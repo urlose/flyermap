@@ -47,7 +47,7 @@ button{cursor:pointer}
 #map{height:100%;min-height:300px}
 header.top{display:flex;align-items:center;gap:10px;padding:14px 16px 8px}
 header.top b{font-size:17px}
-header.top .me{margin-left:auto;color:var(--muted);font-size:13px}
+header.top .me{margin-left:auto;color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 nav.tabs{display:flex;gap:2px;padding:0 10px;border-bottom:1px solid var(--line);overflow-x:auto}
 nav.tabs button{background:none;border:0;padding:10px 10px;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap}
 nav.tabs button.on{color:var(--ink);border-bottom-color:var(--ink);font-weight:600}
@@ -93,7 +93,7 @@ textarea{min-height:60px;resize:vertical}
 @media (max-width:820px){
   #app{grid-template-columns:minmax(0,1fr);grid-template-rows:45vh 1fr}
   header.top .me{display:none}
-  header.top button{margin-left:auto}
+  header.top .langsw{margin-left:auto}
   #map{order:-1;height:45vh}
   #side{border-right:0;border-top:1px solid var(--line)}
 }
@@ -104,34 +104,35 @@ textarea{min-height:60px;resize:vertical}
 <section id="auth" class="hidden">
   <div class="authbox">
     <h1>FlyerMap</h1>
-    <p>Панель администратора</p>
+    <p data-l10n="adminPanel"></p>
     <label class="f" for="aEmail">Email</label>
     <input id="aEmail" type="email" autocomplete="username">
-    <label class="f" for="aPass">Пароль</label>
+    <label class="f" for="aPass" data-l10n="password"></label>
     <input id="aPass" type="password" autocomplete="current-password">
     <div class="row" style="margin-top:16px">
-      <button class="btn pri grow" id="bLogin">Войти</button>
-      <button class="btn" id="bSignup">Создать аккаунт</button>
+      <button class="btn pri grow" id="bLogin" data-l10n="login"></button>
+      <button class="btn" id="bSignup" data-l10n="signup"></button>
     </div>
     <div id="aErr" class="err"></div>
+    <div class="langsw small muted" style="margin-top:18px"></div>
   </div>
 </section>
 
 <section id="noaccess" class="hidden" style="padding:40px;text-align:center">
-  <h2>Нет доступа</h2>
-  <p class="muted">Этот аккаунт не является админом. Попросите существующего админа пригласить ваш email во вкладке «Админы», затем войдите снова.</p>
-  <button class="btn" onclick="logout()">Выйти</button>
+  <h2 data-l10n="noAccess"></h2>
+  <p class="muted" data-l10n="noAccessText"></p>
+  <button class="btn" onclick="logout()" data-l10n="logout"></button>
 </section>
 
 <div id="app" class="hidden">
   <aside id="side">
-    <header class="top"><b>FlyerMap</b><span class="me" id="meEmail"></span><button class="btn sm" onclick="logout()">Выйти</button></header>
+    <header class="top"><b>FlyerMap</b><span class="me" id="meEmail"></span><span class="langsw small"></span><button class="btn sm" onclick="logout()" data-l10n="logout"></button></header>
     <nav class="tabs" id="tabs">
-      <button data-t="live" class="on">Сейчас</button>
-      <button data-t="tasks">Задания</button>
-      <button data-t="workers">Работники</button>
-      <button data-t="routes">Маршруты</button>
-      <button data-t="admins">Админы</button>
+      <button data-t="live" class="on" data-l10n="tabLive"></button>
+      <button data-t="tasks" data-l10n="tabTasks"></button>
+      <button data-t="workers" data-l10n="tabWorkers"></button>
+      <button data-t="routes" data-l10n="tabRoutes"></button>
+      <button data-t="admins" data-l10n="tabAdmins"></button>
     </nav>
     <div id="view"></div>
   </aside>
@@ -145,22 +146,115 @@ const sb = supabase.createClient(SB_URL, SB_KEY);
 const KM_PER_MIN_TRANSIT = 0.75;   // ~45 км за час на S-Bahn/RE
 const WALK_M_PER_MIN = 83;          // ~5 км/ч
 
+/* ---------- i18n ---------- */
+const I18N = {
+  ru: {
+    adminPanel:'Панель администратора', password:'Пароль', login:'Войти', signup:'Создать аккаунт', logout:'Выйти',
+    badLogin:'Неверный email или пароль', pass8:'Пароль — минимум 8 символов', confirmMail:'Аккаунт создан. Подтвердите email по ссылке из письма и войдите.',
+    noAccess:'Нет доступа', noAccessText:'Этот аккаунт не является админом. Попросите существующего админа пригласить ваш email во вкладке «Админы», затем войдите снова.',
+    loadErr:'Ошибка загрузки: ',
+    tabLive:'Сейчас', tabTasks:'Задания', tabWorkers:'Работники', tabRoutes:'Маршруты', tabAdmins:'Админы',
+    liveTitle:'Кто сейчас на маршруте', loading:'Загрузка…', updated:'Обновлено {x}', show:'Показать', call:'Позвонить',
+    liveEmpty:'Сейчас никто не на маршруте. Когда работник нажмёт «Старт» в приложении, он появится здесь и на карте.',
+    justNow:'только что', minAgo:'{n} мин назад', hAgo:'{n} ч назад', noData:'нет данных',
+    tasks:'Задания', newTask:'Новое задание', noDate:'без даты', people:'{n} чел.',
+    noOpenTasks:'Открытых заданий нет. Создайте задание: выберите город и точку старта на карте.', finished:'Завершённые',
+    citySearch:'Город, например Düsseldorf', searchDown:'Поиск недоступен', nothingFound:'Ничего не найдено',
+    city:'Город', clickMap:'Нажмите на карту, чтобы поставить точку старта.', walkMin:'Минут пешком от старта', date:'Дата',
+    title:'Название', titlePh:'Например: Düsseldorf Bilk', notes:'Заметка для работников', notesPh:'Что раздавать, сколько штук, где забрать флаеры',
+    workers:'Работники', pickFirst:'Сначала поставьте точку старта — покажу, у кого она в зоне.', saveTask:'Сохранить задание',
+    buildingZone:'Строю зону по улицам…', zoneReal:'Зона: куда можно дойти за {n} мин по улицам. Нажмите на карту ещё раз, чтобы перенести старт.',
+    zoneCircle:'Сервис расчёта по улицам не ответил — показан круг ~{d}.', outOfZone:' · вне зоны', nobodyInZone:'В зоне этой точки нет работников.',
+    onlyZone:'Только в зоне', showAll:'Показать всех', needTitle:'Укажите название',
+    walkZone:'зона {n} мин пешком', routesN:'Маршрутов', walked:'Пройдено', pdf:'Отчёт PDF', finish:'Завершить', reopen:'Открыть снова', del:'Удалить',
+    assigned:'Назначены', write:'Написать', remove:'Убрать', nobodyAssigned:'Никто не назначен.', fitZone:'Подходят по зоне', assign:'Назначить',
+    nobodyMore:'Больше никого нет в зоне.', routes:'Маршруты', live:' · идёт сейчас', noRoutes:'Маршрутов пока нет.',
+    delTaskQ:'Удалить задание? Маршруты останутся в истории.',
+    invite:'Привет, {name}! Есть работа: {title}{date}. Точка старта: {link}. Задание уже в приложении FlyerMap.',
+    whoCanGo:'Кто может поехать в город', whoPh:'Например: Essen', searchNamePhone:'Поиск по имени или телефону',
+    canReach:'{n} чел. могут добраться до {city} в пределах своей зоны.', reset:'Сбросить', zoneChip:'зона {n} мин',
+    nobodyFound:'Никого не нашлось.', noWorkers:'Пока никто не зарегистрировался. Работники появятся здесь, когда зарегистрируются в приложении.',
+    zoneLabel:'Зона: сколько готов ехать на общественном транспорте', minShort:'мин', hShort:'ч', save:'Сохранить', delWorker:'Удалить работника',
+    saved:'Сохранено', registered:'Зарегистрирован {d} · последняя активность {a}', delWorkerQ:'Удалить {name} и все его маршруты?',
+    allWorkers:'Все работники', notFoundRoutes:'Маршрутов не найдено.',
+    worker:'Работник', task:'Задание', start:'Начало', end:'Конец', liveNow:'идёт сейчас', duration:'Длительность', taskL:'Задание: ',
+    noPoints:'В этом маршруте пока нет GPS-точек.', delRouteQ:'Удалить маршрут безвозвратно?', startPt:'Старт', finishPt:'Финиш',
+    admins:'Админы', since:'с {d}', inviteAdmin:'Пригласить админа', inviteText:'Добавьте email. Человек открывает эту панель, нажимает «Создать аккаунт» с этим email — и сразу получает доступ.',
+    inviteBtn:'Пригласить', pendingAdmins:'Ожидают регистрации', cancel:'Отменить',
+    total:'Пройдено всего', report:'Отчёт о раздаче · создан ', mapCredit:'Карта © OpenStreetMap contributors', mapFail:'Карту улиц загрузить не удалось — показан только пройденный маршрут.',
+    sheetSum:'Сводка', sheetPts:'GPS-точки', km:'Км', gpsPts:'GPS-точек', time:'Время', lat:'Широта', lng:'Долгота',
+    kmU:'км', mU:'м', h:'ч', min:'мин',
+  },
+  de: {
+    adminPanel:'Admin-Bereich', password:'Passwort', login:'Anmelden', signup:'Konto erstellen', logout:'Abmelden',
+    badLogin:'E-Mail oder Passwort falsch', pass8:'Passwort: mindestens 8 Zeichen', confirmMail:'Konto erstellt. Bestätige die E-Mail über den Link und melde dich an.',
+    noAccess:'Kein Zugriff', noAccessText:'Dieses Konto ist kein Admin. Bitte einen bestehenden Admin, deine E-Mail im Tab „Admins" einzuladen, und melde dich erneut an.',
+    loadErr:'Ladefehler: ',
+    tabLive:'Live', tabTasks:'Aufträge', tabWorkers:'Verteiler', tabRoutes:'Routen', tabAdmins:'Admins',
+    liveTitle:'Wer ist gerade unterwegs', loading:'Lädt…', updated:'Aktualisiert {x}', show:'Zeigen', call:'Anrufen',
+    liveEmpty:'Gerade ist niemand unterwegs. Sobald ein Verteiler in der App auf „Los geht\'s" tippt, erscheint er hier und auf der Karte.',
+    justNow:'gerade eben', minAgo:'vor {n} Min.', hAgo:'vor {n} Std.', noData:'keine Daten',
+    tasks:'Aufträge', newTask:'Neuer Auftrag', noDate:'ohne Datum', people:'{n} Pers.',
+    noOpenTasks:'Keine offenen Aufträge. Erstelle einen: Stadt wählen und Startpunkt auf der Karte setzen.', finished:'Abgeschlossen',
+    citySearch:'Stadt, z. B. Düsseldorf', searchDown:'Suche nicht verfügbar', nothingFound:'Nichts gefunden',
+    city:'Stadt', clickMap:'Tippe auf die Karte, um den Startpunkt zu setzen.', walkMin:'Minuten zu Fuß ab Start', date:'Datum',
+    title:'Titel', titlePh:'z. B. Düsseldorf Bilk', notes:'Hinweis für Verteiler', notesPh:'Was verteilen, wie viele, wo die Flyer abholen',
+    workers:'Verteiler', pickFirst:'Setze zuerst den Startpunkt — dann zeige ich, wer ihn in seinem Gebiet hat.', saveTask:'Auftrag speichern',
+    buildingZone:'Berechne Gebiet entlang der Straßen…', zoneReal:'Gebiet: in {n} Min. zu Fuß über Straßen erreichbar. Erneut auf die Karte tippen, um den Start zu verschieben.',
+    zoneCircle:'Straßenberechnung nicht erreichbar — Kreis mit ~{d} angezeigt.', outOfZone:' · außerhalb', nobodyInZone:'Niemand hat diesen Punkt in seinem Gebiet.',
+    onlyZone:'Nur im Gebiet', showAll:'Alle zeigen', needTitle:'Bitte Titel angeben',
+    walkZone:'Gebiet {n} Min. zu Fuß', routesN:'Routen', walked:'Gelaufen', pdf:'PDF-Bericht', finish:'Abschließen', reopen:'Wieder öffnen', del:'Löschen',
+    assigned:'Eingeteilt', write:'Schreiben', remove:'Entfernen', nobodyAssigned:'Niemand eingeteilt.', fitZone:'Im Gebiet verfügbar', assign:'Einteilen',
+    nobodyMore:'Sonst niemand im Gebiet.', routes:'Routen', live:' · läuft gerade', noRoutes:'Noch keine Routen.',
+    delTaskQ:'Auftrag löschen? Die Routen bleiben im Verlauf.',
+    invite:'Hallo {name}! Es gibt Arbeit: {title}{date}. Startpunkt: {link}. Der Auftrag ist schon in der FlyerMap-App.',
+    whoCanGo:'Wer kann in diese Stadt fahren', whoPh:'z. B. Essen', searchNamePhone:'Suche nach Name oder Telefon',
+    canReach:'{n} Pers. erreichen {city} innerhalb ihres Gebiets.', reset:'Zurücksetzen', zoneChip:'Gebiet {n} Min.',
+    nobodyFound:'Niemand gefunden.', noWorkers:'Noch keine Registrierungen. Verteiler erscheinen hier, sobald sie sich in der App registrieren.',
+    zoneLabel:'Gebiet: wie weit mit öffentlichen Verkehrsmitteln', minShort:'Min.', hShort:'Std.', save:'Speichern', delWorker:'Verteiler löschen',
+    saved:'Gespeichert', registered:'Registriert {d} · zuletzt aktiv {a}', delWorkerQ:'{name} und alle Routen löschen?',
+    allWorkers:'Alle Verteiler', notFoundRoutes:'Keine Routen gefunden.',
+    worker:'Verteiler', task:'Auftrag', start:'Beginn', end:'Ende', liveNow:'läuft gerade', duration:'Dauer', taskL:'Auftrag: ',
+    noPoints:'Diese Route hat noch keine GPS-Punkte.', delRouteQ:'Route endgültig löschen?', startPt:'Start', finishPt:'Ziel',
+    admins:'Admins', since:'seit {d}', inviteAdmin:'Admin einladen', inviteText:'E-Mail hinzufügen. Die Person öffnet diese Seite, tippt mit dieser E-Mail auf „Konto erstellen" und hat sofort Zugriff.',
+    inviteBtn:'Einladen', pendingAdmins:'Warten auf Registrierung', cancel:'Zurückziehen',
+    total:'Gesamt gelaufen', report:'Verteilbericht · erstellt ', mapCredit:'Karte © OpenStreetMap-Mitwirkende', mapFail:'Straßenkarte konnte nicht geladen werden — nur die gelaufene Route ist zu sehen.',
+    sheetSum:'Übersicht', sheetPts:'GPS-Punkte', km:'km', gpsPts:'GPS-Punkte', time:'Zeit', lat:'Breite', lng:'Länge',
+    kmU:'km', mU:'m', h:'Std.', min:'Min.',
+  }
+};
+let LANG = (()=>{ try{ return localStorage.getItem('fm_lang') || ((navigator.language||'').startsWith('ru')?'ru':'de'); }catch(e){ return 'ru'; } })();
+const t = (k, v={}) => String(I18N[LANG][k] ?? I18N.ru[k] ?? k).replace(/\{(\w+)\}/g, (_, x) => v[x] ?? '');
+const LOC = () => LANG === 'ru' ? 'ru-RU' : 'de-DE';
+function applyStatic(){
+  document.documentElement.lang = LANG;
+  document.querySelectorAll('[data-l10n]').forEach(el => el.textContent = t(el.dataset.l10n));
+  document.querySelectorAll('.langsw').forEach(el => {
+    el.innerHTML = ['ru','de'].map(l => `<a href="#" data-lang="${l}" style="${l===LANG?'font-weight:600;color:var(--ink)':'color:var(--muted)'};text-decoration:none;margin:0 4px">${l.toUpperCase()}</a>`).join('');
+  });
+}
+document.addEventListener('click', e => {
+  const l = e.target.closest('[data-lang]'); if(!l) return;
+  e.preventDefault(); LANG = l.dataset.lang; try{ localStorage.setItem('fm_lang', LANG); }catch(_){}
+  applyStatic(); if(!$('#app').classList.contains('hidden') && S.tab) go(S.tab === 'newtask' ? 'tasks' : S.tab, S.arg);
+});
+
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
-const S = { tab:'live', workers:[], tasks:[], poll:null, draft:null };
+const S = { tab:'live', arg:null, workers:[], tasks:[], poll:null, draft:null };
 
 /* ---------- geo helpers ---------- */
 function hav(a,b,c,d){const R=6371,r=Math.PI/180,x=Math.sin((c-a)*r/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin((d-b)*r/2)**2;return 2*R*Math.asin(Math.sqrt(x));}
-const fmtKm = m => m>=1000 ? (m/1000).toFixed(2).replace('.',',')+' км' : Math.round(m)+' м';
-function fmtDur(a,b){ if(!a) return '—'; const ms=(b?new Date(b):new Date())-new Date(a); const h=Math.floor(ms/3.6e6), m=Math.round(ms%3.6e6/6e4); return h? `${h} ч ${m} мин`:`${m} мин`; }
-const fmtDT = d => d ? new Date(d).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
-const fmtD = d => d ? new Date(d).toLocaleDateString('ru-RU') : '—';
-const ago = d => { if(!d) return 'нет данных'; const s=(Date.now()-new Date(d))/1000; if(s<90) return 'только что'; if(s<3600) return Math.round(s/60)+' мин назад'; if(s<86400) return Math.round(s/3600)+' ч назад'; return fmtD(d); };
+const fmtKm = m => m>=1000 ? (m/1000).toFixed(2).replace('.',',')+' '+t('kmU') : Math.round(m)+' '+t('mU');
+function fmtDur(a,b){ if(!a) return '—'; const ms=(b?new Date(b):new Date())-new Date(a); const h=Math.floor(ms/3.6e6), m=Math.round(ms%3.6e6/6e4); return h? `${h} ${t('h')} ${m} ${t('min')}`:`${m} ${t('min')}`; }
+const fmtDT = d => d ? new Date(d).toLocaleString(LOC(),{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
+const fmtD = d => d ? new Date(d).toLocaleDateString(LOC()) : '—';
+const ago = d => { if(!d) return t('noData'); const s=(Date.now()-new Date(d))/1000; if(s<90) return t('justNow'); if(s<3600) return t('minAgo',{n:Math.round(s/60)}); if(s<86400) return t('hAgo',{n:Math.round(s/3600)}); return fmtD(d); };
 
 async function geocode(q){
-  const u = 'https://nominatim.openstreetmap.org/search?format=json&limit=6&addressdetails=1&accept-language=de,ru&q='+encodeURIComponent(q);
-  const r = await fetch(u); if(!r.ok) throw new Error('Поиск недоступен');
+  const u = 'https://nominatim.openstreetmap.org/search?format=json&limit=6&addressdetails=1&accept-language=de&q='+encodeURIComponent(q);
+  const r = await fetch(u); if(!r.ok) throw new Error(t('searchDown'));
   return (await r.json()).map(x => ({
     name: x.address?.city || x.address?.town || x.address?.village || x.address?.municipality || x.name || x.display_name.split(',')[0],
     label: x.display_name, lat:+x.lat, lng:+x.lon }));
@@ -216,33 +310,35 @@ const wName = id => S.workers.find(w=>w.id===id)?.name || '—';
 
 /* ---------- auth ---------- */
 async function boot(){
+  applyStatic();
   const {data:{session}} = await sb.auth.getSession();
   if(!session){ show('auth'); return; }
   const {data:ok,error} = await sb.rpc('become_admin');
   if(error || !ok){ show('noaccess'); return; }
   $('#meEmail').textContent = session.user.email;
   show('app'); initMap(); setTimeout(()=>map.invalidateSize(),50);
-  try{ await Promise.all([loadWorkers(),loadTasks()]); }catch(e){ alert('Ошибка загрузки: '+e.message); }
+  try{ await Promise.all([loadWorkers(),loadTasks()]); }catch(e){ alert(t('loadErr')+e.message); }
   go('live');
 }
 function show(id){ ['auth','noaccess','app'].forEach(x=>$('#'+x).classList.toggle('hidden',x!==id)); }
 async function logout(){ await sb.auth.signOut(); location.reload(); }
-$('#bLogin').onclick = async()=>{ $('#aErr').textContent=''; const {error}=await sb.auth.signInWithPassword({email:$('#aEmail').value.trim(),password:$('#aPass').value}); if(error) $('#aErr').textContent=error.message==='Invalid login credentials'?'Неверный email или пароль':error.message; else boot(); };
-$('#bSignup').onclick = async()=>{ $('#aErr').textContent=''; const p=$('#aPass').value; if(p.length<8){$('#aErr').textContent='Пароль — минимум 8 символов';return;} const {data,error}=await sb.auth.signUp({email:$('#aEmail').value.trim(),password:p}); if(error){$('#aErr').textContent=error.message;return;} if(data.session) return boot(); const r=await sb.auth.signInWithPassword({email:$('#aEmail').value.trim(),password:p}); if(!r.error) boot(); else $('#aErr').textContent='Аккаунт создан. Подтвердите email по ссылке из письма и войдите.'; };
+$('#bLogin').onclick = async()=>{ $('#aErr').textContent=''; const {error}=await sb.auth.signInWithPassword({email:$('#aEmail').value.trim(),password:$('#aPass').value}); if(error) $('#aErr').textContent=error.message==='Invalid login credentials'?t('badLogin'):error.message; else boot(); };
+$('#bSignup').onclick = async()=>{ $('#aErr').textContent=''; const p=$('#aPass').value; if(p.length<8){$('#aErr').textContent=t('pass8');return;} const {data,error}=await sb.auth.signUp({email:$('#aEmail').value.trim(),password:p,options:{emailRedirectTo:location.origin+location.pathname}}); if(error){$('#aErr').textContent=error.message;return;} if(data.session) return boot(); const r=await sb.auth.signInWithPassword({email:$('#aEmail').value.trim(),password:p}); if(!r.error) boot(); else $('#aErr').textContent=t('confirmMail'); };
 $('#aPass').addEventListener('keydown',e=>{ if(e.key==='Enter') $('#bLogin').click(); });
 
 /* ---------- navigation ---------- */
-$('#tabs').onclick = e => { const t=e.target.closest('button')?.dataset.t; if(t) go(t); };
+$('#tabs').onclick = e => { const tb=e.target.closest('button')?.dataset.t; if(tb) go(tb); };
 function go(tab, arg){
-  S.tab=tab; S.onMapClick=null; clearInterval(S.poll); $('#view').onclick=null; L1.clearLayers(); L2.clearLayers();
-  document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===tab));
+  S.tab=tab; S.arg=arg; S.onMapClick=null; clearInterval(S.poll); $('#view').onclick=null; L1.clearLayers(); L2.clearLayers();
+  const top = {task:'tasks', newtask:'tasks', worker:'workers', route:'routes'}[tab] || tab;
+  document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===top));
   ({live:viewLive, tasks:viewTasks, task:viewTask, newtask:viewNewTask, workers:viewWorkers, worker:viewWorker, routes:viewRoutes, route:viewRoute, admins:viewAdmins})[tab](arg);
 }
 const V = html => { $('#view').innerHTML = html; };
 
 /* ---------- LIVE ---------- */
 async function viewLive(){
-  V(`<h2>Кто сейчас на маршруте</h2><div id="liveList" class="muted">Загрузка…</div>`);
+  V(`<h2>${t('liveTitle')}</h2><div id="liveList" class="muted">${t('loading')}</div>`);
   const tick = async()=>{
     try{ await loadWorkers(); }catch(e){ return; }
     L2.clearLayers();
@@ -257,10 +353,10 @@ async function viewLive(){
     el.classList.remove('muted');
     el.innerHTML = active.length ? active.map(w=>`
       <div class="item"><div class="t"><span class="dot" style="background:var(--live)"></span>${esc(w.name)}</div>
-      <div class="small muted">Обновлено ${ago(w.last_seen)}</div>
-      <div class="row" style="margin-top:6px"><button class="btn sm" onclick="map.setView([${w.last_lat},${w.last_lng}],16)">Показать</button>
-      <a class="btn sm" href="${telLink(w.phone)}">Позвонить</a><a class="btn sm" target="_blank" href="${waLink(w.phone)}">WhatsApp</a></div></div>`).join('')
-      : `<p class="muted">Сейчас никто не на маршруте. Когда работник нажмёт «Старт» в приложении, он появится здесь и на карте.</p>`;
+      <div class="small muted">${t('updated',{x:ago(w.last_seen)})}</div>
+      <div class="row" style="margin-top:6px"><button class="btn sm" onclick="map.setView([${w.last_lat},${w.last_lng}],16)">${t('show')}</button>
+      <a class="btn sm" href="${telLink(w.phone)}">${t('call')}</a><a class="btn sm" target="_blank" href="${waLink(w.phone)}">WhatsApp</a></div></div>`).join('')
+      : `<p class="muted">${t('liveEmpty')}</p>`;
     if(!S.liveFitted && active.length){ fit(b); S.liveFitted=true; }
   };
   S.liveFitted=false; await tick(); S.poll=setInterval(tick,15000);
@@ -268,129 +364,129 @@ async function viewLive(){
 
 /* ---------- TASKS ---------- */
 function viewTasks(){
-  const open = S.tasks.filter(t=>t.status==='open'), done = S.tasks.filter(t=>t.status!=='open');
-  const row = t => `<div class="item click" onclick="go('task','${t.id}')"><div class="t">${esc(t.title)}</div>
-    <div class="small muted">${esc(t.city_name||'')} · ${t.work_date?fmtD(t.work_date):'без даты'} · ${t.task_workers.length} чел.</div></div>`;
-  V(`<div class="row"><h2 class="grow">Задания</h2><button class="btn pri" onclick="go('newtask')">Новое задание</button></div>
-    ${open.length? open.map(row).join('') : '<p class="muted">Открытых заданий нет. Создайте задание: выберите город и точку старта на карте.</p>'}
-    ${done.length? `<h2 style="margin-top:20px">Завершённые</h2>`+done.map(row).join(''):''}`);
+  const open = S.tasks.filter(x=>x.status==='open'), done = S.tasks.filter(x=>x.status!=='open');
+  const row = tk => `<div class="item click" onclick="go('task','${tk.id}')"><div class="t">${esc(tk.title)}</div>
+    <div class="small muted">${[esc(tk.city_name||''), tk.work_date?fmtD(tk.work_date):t('noDate'), t('people',{n:tk.task_workers.length})].filter(Boolean).join(' · ')}</div></div>`;
+  V(`<div class="row"><h2 class="grow">${t('tasks')}</h2><button class="btn pri" onclick="go('newtask')">${t('newTask')}</button></div>
+    ${open.length? open.map(row).join('') : `<p class="muted">${t('noOpenTasks')}</p>`}
+    ${done.length? `<h2 style="margin-top:20px">${t('finished')}</h2>`+done.map(row).join(''):''}`);
   const b=L.latLngBounds([]);
-  for(const t of open){ if(t.zone_polygon) drawZone(t.zone_polygon); L.marker([t.start_lat,t.start_lng],{icon:icon('pin-start')}).bindTooltip(esc(t.title)).on('click',()=>go('task',t.id)).addTo(L1); b.extend([t.start_lat,t.start_lng]); }
+  for(const tk of open){ if(tk.zone_polygon) drawZone(tk.zone_polygon); L.marker([tk.start_lat,tk.start_lng],{icon:icon('pin-start')}).bindTooltip(esc(tk.title)).on('click',()=>go('task',tk.id)).addTo(L1); b.extend([tk.start_lat,tk.start_lng]); }
   fit(b);
 }
 
-function citySearchWidget(id, onPick, placeholder='Город, например Düsseldorf'){
+function citySearchWidget(id, onPick, placeholder){
   setTimeout(()=>{
     const inp=$('#'+id), res=$('#'+id+'R'); let tmr;
     inp.addEventListener('input',()=>{ clearTimeout(tmr); const q=inp.value.trim(); if(q.length<2){res.innerHTML='';res.classList.add('hidden');return;}
       tmr=setTimeout(async()=>{ try{ const r=await geocode(q); res.classList.remove('hidden');
-        res.innerHTML = r.length? r.map((x,i)=>`<div data-i="${i}">${esc(x.label)}</div>`).join('') : '<div class="muted">Ничего не найдено</div>';
+        res.innerHTML = r.length? r.map((x,i)=>`<div data-i="${i}">${esc(x.label)}</div>`).join('') : `<div class="muted">${t('nothingFound')}</div>`;
         res.onclick=e=>{ const i=e.target.dataset.i; if(i==null) return; res.classList.add('hidden'); inp.value=r[i].name; onPick(r[i]); };
-      }catch(e){ res.innerHTML='<div class="muted">Поиск недоступен</div>'; } },400); });
+      }catch(e){ res.innerHTML=`<div class="muted">${t('searchDown')}</div>`; } },400); });
   });
-  return `<input type="text" id="${id}" placeholder="${placeholder}" autocomplete="off"><div id="${id}R" class="results hidden"></div>`;
+  return `<input type="text" id="${id}" placeholder="${esc(placeholder||t('citySearch'))}" autocomplete="off"><div id="${id}R" class="results hidden"></div>`;
 }
 
 function viewNewTask(){
   const d = S.draft = {city:null, start:null, minutes:15, poly:null, real:false, picked:new Set(), showAll:false};
-  V(`<button class="back" onclick="go('tasks')">← Задания</button><h2>Новое задание</h2>
-    <label class="f">Город</label>${citySearchWidget('ntCity', c=>{ d.city=c; map.setView([c.lat,c.lng],14); $('#ntTitle').value ||= c.name; })}
-    <div class="hint" id="ntHint">Нажмите на карту, чтобы поставить точку старта.</div>
-    <div class="row"><div class="grow"><label class="f">Минут пешком от старта</label><input type="number" id="ntMin" min="5" max="60" value="15"></div>
-      <div class="grow"><label class="f">Дата</label><input type="date" id="ntDate"></div></div>
-    <label class="f">Название</label><input type="text" id="ntTitle" placeholder="Например: Düsseldorf Bilk">
-    <label class="f">Заметка для работников</label><textarea id="ntNotes" placeholder="Что раздавать, сколько штук, где забрать флаеры"></textarea>
-    <h2 style="margin-top:18px">Работники</h2><div id="ntWorkers" class="muted small">Сначала поставьте точку старта — покажу, у кого она в зоне.</div>
-    <div class="row" style="margin-top:16px"><button class="btn pri grow" id="ntSave" disabled>Сохранить задание</button></div><div id="ntErr" class="err"></div>`);
+  V(`<button class="back" onclick="go('tasks')">← ${t('tasks')}</button><h2>${t('newTask')}</h2>
+    <label class="f">${t('city')}</label>${citySearchWidget('ntCity', c=>{ d.city=c; map.setView([c.lat,c.lng],14); $('#ntTitle').value ||= c.name; })}
+    <div class="hint" id="ntHint">${t('clickMap')}</div>
+    <div class="row"><div class="grow"><label class="f">${t('walkMin')}</label><input type="number" id="ntMin" min="5" max="60" value="15"></div>
+      <div class="grow"><label class="f">${t('date')}</label><input type="date" id="ntDate"></div></div>
+    <label class="f">${t('title')}</label><input type="text" id="ntTitle" placeholder="${esc(t('titlePh'))}">
+    <label class="f">${t('notes')}</label><textarea id="ntNotes" placeholder="${esc(t('notesPh'))}"></textarea>
+    <h2 style="margin-top:18px">${t('workers')}</h2><div id="ntWorkers" class="muted small">${t('pickFirst')}</div>
+    <div class="row" style="margin-top:16px"><button class="btn pri grow" id="ntSave" disabled>${t('saveTask')}</button></div><div id="ntErr" class="err"></div>`);
   const redraw = async()=>{
     if(!d.start) return; L1.clearLayers();
-    $('#ntHint').textContent='Строю зону по улицам…';
+    $('#ntHint').textContent=t('buildingZone');
     const r = await isochrone(d.start.lat,d.start.lng,d.minutes); d.poly=r.poly; d.real=r.real;
     L1.clearLayers(); drawZone(d.poly); L.marker([d.start.lat,d.start.lng],{icon:icon('pin-start')}).addTo(L1);
     fit(L.polygon(d.poly).getBounds());
-    $('#ntHint').textContent = r.real ? `Зона: куда можно дойти за ${d.minutes} мин по улицам. Нажмите на карту ещё раз, чтобы перенести старт.` : `Сервис расчёта по улицам не ответил — показан круг ~${fmtKm(d.minutes*WALK_M_PER_MIN)}.`;
+    $('#ntHint').textContent = r.real ? t('zoneReal',{n:d.minutes}) : t('zoneCircle',{d:fmtKm(d.minutes*WALK_M_PER_MIN)});
     renderPick(); $('#ntSave').disabled=false;
   };
   const renderPick = ()=>{
     const list = workersForPoint(d.start.lat,d.start.lng).filter(x=>d.showAll||x.inZone);
     $('#ntWorkers').classList.remove('muted');
     $('#ntWorkers').innerHTML = (list.length? list.map(x=>`<label class="item row" style="cursor:pointer"><input type="checkbox" data-id="${x.w.id}" ${d.picked.has(x.w.id)?'checked':''}>
-      <span class="grow"><b>${esc(x.w.name)}</b><br><span class="small muted">${x.city?esc(x.city.name)+', ':''}${isFinite(x.km)?Math.round(x.km)+' км':''}${x.inZone?'':' · вне зоны'}</span></span></label>`).join('')
-      : '<p class="muted">В зоне этой точки нет работников.</p>') +
-      `<button class="btn sm" style="margin-top:8px" onclick="S.draft.showAll=!S.draft.showAll;this.parentNode.dispatchEvent(new Event('rerender'))">${d.showAll?'Только в зоне':'Показать всех'}</button>`;
+      <span class="grow"><b>${esc(x.w.name)}</b><br><span class="small muted">${x.city?esc(x.city.name)+', ':''}${isFinite(x.km)?Math.round(x.km)+' '+t('kmU'):''}${x.inZone?'':t('outOfZone')}</span></span></label>`).join('')
+      : `<p class="muted">${t('nobodyInZone')}</p>`) +
+      `<button class="btn sm" style="margin-top:8px" onclick="S.draft.showAll=!S.draft.showAll;this.parentNode.dispatchEvent(new Event('rerender'))">${d.showAll?t('onlyZone'):t('showAll')}</button>`;
   };
   $('#ntWorkers').addEventListener('change',e=>{ const id=e.target.dataset.id; if(!id) return; e.target.checked?d.picked.add(id):d.picked.delete(id); });
   $('#ntWorkers').addEventListener('rerender',renderPick);
   S.onMapClick = ll => { d.start={lat:ll.lat,lng:ll.lng}; redraw(); };
   $('#ntMin').onchange = e => { d.minutes=Math.max(5,Math.min(60,+e.target.value||15)); redraw(); };
   $('#ntSave').onclick = async()=>{
-    const title=$('#ntTitle').value.trim(); if(!title){$('#ntErr').textContent='Укажите название';return;}
+    const title=$('#ntTitle').value.trim(); if(!title){$('#ntErr').textContent=t('needTitle');return;}
     $('#ntSave').disabled=true;
     const {data:u}=await sb.auth.getUser();
-    const {data:t,error}=await sb.from('tasks').insert({title, city_name:d.city?.name||null, start_lat:d.start.lat, start_lng:d.start.lng, walk_minutes:d.minutes, zone_polygon:d.poly, work_date:$('#ntDate').value||null, notes:$('#ntNotes').value.trim()||null, created_by:u.user.id}).select().single();
+    const {data:tk,error}=await sb.from('tasks').insert({title, city_name:d.city?.name||null, start_lat:d.start.lat, start_lng:d.start.lng, walk_minutes:d.minutes, zone_polygon:d.poly, work_date:$('#ntDate').value||null, notes:$('#ntNotes').value.trim()||null, created_by:u.user.id}).select().single();
     if(error){$('#ntErr').textContent=error.message;$('#ntSave').disabled=false;return;}
-    if(d.picked.size){ const {error:e2}=await sb.from('task_workers').insert([...d.picked].map(w=>({task_id:t.id,worker_id:w}))); if(e2) alert(e2.message); }
-    await loadTasks(); go('task',t.id);
+    if(d.picked.size){ const {error:e2}=await sb.from('task_workers').insert([...d.picked].map(w=>({task_id:tk.id,worker_id:w}))); if(e2) alert(e2.message); }
+    await loadTasks(); go('task',tk.id);
   };
 }
 
 async function viewTask(id){
-  const t = S.tasks.find(x=>x.id===id); if(!t) return go('tasks');
-  const assigned = new Set(t.task_workers.map(x=>x.worker_id));
+  const tk = S.tasks.find(x=>x.id===id); if(!tk) return go('tasks');
+  const assigned = new Set(tk.task_workers.map(x=>x.worker_id));
   const {data:routes} = await sb.from('routes').select('*').eq('task_id',id).order('started_at');
   const totalM = (routes||[]).reduce((s,r)=>s+r.distance_m,0);
-  const gmaps = `https://maps.google.com/?q=${t.start_lat},${t.start_lng}`;
-  const invite = w => `Привет, ${w.name}! Есть работа: ${t.title}${t.work_date?', '+fmtD(t.work_date):''}. Точка старта: ${gmaps}. Задание уже в приложении.`;
-  V(`<button class="back" onclick="go('tasks')">← Задания</button><h2>${esc(t.title)}</h2>
-    <div class="small muted">${esc(t.city_name||'')} · ${t.work_date?fmtD(t.work_date):'без даты'} · зона ${t.walk_minutes} мин пешком</div>
-    ${t.notes?`<div class="hint">${esc(t.notes)}</div>`:''}
-    <div class="stat"><div><span>Маршрутов</span><b>${routes?.length||0}</b></div><div><span>Пройдено</span><b>${fmtKm(totalM)}</b></div></div>
-    <div class="row"><button class="btn sm" id="tPdf">Отчёт PDF</button><button class="btn sm" id="tXls">Excel</button>
-      <button class="btn sm" id="tDone">${t.status==='open'?'Завершить':'Открыть снова'}</button><button class="btn sm danger" id="tDel">Удалить</button></div>
-    <h2 style="margin-top:18px">Назначены</h2>
+  const gmaps = `https://maps.google.com/?q=${tk.start_lat},${tk.start_lng}`;
+  const invite = w => t('invite',{name:w.name, title:tk.title, date:tk.work_date?', '+fmtD(tk.work_date):'', link:gmaps});
+  V(`<button class="back" onclick="go('tasks')">← ${t('tasks')}</button><h2>${esc(tk.title)}</h2>
+    <div class="small muted">${[esc(tk.city_name||''), tk.work_date?fmtD(tk.work_date):t('noDate'), t('walkZone',{n:tk.walk_minutes})].filter(Boolean).join(' · ')}</div>
+    ${tk.notes?`<div class="hint">${esc(tk.notes)}</div>`:''}
+    <div class="stat"><div><span>${t('routesN')}</span><b>${routes?.length||0}</b></div><div><span>${t('walked')}</span><b>${fmtKm(totalM)}</b></div></div>
+    <div class="row"><button class="btn sm" id="tPdf">${t('pdf')}</button><button class="btn sm" id="tXls">Excel</button>
+      <button class="btn sm" id="tDone">${tk.status==='open'?t('finish'):t('reopen')}</button><button class="btn sm danger" id="tDel">${t('del')}</button></div>
+    <h2 style="margin-top:18px">${t('assigned')}</h2>
     ${[...assigned].map(wid=>{ const w=S.workers.find(x=>x.id===wid); if(!w) return ''; return `<div class="item"><div class="row"><span class="grow t">${esc(w.name)}</span>
-      <a class="btn sm" target="_blank" href="${waLink(w.phone,invite(w))}">Написать</a><button class="btn sm" data-un="${w.id}">Убрать</button></div></div>`;}).join('') || '<p class="muted">Никто не назначен.</p>'}
-    <h2 style="margin-top:18px">Подходят по зоне</h2>
-    ${workersForPoint(t.start_lat,t.start_lng).filter(x=>x.inZone&&!assigned.has(x.w.id)).map(x=>`<div class="item"><div class="row"><span class="grow"><b>${esc(x.w.name)}</b><br><span class="small muted">${esc(x.city?.name||'')}, ${Math.round(x.km)} км</span></span>
-      <a class="btn sm" target="_blank" href="${waLink(x.w.phone,invite(x.w))}">Написать</a><button class="btn sm" data-as="${x.w.id}">Назначить</button></div></div>`).join('') || '<p class="muted small">Больше никого нет в зоне.</p>'}
-    <h2 style="margin-top:18px">Маршруты</h2>
-    ${(routes||[]).map(r=>`<div class="item click" onclick="go('route','${r.id}')"><div class="t">${esc(wName(r.worker_id))}</div><div class="small muted">${fmtDT(r.started_at)} · ${fmtDur(r.started_at,r.ended_at)} · ${fmtKm(r.distance_m)}${r.ended_at?'':' · идёт сейчас'}</div></div>`).join('') || '<p class="muted small">Маршрутов пока нет.</p>'}`);
+      <a class="btn sm" target="_blank" href="${waLink(w.phone,invite(w))}">${t('write')}</a><button class="btn sm" data-un="${w.id}">${t('remove')}</button></div></div>`;}).join('') || `<p class="muted">${t('nobodyAssigned')}</p>`}
+    <h2 style="margin-top:18px">${t('fitZone')}</h2>
+    ${workersForPoint(tk.start_lat,tk.start_lng).filter(x=>x.inZone&&!assigned.has(x.w.id)).map(x=>`<div class="item"><div class="row"><span class="grow"><b>${esc(x.w.name)}</b><br><span class="small muted">${esc(x.city?.name||'')}, ${Math.round(x.km)} ${t('kmU')}</span></span>
+      <a class="btn sm" target="_blank" href="${waLink(x.w.phone,invite(x.w))}">${t('write')}</a><button class="btn sm" data-as="${x.w.id}">${t('assign')}</button></div></div>`).join('') || `<p class="muted small">${t('nobodyMore')}</p>`}
+    <h2 style="margin-top:18px">${t('routes')}</h2>
+    ${(routes||[]).map(r=>`<div class="item click" onclick="go('route','${r.id}')"><div class="t">${esc(wName(r.worker_id))}</div><div class="small muted">${fmtDT(r.started_at)} · ${fmtDur(r.started_at,r.ended_at)} · ${fmtKm(r.distance_m)}${r.ended_at?'':t('live')}</div></div>`).join('') || `<p class="muted small">${t('noRoutes')}</p>`}`);
   $('#view').onclick = async e => {
     const un=e.target.dataset.un, as=e.target.dataset.as;
     if(un){ await sb.from('task_workers').delete().eq('task_id',id).eq('worker_id',un); await loadTasks(); go('task',id); }
     if(as){ await sb.from('task_workers').insert({task_id:id,worker_id:as}); await loadTasks(); go('task',id); }
   };
-  $('#tDone').onclick = async()=>{ await sb.from('tasks').update({status:t.status==='open'?'done':'open'}).eq('id',id); await loadTasks(); go('task',id); };
-  $('#tDel').onclick = async()=>{ if(!confirm('Удалить задание? Маршруты останутся в истории.')) return; await sb.from('tasks').delete().eq('id',id); await loadTasks(); go('tasks'); };
-  if(t.zone_polygon) drawZone(t.zone_polygon);
-  L.marker([t.start_lat,t.start_lng],{icon:icon('pin-start')}).addTo(L1);
-  const b = t.zone_polygon? L.polygon(t.zone_polygon).getBounds() : L.latLngBounds([[t.start_lat,t.start_lng]]);
+  $('#tDone').onclick = async()=>{ await sb.from('tasks').update({status:tk.status==='open'?'done':'open'}).eq('id',id); await loadTasks(); go('task',id); };
+  $('#tDel').onclick = async()=>{ if(!confirm(t('delTaskQ'))) return; await sb.from('tasks').delete().eq('id',id); await loadTasks(); go('tasks'); };
+  if(tk.zone_polygon) drawZone(tk.zone_polygon);
+  L.marker([tk.start_lat,tk.start_lng],{icon:icon('pin-start')}).addTo(L1);
+  const b = tk.zone_polygon? L.polygon(tk.zone_polygon).getBounds() : L.latLngBounds([[tk.start_lat,tk.start_lng]]);
   const lines = [];
   for(const r of routes||[]){ const pts=await fetchPoints(r.id); lines.push({r,pts}); if(pts.length>1){ drawLine(pts.map(p=>[p.lat,p.lng])); pts.forEach(p=>b.extend([p.lat,p.lng])); } }
   fit(b);
-  const meta = [['Задание',t.title],['Город',t.city_name||'—'],['Дата',t.work_date?fmtD(t.work_date):'—'],['Маршрутов',String(lines.length)],['Пройдено всего',fmtKm(totalM)]];
-  $('#tPdf').onclick = ()=>exportPDF(t.title, meta, lines, t);
-  $('#tXls').onclick = ()=>exportXLS(t.title, lines);
+  const meta = [[t('task'),tk.title],[t('city'),tk.city_name||'—'],[t('date'),tk.work_date?fmtD(tk.work_date):'—'],[t('routesN'),String(lines.length)],[t('total'),fmtKm(totalM)]];
+  $('#tPdf').onclick = ()=>exportPDF(tk.title, meta, lines, tk);
+  $('#tXls').onclick = ()=>exportXLS(tk.title, lines);
 }
 
 /* ---------- WORKERS ---------- */
 function viewWorkers(){
   let place=null;
-  V(`<h2>Работники <span class="muted small">(${S.workers.length})</span></h2>
-    <label class="f">Кто может поехать в город</label>${citySearchWidget('wCity', c=>{place=c; render(); L1.clearLayers(); L.marker([c.lat,c.lng],{icon:icon('pin-start')}).addTo(L1); map.setView([c.lat,c.lng],9);}, 'Например: Essen')}
-    <label class="f">Поиск по имени или телефону</label><input type="text" id="wQ">
+  V(`<h2>${t('workers')} <span class="muted small">(${S.workers.length})</span></h2>
+    <label class="f">${t('whoCanGo')}</label>${citySearchWidget('wCity', c=>{place=c; render(); L1.clearLayers(); L.marker([c.lat,c.lng],{icon:icon('pin-start')}).addTo(L1); map.setView([c.lat,c.lng],9);}, t('whoPh'))}
+    <label class="f">${t('searchNamePhone')}</label><input type="text" id="wQ">
     <div id="wList"></div>`);
   const render = ()=>{
     const q=$('#wQ').value.trim().toLowerCase();
     let list = S.workers.map(w=>({w,...(place?workerDistTo(w,place.lat,place.lng):{km:null})}));
     if(place) list = list.filter(x=>x.km<=workerZoneKm(x.w)).sort((a,b)=>a.km-b.km);
     if(q) list = list.filter(x=>(x.w.name+' '+x.w.phone).toLowerCase().includes(q));
-    $('#wList').innerHTML = (place?`<div class="hint">${list.length} чел. могут добраться до ${esc(place.name)} в пределах своей зоны. <a href="#" id="wClr">Сбросить</a></div>`:'') +
+    $('#wList').innerHTML = (place?`<div class="hint">${t('canReach',{n:list.length, city:esc(place.name)})} <a href="#" id="wClr">${t('reset')}</a></div>`:'') +
       (list.length ? list.map(({w,km})=>`<div class="item"><div class="row"><span class="grow t click" style="cursor:pointer" onclick="go('worker','${w.id}')">${esc(w.name)}</span>
-        <a class="btn sm" href="${telLink(w.phone)}">Позвонить</a><a class="btn sm" target="_blank" href="${waLink(w.phone)}">WhatsApp</a></div>
-        <div class="small muted">${esc(w.phone)}${km!=null?' · '+Math.round(km)+' км':''}</div>
-        <div>${(w.cities||[]).map(c=>`<span class="chip">${esc(c.name)}</span>`).join('')}<span class="chip">зона ${w.zone_minutes} мин</span></div></div>`).join('')
-       : `<p class="muted">${S.workers.length?'Никого не нашлось.':'Пока никто не зарегистрировался. Работники появятся здесь, когда зарегистрируются в приложении.'}</p>`);
+        <a class="btn sm" href="${telLink(w.phone)}">${t('call')}</a><a class="btn sm" target="_blank" href="${waLink(w.phone)}">WhatsApp</a></div>
+        <div class="small muted">${esc(w.phone)}${km!=null?' · '+Math.round(km)+' '+t('kmU'):''}</div>
+        <div>${(w.cities||[]).map(c=>`<span class="chip">${esc(c.name)}</span>`).join('')}<span class="chip">${t('zoneChip',{n:w.zone_minutes})}</span></div></div>`).join('')
+       : `<p class="muted">${S.workers.length?t('nobodyFound'):t('noWorkers')}</p>`);
     const clr=$('#wClr'); if(clr) clr.onclick=e=>{e.preventDefault();place=null;$('#wCity').value='';L1.clearLayers();render();};
   };
   $('#wQ').oninput=render; render();
@@ -399,64 +495,65 @@ function viewWorkers(){
 async function viewWorker(id){
   const w = S.workers.find(x=>x.id===id); if(!w) return go('workers');
   const {data:routes} = await sb.from('routes').select('*').eq('worker_id',id).order('started_at',{ascending:false}).limit(50);
-  V(`<button class="back" onclick="go('workers')">← Работники</button><h2>${esc(w.name)}</h2>
-    <div class="row"><a class="btn sm" href="${telLink(w.phone)}">Позвонить</a><a class="btn sm" target="_blank" href="${waLink(w.phone)}">WhatsApp</a><span class="small muted">${esc(w.phone)}</span></div>
+  const optLabel = m => (m<60 ? m+' '+t('minShort') : (m/60).toString().replace('.',',')+' '+t('hShort')) + ` (~${Math.round(m*KM_PER_MIN_TRANSIT)} ${t('kmU')})`;
+  V(`<button class="back" onclick="go('workers')">← ${t('workers')}</button><h2>${esc(w.name)}</h2>
+    <div class="row"><a class="btn sm" href="${telLink(w.phone)}">${t('call')}</a><a class="btn sm" target="_blank" href="${waLink(w.phone)}">WhatsApp</a><span class="small muted">${esc(w.phone)}</span></div>
     <div style="margin-top:8px">${(w.cities||[]).map(c=>`<span class="chip">${esc(c.name)}</span>`).join('')}</div>
-    <label class="f">Зона: сколько готов ехать на общественном транспорте</label>
-    <select id="wzm">${[30,45,60,75,90,120].map(m=>`<option value="${m}" ${m===w.zone_minutes?'selected':''}>${m<60?m+' мин':(m/60).toString().replace('.',',')+' ч'} (~${Math.round(m*KM_PER_MIN_TRANSIT)} км)</option>`).join('')}</select>
-    <label class="f">Заметки</label><textarea id="wnotes">${esc(w.notes||'')}</textarea>
-    <div class="row" style="margin-top:8px"><button class="btn pri" id="wsave">Сохранить</button><button class="btn danger" id="wdel">Удалить работника</button><span id="wmsg" class="small muted"></span></div>
-    <div class="small muted" style="margin-top:8px">Зарегистрирован ${fmtD(w.created_at)} · последняя активность ${ago(w.last_seen)}</div>
-    <h2 style="margin-top:18px">Маршруты</h2>
-    ${(routes||[]).map(r=>`<div class="item click" onclick="go('route','${r.id}')"><div class="t">${fmtDT(r.started_at)}</div><div class="small muted">${fmtDur(r.started_at,r.ended_at)} · ${fmtKm(r.distance_m)}${r.task_id?' · '+esc(S.tasks.find(t=>t.id===r.task_id)?.title||''):''}</div></div>`).join('') || '<p class="muted small">Маршрутов пока нет.</p>'}`);
+    <label class="f">${t('zoneLabel')}</label>
+    <select id="wzm">${[30,45,60,75,90,120].map(m=>`<option value="${m}" ${m===w.zone_minutes?'selected':''}>${optLabel(m)}</option>`).join('')}</select>
+    <label class="f">${t('notes')}</label><textarea id="wnotes">${esc(w.notes||'')}</textarea>
+    <div class="row" style="margin-top:8px"><button class="btn pri" id="wsave">${t('save')}</button><button class="btn danger" id="wdel">${t('delWorker')}</button><span id="wmsg" class="small muted"></span></div>
+    <div class="small muted" style="margin-top:8px">${t('registered',{d:fmtD(w.created_at), a:ago(w.last_seen)})}</div>
+    <h2 style="margin-top:18px">${t('routes')}</h2>
+    ${(routes||[]).map(r=>`<div class="item click" onclick="go('route','${r.id}')"><div class="t">${fmtDT(r.started_at)}</div><div class="small muted">${fmtDur(r.started_at,r.ended_at)} · ${fmtKm(r.distance_m)}${r.task_id?' · '+esc(S.tasks.find(x=>x.id===r.task_id)?.title||''):''}</div></div>`).join('') || `<p class="muted small">${t('noRoutes')}</p>`}`);
   const drawZones = ()=>{ L1.clearLayers(); const b=L.latLngBounds([]); for(const c of w.cities||[]){ const circ=L.circle([c.lat,c.lng],{radius:workerZoneKm(w)*1000,color:css('--zone'),weight:2,fillOpacity:.08}).addTo(L1); L.marker([c.lat,c.lng],{icon:icon('pin-start')}).bindTooltip(esc(c.name)).addTo(L1); b.extend(circ.getBounds()); } fit(b); };
   drawZones();
   $('#wzm').onchange = e=>{ w.zone_minutes=+e.target.value; drawZones(); };
-  $('#wsave').onclick = async()=>{ const {error}=await sb.from('workers').update({zone_minutes:+$('#wzm').value, notes:$('#wnotes').value.trim()||null}).eq('id',id); $('#wmsg').textContent=error?error.message:'Сохранено'; await loadWorkers(); };
-  $('#wdel').onclick = async()=>{ if(!confirm(`Удалить ${w.name} и все его маршруты?`)) return; await sb.from('workers').delete().eq('id',id); await loadWorkers(); go('workers'); };
+  $('#wsave').onclick = async()=>{ const {error}=await sb.from('workers').update({zone_minutes:+$('#wzm').value, notes:$('#wnotes').value.trim()||null}).eq('id',id); $('#wmsg').textContent=error?error.message:t('saved'); await loadWorkers(); };
+  $('#wdel').onclick = async()=>{ if(!confirm(t('delWorkerQ',{name:w.name}))) return; await sb.from('workers').delete().eq('id',id); await loadWorkers(); go('workers'); };
 }
 
 /* ---------- ROUTES ---------- */
 async function viewRoutes(){
-  V(`<h2>Маршруты</h2><div class="row"><select id="rW" class="grow"><option value="">Все работники</option>${S.workers.map(w=>`<option value="${w.id}">${esc(w.name)}</option>`).join('')}</select><input type="date" id="rD" style="width:auto"></div><div id="rList" class="muted" style="margin-top:8px">Загрузка…</div>`);
+  V(`<h2>${t('routes')}</h2><div class="row"><select id="rW" class="grow"><option value="">${t('allWorkers')}</option>${S.workers.map(w=>`<option value="${w.id}">${esc(w.name)}</option>`).join('')}</select><input type="date" id="rD" style="width:auto"></div><div id="rList" class="muted" style="margin-top:8px">${t('loading')}</div>`);
   const load = async()=>{
     let q = sb.from('routes').select('*').order('started_at',{ascending:false}).limit(100);
     if($('#rW').value) q=q.eq('worker_id',$('#rW').value);
     if($('#rD').value){ const d=new Date($('#rD').value); q=q.gte('started_at',d.toISOString()).lt('started_at',new Date(+d+864e5).toISOString()); }
     const {data,error}=await q; const el=$('#rList'); el.classList.remove('muted');
     el.innerHTML = error? `<p class="err">${esc(error.message)}</p>` : data.length ? data.map(r=>`<div class="item click" onclick="go('route','${r.id}')"><div class="t">${esc(wName(r.worker_id))}</div>
-      <div class="small muted">${fmtDT(r.started_at)} · ${fmtDur(r.started_at,r.ended_at)} · ${fmtKm(r.distance_m)}${r.ended_at?'':' · идёт сейчас'}${r.task_id?' · '+esc(S.tasks.find(t=>t.id===r.task_id)?.title||''):''}</div></div>`).join('') : '<p class="muted">Маршрутов не найдено.</p>';
+      <div class="small muted">${fmtDT(r.started_at)} · ${fmtDur(r.started_at,r.ended_at)} · ${fmtKm(r.distance_m)}${r.ended_at?'':t('live')}${r.task_id?' · '+esc(S.tasks.find(x=>x.id===r.task_id)?.title||''):''}</div></div>`).join('') : `<p class="muted">${t('notFoundRoutes')}</p>`;
   };
   $('#rW').onchange=load; $('#rD').onchange=load; load();
 }
 async function viewRoute(id){
   const {data:r} = await sb.from('routes').select('*').eq('id',id).single(); if(!r) return go('routes');
-  const pts = await fetchPoints(id); const t = S.tasks.find(x=>x.id===r.task_id);
-  const meta = [['Работник',wName(r.worker_id)],['Задание',t?.title||'—'],['Начало',fmtDT(r.started_at)],['Конец',r.ended_at?fmtDT(r.ended_at):'идёт сейчас'],['Длительность',fmtDur(r.started_at,r.ended_at)],['Пройдено',fmtKm(r.distance_m)]];
-  V(`<button class="back" onclick="go('routes')">← Маршруты</button><h2>${esc(wName(r.worker_id))}</h2>
+  const pts = await fetchPoints(id); const tk = S.tasks.find(x=>x.id===r.task_id);
+  const meta = [[t('worker'),wName(r.worker_id)],[t('task'),tk?.title||'—'],[t('start'),fmtDT(r.started_at)],[t('end'),r.ended_at?fmtDT(r.ended_at):t('liveNow')],[t('duration'),fmtDur(r.started_at,r.ended_at)],[t('walked'),fmtKm(r.distance_m)]];
+  V(`<button class="back" onclick="go('routes')">← ${t('routes')}</button><h2>${esc(wName(r.worker_id))}</h2>
     <div class="stat">${meta.slice(2).map(([k,v])=>`<div><span>${k}</span><b>${esc(v)}</b></div>`).join('')}</div>
-    ${t?`<p class="small">Задание: <a href="#" onclick="go('task','${t.id}');return false">${esc(t.title)}</a></p>`:''}
-    <div class="row"><button class="btn sm" id="rPdf">Отчёт PDF</button><button class="btn sm" id="rXls">Excel</button><button class="btn sm" id="rGpx">GPX</button><button class="btn sm danger" id="rDel">Удалить</button></div>
-    ${pts.length<2?'<p class="muted">В этом маршруте пока нет GPS-точек.</p>':''}`);
-  if(t?.zone_polygon) drawZone(t.zone_polygon);
+    ${tk?`<p class="small">${t('taskL')}<a href="#" onclick="go('task','${tk.id}');return false">${esc(tk.title)}</a></p>`:''}
+    <div class="row"><button class="btn sm" id="rPdf">${t('pdf')}</button><button class="btn sm" id="rXls">Excel</button><button class="btn sm" id="rGpx">GPX</button><button class="btn sm danger" id="rDel">${t('del')}</button></div>
+    ${pts.length<2?`<p class="muted">${t('noPoints')}</p>`:''}`);
+  if(tk?.zone_polygon) drawZone(tk.zone_polygon);
   const b = L.latLngBounds([]);
-  if(pts.length>1){ const ln=drawLine(pts.map(p=>[p.lat,p.lng])); b.extend(ln.getBounds()); L.circleMarker([pts[0].lat,pts[0].lng],{radius:6,color:css('--zone'),fillOpacity:1}).bindTooltip('Старт').addTo(L1); L.circleMarker([pts.at(-1).lat,pts.at(-1).lng],{radius:6,color:css('--route'),fillOpacity:1}).bindTooltip('Финиш').addTo(L1); }
+  if(pts.length>1){ const ln=drawLine(pts.map(p=>[p.lat,p.lng])); b.extend(ln.getBounds()); L.circleMarker([pts[0].lat,pts[0].lng],{radius:6,color:css('--zone'),fillOpacity:1}).bindTooltip(t('startPt')).addTo(L1); L.circleMarker([pts.at(-1).lat,pts.at(-1).lng],{radius:6,color:css('--route'),fillOpacity:1}).bindTooltip(t('finishPt')).addTo(L1); }
   fit(b);
   const lines=[{r,pts}], title=`${wName(r.worker_id)} ${fmtD(r.started_at)}`;
-  $('#rPdf').onclick=()=>exportPDF(title, meta, lines, t);
+  $('#rPdf').onclick=()=>exportPDF(title, meta, lines, tk);
   $('#rXls').onclick=()=>exportXLS(title, lines);
   $('#rGpx').onclick=()=>{ const g=`<?xml version="1.0" encoding="UTF-8"?><gpx version="1.1" creator="FlyerMap" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>${esc(title)}</name><trkseg>${pts.map(p=>`<trkpt lat="${p.lat}" lon="${p.lng}"><time>${new Date(p.t).toISOString()}</time></trkpt>`).join('')}</trkseg></trk></gpx>`; download(new Blob([g],{type:'application/gpx+xml'}), slug(title)+'.gpx'); };
-  $('#rDel').onclick=async()=>{ if(!confirm('Удалить маршрут безвозвратно?')) return; await sb.from('routes').delete().eq('id',id); go('routes'); };
+  $('#rDel').onclick=async()=>{ if(!confirm(t('delRouteQ'))) return; await sb.from('routes').delete().eq('id',id); go('routes'); };
 }
 
 /* ---------- ADMINS ---------- */
 async function viewAdmins(){
   const [{data:ad},{data:inv}] = await Promise.all([sb.from('admins').select('*').order('created_at'), sb.from('admin_invites').select('*')]);
-  V(`<h2>Админы</h2>${(ad||[]).map(a=>`<div class="item"><div class="t">${esc(a.email)}</div><div class="small muted">с ${fmtD(a.created_at)}</div></div>`).join('')}
-    <h2 style="margin-top:18px">Пригласить админа</h2>
-    <p class="small muted">Добавьте email. Человек открывает эту панель, нажимает «Создать аккаунт» с этим email — и сразу получает доступ.</p>
-    <div class="row"><input type="email" id="invE" class="grow" placeholder="email@example.com"><button class="btn pri" id="invB">Пригласить</button></div><div id="invErr" class="err"></div>
-    ${(inv||[]).length?`<h2 style="margin-top:18px">Ожидают регистрации</h2>`+inv.map(i=>`<div class="item row"><span class="grow">${esc(i.email)}</span><button class="btn sm" data-del="${esc(i.email)}">Отменить</button></div>`).join(''):''}`);
+  V(`<h2>${t('admins')}</h2>${(ad||[]).map(a=>`<div class="item"><div class="t">${esc(a.email)}</div><div class="small muted">${t('since',{d:fmtD(a.created_at)})}</div></div>`).join('')}
+    <h2 style="margin-top:18px">${t('inviteAdmin')}</h2>
+    <p class="small muted">${t('inviteText')}</p>
+    <div class="row"><input type="email" id="invE" class="grow" placeholder="email@example.com"><button class="btn pri" id="invB">${t('inviteBtn')}</button></div><div id="invErr" class="err"></div>
+    ${(inv||[]).length?`<h2 style="margin-top:18px">${t('pendingAdmins')}</h2>`+inv.map(i=>`<div class="item row"><span class="grow">${esc(i.email)}</span><button class="btn sm" data-del="${esc(i.email)}">${t('cancel')}</button></div>`).join(''):''}`);
   $('#invB').onclick=async()=>{ const e=$('#invE').value.trim().toLowerCase(); if(!e.includes('@')) return; const {error}=await sb.from('admin_invites').insert({email:e}); if(error) $('#invErr').textContent=error.message; else viewAdmins(); };
   $('#view').onclick=async ev=>{ const d=ev.target.dataset.del; if(d){ await sb.from('admin_invites').delete().eq('email',d); viewAdmins(); } };
 }
@@ -466,15 +563,15 @@ const slug = s => String(s).replace(/[^\p{L}\p{N}]+/gu,'_').slice(0,60);
 function download(blob,name){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),2000); }
 
 function exportXLS(title, lines){
-  const sum = lines.map(({r,pts})=>({'Работник':wName(r.worker_id),'Начало':fmtDT(r.started_at),'Конец':r.ended_at?fmtDT(r.ended_at):'','Длительность':fmtDur(r.started_at,r.ended_at),'Км':+(r.distance_m/1000).toFixed(2),'GPS-точек':pts.length}));
-  const pts = lines.flatMap(({r,pts})=>pts.map(p=>({'Работник':wName(r.worker_id),'Время':fmtDT(p.t),'Широта':p.lat,'Долгота':p.lng})));
+  const sum = lines.map(({r,pts})=>({[t('worker')]:wName(r.worker_id),[t('start')]:fmtDT(r.started_at),[t('end')]:r.ended_at?fmtDT(r.ended_at):'',[t('duration')]:fmtDur(r.started_at,r.ended_at),[t('km')]:+(r.distance_m/1000).toFixed(2),[t('gpsPts')]:pts.length}));
+  const pts = lines.flatMap(({r,pts})=>pts.map(p=>({[t('worker')]:wName(r.worker_id),[t('time')]:fmtDT(p.t),[t('lat')]:p.lat,[t('lng')]:p.lng})));
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sum), 'Сводка');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(pts), 'GPS-точки');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sum), t('sheetSum'));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(pts), t('sheetPts'));
   XLSX.writeFile(wb, slug(title)+'.xlsx');
 }
 
-// карта для PDF: рисуем тайлы OSM и маршрут на canvas
+// карта для PDF: тайлы OSM + маршрут на canvas
 async function renderMapCanvas(lines, task, W, H){
   const cv=document.createElement('canvas'); cv.width=W; cv.height=H; const g=cv.getContext('2d');
   g.fillStyle='#f2f2f2'; g.fillRect(0,0,W,H);
@@ -487,8 +584,8 @@ async function renderMapCanvas(lines, task, W, H){
   const cx=(X(mnLo,z)+X(mxLo,z))/2, cy=(Y(mxLa,z)+Y(mnLa,z))/2, ox=cx-W/2, oy=cy-H/2;
   let ok=true; const jobs=[];
   for(let tx=Math.floor(ox/256); tx<=Math.floor((ox+W)/256); tx++) for(let ty=Math.floor(oy/256); ty<=Math.floor((oy+H)/256); ty++){
-    jobs.push(new Promise(res=>{ const im=new Image(); im.crossOrigin='anonymous'; const t=setTimeout(()=>{ok=false;res();},8000);
-      im.onload=()=>{clearTimeout(t); g.drawImage(im,tx*256-ox,ty*256-oy); res();}; im.onerror=()=>{clearTimeout(t); ok=false; res();};
+    jobs.push(new Promise(res=>{ const im=new Image(); im.crossOrigin='anonymous'; const tm=setTimeout(()=>{ok=false;res();},8000);
+      im.onload=()=>{clearTimeout(tm); g.drawImage(im,tx*256-ox,ty*256-oy); res();}; im.onerror=()=>{clearTimeout(tm); ok=false; res();};
       im.src=`https://tile.openstreetmap.org/${z}/${tx}/${ty}.png`; }));
   }
   await Promise.all(jobs);
@@ -500,17 +597,17 @@ async function renderMapCanvas(lines, task, W, H){
   return {cv,ok};
 }
 async function exportPDF(title, meta, lines, task){
-  // страница A4 рисуется на canvas (поддержка кириллицы), затем кладётся в PDF
+  // страница A4 рисуется на canvas (кириллица/умлауты), затем кладётся в PDF
   const W=1240, H=1754, cv=document.createElement('canvas'); cv.width=W; cv.height=H; const g=cv.getContext('2d');
   g.fillStyle='#fff'; g.fillRect(0,0,W,H); g.fillStyle='#18212F';
   g.font='600 44px "IBM Plex Sans",sans-serif'; g.fillText(title.slice(0,48),80,120);
-  g.font='24px "IBM Plex Sans",sans-serif'; g.fillStyle='#5D6878'; g.fillText('Отчёт о раздаче · создан '+fmtDT(new Date()),80,165);
+  g.font='24px "IBM Plex Sans",sans-serif'; g.fillStyle='#5D6878'; g.fillText(t('report')+fmtDT(new Date()),80,165);
   let y=230; g.font='26px "IBM Plex Sans",sans-serif';
   for(const [k,v] of meta){ g.fillStyle='#5D6878'; g.fillText(k,80,y); g.fillStyle='#18212F'; g.fillText(String(v),420,y); y+=42; }
   const {cv:mc,ok} = await renderMapCanvas(lines, task, 1080, 900);
   y+=20; g.drawImage(mc,80,y); g.strokeStyle='#DCE1E7'; g.lineWidth=2; g.strokeRect(80,y,1080,900); y+=930;
   g.font='18px "IBM Plex Sans",sans-serif'; g.fillStyle='#5D6878';
-  g.fillText(ok?'Карта © OpenStreetMap contributors':'Карту улиц загрузить не удалось — показан только пройденный маршрут.',80,y); y+=50;
+  g.fillText(ok?t('mapCredit'):t('mapFail'),80,y); y+=50;
   if(lines.length>1){ g.font='22px "IBM Plex Sans",sans-serif'; const colors=['#C2185B','#1E40AF','#B45309','#6D28D9','#047857'];
     lines.slice(0,12).forEach((l,i)=>{ g.fillStyle=colors[i%colors.length]; g.fillRect(80,y-16,30,8); g.fillStyle='#18212F'; g.fillText(`${wName(l.r.worker_id)} — ${fmtDT(l.r.started_at)}, ${fmtDur(l.r.started_at,l.r.ended_at)}, ${fmtKm(l.r.distance_m)}`,125,y); y+=36; }); }
   const pdf = new jspdf.jsPDF({unit:'mm',format:'a4'}); pdf.addImage(cv.toDataURL('image/jpeg',.9),'JPEG',0,0,210,297); pdf.save(slug(title)+'.pdf');
