@@ -10,6 +10,7 @@ const SB_URL = 'https://xobrvfkwqessbkdwiavu.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhvYnJ2Zmt3cWVzc2JrZHdpYXZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI2NzA4NTQsImV4cCI6MjEwODI0Njg1NH0.5AvLRyZaiqpYQV_O47o7MNO8kg7BEZdiU4-WYSPuNBM';
 const TILES = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
 const TILE_ATTR = '© OpenStreetMap © CARTO';
+const PRIVACY_URL = 'https://urlose.github.io/flyermap/privacy.html';
 
 /* ================= i18n ================= */
 const T = {
@@ -29,7 +30,7 @@ const T = {
     synced:'Всё отправлено', pending:'Не отправлено точек: {n}. Отправятся, когда появится интернет',
     bgTitle:'FlyerMap записывает маршрут', bgMsg:'Нажмите, чтобы открыть приложение',
     locDenied:'Нет доступа к геопозиции', locDeniedText:'Откройте Настройки → FlyerMap → Геопозиция и выберите «При использовании» или «Всегда». Без этого маршрут не записывается.', openSettings:'Открыть настройки',
-    saveProfile:'Сохранить', logout:'Выйти из аккаунта', logoutQ:'Выйти? Чтобы войти снова, понадобятся телефон и PIN.', saved:'Сохранено',
+    saveProfile:'Сохранить', logout:'Выйти из аккаунта', logoutQ:'Выйти? Чтобы войти снова, понадобятся телефон и PIN.', saved:'Сохранено', privacy:'Политика конфиденциальности', delAcc:'Удалить аккаунт', delAccQ:'Удалить профиль и все ваши маршруты навсегда? Это нельзя отменить.', delAccYes:'Удалить навсегда', regAgree:'Регистрируясь, вы соглашаетесь с',
     language:'Язык',
     e_name_required:'Введите имя', e_phone_required:'Введите номер телефона', e_pin_4_digits:'PIN — ровно 4 цифры', e_city_required:'Добавьте хотя бы один город',
     e_phone_exists:'Этот номер уже зарегистрирован. Нажмите «У меня уже есть аккаунт».', e_wrong:'Неверный телефон или PIN',
@@ -53,7 +54,7 @@ const T = {
     synced:'Alles gesendet', pending:'{n} Punkte warten — werden gesendet, sobald Internet da ist',
     bgTitle:'FlyerMap zeichnet deine Route auf', bgMsg:'Tippen, um die App zu öffnen',
     locDenied:'Kein Zugriff auf den Standort', locDeniedText:'Öffne Einstellungen → FlyerMap → Standort und wähle „Beim Verwenden" oder „Immer". Ohne das wird keine Route aufgezeichnet.', openSettings:'Einstellungen öffnen',
-    saveProfile:'Speichern', logout:'Abmelden', logoutQ:'Abmelden? Zum erneuten Anmelden brauchst du Telefon und PIN.', saved:'Gespeichert',
+    saveProfile:'Speichern', logout:'Abmelden', logoutQ:'Abmelden? Zum erneuten Anmelden brauchst du Telefon und PIN.', saved:'Gespeichert', privacy:'Datenschutzerklärung', delAcc:'Konto löschen', delAccQ:'Profil und alle deine Routen endgültig löschen? Das kann nicht rückgängig gemacht werden.', delAccYes:'Endgültig löschen', regAgree:'Mit der Registrierung akzeptierst du die',
     language:'Sprache',
     e_name_required:'Bitte Namen eingeben', e_phone_required:'Bitte Telefonnummer eingeben', e_pin_4_digits:'PIN muss genau 4 Ziffern haben', e_city_required:'Mindestens eine Stadt hinzufügen',
     e_phone_exists:'Diese Nummer ist schon registriert. Tippe auf „Ich habe schon ein Konto".', e_wrong:'Telefon oder PIN falsch',
@@ -293,6 +294,7 @@ function viewWelcome(){
     <button class="btn pri" id="toReg">${esc(t('register'))}</button>
     <button class="btn" id="toLogin">${esc(t('haveAccount'))}</button>
     ${langSwitch()}
+    <p class="small" style="text-align:center"><a href="${PRIVACY_URL}#${LANG}" style="color:var(--muted)">${esc(t('privacy'))}</a></p>
   </div></div>`);
   $('#toReg').onclick = viewRegister; $('#toLogin').onclick = viewLogin; bindLang(viewWelcome);
 }
@@ -310,6 +312,7 @@ function viewRegister(){
     <p class="small muted" style="margin-top:6px">${esc(t('pinHint'))}</p>
     <div style="height:10px"></div>
     <button class="btn pri" id="rGo">${esc(t('create'))}</button><div class="err" id="rErr"></div>
+    <p class="small muted" style="margin-top:4px">${esc(t('regAgree'))} <a href="${PRIVACY_URL}#${LANG}" style="color:var(--live)">${esc(t('privacy'))}</a>.</p>
   </div></div>`);
   cp.bind();
   $('#bk').onclick = viewWelcome;
@@ -447,8 +450,10 @@ function viewProfile(){
     <label class="f">${esc(t('phone'))}</label><input class="in" value="${esc(me.phone)}" disabled>
     <label class="f">${esc(t('cities'))}</label>${cp.html}
     <div style="height:18px"></div><button class="btn pri" id="pSave">${esc(t('saveProfile'))}</button><div class="err" id="pErr"></div>
-    <div style="height:28px"></div><button class="btn" id="pOut" style="color:var(--danger)">${esc(t('logout'))}</button>
+    <div style="height:28px"></div><button class="btn" id="pOut">${esc(t('logout'))}</button>
+    <button class="btn" id="pDel" style="color:var(--danger)">${esc(t('delAcc'))}</button>
     ${langSwitch()}
+    <p class="small" style="text-align:center"><a href="${PRIVACY_URL}#${LANG}" style="color:var(--muted)">${esc(t('privacy'))}</a></p>
   </div></div>`);
   cp.bind(); bindLang(viewProfile);
   $('#bk').onclick = viewHome;
@@ -459,7 +464,12 @@ function viewProfile(){
     catch(e){ $('#pErr').textContent = errText(e); }
     $('#pSave').disabled = false;
   };
-  $('#pOut').onclick = async () => { if(await confirmBox(t('logout'), t('logoutQ'), t('logout'), true)) forceLogout(); };
+  $('#pOut').onclick = async () => { if(await confirmBox(t('logout'), t('logoutQ'), t('logout'), false)) forceLogout(); };
+  $('#pDel').onclick = async () => {
+    if(!await confirmBox(t('delAcc'), t('delAccQ'), t('delAccYes'), true)) return;
+    try{ await rpc('delete_my_account', { p_token:S.token }); await forceLogout(); }
+    catch(e){ $('#pErr').textContent = errText(e); }
+  };
 }
 
 /* ================= boot ================= */

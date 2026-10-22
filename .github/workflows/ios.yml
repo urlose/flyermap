@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths: ['worker/**', '.github/workflows/ios.yml']
+  # SideStore-сборка (без подписи). Для команды используется testflight.yml
   workflow_dispatch:
 
 permissions:
@@ -32,33 +33,8 @@ jobs:
           npm install
           npm run build
 
-      - name: Create iOS project
-        run: npx cap add ios --packagemanager SPM
-
-      - name: App icon
-        continue-on-error: true
-        run: npx -y @capacitor/assets@3 generate --ios --iconBackgroundColor '#0E9F8E'
-
-      - name: Location permissions & background mode
-        run: |
-          PL=ios/App/App/Info.plist
-          pb() { /usr/libexec/PlistBuddy -c "$1" "$PL"; }
-          MSG="FlyerMap записывает маршрут раздачи во время смены. / FlyerMap zeichnet deine Verteilroute während der Schicht auf."
-          pb "Delete :NSLocationWhenInUseUsageDescription" 2>/dev/null || true
-          pb "Add :NSLocationWhenInUseUsageDescription string $MSG"
-          pb "Delete :NSLocationAlwaysAndWhenInUseUsageDescription" 2>/dev/null || true
-          pb "Add :NSLocationAlwaysAndWhenInUseUsageDescription string $MSG"
-          pb "Delete :UIBackgroundModes" 2>/dev/null || true
-          pb "Add :UIBackgroundModes array"
-          pb "Add :UIBackgroundModes:0 string location"
-          pb "Set :CFBundleDisplayName FlyerMap" 2>/dev/null || pb "Add :CFBundleDisplayName string FlyerMap"
-          pb "Delete :UISupportedInterfaceOrientations" 2>/dev/null || true
-          pb "Add :UISupportedInterfaceOrientations array"
-          pb "Add :UISupportedInterfaceOrientations:0 string UIInterfaceOrientationPortrait"
-          plutil -lint "$PL"
-
-      - name: Sync
-        run: npx cap sync ios
+      - name: Create & configure iOS project
+        run: bash scripts/ios-setup.sh
 
       - name: Build unsigned app
         working-directory: worker/ios/App

@@ -1,5 +1,5 @@
 {
-  "appId": "app.flyermap.worker",
+  "appId": "com.urlose.flyermap",
   "appName": "FlyerMap",
   "webDir": "www",
   "ios": { "contentInset": "never" }

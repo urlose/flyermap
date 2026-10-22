@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FlyerMap – Datenschutz</title>
+<style>
+:root{--bg:#FFFFFF;--ink:#18212F;--muted:#5D6878;--line:#DCE1E7;--accent:#0E9F8E}
+@media (prefers-color-scheme: dark){:root{--bg:#11161D;--ink:#E6EBF1;--muted:#9AA6B5;--line:#2A3542;--accent:#2DD4BF}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
+main{max-width:720px;margin:0 auto;padding:32px 16px 64px}
+h1{font-size:28px;line-height:1.2;margin:0 0 6px}
+h2{font-size:19px;margin:28px 0 8px}
+p,li{color:var(--ink)}
+.muted{color:var(--muted)}
+nav{display:flex;gap:14px;margin:18px 0 8px;border-bottom:1px solid var(--line);padding-bottom:10px}
+nav a{color:var(--muted);text-decoration:none}
+nav a.on{color:var(--ink);font-weight:600}
+section{display:none}
+section.on{display:block}
+a{color:var(--accent)}
+</style>
+</head>
+<body>
+<main>
+  <h1>FlyerMap</h1>
+  <div class="muted" id="sub">Datenschutzerklärung · Stand: Oktober 2026</div>
+  <nav><a href="#de" data-l="de">Deutsch</a><a href="#ru" data-l="ru">Русский</a><a href="#en" data-l="en">English</a></nav>
+
+  <section id="s-de">
+    <h2>Verantwortlicher</h2>
+    <p>Asadulloh Orifi, Düsseldorf, Deutschland · E-Mail: <a href="mailto:asadorifi@gmail.com">asadorifi@gmail.com</a></p>
+    <h2>Wofür ist die App?</h2>
+    <p>FlyerMap ist eine interne App für Personen, die für uns Flyer verteilen. Sie zeigt das Verteilgebiet und zeichnet die gelaufene Route auf, damit die Verteilung gegenüber Auftraggebern nachgewiesen werden kann.</p>
+    <h2>Welche Daten wir verarbeiten</h2>
+    <ul>
+      <li><b>Profil:</b> Name, Telefonnummer, gewählte Städte, eine verschlüsselt gespeicherte 4-stellige PIN.</li>
+      <li><b>Standort:</b> nur während einer Route, die du selbst mit „Los geht's" startest, bis du „Feierabend" tippst. Außerhalb einer Route wird kein Standort erfasst.</li>
+      <li><b>Routen:</b> Zeitpunkt, GPS-Punkte und Länge jeder Route.</li>
+    </ul>
+    <p>Wir nutzen keine Werbung, kein Tracking durch Dritte und verkaufen keine Daten.</p>
+    <h2>Rechtsgrundlage und Zweck</h2>
+    <p>Die Verarbeitung dient der Organisation und dem Nachweis der Verteilarbeit (Art. 6 Abs. 1 lit. b DSGVO – Durchführung der Zusammenarbeit). Nur die Administratoren von FlyerMap sehen deine Daten.</p>
+    <h2>Speicherung</h2>
+    <p>Die Daten liegen bei Supabase in einem Rechenzentrum in Frankfurt am Main (EU). Kartenkacheln werden von CARTO/OpenStreetMap geladen, die Städtesuche nutzt Photon (komoot); dabei wird deine IP-Adresse an diese Dienste übertragen, aber keine Profildaten.</p>
+    <h2>Löschung und deine Rechte</h2>
+    <p>Du kannst jederzeit Auskunft, Berichtigung oder Löschung deines Profils und aller Routen verlangen – schreib einfach an die oben genannte E-Mail-Adresse. Du hast außerdem das Recht, dich bei einer Datenschutz-Aufsichtsbehörde zu beschweren (in NRW: LDI NRW).</p>
+  </section>
+
+  <section id="s-ru">
+    <h2>Ответственный</h2>
+    <p>Asadulloh Orifi, Дюссельдорф, Германия · Email: <a href="mailto:asadorifi@gmail.com">asadorifi@gmail.com</a></p>
+    <h2>Для чего приложение</h2>
+    <p>FlyerMap — внутреннее приложение для людей, которые раздают для нас флаеры. Оно показывает зону раздачи и записывает пройденный маршрут, чтобы подтвердить раздачу перед заказчиками.</p>
+    <h2>Какие данные мы обрабатываем</h2>
+    <ul>
+      <li><b>Профиль:</b> имя, номер телефона, выбранные города, 4-значный PIN в зашифрованном виде.</li>
+      <li><b>Геопозиция:</b> только во время маршрута, который вы сами начали кнопкой «Старт», и до нажатия «Закончить». Вне маршрута геопозиция не записывается.</li>
+      <li><b>Маршруты:</b> время, GPS-точки и длина каждого маршрута.</li>
+    </ul>
+    <p>Мы не показываем рекламу, не передаём данные сторонним трекерам и не продаём их.</p>
+    <h2>Основание и цель</h2>
+    <p>Данные нужны, чтобы организовать раздачу и подтвердить выполненную работу (ст. 6 п. 1 b GDPR — выполнение сотрудничества). Ваши данные видят только администраторы FlyerMap.</p>
+    <h2>Где хранятся данные</h2>
+    <p>Данные хранятся у Supabase в дата-центре во Франкфурте (ЕС). Карты загружаются с CARTO/OpenStreetMap, поиск городов — через Photon (komoot); этим сервисам передаётся только ваш IP-адрес, без данных профиля.</p>
+    <h2>Удаление и ваши права</h2>
+    <p>Вы в любой момент можете запросить информацию о своих данных, их исправление или удаление профиля и всех маршрутов — напишите на email выше. Вы также вправе обратиться с жалобой в надзорный орган по защите данных (в NRW — LDI NRW).</p>
+  </section>
+
+  <section id="s-en">
+    <h2>Controller</h2>
+    <p>Asadulloh Orifi, Düsseldorf, Germany · Email: <a href="mailto:asadorifi@gmail.com">asadorifi@gmail.com</a></p>
+    <h2>What the app is for</h2>
+    <p>FlyerMap is an internal app for people who distribute flyers for us. It shows the distribution area and records the walked route so the distribution can be proven to clients.</p>
+    <h2>Data we process</h2>
+    <ul>
+      <li><b>Profile:</b> name, phone number, selected cities, a 4-digit PIN stored hashed.</li>
+      <li><b>Location:</b> only during a route you start yourself with “Start”, until you tap “Finish”. No location is collected outside a route.</li>
+      <li><b>Routes:</b> time, GPS points and length of each route.</li>
+    </ul>
+    <p>No ads, no third-party tracking, no sale of data.</p>
+    <h2>Legal basis and purpose</h2>
+    <p>Processing is needed to organise and document the distribution work (Art. 6(1)(b) GDPR). Only FlyerMap administrators can see your data.</p>
+    <h2>Storage</h2>
+    <p>Data is stored with Supabase in Frankfurt am Main (EU). Map tiles are loaded from CARTO/OpenStreetMap and city search uses Photon (komoot); these services receive your IP address but no profile data.</p>
+    <h2>Deletion and your rights</h2>
+    <p>You can request access, correction or deletion of your profile and all routes at any time via the email above. You may also lodge a complaint with a data protection authority.</p>
+  </section>
+</main>
+<script>
+function sel(l){ ['de','ru','en'].forEach(x=>{ document.getElementById('s-'+x).classList.toggle('on',x===l); document.querySelector('[data-l='+x+']').classList.toggle('on',x===l); });
+  document.documentElement.lang=l; document.getElementById('sub').textContent={de:'Datenschutzerklärung · Stand: Oktober 2026',ru:'Политика конфиденциальности · октябрь 2026',en:'Privacy policy · October 2026'}[l]; }
+const pick=()=>{ const h=location.hash.slice(1); return ['de','ru','en'].includes(h)?h:((navigator.language||'').startsWith('ru')?'ru':'de'); };
+window.addEventListener('hashchange',()=>sel(pick())); sel(pick());
+</script>
+</body>
+</html>
