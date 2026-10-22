@@ -1,0 +1,6 @@
+node_modules/
+worker/www/
+worker/ios/
+worker/android/
+.netlify
+.DS_Store

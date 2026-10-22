@@ -1,0 +1,88 @@
+name: iOS app (unsigned IPA)
+
+on:
+  push:
+    branches: [main]
+    paths: ['worker/**', '.github/workflows/ios.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install & build web app
+        run: |
+          npm install
+          npm run build
+
+      - name: Create iOS project
+        run: npx cap add ios --packagemanager SPM
+
+      - name: App icon
+        continue-on-error: true
+        run: npx -y @capacitor/assets@3 generate --ios --iconBackgroundColor '#0E9F8E'
+
+      - name: Location permissions & background mode
+        run: |
+          PL=ios/App/App/Info.plist
+          pb() { /usr/libexec/PlistBuddy -c "$1" "$PL"; }
+          MSG="FlyerMap записывает маршрут раздачи во время смены. / FlyerMap zeichnet deine Verteilroute während der Schicht auf."
+          pb "Delete :NSLocationWhenInUseUsageDescription" 2>/dev/null || true
+          pb "Add :NSLocationWhenInUseUsageDescription string $MSG"
+          pb "Delete :NSLocationAlwaysAndWhenInUseUsageDescription" 2>/dev/null || true
+          pb "Add :NSLocationAlwaysAndWhenInUseUsageDescription string $MSG"
+          pb "Delete :UIBackgroundModes" 2>/dev/null || true
+          pb "Add :UIBackgroundModes array"
+          pb "Add :UIBackgroundModes:0 string location"
+          pb "Set :CFBundleDisplayName FlyerMap" 2>/dev/null || pb "Add :CFBundleDisplayName string FlyerMap"
+          pb "Delete :UISupportedInterfaceOrientations" 2>/dev/null || true
+          pb "Add :UISupportedInterfaceOrientations array"
+          pb "Add :UISupportedInterfaceOrientations:0 string UIInterfaceOrientationPortrait"
+          plutil -lint "$PL"
+
+      - name: Sync
+        run: npx cap sync ios
+
+      - name: Build unsigned app
+        working-directory: worker/ios/App
+        run: |
+          if [ -d App.xcworkspace ]; then T="-workspace App.xcworkspace"; else T="-project App.xcodeproj"; fi
+          xcodebuild $T -scheme App -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build | tail -n 40
+          rm -rf Payload && mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/App.app Payload/
+          zip -qry FlyerMap.ipa Payload
+          ls -la FlyerMap.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FlyerMap-ipa
+          path: worker/ios/App/FlyerMap.ipa
+
+      - name: Publish release (download link for the phone)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: FlyerMap ${{ github.run_number }}
+          body: Скачайте FlyerMap.ipa на iPhone и откройте через SideStore.
+          files: worker/ios/App/FlyerMap.ipa
+          make_latest: true

@@ -1,0 +1,6 @@
+{
+  "appId": "app.flyermap.worker",
+  "appName": "FlyerMap",
+  "webDir": "www",
+  "ios": { "contentInset": "never" }
+}
