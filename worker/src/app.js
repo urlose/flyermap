@@ -8,8 +8,8 @@ const NATIVE = Capacitor.isNativePlatform();
 
 const SB_URL = 'https://xobrvfkwqessbkdwiavu.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhvYnJ2Zmt3cWVzc2JrZHdpYXZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI2NzA4NTQsImV4cCI6MjEwODI0Njg1NH0.5AvLRyZaiqpYQV_O47o7MNO8kg7BEZdiU4-WYSPuNBM';
-const TILES = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
-const TILE_ATTR = '© OpenStreetMap © CARTO';
+const TILES = 'https://tile.openstreetmap.de/{z}/{x}/{y}.png';
+const TILE_ATTR = '© OpenStreetMap';
 const PRIVACY_URL = 'https://urlose.github.io/flyermap/privacy.html';
 
 /* ================= i18n ================= */
@@ -135,13 +135,15 @@ async function flush(){
       S.route = null; S.queue = []; S.track = [];
       await store.del('route'); await store.del('queue'); await store.del('track');
     }
+    S.flushFailed = false;
   }catch(e){
     if(e.message === 'invalid_token'){ await forceLogout(t('e_invalid_token')); }
+    else S.flushFailed = true;
   }finally{
     S.busy = false; updateSync();
   }
 }
-setInterval(flush, 20000);
+setInterval(flush, 8000);
 
 /* ================= location ================= */
 function onLocation(lat, lng, acc, time, sim){
@@ -162,7 +164,7 @@ function onLocation(lat, lng, acc, time, sim){
   S.queue.push({ t:new Date(time).toISOString(), lat:+lat.toFixed(6), lng:+lng.toFixed(6), acc: acc==null?null:Math.round(acc) });
   saveRoute();
   drawTrack(); moveMe(lat, lng, true); updateSync();
-  if(S.queue.length >= 25) flush();
+  if(S.queue.length >= 10) flush();
 }
 
 /* ================= demo walk (web prototype) ================= */
@@ -268,7 +270,7 @@ function makeMap(center){
   if(S.map){ S.map.remove(); S.map = null; }
   trackLine = null; meMarker = null; follow = true;
   S.map = L.map('map', { zoomControl:false, attributionControl:true }).setView(center || [51.2277, 6.7735], 15);
-  L.tileLayer(TILES, { maxZoom:19, subdomains:'abcd', attribution:TILE_ATTR }).addTo(S.map);
+  L.tileLayer(TILES, { maxZoom:19, attribution:TILE_ATTR }).addTo(S.map);
   S.map.on('dragstart', () => { follow = false; });
   return S.map;
 }
@@ -516,7 +518,7 @@ async function viewTracking(){
   };
 }
 function setGpsStatus(ok){ const g = $('#gps'); if(g) g.textContent = ok ? t('onRoute') : t('gpsWait'); }
-function updateSync(){ const el = $('#sync'); if(!el) return; el.textContent = S.queue.length ? t('pending', { n:S.queue.length }) : t('synced'); }
+function updateSync(){ const el = $('#sync'); if(!el) return; el.textContent = (S.queue.length && S.flushFailed) ? t('pending', { n:S.queue.length }) : t('synced'); }
 
 function viewProfile(){
   S.view = 'profile';
