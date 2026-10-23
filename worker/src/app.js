@@ -36,7 +36,7 @@ const T = {
     e_phone_exists:'Этот номер уже зарегистрирован. Нажмите «У меня уже есть аккаунт».', e_wrong:'Неверный телефон или PIN',
     e_too_many_attempts:'Слишком много попыток. Подождите 15 минут.', e_net:'Нет интернета. Попробуйте ещё раз.', e_invalid_token:'Ваш профиль удалён админом. Зарегистрируйтесь заново.',
     e_search:'Поиск городов недоступен', notFound:'Ничего не найдено',
-    gpsWait:'Ищу GPS-сигнал…', onRoute:'Вы на маршруте',
+    gpsWait:'Ищу GPS-сигнал…', onRoute:'Вы на маршруте', demoWalk:'Демо-прогулка', demoStop:'Остановить демо', demoRunning:'Демо: идём по улицам…', webNote:'Веб-версия для демонстрации. В приложении для iPhone маршрут пишется и при заблокированном экране.',
   },
   de: {
     welcomeTitle:'Flyer verteilen', welcomeText:'Einmal registrieren — danach merkt sich die App dich. Der Admin sieht dein Profil und schickt dir Aufträge.',
@@ -60,7 +60,7 @@ const T = {
     e_phone_exists:'Diese Nummer ist schon registriert. Tippe auf „Ich habe schon ein Konto".', e_wrong:'Telefon oder PIN falsch',
     e_too_many_attempts:'Zu viele Versuche. Bitte 15 Minuten warten.', e_net:'Kein Internet. Bitte nochmal versuchen.', e_invalid_token:'Dein Profil wurde vom Admin gelöscht. Bitte neu registrieren.',
     e_search:'Städtesuche nicht verfügbar', notFound:'Nichts gefunden',
-    gpsWait:'Suche GPS-Signal…', onRoute:'Du bist unterwegs',
+    gpsWait:'Suche GPS-Signal…', onRoute:'Du bist unterwegs', demoWalk:'Demo-Spaziergang', demoStop:'Demo stoppen', demoRunning:'Demo: unterwegs durch die Straßen…', webNote:'Web-Version zur Vorführung. In der iPhone-App wird die Route auch bei gesperrtem Bildschirm aufgezeichnet.',
   }
 };
 let LANG = 'ru';
@@ -144,12 +144,14 @@ async function flush(){
 setInterval(flush, 20000);
 
 /* ================= location ================= */
-function onLocation(lat, lng, acc, time){
+function onLocation(lat, lng, acc, time, sim){
   if(!S.route || S.route.endedAt) return;
+  if(S.sim && !sim) return;                                    // during demo walk ignore real GPS
   if(acc != null && acc > 50) { setGpsStatus(false); return; }
   setGpsStatus(true);
   const last = S.track[S.track.length-1];
-  if(last){
+  if(last && sim === 'first'){ /* demo jumps to its own start: no distance, no jump check */ }
+  else if(last){
     const d = hav(last[0], last[1], lat, lng), dt = (time - last[2]) / 1000;
     if(dt <= 0) return;
     if(d < 4) { moveMe(lat, lng); return; }                  // standing still
@@ -162,6 +164,78 @@ function onLocation(lat, lng, acc, time){
   drawTrack(); moveMe(lat, lng, true); updateSync();
   if(S.queue.length >= 25) flush();
 }
+
+/* ================= demo walk (web prototype) ================= */
+function decodePolyline6(str){
+  let i = 0, lat = 0, lng = 0; const out = [];
+  while(i < str.length){
+    for(const k of [0,1]){
+      let b, shift = 0, res = 0;
+      do{ b = str.charCodeAt(i++) - 63; res |= (b & 0x1f) << shift; shift += 5; } while(b >= 0x20);
+      const d = (res & 1) ? ~(res >> 1) : (res >> 1);
+      if(k === 0) lat += d; else lng += d;
+    }
+    out.push([lat / 1e6, lng / 1e6]);
+  }
+  return out;
+}
+function densify(pts, step){
+  const out = [pts[0]];
+  for(let i = 1; i < pts.length; i++){
+    const [a, b] = [pts[i-1], pts[i]], d = hav(a[0], a[1], b[0], b[1]), n = Math.max(1, Math.round(d / step));
+    for(let k = 1; k <= n; k++) out.push([a[0] + (b[0]-a[0]) * k/n, a[1] + (b[1]-a[1]) * k/n]);
+  }
+  return out;
+}
+async function demoPath(lat, lng){
+  const R = 380, rot = Math.random() * Math.PI * 2, mPerLat = 111320, mPerLng = 111320 * Math.cos(lat * Math.PI / 180);
+  const wp = [0,1,2,3].map(i => { const a = rot + i * Math.PI / 2, r = R * (0.75 + Math.random() * 0.5); return { lat: lat + r * Math.cos(a) / mPerLat, lon: lng + r * Math.sin(a) / mPerLng }; });
+  try{
+    const q = { locations:[{ lat, lon:lng }, ...wp, { lat, lon:lng }], costing:'pedestrian' };
+    const ctrl = new AbortController(); setTimeout(() => ctrl.abort(), 10000);
+    const r = await fetch('https://valhalla1.openstreetmap.de/route?json=' + encodeURIComponent(JSON.stringify(q)), { signal:ctrl.signal });
+    if(!r.ok) throw 0;
+    const j = await r.json();
+    const pts = j.trip.legs.flatMap(l => decodePolyline6(l.shape));
+    if(pts.length > 2) return densify(pts, 5);
+  }catch{}
+  const loop = []; for(let i = 0; i <= 60; i++){ const a = i / 60 * Math.PI * 2; loop.push([lat + R * Math.cos(a) / mPerLat, lng + R * Math.sin(a) / mPerLng]); }
+  return densify(loop, 5);
+}
+async function startDemoWalk(){
+  if(S.sim) return stopDemoWalk();
+  const task = S.route.task, last = S.track[S.track.length-1];
+  const c = task ? [task.start_lat, task.start_lng] : last ? [last[0], last[1]] : [51.2177, 6.7737];
+  S.sim = { i:0, pts:null, timer:null };
+  const b = $('#demo'); if(b) b.textContent = t('demoStop');
+  const g = $('#gps'); if(g) g.textContent = t('demoRunning');
+  const pts = await demoPath(c[0], c[1]);
+  if(!S.sim) return;
+  S.sim.pts = pts; follow = true;
+  S.sim.timer = setInterval(() => {
+    if(!S.sim || !S.route || S.route.endedAt) return stopDemoWalk();
+    const p = S.sim.pts[S.sim.i];
+    if(!p) return stopDemoWalk();
+    onLocation(p[0], p[1], 5, Date.now(), S.sim.i === 0 ? 'first' : true);
+    S.sim.i++;
+  }, 600);
+}
+function stopDemoWalk(){
+  if(S.sim && S.sim.timer) clearInterval(S.sim.timer);
+  S.sim = null;
+  const b = $('#demo'); if(b) b.textContent = t('demoWalk');
+  flush();
+}
+
+/* keep screen on in the web version while a route runs */
+let wakeLock = null;
+async function keepAwake(on){
+  try{
+    if(on && !NATIVE && 'wakeLock' in navigator && !wakeLock) wakeLock = await navigator.wakeLock.request('screen');
+    if(!on && wakeLock){ await wakeLock.release(); wakeLock = null; }
+  }catch{}
+}
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible' && S.route && !S.route.endedAt){ wakeLock = null; keepAwake(true); } });
 
 async function startWatching(){
   if(S.watcherId) return;
@@ -374,6 +448,7 @@ function viewHome(){
       ${tk.notes ? `<div class="n">${esc(tk.notes)}</div>` : ''}</div>`).join('') : `<div class="empty">${esc(t('noTasks'))}</div>`}</div>
     <div style="height:20px"></div>
     <button class="btn" id="free">${esc(t('freeRoute'))}</button>
+    ${NATIVE ? '' : `<p class="small muted" style="margin-top:16px">${esc(t('webNote'))}</p>`}
   </div></div>`);
   $('#toProfile').onclick = viewProfile;
   $('#rf').onclick = async () => { $('#rf').disabled = true; await loadMe(); viewHome(); };
@@ -419,8 +494,11 @@ async function viewTracking(){
       ${task ? `<div style="font-weight:600;margin-top:6px">${esc(task.title)}</div>` : ''}
       <div class="stats" style="margin-top:12px"><div><span>${esc(t('time'))}</span><b id="sT">0:00</b></div><div><span>${esc(t('dist'))}</span><b id="sD">0 m</b></div></div>
       <button class="btn stop" id="stop">${esc(t('stop'))}</button>
+      ${NATIVE ? '' : `<button class="btn" id="demo">${esc(t(S.sim ? 'demoStop' : 'demoWalk'))}</button>`}
       <div class="sync" id="sync"></div>
     </div>`);
+  keepAwake(true);
+  if(!NATIVE) $('#demo').onclick = startDemoWalk;
   const last = S.track[S.track.length-1];
   makeMap(last ? [last[0], last[1]] : task ? [task.start_lat, task.start_lng] : null);
   if(task){ drawTaskLayers(task); rpc('task_coverage', { p_token:S.token, p_task_id:task.id }).then(cov => { if(S.view === 'tracking') drawCoverage(cov); }).catch(()=>{}); }
@@ -430,6 +508,7 @@ async function viewTracking(){
   updateSync();
   $('#stop').onclick = async () => {
     if(!await confirmBox(t('stopQ'), t('stopText'), t('stopYes'), true)) return;
+    stopDemoWalk(); keepAwake(false);
     await stopWatching();
     S.route.endedAt = Date.now(); await saveRoute();
     await flush();

@@ -1,9 +1,10 @@
-name: Admin panel (GitHub Pages)
+name: Admin panel + web app (GitHub Pages)
 
+# Публикует панель админа (/flyermap/) и веб-версию приложения работника (/flyermap/app/)
 on:
   push:
     branches: [main]
-    paths: ['admin/**', '.github/workflows/admin.yml']
+    paths: ['admin/**', 'worker/src/**', 'worker/build.mjs', 'worker/package.json', 'worker/assets/**', '.github/workflows/admin.yml']
   workflow_dispatch:
 
 permissions:
@@ -23,9 +24,24 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build worker web app
+        working-directory: worker
+        run: |
+          npm install
+          npm run build
+      - name: Assemble site
+        run: |
+          mkdir -p site
+          cp -R admin/. site/
+          rm -f site/.gitignore
+          cp -R worker/www site/app
+          ls -R site | head -40
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: admin
+          path: site
       - id: deployment
         uses: actions/deploy-pages@v4

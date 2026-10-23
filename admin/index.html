@@ -11,6 +11,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
 :root{
   --bg:#F3F5F7; --panel:#FFFFFF; --ink:#18212F; --muted:#5D6878; --line:#DCE1E7;
@@ -49,7 +50,7 @@ header.top{display:flex;align-items:center;gap:10px;padding:14px 16px 8px}
 header.top b{font-size:17px}
 header.top .me{margin-left:auto;color:var(--muted);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 nav.tabs{display:flex;gap:2px;padding:0 10px;border-bottom:1px solid var(--line);overflow-x:auto}
-nav.tabs button{background:none;border:0;padding:10px 10px;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap}
+nav.tabs button{background:none;border:0;padding:10px 8px;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap}
 nav.tabs button.on{color:var(--ink);border-bottom-color:var(--ink);font-weight:600}
 #view{padding:14px 16px 24px;overflow:auto;flex:1;min-height:0}
 
@@ -133,6 +134,7 @@ textarea{min-height:60px;resize:vertical}
       <button data-t="workers" data-l10n="tabWorkers"></button>
       <button data-t="routes" data-l10n="tabRoutes"></button>
       <button data-t="admins" data-l10n="tabAdmins"></button>
+      <button data-t="demo" data-l10n="tabDemo"></button>
     </nav>
     <div id="view"></div>
   </aside>
@@ -184,6 +186,14 @@ const I18N = {
     total:'Пройдено всего', report:'Отчёт о раздаче · создан ', mapCredit:'Карта © OpenStreetMap contributors', mapFail:'Карту улиц загрузить не удалось — показан только пройденный маршрут.',
     sheetSum:'Сводка', sheetPts:'GPS-точки', km:'Км', gpsPts:'GPS-точек', time:'Время', lat:'Широта', lng:'Долгота',
     kmU:'км', mU:'м', h:'ч', min:'мин',
+    tabDemo:'Демо', demoTitle:'Демонстрация', demoLead:'Покажите систему без iPhone-приложения: работник открывает веб-версию по ссылке, а тестовые работники «ходят» по Дюссельдорфу вживую.',
+    appLink:'Приложение работника (веб-версия)', appLinkText:'Откройте на телефоне или отсканируйте QR-код. В Safari: «Поделиться» → «На экран Домой» — будет выглядеть как приложение.',
+    demoData:'Тестовые данные', demoDataText:'6 работников в Дюссельдорфе, Нойсе, Кёльне, Эссене и Дуйсбурге, 2 задания и 2 вчерашних маршрута — для вкладок «Работники», «Маршруты» и PDF-отчёта.',
+    demoCreate:'Создать тестовые данные', demoCreated:'Готово: работники, задания и маршруты созданы.', demoExists:'Тестовые данные уже есть.', demoWorking:'Создаю… (строю маршруты по улицам)',
+    demoLive:'Живая демонстрация', demoLiveText:'Три тестовых работника начинают задание «Düsseldorf Bilk» и идут по улицам примерно 3 минуты. Откройте вкладку «Сейчас» — видно, как они двигаются.',
+    demoStart:'Запустить', demoStop:'Остановить', demoProgress:'Идут: {p}%', demoDone:'Демонстрация закончена — маршруты сохранены во вкладке «Маршруты».', demoNeedData:'Сначала создайте тестовые данные.',
+    demoClean:'Удалить тестовые данные', demoCleanQ:'Удалить всех тестовых работников (Demo), их маршруты и тестовые задания? Настоящие данные не затрагиваются.', demoCleaned:'Тестовые данные удалены.',
+    demoScript:'Как показывать (3 минуты)', demoS1:'Вкладка «Задания» → откройте «Düsseldorf Bilk (Demo)»: зона 15 минут пешком по улицам и кто подходит по зоне.', demoS2:'Вкладка «Работники» → введите «Essen»: видно, кто может туда доехать за свой час.', demoS3:'Нажмите «Запустить» ниже и откройте «Сейчас»: три человека идут по району вживую.', demoS4:'На телефоне откройте приложение работника, зарегистрируйтесь, назначьте себя на задание, нажмите «Старт» → «Демо-прогулка» — вы появитесь на карте.', demoS5:'Вкладка «Маршруты» → маршрут → «Отчёт PDF»: готовый отчёт для заказчика.',
   },
   de: {
     adminPanel:'Admin-Bereich', password:'Passwort', login:'Anmelden', signup:'Konto erstellen', logout:'Abmelden',
@@ -221,6 +231,14 @@ const I18N = {
     total:'Gesamt gelaufen', report:'Verteilbericht · erstellt ', mapCredit:'Karte © OpenStreetMap-Mitwirkende', mapFail:'Straßenkarte konnte nicht geladen werden — nur die gelaufene Route ist zu sehen.',
     sheetSum:'Übersicht', sheetPts:'GPS-Punkte', km:'km', gpsPts:'GPS-Punkte', time:'Zeit', lat:'Breite', lng:'Länge',
     kmU:'km', mU:'m', h:'Std.', min:'Min.',
+    tabDemo:'Demo', demoTitle:'Vorführung', demoLead:'Zeige das System ohne iPhone-App: der Verteiler öffnet die Web-Version per Link, Test-Verteiler laufen live durch Düsseldorf.',
+    appLink:'Verteiler-App (Web-Version)', appLinkText:'Am Handy öffnen oder QR-Code scannen. In Safari: „Teilen" → „Zum Home-Bildschirm" — sieht dann aus wie eine App.',
+    demoData:'Testdaten', demoDataText:'6 Verteiler in Düsseldorf, Neuss, Köln, Essen und Duisburg, 2 Aufträge und 2 Routen von gestern — für die Tabs „Verteiler", „Routen" und den PDF-Bericht.',
+    demoCreate:'Testdaten erstellen', demoCreated:'Fertig: Verteiler, Aufträge und Routen erstellt.', demoExists:'Testdaten sind schon vorhanden.', demoWorking:'Erstelle… (berechne Routen über Straßen)',
+    demoLive:'Live-Vorführung', demoLiveText:'Drei Test-Verteiler starten den Auftrag „Düsseldorf Bilk" und laufen etwa 3 Minuten durch die Straßen. Öffne den Tab „Live" — man sieht sie laufen.',
+    demoStart:'Starten', demoStop:'Stoppen', demoProgress:'Unterwegs: {p} %', demoDone:'Vorführung beendet — Routen im Tab „Routen" gespeichert.', demoNeedData:'Erstelle zuerst die Testdaten.',
+    demoClean:'Testdaten löschen', demoCleanQ:'Alle Test-Verteiler (Demo), ihre Routen und Test-Aufträge löschen? Echte Daten bleiben unberührt.', demoCleaned:'Testdaten gelöscht.',
+    demoScript:'So führst du es vor (3 Minuten)', demoS1:'Tab „Aufträge" → „Düsseldorf Bilk (Demo)" öffnen: 15-Min.-Gehgebiet über Straßen und wer vom Gebiet passt.', demoS2:'Tab „Verteiler" → „Essen" eingeben: wer in seiner Stunde dorthin kommt.', demoS3:'Unten „Starten" tippen und „Live" öffnen: drei Personen laufen live durchs Viertel.', demoS4:'Am Handy die Verteiler-App öffnen, registrieren, dich dem Auftrag zuteilen, „Los geht\'s" → „Demo-Spaziergang" — du erscheinst auf der Karte.', demoS5:'Tab „Routen" → Route → „PDF-Bericht": fertiger Bericht für den Kunden.',
   }
 };
 let LANG = (()=>{ try{ return localStorage.getItem('fm_lang') || ((navigator.language||'').startsWith('ru')?'ru':'de'); }catch(e){ return 'ru'; } })();
@@ -332,7 +350,7 @@ function go(tab, arg){
   S.tab=tab; S.arg=arg; S.onMapClick=null; clearInterval(S.poll); $('#view').onclick=null; L1.clearLayers(); L2.clearLayers();
   const top = {task:'tasks', newtask:'tasks', worker:'workers', route:'routes'}[tab] || tab;
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.t===top));
-  ({live:viewLive, tasks:viewTasks, task:viewTask, newtask:viewNewTask, workers:viewWorkers, worker:viewWorker, routes:viewRoutes, route:viewRoute, admins:viewAdmins})[tab](arg);
+  ({live:viewLive, tasks:viewTasks, task:viewTask, newtask:viewNewTask, workers:viewWorkers, worker:viewWorker, routes:viewRoutes, route:viewRoute, admins:viewAdmins, demo:viewDemo})[tab](arg);
 }
 const V = html => { $('#view').innerHTML = html; };
 
@@ -359,7 +377,7 @@ async function viewLive(){
       : `<p class="muted">${t('liveEmpty')}</p>`;
     if(!S.liveFitted && active.length){ fit(b); S.liveFitted=true; }
   };
-  S.liveFitted=false; await tick(); S.poll=setInterval(tick,15000);
+  S.liveFitted=false; await tick(); S.poll=setInterval(tick, S.demo ? 4000 : 15000);
 }
 
 /* ---------- TASKS ---------- */
@@ -556,6 +574,138 @@ async function viewAdmins(){
     ${(inv||[]).length?`<h2 style="margin-top:18px">${t('pendingAdmins')}</h2>`+inv.map(i=>`<div class="item row"><span class="grow">${esc(i.email)}</span><button class="btn sm" data-del="${esc(i.email)}">${t('cancel')}</button></div>`).join(''):''}`);
   $('#invB').onclick=async()=>{ const e=$('#invE').value.trim().toLowerCase(); if(!e.includes('@')) return; const {error}=await sb.from('admin_invites').insert({email:e}); if(error) $('#invErr').textContent=error.message; else viewAdmins(); };
   $('#view').onclick=async ev=>{ const d=ev.target.dataset.del; if(d){ await sb.from('admin_invites').delete().eq('email',d); viewAdmins(); } };
+}
+
+
+/* ---------- DEMO ---------- */
+const DEMO_PHONE = '+4900000000';
+const DEMO_WORKERS = [
+  ['Lena Becker (Demo)',   'Düsseldorf', 51.2277, 6.7735, 60],
+  ['Murat Yılmaz (Demo)',  'Düsseldorf', 51.2277, 6.7735, 45],
+  ['Anna Kowalski (Demo)', 'Neuss',      51.2042, 6.6879, 60],
+  ['Jonas Weber (Demo)',   'Köln',       50.9375, 6.9603, 60],
+  ['Sara Haddad (Demo)',   'Essen',      51.4556, 7.0116, 90],
+  ['Tim Schulz (Demo)',    'Duisburg',   51.4344, 6.7623, 30],
+];
+const DEMO_TASKS = [
+  { title:'Düsseldorf Bilk (Demo)',  city:'Düsseldorf', lat:51.20655, lng:6.77655, notes:{ru:'800 флаеров пиццерии «Da Mario». Забрать у входа в Bilk Arcaden.', de:'800 Flyer der Pizzeria „Da Mario". Abholen am Eingang der Bilk Arcaden.'}, who:[0,1,2] },
+  { title:'Köln Ehrenfeld (Demo)',   city:'Köln',       lat:50.94975, lng:6.91745, notes:{ru:'Меню нового кафе, 500 штук.', de:'Speisekarten des neuen Cafés, 500 Stück.'}, who:[3] },
+];
+function decodePolyline6(str){
+  let i=0, lat=0, lng=0; const out=[];
+  while(i<str.length){
+    for(const k of [0,1]){ let b, sh=0, res=0; do{ b=str.charCodeAt(i++)-63; res|=(b&0x1f)<<sh; sh+=5; }while(b>=0x20); const d=(res&1)?~(res>>1):(res>>1); if(k===0) lat+=d; else lng+=d; }
+    out.push([lat/1e6, lng/1e6]);
+  }
+  return out;
+}
+function densify(pts, step){ const out=[pts[0]]; for(let i=1;i<pts.length;i++){ const a=pts[i-1], b=pts[i], n=Math.max(1,Math.round(hav(a[0],a[1],b[0],b[1])*1000/step)); for(let k=1;k<=n;k++) out.push([a[0]+(b[0]-a[0])*k/n, a[1]+(b[1]-a[1])*k/n]); } return out; }
+async function demoPath(lat, lng, rot, R=380){
+  const mLat=111320, mLng=111320*Math.cos(lat*Math.PI/180);
+  const wp=[0,1,2,3].map(i=>{ const a=rot+i*Math.PI/2, r=R*(0.75+Math.random()*0.5); return {lat:lat+r*Math.cos(a)/mLat, lon:lng+r*Math.sin(a)/mLng}; });
+  try{
+    const q={locations:[{lat,lon:lng},...wp,{lat,lon:lng}], costing:'pedestrian'};
+    const ctrl=new AbortController(); setTimeout(()=>ctrl.abort(),12000);
+    const r=await fetch('https://valhalla1.openstreetmap.de/route?json='+encodeURIComponent(JSON.stringify(q)),{signal:ctrl.signal});
+    if(!r.ok) throw 0;
+    const j=await r.json(); const pts=j.trip.legs.flatMap(l=>decodePolyline6(l.shape));
+    if(pts.length>2) return densify(pts,5);
+  }catch(e){}
+  const loop=[]; for(let i=0;i<=60;i++){ const a=rot+i/60*Math.PI*2; loop.push([lat+R*Math.cos(a)/mLat, lng+R*Math.sin(a)/mLng]); }
+  return densify(loop,5);
+}
+async function demoWorkerRows(){ const {data,error}=await sb.from('workers').select('id,name,token,phone').like('phone',DEMO_PHONE+'%').order('phone'); if(error) throw error; return data; }
+async function pushInBatches(token, routeId, pts, t0, stepMs){
+  for(let i=0;i<pts.length;i+=300){
+    const batch=pts.slice(i,i+300).map((p,k)=>({t:new Date(t0+(i+k)*stepMs).toISOString(), lat:+p[0].toFixed(6), lng:+p[1].toFixed(6), acc:5}));
+    const {error}=await sb.rpc('push_points',{p_token:token,p_route_id:routeId,p_points:batch}); if(error) throw error;
+  }
+}
+async function demoCreate(msg){
+  if((await demoWorkerRows()).length){ msg(t('demoExists')); return; }
+  msg(t('demoWorking'));
+  const {error:e1}=await sb.from('workers').insert(DEMO_WORKERS.map((w,i)=>({name:w[0], phone:DEMO_PHONE+(i+1), cities:[{name:w[1],lat:w[2],lng:w[3]}], zone_minutes:w[4], pin_hash:'demo', notes:'Demo'})));
+  if(e1) throw e1;
+  const rows=await demoWorkerRows();
+  const {data:u}=await sb.auth.getUser();
+  const today=new Date(); const iso=d=>d.toISOString().slice(0,10);
+  const tasks=[];
+  for(const dt of DEMO_TASKS){
+    const z=await isochrone(dt.lat,dt.lng,15);
+    const {data:tk,error}=await sb.from('tasks').insert({title:dt.title, city_name:dt.city, start_lat:dt.lat, start_lng:dt.lng, walk_minutes:15, zone_polygon:z.poly, work_date:iso(today), notes:dt.notes[LANG]||dt.notes.ru, created_by:u.user.id}).select().single();
+    if(error) throw error; tasks.push(tk);
+    const {error:e2}=await sb.from('task_workers').insert(dt.who.map(i=>({task_id:tk.id, worker_id:rows[i].id}))); if(e2) throw e2;
+  }
+  // two finished routes yesterday on the Bilk task
+  const y=new Date(); y.setDate(y.getDate()-1);
+  for(const [wi,hour,rot] of [[0,10,0.3],[1,14,2.1]]){
+    const w=rows[wi]; const start=new Date(y); start.setHours(hour,5,0,0);
+    const pts=await demoPath(DEMO_TASKS[0].lat, DEMO_TASKS[0].lng, rot, 450);
+    const {data:rid,error}=await sb.rpc('start_route',{p_token:w.token,p_task_id:tasks[0].id,p_started_at:start.toISOString()}); if(error) throw error;
+    await pushInBatches(w.token, rid, pts, +start, 4000);
+    const {error:e3}=await sb.rpc('end_route',{p_token:w.token,p_route_id:rid,p_ended_at:new Date(+start+pts.length*4000).toISOString()}); if(e3) throw e3;
+  }
+  await Promise.all([loadWorkers(),loadTasks()]);
+  msg(t('demoCreated'));
+}
+async function demoLive(onProgress){
+  const rows=await demoWorkerRows();
+  const task=S.tasks.find(x=>x.title===DEMO_TASKS[0].title);
+  if(rows.length<3 || !task){ onProgress(null, t('demoNeedData')); return; }
+  const walkers=[];
+  for(const [i,rot] of [[0,0.2],[1,1.8],[2,3.6]]){
+    const w=rows[i];
+    const pts=await demoPath(task.start_lat, task.start_lng, rot, 330+i*60);
+    const {data:rid,error}=await sb.rpc('start_route',{p_token:w.token,p_task_id:task.id,p_started_at:new Date().toISOString()}); if(error) throw error;
+    walkers.push({w,rid,pts,i:0});
+  }
+  const per=Math.max(3, Math.ceil(Math.max(...walkers.map(x=>x.pts.length))/90)); // ~3 min at 2 s/tick
+  S.demo={stop:false};
+  while(!S.demo.stop){
+    let left=0;
+    for(const x of walkers){
+      if(x.i>=x.pts.length) continue;
+      const now=Date.now(), chunk=x.pts.slice(x.i,x.i+per).map((p,k)=>({t:new Date(now-(per-1-k)*400).toISOString(), lat:+p[0].toFixed(6), lng:+p[1].toFixed(6), acc:5}));
+      x.i+=per; left+=Math.max(0,x.pts.length-x.i);
+      await sb.rpc('push_points',{p_token:x.w.token,p_route_id:x.rid,p_points:chunk});
+    }
+    const total=walkers.reduce((s,x)=>s+x.pts.length,0);
+    onProgress(Math.round(100*(1-left/total)));
+    if(!left) break;
+    await new Promise(r=>setTimeout(r,2000));
+  }
+  for(const x of walkers) await sb.rpc('end_route',{p_token:x.w.token,p_route_id:x.rid,p_ended_at:new Date().toISOString()});
+  S.demo=null;
+  onProgress(100, t('demoDone'));
+}
+async function demoClean(){
+  const {error:e1}=await sb.from('workers').delete().like('phone',DEMO_PHONE+'%'); if(e1) throw e1;
+  const {error:e2}=await sb.from('tasks').delete().like('title','%(Demo)'); if(e2) throw e2;
+  await Promise.all([loadWorkers(),loadTasks()]);
+}
+function appUrl(){ return location.origin + location.pathname.replace(/index\.html$/,'').replace(/\/?$/,'/') + 'app/'; }
+function viewDemo(){
+  const url=appUrl();
+  V(`<h2>${t('demoTitle')}</h2><p class="small muted">${t('demoLead')}</p>
+    <div class="box"><b>${t('appLink')}</b><p class="small muted" style="margin:6px 0">${t('appLinkText')}</p>
+      <div class="row" style="align-items:flex-start"><div id="qr" style="background:#fff;padding:8px;border-radius:8px"></div>
+      <div class="grow small"><a href="${esc(url)}" target="_blank" style="word-break:break-all">${esc(url)}</a></div></div></div>
+    <div class="box"><b>${t('demoData')}</b><p class="small muted" style="margin:6px 0">${t('demoDataText')}</p>
+      <div class="row"><button class="btn pri" id="dmCreate">${t('demoCreate')}</button><button class="btn danger" id="dmClean">${t('demoClean')}</button></div><div class="small" id="dmMsg" style="margin-top:8px"></div></div>
+    <div class="box"><b>${t('demoLive')}</b><p class="small muted" style="margin:6px 0">${t('demoLiveText')}</p>
+      <div class="row"><button class="btn pri" id="dmLive">${S.demo?t('demoStop'):t('demoStart')}</button><span class="small" id="dmProg">${esc(S.demoMsg||'')}</span></div></div>
+    <h2 style="margin-top:18px">${t('demoScript')}</h2>
+    <ol class="small" style="padding-left:20px">${['demoS1','demoS2','demoS3','demoS4','demoS5'].map(k=>`<li style="margin-bottom:6px">${t(k)}</li>`).join('')}</ol>`);
+  try{ new QRCode($('#qr'),{text:url,width:132,height:132,correctLevel:QRCode.CorrectLevel.M}); }catch(e){ $('#qr').remove(); }
+  const msg=x=>{ const el=$('#dmMsg'); if(el) el.textContent=x; };
+  $('#dmCreate').onclick=async()=>{ $('#dmCreate').disabled=true; try{ await demoCreate(msg); }catch(e){ msg(e.message); } const b=$('#dmCreate'); if(b) b.disabled=false; };
+  $('#dmClean').onclick=async()=>{ if(!confirm(t('demoCleanQ'))) return; if(S.demo) S.demo.stop=true; try{ await demoClean(); msg(t('demoCleaned')); }catch(e){ msg(e.message); } };
+  $('#dmLive').onclick=async()=>{
+    if(S.demo){ S.demo.stop=true; return; }
+    const prog=(p,text)=>{ S.demoMsg = text || t('demoProgress',{p}); const el=$('#dmProg'); if(el) el.textContent = S.demoMsg; const b=$('#dmLive'); if(b) b.textContent = S.demo?t('demoStop'):t('demoStart'); };
+    $('#dmLive').textContent=t('demoStop');
+    demoLive(prog).catch(e=>{ S.demo=null; prog(null, e.message); });
+  };
 }
 
 /* ---------- export ---------- */
