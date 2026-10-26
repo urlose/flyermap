@@ -12,6 +12,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="planner.js"></script>
 <style>
 :root{
   --bg:#F3F5F7; --panel:#FFFFFF; --ink:#18212F; --muted:#5D6878; --line:#DCE1E7;
@@ -186,6 +187,10 @@ const I18N = {
     total:'Пройдено всего', report:'Отчёт о раздаче · создан ', mapCredit:'Карта © OpenStreetMap contributors', mapFail:'Карту улиц загрузить не удалось — показан только пройденный маршрут.',
     sheetSum:'Сводка', sheetPts:'GPS-точки', km:'Км', gpsPts:'GPS-точек', time:'Время', lat:'Широта', lng:'Долгота',
     kmU:'км', mU:'м', h:'ч', min:'мин',
+    planTitle:'Маршруты работников', planNeedStart:'Поставьте точку старта — улицы зоны загрузятся и маршруты построятся автоматически.', planLoading:'Загружаю улицы зоны из OpenStreetMap…',
+    planFail:'Не удалось загрузить улицы ({e}). Задание можно сохранить без маршрутов и назначить работников вручную.', planSummary:'Улиц в зоне: {km}. Одному человеку это ≈{h} ч. Рекомендуем {n} чел.',
+    planCount:'Сколько работников', planRoute:'Маршрут {n}', planRouteInfo:'{km} пути · ≈{h} ч', planNobody:'— не назначен —', planReplan:'Перестроить маршруты', planReplanQ:'Перестроить маршруты? Текущее распределение заменится новым.',
+    planDone:'выполнено {p}%', planNone:'У этого задания нет маршрутов.', planBuild:'Построить маршруты', manualAssign:'Работники без маршрута', planHint:'Каждый маршрут начинается и заканчивается у точки старта и проходит все улицы своей части. Пройденное станет зелёным.',
     tabDemo:'Демо', demoTitle:'Демонстрация', demoLead:'Покажите систему без iPhone-приложения: работник открывает веб-версию по ссылке, а тестовые работники «ходят» по Дюссельдорфу вживую.',
     appLink:'Приложение работника (веб-версия)', appLinkText:'Откройте на телефоне или отсканируйте QR-код. В Safari: «Поделиться» → «На экран Домой» — будет выглядеть как приложение.',
     demoData:'Тестовые данные', demoDataText:'6 работников в Дюссельдорфе, Нойсе, Кёльне, Эссене и Дуйсбурге, 2 задания и 2 вчерашних маршрута — для вкладок «Работники», «Маршруты» и PDF-отчёта.',
@@ -231,6 +236,10 @@ const I18N = {
     total:'Gesamt gelaufen', report:'Verteilbericht · erstellt ', mapCredit:'Karte © OpenStreetMap-Mitwirkende', mapFail:'Straßenkarte konnte nicht geladen werden — nur die gelaufene Route ist zu sehen.',
     sheetSum:'Übersicht', sheetPts:'GPS-Punkte', km:'km', gpsPts:'GPS-Punkte', time:'Zeit', lat:'Breite', lng:'Länge',
     kmU:'km', mU:'m', h:'Std.', min:'Min.',
+    planTitle:'Routen der Verteiler', planNeedStart:'Setze den Startpunkt — die Straßen des Gebiets werden geladen und die Routen automatisch berechnet.', planLoading:'Lade Straßen des Gebiets aus OpenStreetMap…',
+    planFail:'Straßen konnten nicht geladen werden ({e}). Der Auftrag kann ohne Routen gespeichert und Verteiler manuell eingeteilt werden.', planSummary:'Straßen im Gebiet: {km}. Für eine Person ≈{h} Std. Empfohlen: {n} Pers.',
+    planCount:'Wie viele Verteiler', planRoute:'Route {n}', planRouteInfo:'{km} Weg · ≈{h} Std.', planNobody:'— nicht eingeteilt —', planReplan:'Routen neu berechnen', planReplanQ:'Routen neu berechnen? Die aktuelle Aufteilung wird ersetzt.',
+    planDone:'{p} % erledigt', planNone:'Dieser Auftrag hat keine Routen.', planBuild:'Routen berechnen', manualAssign:'Verteiler ohne Route', planHint:'Jede Route beginnt und endet am Startpunkt und läuft alle Straßen ihres Teils ab. Gelaufenes wird grün.',
     tabDemo:'Demo', demoTitle:'Vorführung', demoLead:'Zeige das System ohne iPhone-App: der Verteiler öffnet die Web-Version per Link, Test-Verteiler laufen live durch Düsseldorf.',
     appLink:'Verteiler-App (Web-Version)', appLinkText:'Am Handy öffnen oder QR-Code scannen. In Safari: „Teilen" → „Zum Home-Bildschirm" — sieht dann aus wie eine App.',
     demoData:'Testdaten', demoDataText:'6 Verteiler in Düsseldorf, Neuss, Köln, Essen und Duisburg, 2 Aufträge und 2 Routen von gestern — für die Tabs „Verteiler", „Routen" und den PDF-Bericht.',
@@ -405,8 +414,50 @@ function citySearchWidget(id, onPick, placeholder){
   return `<input type="text" id="${id}" placeholder="${esc(placeholder||t('citySearch'))}" autocomplete="off"><div id="${id}R" class="results hidden"></div>`;
 }
 
+/* ---------- route plans ---------- */
+const fmtH = m => (Planner.hours(m)).toFixed(1).replace('.', LANG==='ru'?',':',');
+function workerOptions(lat, lng, selected){
+  const list = workersForPoint(lat, lng);
+  return `<option value="">${t('planNobody')}</option>` + list.map(x=>`<option value="${x.w.id}" ${x.w.id===selected?'selected':''}>${esc(x.w.name)}${x.city?' · '+esc(x.city.name):''}${isFinite(x.km)?' · '+Math.round(x.km)+' '+t('kmU'):''}${x.inZone?'':' ·'+t('outOfZone').replace(' · ','')}</option>`).join('');
+}
+// plan box: loads streets for a zone, lets the admin pick the number of workers, draws routes
+function PlanBox(el, { poly, start, layer, assign }){
+  const st = { g:null, routes:[], n:1, assign: assign || {} };
+  const draw = () => {
+    layer.clearLayers();
+    st.routes.forEach((r, i) => { if(r.path.length > 1) L.polyline(r.path, { color:Planner.COLORS[i % Planner.COLORS.length], weight:4, opacity:.85 }).addTo(layer); });
+  };
+  const render = () => {
+    const sum = st.g.street_m;
+    el.innerHTML = `<p class="small">${t('planSummary',{km:fmtKm(sum), h:fmtH(sum*1.35), n:Planner.suggestWorkers(sum)})}</p>
+      <div class="row"><label class="small muted" for="pbN">${t('planCount')}</label><input type="number" id="pbN" min="1" max="20" value="${st.n}" style="width:90px"></div>
+      <p class="small muted" style="margin:8px 0">${t('planHint')}</p>
+      ${st.routes.map((r, i) => `<div class="item"><div class="row"><span class="dot" style="background:${Planner.COLORS[i % Planner.COLORS.length]};width:12px;height:12px"></span>
+        <span class="grow"><b>${t('planRoute',{n:i+1})}</b><br><span class="small muted">${t('planRouteInfo',{km:fmtKm(r.length_m), h:fmtH(r.length_m)})}</span></span></div>
+        <select data-route="${i}" style="margin-top:6px">${workerOptions(start.lat, start.lng, st.assign[i])}</select></div>`).join('')}`;
+    el.querySelector('#pbN').onchange = e => { st.n = Math.max(1, Math.min(20, +e.target.value || 1)); plan(); };
+    el.querySelectorAll('[data-route]').forEach(sel => sel.onchange = () => { st.assign[+sel.dataset.route] = sel.value || null; });
+  };
+  const plan = () => { st.routes = Planner.planRoutes(st.g, [start.lat, start.lng], st.n); draw(); render(); };
+  const load = async (n) => {
+    el.innerHTML = `<p class="small muted">${t('planLoading')}</p>`;
+    try{
+      st.g = await Planner.loadZone(poly);
+      if(!st.g.edges.length) throw new Error('0 streets');
+      st.n = n || Planner.suggestWorkers(st.g.street_m); plan();
+    }catch(e){ st.g = null; layer.clearLayers(); el.innerHTML = `<p class="small err">${t('planFail',{e:esc(e.message)})}</p>`; }
+  };
+  return { load, state: st, rows: task_id => st.routes.map((r, i) => ({ task_id, idx:i, worker_id: st.assign[i] || null, color: Planner.COLORS[i % Planner.COLORS.length], path:r.path, length_m:r.length_m, street_m:r.street_m })) };
+}
+async function savePlans(taskId, rows){
+  if(rows.length){ const { error } = await sb.from('task_plans').insert(rows); if(error) throw error; }
+  const ws = [...new Set(rows.map(r => r.worker_id).filter(Boolean))];
+  if(ws.length) await sb.from('task_workers').upsert(ws.map(w => ({ task_id:taskId, worker_id:w })), { onConflict:'task_id,worker_id', ignoreDuplicates:true });
+}
+
 function viewNewTask(){
-  const d = S.draft = {city:null, start:null, minutes:15, poly:null, real:false, picked:new Set(), showAll:false};
+  const d = S.draft = {city:null, start:null, minutes:15, poly:null, real:false, picked:new Set(), showAll:false, box:null};
+  const planLayer = L.layerGroup().addTo(L1);
   V(`<button class="back" onclick="go('tasks')">← ${t('tasks')}</button><h2>${t('newTask')}</h2>
     <label class="f">${t('city')}</label>${citySearchWidget('ntCity', c=>{ d.city=c; map.setView([c.lat,c.lng],14); $('#ntTitle').value ||= c.name; })}
     <div class="hint" id="ntHint">${t('clickMap')}</div>
@@ -414,16 +465,19 @@ function viewNewTask(){
       <div class="grow"><label class="f">${t('date')}</label><input type="date" id="ntDate"></div></div>
     <label class="f">${t('title')}</label><input type="text" id="ntTitle" placeholder="${esc(t('titlePh'))}">
     <label class="f">${t('notes')}</label><textarea id="ntNotes" placeholder="${esc(t('notesPh'))}"></textarea>
-    <h2 style="margin-top:18px">${t('workers')}</h2><div id="ntWorkers" class="muted small">${t('pickFirst')}</div>
+    <h2 style="margin-top:18px">${t('planTitle')}</h2><div id="ntPlan"><p class="small muted">${t('planNeedStart')}</p></div>
+    <details style="margin-top:12px"><summary class="small muted" style="cursor:pointer">${t('manualAssign')}</summary><div id="ntWorkers" class="muted small" style="margin-top:6px">${t('pickFirst')}</div></details>
     <div class="row" style="margin-top:16px"><button class="btn pri grow" id="ntSave" disabled>${t('saveTask')}</button></div><div id="ntErr" class="err"></div>`);
   const redraw = async()=>{
-    if(!d.start) return; L1.clearLayers();
-    $('#ntHint').textContent=t('buildingZone');
+    if(!d.start) return; L1.clearLayers(); planLayer.addTo(L1); planLayer.clearLayers();
+    $('#ntHint').textContent=t('buildingZone'); $('#ntSave').disabled=true;
     const r = await isochrone(d.start.lat,d.start.lng,d.minutes); d.poly=r.poly; d.real=r.real;
-    L1.clearLayers(); drawZone(d.poly); L.marker([d.start.lat,d.start.lng],{icon:icon('pin-start')}).addTo(L1);
+    L1.clearLayers(); planLayer.addTo(L1); drawZone(d.poly); L.marker([d.start.lat,d.start.lng],{icon:icon('pin-start')}).addTo(L1);
     fit(L.polygon(d.poly).getBounds());
     $('#ntHint').textContent = r.real ? t('zoneReal',{n:d.minutes}) : t('zoneCircle',{d:fmtKm(d.minutes*WALK_M_PER_MIN)});
     renderPick(); $('#ntSave').disabled=false;
+    d.box = PlanBox($('#ntPlan'), { poly:d.poly, start:d.start, layer:planLayer });
+    await d.box.load();
   };
   const renderPick = ()=>{
     const list = workersForPoint(d.start.lat,d.start.lng).filter(x=>d.showAll||x.inZone);
@@ -440,30 +494,43 @@ function viewNewTask(){
   $('#ntSave').onclick = async()=>{
     const title=$('#ntTitle').value.trim(); if(!title){$('#ntErr').textContent=t('needTitle');return;}
     $('#ntSave').disabled=true;
-    const {data:u}=await sb.auth.getUser();
-    const {data:tk,error}=await sb.from('tasks').insert({title, city_name:d.city?.name||null, start_lat:d.start.lat, start_lng:d.start.lng, walk_minutes:d.minutes, zone_polygon:d.poly, work_date:$('#ntDate').value||null, notes:$('#ntNotes').value.trim()||null, created_by:u.user.id}).select().single();
-    if(error){$('#ntErr').textContent=error.message;$('#ntSave').disabled=false;return;}
-    if(d.picked.size){ const {error:e2}=await sb.from('task_workers').insert([...d.picked].map(w=>({task_id:tk.id,worker_id:w}))); if(e2) alert(e2.message); }
-    await loadTasks(); go('task',tk.id);
+    try{
+      const {data:u}=await sb.auth.getUser();
+      const g = d.box && d.box.state.g;
+      const {data:tk,error}=await sb.from('tasks').insert({title, city_name:d.city?.name||null, start_lat:d.start.lat, start_lng:d.start.lng, walk_minutes:d.minutes, zone_polygon:d.poly, work_date:$('#ntDate').value||null, notes:$('#ntNotes').value.trim()||null, created_by:u.user.id, street_m: g ? g.street_m : null}).select().single();
+      if(error) throw error;
+      if(g) await savePlans(tk.id, d.box.rows(tk.id));
+      if(d.picked.size) await sb.from('task_workers').upsert([...d.picked].map(w=>({task_id:tk.id,worker_id:w})), { onConflict:'task_id,worker_id', ignoreDuplicates:true });
+      await loadTasks(); go('task',tk.id);
+    }catch(e){ $('#ntErr').textContent=e.message; $('#ntSave').disabled=false; }
   };
 }
 
 async function viewTask(id){
   const tk = S.tasks.find(x=>x.id===id); if(!tk) return go('tasks');
   const assigned = new Set(tk.task_workers.map(x=>x.worker_id));
-  const {data:routes} = await sb.from('routes').select('*').eq('task_id',id).order('started_at');
+  const [{data:routes}, {data:plans}] = await Promise.all([
+    sb.from('routes').select('*').eq('task_id',id).order('started_at'),
+    sb.from('task_plans').select('*').eq('task_id',id).order('idx')]);
   const totalM = (routes||[]).reduce((s,r)=>s+r.distance_m,0);
   const gmaps = `https://maps.google.com/?q=${tk.start_lat},${tk.start_lng}`;
   const invite = w => t('invite',{name:w.name, title:tk.title, date:tk.work_date?', '+fmtD(tk.work_date):'', link:gmaps});
+  const withoutPlan = [...assigned].filter(wid => !(plans||[]).some(p => p.worker_id === wid));
   V(`<button class="back" onclick="go('tasks')">← ${t('tasks')}</button><h2>${esc(tk.title)}</h2>
-    <div class="small muted">${[esc(tk.city_name||''), tk.work_date?fmtD(tk.work_date):t('noDate'), t('walkZone',{n:tk.walk_minutes})].filter(Boolean).join(' · ')}</div>
+    <div class="small muted">${[esc(tk.city_name||''), tk.work_date?fmtD(tk.work_date):t('noDate'), t('walkZone',{n:tk.walk_minutes}), tk.street_m?fmtKm(tk.street_m):''].filter(Boolean).join(' · ')}</div>
     ${tk.notes?`<div class="hint">${esc(tk.notes)}</div>`:''}
     <div class="stat"><div><span>${t('routesN')}</span><b>${routes?.length||0}</b></div><div><span>${t('walked')}</span><b>${fmtKm(totalM)}</b></div></div>
     <div class="row"><button class="btn sm" id="tPdf">${t('pdf')}</button><button class="btn sm" id="tXls">Excel</button>
       <button class="btn sm" id="tDone">${tk.status==='open'?t('finish'):t('reopen')}</button><button class="btn sm danger" id="tDel">${t('del')}</button></div>
-    <h2 style="margin-top:18px">${t('assigned')}</h2>
-    ${[...assigned].map(wid=>{ const w=S.workers.find(x=>x.id===wid); if(!w) return ''; return `<div class="item"><div class="row"><span class="grow t">${esc(w.name)}</span>
-      <a class="btn sm" target="_blank" href="${waLink(w.phone,invite(w))}">${t('write')}</a><button class="btn sm" data-un="${w.id}">${t('remove')}</button></div></div>`;}).join('') || `<p class="muted">${t('nobodyAssigned')}</p>`}
+    <h2 style="margin-top:18px">${t('planTitle')}</h2>
+    <div id="tPlans">${(plans||[]).length ? plans.map(p=>{ const w=S.workers.find(x=>x.id===p.worker_id); return `<div class="item"><div class="row"><span class="dot" style="background:${esc(p.color||'#2563EB')};width:12px;height:12px"></span>
+      <span class="grow"><b>${t('planRoute',{n:p.idx+1})}</b> <span class="small muted" id="pp${p.idx}"></span><br><span class="small muted">${t('planRouteInfo',{km:fmtKm(p.length_m), h:fmtH(p.length_m)})}</span></span>
+      ${w?`<a class="btn sm" target="_blank" href="${waLink(w.phone,invite(w))}">${t('write')}</a>`:''}</div>
+      <select data-plan="${p.id}" style="margin-top:6px">${workerOptions(tk.start_lat, tk.start_lng, p.worker_id)}</select></div>`; }).join('') : `<p class="muted small">${t('planNone')}</p>`}</div>
+    <details style="margin-top:8px" id="tReplanBox"><summary class="small" style="cursor:pointer">${(plans||[]).length?t('planReplan'):t('planBuild')}</summary><div id="tReplan" style="margin-top:8px"></div>
+      <button class="btn sm pri" id="tReplanSave" style="margin-top:8px" disabled>${t('save')}</button></details>
+    ${withoutPlan.length?`<h2 style="margin-top:18px">${t('manualAssign')}</h2>`+withoutPlan.map(wid=>{ const w=S.workers.find(x=>x.id===wid); if(!w) return ''; return `<div class="item"><div class="row"><span class="grow t">${esc(w.name)}</span>
+      <a class="btn sm" target="_blank" href="${waLink(w.phone,invite(w))}">${t('write')}</a><button class="btn sm" data-un="${w.id}">${t('remove')}</button></div></div>`;}).join(''):''}
     <h2 style="margin-top:18px">${t('fitZone')}</h2>
     ${workersForPoint(tk.start_lat,tk.start_lng).filter(x=>x.inZone&&!assigned.has(x.w.id)).map(x=>`<div class="item"><div class="row"><span class="grow"><b>${esc(x.w.name)}</b><br><span class="small muted">${esc(x.city?.name||'')}, ${Math.round(x.km)} ${t('kmU')}</span></span>
       <a class="btn sm" target="_blank" href="${waLink(x.w.phone,invite(x.w))}">${t('write')}</a><button class="btn sm" data-as="${x.w.id}">${t('assign')}</button></div></div>`).join('') || `<p class="muted small">${t('nobodyMore')}</p>`}
@@ -474,13 +541,49 @@ async function viewTask(id){
     if(un){ await sb.from('task_workers').delete().eq('task_id',id).eq('worker_id',un); await loadTasks(); go('task',id); }
     if(as){ await sb.from('task_workers').insert({task_id:id,worker_id:as}); await loadTasks(); go('task',id); }
   };
+  document.querySelectorAll('[data-plan]').forEach(sel => sel.onchange = async () => {
+    const wid = sel.value || null;
+    await sb.from('task_plans').update({ worker_id:wid }).eq('id', sel.dataset.plan);
+    if(wid) await sb.from('task_workers').upsert({ task_id:id, worker_id:wid }, { onConflict:'task_id,worker_id', ignoreDuplicates:true });
+    await loadTasks(); go('task', id);
+  });
   $('#tDone').onclick = async()=>{ await sb.from('tasks').update({status:tk.status==='open'?'done':'open'}).eq('id',id); await loadTasks(); go('task',id); };
   $('#tDel').onclick = async()=>{ if(!confirm(t('delTaskQ'))) return; await sb.from('tasks').delete().eq('id',id); await loadTasks(); go('tasks'); };
   if(tk.zone_polygon) drawZone(tk.zone_polygon);
+  const planLayer = L.layerGroup().addTo(L1), doneLayer = L.layerGroup();
+  (plans||[]).forEach(p => { if(p.path?.length > 1) L.polyline(p.path, { color:p.color||'#2563EB', weight:4, opacity:.55 }).addTo(planLayer); });
+  doneLayer.addTo(L1);
   L.marker([tk.start_lat,tk.start_lng],{icon:icon('pin-start')}).addTo(L1);
   const b = tk.zone_polygon? L.polygon(tk.zone_polygon).getBounds() : L.latLngBounds([[tk.start_lat,tk.start_lng]]);
+  // replan
+  let box = null;
+  $('#tReplanBox').addEventListener('toggle', async e => {
+    if(!e.target.open || box) return;
+    const prev = {}; (plans||[]).forEach(p => { prev[p.idx] = p.worker_id; });
+    box = PlanBox($('#tReplan'), { poly: tk.zone_polygon || circlePoly(tk.start_lat, tk.start_lng, tk.walk_minutes*WALK_M_PER_MIN), start:{lat:tk.start_lat,lng:tk.start_lng}, layer:planLayer, assign:prev });
+    await box.load((plans||[]).length || undefined);
+    $('#tReplanSave').disabled = !box.state.g;
+  });
+  $('#tReplanSave').onclick = async () => {
+    if(!box || !box.state.g) return;
+    if((plans||[]).length && !confirm(t('planReplanQ'))) return;
+    try{
+      await sb.from('task_plans').delete().eq('task_id', id);
+      await savePlans(id, box.rows(id));
+      await sb.from('tasks').update({ street_m: box.state.g.street_m }).eq('id', id);
+      await loadTasks(); go('task', id);
+    }catch(err){ alert(err.message); }
+  };
   const lines = [];
   for(const r of routes||[]){ const pts=await fetchPoints(r.id); lines.push({r,pts}); if(pts.length>1){ drawLine(pts.map(p=>[p.lat,p.lng])); pts.forEach(p=>b.extend([p.lat,p.lng])); } }
+  // progress per plan from its worker's routes on this task
+  for(const p of plans||[]){
+    if(!p.worker_id || !p.path?.length) continue;
+    const tr = Planner.makeTracker(p.path);
+    lines.filter(l => l.r.worker_id === p.worker_id).forEach(l => tr.addTrack(l.pts.map(x => [x.lat, x.lng])));
+    tr.runs().forEach(run => L.polyline(run, { color:'#16A34A', weight:6, opacity:.9 }).addTo(doneLayer));
+    const el = $('#pp'+p.idx); if(el) el.textContent = '· ' + t('planDone',{p:tr.pct()});
+  }
   fit(b);
   const meta = [[t('task'),tk.title],[t('city'),tk.city_name||'—'],[t('date'),tk.work_date?fmtD(tk.work_date):'—'],[t('routesN'),String(lines.length)],[t('total'),fmtKm(totalM)]];
   $('#tPdf').onclick = ()=>exportPDF(tk.title, meta, lines, tk);
