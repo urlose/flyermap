@@ -37,6 +37,7 @@ export function hav(a, b, c, d){ const R = 6371000, r = Math.PI / 180, x = Math.
 const dec = () => I.lang === 'ru' ? ',' : ',';
 export const fmtDist = m => m >= 1000 ? (m/1000).toFixed(1).replace('.', dec()) + ' ' + t('km') : Math.round(m) + ' ' + t('m');
 export const fmtH = m => (m / 1000 / 3).toFixed(1).replace('.', dec());
+export const fmtHm = min => (min / 60).toFixed(1).replace('.', ',');
 export const fmtN = n => Math.round(n).toLocaleString(I.lang === 'ru' ? 'ru-RU' : 'de-DE');
 export const fmtTime = ms => { const s = Math.max(0, Math.floor(ms/1000)); const h = Math.floor(s/3600), m = Math.floor(s%3600/60), x = s%60; return (h ? h + ':' : '') + String(m).padStart(h ? 2 : 1, '0') + ':' + String(x).padStart(2, '0'); };
 export const loc = () => I.lang === 'ru' ? 'ru-RU' : 'de-DE';
@@ -109,3 +110,13 @@ export async function loopPath(lat, lng, rot = Math.random() * 6.28, R = 380){
   const loop = []; for(let i = 0; i <= 60; i++){ const a = rot + i/60*Math.PI*2; loop.push([lat + R*Math.cos(a)/mLat, lng + R*Math.sin(a)/mLng]); }
   return densify(loop, 5);
 }
+
+export function normPhone(raw){
+  let s = String(raw || '').replace(/[^\d+]/g, '');
+  if(s.startsWith('00')) s = '+' + s.slice(2);
+  else if(s.startsWith('0')) s = '+49' + s.slice(1);
+  else if(!s.startsWith('+')) s = '+' + (s.startsWith('49') ? s : '49' + s);
+  const digits = s.replace(/\D/g, '');
+  return digits.length >= 9 && digits.length <= 15 ? '+' + digits : null;
+}
+

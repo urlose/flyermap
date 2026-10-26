@@ -56,6 +56,12 @@ a{color:var(--live)}
 .topbar h1{font-size:24px;margin:0;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pad{padding:4px 16px 28px}
 .icon-btn{width:42px;height:42px;flex:none;border-radius:12px;border:1px solid var(--line);background:var(--card);display:grid;place-items:center;padding:0}
+.badge{position:absolute;top:-5px;right:-5px;min-width:18px;height:18px;border-radius:9px;background:var(--danger);color:#fff;font-size:11px;font-weight:700;display:grid;place-items:center;padding:0 4px}
+.pill.warn{--pc:#D97706}.pill.bad{--pc:var(--danger)}
+.quota{display:flex;align-items:center;gap:8px;font-size:14px;margin:8px 0 2px}.quota i{width:10px;height:10px;border-radius:50%;background:var(--green);flex:none}.quota.warn i{background:#D97706}.quota.bad i{background:var(--danger)}
+.rec.paused{color:#D97706}.rec.paused::before{background:#D97706;animation:none}
+.dates{display:grid;gap:8px;margin:8px 0 14px}.dates label{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--muted)}.dates label span{flex:none;width:52px}
+.notif{display:block;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:8px}.notif.new{border-color:var(--brand)}.notif b{display:block}.notif span{font-size:14px;color:var(--muted)}
 .icon-btn svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 
 /* ---------- controls ---------- */
@@ -85,6 +91,8 @@ textarea.in{min-height:72px;resize:vertical}
 h2.sec{font-size:17px;margin:22px 0 10px}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .chip{display:inline-flex;align-items:center;gap:6px;background:var(--soft);border-radius:20px;padding:6px 8px 6px 12px;font-size:14.5px}
+.chip.on{background:var(--brand);color:var(--brand-ink)}
+button.chip{border:0;cursor:pointer;padding:6px 12px}
 .chip button{border:0;background:none;color:var(--muted);font-size:18px;line-height:1;padding:0 4px}
 .tool-row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
 .steppers{display:flex;gap:12px}.steppers>div{flex:1}
@@ -170,7 +178,7 @@ h2.sec{font-size:17px;margin:22px 0 10px}
 .sync{font-size:12.5px;color:var(--muted);margin-top:8px;text-align:center}
 .live-list{display:flex;gap:8px;overflow-x:auto;margin-top:8px;padding-bottom:2px}
 .live-chip{flex:none;display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--card);border-radius:20px;padding:7px 12px;font-size:14px}
-.dotc{width:9px;height:9px;border-radius:50%;background:var(--live)}
+.dotc{width:9px;height:9px;border-radius:50%;background:var(--green)}.dotc.warn{background:#D97706}.dotc.bad{background:var(--danger)}.dotc.pause{background:var(--muted)}
 
 /* bottom sheet for route creation */
 .sheet{position:absolute;z-index:600;left:0;right:0;bottom:0;background:var(--card);border-radius:22px 22px 0 0;box-shadow:var(--shadow);padding:10px 16px 18px;max-height:44%;overflow:auto;transition:max-height .25s}

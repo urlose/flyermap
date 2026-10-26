@@ -12,7 +12,8 @@
   const HIGHWAYS = 'primary|secondary|tertiary|unclassified|residential|living_street|pedestrian|road';
   const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
   const WORK_HOURS = 7;            // 8 h shift minus 1 h unpaid break
-  const WALK_KMH = 3;              // effective speed while distributing
+  const WALK_KMH = 3;              // effective walking speed while distributing
+  const BOX_SEC = 5;               // handling time per mailbox (seconds)
 
   function dist(a, b){
     const x = Math.sin((b[0]-a[0])*RAD/2)**2 + Math.cos(a[0]*RAD)*Math.cos(b[0]*RAD)*Math.sin((b[1]-a[1])*RAD/2)**2;
@@ -392,21 +393,30 @@
     tol = tol || 30;
     const done = new Uint8Array(boxes.length); let count = 0;
     const total = boxes.reduce((s, b) => s + b[2], 0);
+    const cell = 0.0004, grid = new Map(), key = (la, lo) => Math.floor(la / cell) + ':' + Math.floor(lo / cell);
+    boxes.forEach((b, i) => { const k = key(b[0], b[1]); if(!grid.has(k)) grid.set(k, []); grid.get(k).push(i); });
     function visit(lat, lng){
-      for(let i = 0; i < boxes.length; i++){ if(done[i]) continue; if(dist([lat, lng], boxes[i]) <= tol){ done[i] = 1; count += boxes[i][2]; } }
+      const cy = Math.floor(lat / cell), cx = Math.floor(lng / cell);
+      for(let dy = -1; dy <= 1; dy++) for(let dx = -1; dx <= 1; dx++){
+        const list = grid.get((cy + dy) + ':' + (cx + dx)); if(!list) continue;
+        for(const i of list) if(!done[i] && dist([lat, lng], boxes[i]) <= tol){ done[i] = 1; count += boxes[i][2]; }
+      }
       return count;
     }
-    return { visit, visitAll(pts){ for(const p of pts) visit(p[0], p[1]); return count; }, count:() => count, total };
+    function visitLine(a, b){ const d = dist(a, b), n = Math.min(50, Math.max(1, Math.ceil(d / 15))); for(let k = 0; k <= n; k++) visit(a[0] + (b[0]-a[0]) * k/n, a[1] + (b[1]-a[1]) * k/n); return count; }
+    return { visit, visitLine, visitAll(pts){ for(let i = 0; i < pts.length; i++){ if(i && dist(pts[i-1], pts[i]) < 120) visitLine(pts[i-1], pts[i]); else visit(pts[i][0], pts[i][1]); } return count; }, count:() => count, total };
   }
 
-  function suggestWorkers(routeMeters, hoursPerDay, days){ return Math.max(1, Math.ceil(routeMeters / 1000 / WALK_KMH / ((hoursPerDay || WORK_HOURS) * (days || 1)))); }
+  function suggestWorkers(totalMinutes, hoursPerDay, days){ return Math.max(1, Math.ceil(totalMinutes / 60 / ((hoursPerDay || WORK_HOURS) * (days || 1)))); }
   function hours(meters){ return meters / 1000 / WALK_KMH; }
+  function routeMinutes(len, mb){ return Math.round(len / 1000 / WALK_KMH * 60 + (mb || 0) * BOX_SEC / 60); }
   /* does the plan fit the available time? */
   function capacity(routes, flyers, opt){
     const hpd = (opt && opt.hoursPerDay) || WORK_HOURS, days = (opt && opt.days) || 2, limit = hpd * days;
-    const totalH = routes.reduce((s, r) => s + hours(r.length_m), 0), over = routes.filter(r => hours(r.length_m) > limit).map(r => r.idx);
+    const hr = r => r.minutes != null ? r.minutes / 60 : hours(r.length_m);
+    const totalH = routes.reduce((s, r) => s + hr(r), 0), over = routes.filter(r => hr(r) > limit).map(r => r.idx);
     const cap = routes.length * limit, ok = totalH <= cap && !over.length;
-    const slowest = routes.reduce((m, r) => Math.max(m, hours(r.length_m)), 0);
+    const slowest = routes.reduce((m, r) => Math.max(m, hr(r)), 0);
     return { ok, limit, totalH, slowest, over, suggestedFlyers: ok ? flyers : Math.max(0, Math.floor(flyers * Math.min(1, limit / (slowest || limit)) / 50) * 50) };
   }
 
@@ -419,14 +429,14 @@
   }
   // main entry: streets + buildings around the start; grows the radius until enough mailboxes exist
   async function loadForFlyers(start, flyers, opt){
-    opt = opt || {}; let r = opt.radius || 1500, last = null;
+    opt = opt || {}; let r = Math.min(4000, opt.radius || 1500), last = null;
     for(let round = 0; round < 5; round++){
       const [osm, bld] = await Promise.all([fetchStreetsAround(start, r, opt.fetchImpl), fetchBuildings(start, r, opt.fetchImpl)]);
       const g = largestComponent(buildGraph(osm, null));
       attachBuildings(g, parseBuildings(bld));
       g.radius = r; g.street_m = Math.round(g.edges.reduce((s, e) => s + e.len, 0)); last = g;
-      if(g.mailboxes >= flyers * 1.35 || r >= 7000) break;
-      r = Math.round(r * 1.6);
+      if(g.mailboxes >= flyers * 1.35 || r >= 4000) break;
+      r = Math.min(4000, Math.round(r * 1.5));
     }
     return last;
   }
@@ -438,7 +448,7 @@
     const routes = parts.map((part, k) => {
       const r = planPart(g, part, start);
       const boxes = []; let mb = 0; for(const i of part){ mb += g.edges[i].mb; for(const b of g.edges[i].boxes) boxes.push(b); }
-      return { idx:k, ...r, mailboxes:mb, boxes, minutes:Math.round(hours(r.length_m) * 60) };
+      return { idx:k, ...r, mailboxes:mb, boxes, minutes:routeMinutes(r.length_m, mb) };
     });
     const pts = []; for(const i of sel.ids) for(const c of g.edges[i].coords) pts.push(c);
     return { routes, mailboxes:sel.mailboxes, reach_m:sel.reach_m, zone:hull(pts), capacity:capacity(routes, flyers) };
@@ -447,6 +457,6 @@
     return partition(g, start, n).map((part, k) => ({ idx:k, ...planPart(g, part, start) }));
   }
 
-  const api = { COLORS, densifyPath, makeTracker, makeBoxCounter, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH };
+  const api = { COLORS, densifyPath, makeTracker, makeBoxCounter, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
   if(typeof module !== 'undefined' && module.exports) module.exports = api; else root.Planner = api;
 })(typeof window !== 'undefined' ? window : globalThis);
