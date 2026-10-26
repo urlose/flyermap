@@ -1,0 +1,367 @@
+import L from 'leaflet';
+import Planner from '../../admin/planner.js';
+import { t, I } from './i18n.js';
+import { sb, store, $, esc, css, hav, fmtDist, fmtH, fmtDay, fmtDT, ago, waLink, telLink, isochrone, circlePoly, loopPath } from './core.js';
+import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, labelIcon, fit, modal, confirmBox, toast, searchField, langSwitch, avatar, every } from './ui.js';
+
+const GREEN = '#16A34A';
+const KM_PER_MIN_TRANSIT = 0.75;
+export const A = { user:null, workers:[], tasks:[], demo:null, hooks:{} };
+
+/* ---------- data ---------- */
+async function loadWorkers(){ const { data, error } = await sb.from('workers').select('id,name,phone,cities,zone_minutes,notes,last_lat,last_lng,last_seen,active_route_id,created_at').order('name'); if(error) throw error; A.workers = data; }
+async function loadTasks(){ const { data, error } = await sb.from('tasks').select('*,task_workers(worker_id)').order('created_at', { ascending:false }); if(error) throw error; A.tasks = data; }
+async function loadAll(){ await Promise.all([loadWorkers(), loadTasks()]); }
+async function fetchPoints(routeId){
+  let all = [], from = 0;
+  for(;;){ const { data, error } = await sb.from('route_points').select('t,lat,lng').eq('route_id', routeId).order('t').range(from, from + 999); if(error) throw error; all = all.concat(data); if(data.length < 1000) break; from += 1000; }
+  return all;
+}
+const wById = id => A.workers.find(w => w.id === id);
+const zoneKm = w => (w.zone_minutes || 60) * KM_PER_MIN_TRANSIT;
+function distTo(w, lat, lng){ let best = Infinity, city = null; for(const c of (w.cities || [])){ const d = hav(c.lat, c.lng, lat, lng) / 1000; if(d < best){ best = d; city = c; } } return { km:best, city }; }
+const forPoint = (lat, lng) => A.workers.map(w => ({ w, ...distTo(w, lat, lng) })).map(x => ({ ...x, inZone:x.km <= zoneKm(x.w) })).sort((a, b) => a.km - b.km);
+const isLive = w => w.active_route_id && w.last_seen && Date.now() - new Date(w.last_seen) < 20 * 60e3;
+function workerOptions(lat, lng, sel){
+  return `<option value="">${esc(t('nobody'))}</option>` + forPoint(lat, lng).map(x => `<option value="${x.w.id}" ${x.w.id === sel ? 'selected' : ''}>${esc(x.w.name)}${x.city ? ' · ' + esc(x.city.name) : ''}${isFinite(x.km) ? ' · ' + Math.round(x.km) + ' km' : ''}${x.inZone ? '' : ' · ' + esc(t('outZone'))}</option>`).join('');
+}
+
+/* ---------- tabs ---------- */
+export function adminTab(tab){
+  if(tab === 'map') return viewLive();
+  if(tab === 'people') return viewPeople();
+  return viewTasks();
+}
+
+/* ---------- KARTE: who is where right now ---------- */
+function viewLive(){
+  shell('map', `<div id="fullMap" class="fullmap"></div>
+    <div class="float-card"><div class="fc-row"><b id="liveCount">…</b><span class="muted small" id="liveUpd"></span></div><div class="live-list" id="liveList"></div></div>`, { map:true });
+  const m = makeMap($('#fullMap'), null, 12);
+  const layer = L.layerGroup().addTo(m); let fitted = false;
+  const tick = async () => {
+    try{ await loadWorkers(); }catch{ return; }
+    const live = A.workers.filter(isLive);
+    layer.clearLayers(); const b = L.latLngBounds([]);
+    for(const w of live){
+      L.marker([w.last_lat, w.last_lng], { icon:labelIcon('me-dot', w.name), zIndexOffset:500 }).addTo(layer);
+      b.extend([w.last_lat, w.last_lng]);
+      fetchPoints(w.active_route_id).then(pts => { if(pts.length > 1) L.polyline(pts.map(p => [p.lat, p.lng]), { color:css('--route'), weight:4, opacity:.85 }).addTo(layer); }).catch(() => {});
+    }
+    if(!$('#liveCount')) return;
+    $('#liveCount').textContent = live.length ? t('liveNow', { n:live.length }) : t('nobodyLive');
+    $('#liveUpd').textContent = t('updated', { x:t('justNow') });
+    $('#liveList').innerHTML = live.map(w => `<button class="live-chip" data-id="${w.id}"><span class="dotc"></span>${esc(w.name)}</button>`).join('');
+    document.querySelectorAll('.live-chip').forEach(c => c.onclick = () => { const w = wById(c.dataset.id); if(w) m.setView([w.last_lat, w.last_lng], 17); });
+    if(!fitted && live.length){ fit(m, b, 60); fitted = true; }
+  };
+  tick(); every(A.demo ? 3000 : 6000, tick);
+}
+
+/* ---------- MITARBEITER: admin profile + team ---------- */
+function viewPeople(){
+  let place = null;
+  const sf = searchField('wCity', t('whoPh'), c => { place = c; render(); }, { citiesOnly:true });
+  shell('people', `${topbar(t('tabPeople'))}
+    <div class="pad">
+      <div class="person-row big">${avatar()}<div><b>${esc(A.user?.email || '')}</b><span>${esc(t('admin'))}</span></div></div>
+      <div class="tool-row"><button class="btn ghost small" id="tDemo">${esc(t('demo'))}</button><button class="btn ghost small" id="tInv">${esc(t('inviteAdmin'))}</button><button class="btn ghost small" id="tOut">${esc(t('logout'))}</button></div>
+      ${langSwitch(I.lang)}
+      <h2 class="sec">${esc(t('workersN', { n:A.workers.length }))}</h2>
+      <label class="f">${esc(t('whoCanGo'))}</label>${sf.html}
+      <div class="searchbox" style="margin-top:8px"><span class="sb-ic">${ICONS.search}</span><input id="wQ" class="sb-in" placeholder="${esc(t('searchNamePhone'))}"></div>
+      <div id="wList" style="margin-top:12px"></div>
+    </div>`);
+  sf.bind();
+  const render = () => {
+    const q = $('#wQ').value.trim().toLowerCase();
+    let list = A.workers.map(w => ({ w, ...(place ? distTo(w, place.lat, place.lng) : { km:null }) }));
+    if(place) list = list.filter(x => x.km <= zoneKm(x.w)).sort((a, b) => a.km - b.km);
+    if(q) list = list.filter(x => (x.w.name + ' ' + x.w.phone).toLowerCase().includes(q));
+    $('#wList').innerHTML = (place ? `<div class="hint">${esc(t('canReach', { n:list.length, city:place.name }))} <button class="link" id="wClr">${esc(t('reset'))}</button></div>` : '') +
+      (list.length ? list.map(({ w, km }) => `<div class="card worker-card"><button class="wc-main" data-id="${w.id}">${avatar(w.name, isLive(w) ? 'live' : '')}
+        <div><b>${esc(w.name)}</b><span>${esc((w.cities || []).map(c => c.name).join(', '))}${km != null ? ' · ' + Math.round(km) + ' km' : ''} · ${esc(t('zoneChip', { n:w.zone_minutes }))}</span></div></button>
+        <div class="wc-act"><a class="btn ghost small" href="${telLink(w.phone)}">${esc(t('call'))}</a><a class="btn ghost small" target="_blank" href="${waLink(w.phone)}">WhatsApp</a></div></div>`).join('')
+       : `<div class="empty">${esc(A.workers.length ? t('notFound') : t('noWorkers'))}</div>`);
+    const clr = $('#wClr'); if(clr) clr.onclick = () => { place = null; $('#wCity').value = ''; render(); };
+    document.querySelectorAll('.wc-main').forEach(b => b.onclick = () => viewWorker(b.dataset.id));
+  };
+  $('#wQ').oninput = render; render();
+  $('#tOut').onclick = async () => { if(await confirmBox(t('logout'), t('logoutQ'), t('logout'))){ await sb.auth.signOut(); await store.del('role'); A.hooks.loggedOut && A.hooks.loggedOut(); } };
+  $('#tInv').onclick = () => {
+    const mo = modal(`<h2>${esc(t('inviteAdmin'))}</h2><input class="in" id="invE" type="email" placeholder="email@example.com"><button class="btn primary" id="invB" style="margin-top:12px">${esc(t('inviteAdmin'))}</button><div class="err" id="invErr"></div>`);
+    mo.querySelector('#invB').onclick = async () => { const e = mo.querySelector('#invE').value.trim().toLowerCase(); if(!e.includes('@')) return; const { error } = await sb.from('admin_invites').insert({ email:e }); if(error) mo.querySelector('#invErr').textContent = error.message; else { mo.remove(); toast(t('inviteSent')); } };
+  };
+  $('#tDemo').onclick = demoSheet;
+}
+
+async function viewWorker(id){
+  const w = wById(id); if(!w) return viewPeople();
+  const { data:routes } = await sb.from('routes').select('*').eq('worker_id', id).order('started_at', { ascending:false }).limit(30);
+  shell('people', `${topbar(w.name, true)}
+    <div class="pad">
+      <div class="person-row big">${avatar(w.name, isLive(w) ? 'live' : '')}<div><b>${esc(w.name)}</b><span>${esc(w.phone)} · ${esc(t('lastActive', { a:ago(w.last_seen) }))}</span></div></div>
+      <div class="tool-row"><a class="btn primary small" href="${telLink(w.phone)}">${esc(t('call'))}</a><a class="btn ghost small" target="_blank" href="${waLink(w.phone)}">WhatsApp</a></div>
+      <div class="chips">${(w.cities || []).map(c => `<span class="chip">${esc(c.name)}</span>`).join('')}</div>
+      <label class="f">${esc(t('zoneLabel'))}</label>
+      <select class="in" id="wzm">${[30, 45, 60, 75, 90, 120].map(m => `<option value="${m}" ${m === w.zone_minutes ? 'selected' : ''}>${m < 60 ? m + ' ' + t('min') : (m/60).toString().replace('.', ',') + ' ' + t('h')} (~${Math.round(m * KM_PER_MIN_TRANSIT)} km)</option>`).join('')}</select>
+      <label class="f">${esc(t('notes'))}</label><textarea class="in" id="wnotes">${esc(w.notes || '')}</textarea>
+      <button class="btn primary" id="wsave" style="margin-top:12px">${esc(t('save'))}</button>
+      <h2 class="sec">${esc(t('route'))}</h2>
+      ${(routes || []).map(r => `<div class="row-line"><b>${esc(fmtDT(r.started_at))}</b><span>${esc(fmtDist(r.distance_m))}${r.ended_at ? '' : ' · ' + t('active')}</span></div>`).join('') || `<p class="muted small">—</p>`}
+      <button class="btn ghost danger-text" id="wdel" style="margin-top:20px">${esc(t('del'))}</button>
+    </div>`);
+  bindBack(viewPeople);
+  $('#wsave').onclick = async () => { const { error } = await sb.from('workers').update({ zone_minutes:+$('#wzm').value, notes:$('#wnotes').value.trim() || null }).eq('id', id); if(!error){ await loadWorkers(); toast(t('saved')); } };
+  $('#wdel').onclick = async () => { if(!await confirmBox(t('del'), t('delWorkerQ', { name:w.name }), t('del'), true)) return; await sb.from('workers').delete().eq('id', id); await loadWorkers(); viewPeople(); };
+}
+
+/* ---------- AUFTRÄGE ---------- */
+function viewTasks(){
+  const open = A.tasks.filter(x => x.status === 'open'), done = A.tasks.filter(x => x.status !== 'open');
+  const live = new Set(A.workers.filter(isLive).map(w => w.id));
+  const card = tk => `<button class="card task-card" data-id="${tk.id}"><div class="tc-main"><b>${esc(tk.title)}</b>
+    <span>${esc([fmtDay(tk.work_date), tk.city_name, tk.task_workers.length + ' ' + t('tabPeople')].filter(Boolean).join(' · '))}</span>
+    ${tk.task_workers.some(x => live.has(x.worker_id)) ? `<span class="pill live">${esc(t('active'))}</span>` : ''}</div>${ICONS.chevron}</button>`;
+  shell('tasks', `${topbar(t('tasks'))}
+    <div class="pad">
+      <button class="card create-card" id="create"><span class="cc-ic">${ICONS.plus}</span><div><b>${esc(t('createTask'))}</b><span>${esc(t('createTaskSub'))}</span></div></button>
+      ${open.length ? open.map(card).join('') : `<div class="empty">${esc(t('noOpenTasks'))}</div>`}
+      ${done.length ? `<h2 class="sec">${esc(t('finished'))}</h2>` + done.map(card).join('') : ''}
+    </div>`);
+  $('#create').onclick = viewCreate;
+  document.querySelectorAll('.task-card').forEach(b => b.onclick = () => viewTask(b.dataset.id));
+}
+
+/* Routenerstellung: full map + search on top, sheet with zone/workers/routes */
+function viewCreate(){
+  const d = { start:null, place:null, minutes:15, n:1, poly:null, g:null, routes:[], assign:{}, loading:false };
+  const sf = searchField('cSearch', t('searchAddr'), c => { d.place = c; setStart(c.lat, c.lng); }, { near:() => d.start ? [d.start.lat, d.start.lng] : null });
+  shell('tasks', `<div id="fullMap" class="fullmap"></div>
+    <div class="map-top"><button class="icon-btn" id="cBack" aria-label="${esc(t('back'))}">${ICONS.back}</button><div class="grow">${sf.html}</div></div>
+    <div class="sheet" id="cSheet"><p class="muted small" style="margin:0">${esc(t('tapMap'))}</p></div>`, { map:true });
+  sf.bind();
+  $('#cBack').onclick = viewTasks;
+  const m = makeMap($('#fullMap'), null, 13);
+  const zoneLayer = L.layerGroup().addTo(m), planLayer = L.layerGroup().addTo(m);
+  m.on('click', e => { d.place = null; setStart(e.latlng.lat, e.latlng.lng); });
+  async function setStart(lat, lng){
+    d.start = { lat, lng }; zoneLayer.clearLayers(); planLayer.clearLayers();
+    L.marker([lat, lng], { icon:dot('pin-start', 26) }).addTo(zoneLayer); m.setView([lat, lng], 15, { animate:false });
+    sheet(`<p class="muted small" style="margin:0">${esc(t('buildingZone'))}</p>`);
+    const r = await isochrone(lat, lng, d.minutes); d.poly = r.poly;
+    zoneLayer.clearLayers(); const z = L.polygon(d.poly, { color:css('--brand'), weight:2, fillOpacity:.08, interactive:false }).addTo(zoneLayer);
+    L.marker([lat, lng], { icon:dot('pin-start', 26) }).addTo(zoneLayer); m.fitBounds(z.getBounds(), { paddingTopLeft:[24, 80], paddingBottomRight:[24, Math.round(innerHeight * .5)], maxZoom:17, animate:false });
+    sheet(`<p class="muted small" style="margin:0">${esc(t('streetsLoading'))}</p>`);
+    try{ d.g = await Planner.loadZone(d.poly); if(!d.g.edges.length) throw new Error('0'); d.n = Planner.suggestWorkers(d.g.street_m); d.err = null; }
+    catch(e){ d.g = null; d.err = e.message; }
+    plan(); renderSheet();
+  }
+  function plan(){
+    planLayer.clearLayers(); d.routes = [];
+    if(!d.g) return;
+    d.routes = Planner.planRoutes(d.g, [d.start.lat, d.start.lng], d.n);
+    d.routes.forEach((r, i) => { if(r.path.length > 1) L.polyline(r.path, { color:Planner.COLORS[i % 10], weight:4, opacity:.85 }).addTo(planLayer); });
+  }
+  function sheet(html){ $('#cSheet').innerHTML = html; }
+  function renderSheet(){
+    const title = d.place ? d.place.name : '';
+    sheet(`<button class="sheet-grip" id="grip" aria-label="Panel"></button>
+      <label class="f">${esc(t('title'))}</label><input class="in" id="cTitle" value="${esc(title)}">
+      <div class="steppers">
+        <div><label class="f">${esc(t('walkMin'))}</label><div class="stepper"><button data-s="min:-5">−</button><b id="vMin">${d.minutes}</b><button data-s="min:5">+</button></div></div>
+        <div><label class="f">${esc(t('workersCount'))}</label><div class="stepper"><button data-s="n:-1" ${d.g ? '' : 'disabled'}>−</button><b id="vN">${d.g ? d.n : '—'}</b><button data-s="n:1" ${d.g ? '' : 'disabled'}>+</button></div></div>
+      </div>
+      ${d.g ? `<p class="small muted">${esc(t('planSummary', { km:fmtDist(d.g.street_m), n:Planner.suggestWorkers(d.g.street_m) }))}</p>` : `<p class="small err">${esc(t('streetsFail', { e:d.err || '' }))}</p>`}
+      ${d.routes.map((r, i) => `<div class="route-row"><span class="swatch" style="background:${Planner.COLORS[i % 10]}"></span>
+        <div class="grow"><b>${esc(t('planRoute', { n:i + 1 }))}</b><span>${esc(t('routeInfo', { km:fmtDist(r.length_m), h:fmtH(r.length_m) }))}</span>
+        <select class="in small" data-r="${i}">${workerOptions(d.start.lat, d.start.lng, d.assign[i])}</select></div></div>`).join('')}
+      <div class="steppers"><div><label class="f">${esc(t('date'))}</label><input class="in" type="date" id="cDate"></div></div>
+      <label class="f">${esc(t('note'))}</label><textarea class="in" id="cNotes" placeholder="${esc(t('notesPh'))}"></textarea>
+      <button class="btn primary" id="cSave" style="margin-top:12px">${esc(t('saveTask'))}</button><div class="err" id="cErr"></div>`);
+    $('#grip').onclick = () => $('#cSheet').classList.toggle('tall');
+    document.querySelectorAll('[data-s]').forEach(b => b.onclick = () => {
+      const [k, v] = b.dataset.s.split(':'); const keep = { title:$('#cTitle').value, date:$('#cDate').value, notes:$('#cNotes').value };
+      if(k === 'min'){ d.minutes = Math.max(5, Math.min(45, d.minutes + +v)); d.place = d.place || null; setStart(d.start.lat, d.start.lng).then(() => restore(keep)); return; }
+      d.n = Math.max(1, Math.min(20, d.n + +v)); plan(); renderSheet(); restore(keep);
+    });
+    document.querySelectorAll('[data-r]').forEach(s => s.onchange = () => { d.assign[+s.dataset.r] = s.value || null; });
+    $('#cSave').onclick = save;
+  }
+  function restore(k){ if($('#cTitle')) $('#cTitle').value = k.title; if($('#cDate')) $('#cDate').value = k.date; if($('#cNotes')) $('#cNotes').value = k.notes; }
+  async function save(){
+    const title = $('#cTitle').value.trim(); if(!title){ $('#cErr').textContent = t('needTitle'); return; }
+    $('#cSave').disabled = true;
+    try{
+      const { data:tk, error } = await sb.from('tasks').insert({ title, city_name:(d.place && d.place.city) || null, start_lat:d.start.lat, start_lng:d.start.lng, walk_minutes:d.minutes, zone_polygon:d.poly, work_date:$('#cDate').value || null, notes:$('#cNotes').value.trim() || null, created_by:A.user.id, street_m:d.g ? d.g.street_m : null }).select().single();
+      if(error) throw error;
+      await savePlans(tk.id, d.routes.map((r, i) => ({ task_id:tk.id, idx:i, worker_id:d.assign[i] || null, color:Planner.COLORS[i % 10], path:r.path, length_m:r.length_m, street_m:r.street_m })));
+      await loadTasks(); viewTask(tk.id);
+    }catch(e){ $('#cErr').textContent = e.message; $('#cSave').disabled = false; }
+  }
+}
+async function savePlans(taskId, rows){
+  if(rows.length){ const { error } = await sb.from('task_plans').insert(rows); if(error) throw error; }
+  const ws = [...new Set(rows.map(r => r.worker_id).filter(Boolean))];
+  if(ws.length) await sb.from('task_workers').upsert(ws.map(w => ({ task_id:taskId, worker_id:w })), { onConflict:'task_id,worker_id', ignoreDuplicates:true });
+}
+
+/* task detail (sketch: info + map + routes) */
+async function viewTask(id){
+  const tk = A.tasks.find(x => x.id === id); if(!tk) return viewTasks();
+  const [{ data:plans }, { data:routes }] = await Promise.all([sb.from('task_plans').select('*').eq('task_id', id).order('idx'), sb.from('routes').select('*').eq('task_id', id)]);
+  const walked = (routes || []).reduce((s, r) => s + r.distance_m, 0);
+  const invite = w => t('invite', { name:w.name, title:tk.title, date:tk.work_date ? ', ' + fmtDay(tk.work_date) : '' });
+  shell('tasks', `${topbar(tk.title, true)}
+    <div class="pad">
+      <h2 class="sec" style="margin-top:4px">${esc(t('taskInfo'))}:</h2>
+      <div class="info">
+        <div><span>${esc(t('place'))}</span><b>${esc(tk.city_name || '—')}</b></div>
+        <div><span>${esc(t('date'))}</span><b>${esc(fmtDay(tk.work_date))}</b></div>
+        <div><span>${esc(t('walkMin'))}</span><b>${esc(t('walkZone', { n:tk.walk_minutes }))}${tk.street_m ? ' · ' + esc(fmtDist(tk.street_m)) : ''}</b></div>
+        <div><span>${esc(t('dist'))}</span><b>${esc(fmtDist(walked))}</b></div>
+        ${tk.notes ? `<div><span>${esc(t('note'))}</span><b>${esc(tk.notes)}</b></div>` : ''}
+      </div>
+      <div class="mapbox" id="tMap"></div>
+      <h2 class="sec">${esc(t('routesOf'))}</h2>
+      ${(plans || []).length ? plans.map(p => { const w = wById(p.worker_id); return `<div class="route-row"><span class="swatch" style="background:${esc(p.color || '#2563EB')}"></span>
+        <div class="grow"><b>${esc(t('planRoute', { n:p.idx + 1 }))} <span class="muted" id="pp${p.idx}"></span></b><span>${esc(t('routeInfo', { km:fmtDist(p.length_m), h:fmtH(p.length_m) }))}</span>
+        <div class="bar"><i id="pb${p.idx}"></i></div>
+        <div class="rr-act"><select class="in small" data-plan="${p.id}">${workerOptions(tk.start_lat, tk.start_lng, p.worker_id)}</select>${w ? `<a class="btn ghost small" target="_blank" href="${waLink(w.phone, invite(w))}">${esc(t('write'))}</a>` : ''}</div></div></div>`; }).join('') : `<p class="muted small">${esc(t('noPlans'))}</p>`}
+      <div class="tool-row" style="margin-top:16px"><button class="btn ghost small" id="tDone">${esc(tk.status === 'open' ? t('finish') : t('reopen'))}</button><button class="btn ghost small danger-text" id="tDel">${esc(t('del'))}</button></div>
+      <p class="small muted">${esc(t('desktop'))}</p>
+    </div>`);
+  bindBack(viewTasks);
+  const m = makeMap($('#tMap'), [tk.start_lat, tk.start_lng], 14);
+  let b = L.latLngBounds([[tk.start_lat, tk.start_lng]]);
+  if(tk.zone_polygon){ const z = L.polygon(tk.zone_polygon, { color:css('--brand'), weight:2, fillOpacity:.06, interactive:false }).addTo(m); b = z.getBounds(); }
+  (plans || []).forEach(p => { if(p.path?.length > 1) L.polyline(p.path, { color:p.color || '#2563EB', weight:4, opacity:.6 }).addTo(m); });
+  const doneLayer = L.layerGroup().addTo(m);
+  L.marker([tk.start_lat, tk.start_lng], { icon:dot('pin-start', 24) }).addTo(m);
+  fit(m, b, 16);
+  document.querySelectorAll('[data-plan]').forEach(sel => sel.onchange = async () => {
+    const wid = sel.value || null;
+    await sb.from('task_plans').update({ worker_id:wid }).eq('id', sel.dataset.plan);
+    if(wid) await sb.from('task_workers').upsert({ task_id:id, worker_id:wid }, { onConflict:'task_id,worker_id', ignoreDuplicates:true });
+    await loadTasks(); toast(t('saved'));
+  });
+  $('#tDone').onclick = async () => { await sb.from('tasks').update({ status:tk.status === 'open' ? 'done' : 'open' }).eq('id', id); await loadTasks(); viewTask(id); };
+  $('#tDel').onclick = async () => { if(!await confirmBox(t('del'), t('delTaskQ'), t('del'), true)) return; await sb.from('tasks').delete().eq('id', id); await loadTasks(); viewTasks(); };
+  // progress per route from its worker's tracks
+  const byWorker = {};
+  for(const r of routes || []){ const pts = await fetchPoints(r.id); (byWorker[r.worker_id] = byWorker[r.worker_id] || []).push(pts.map(p => [p.lat, p.lng])); }
+  for(const p of plans || []){
+    if(!p.worker_id || !byWorker[p.worker_id] || !p.path?.length) continue;
+    const tr = Planner.makeTracker(p.path); byWorker[p.worker_id].forEach(pts => tr.addTrack(pts));
+    tr.runs().forEach(run => L.polyline(run, { color:GREEN, weight:6, opacity:.95 }).addTo(doneLayer));
+    const pct = tr.pct(); const el = $('#pp' + p.idx); if(el) el.textContent = '· ' + t('done', { p:pct }); const bar = $('#pb' + p.idx); if(bar) bar.style.width = pct + '%';
+  }
+}
+
+/* ---------- DEMO (pitch) ---------- */
+const DEMO_PHONE = '+4900000000';
+const DEMO_WORKERS = [['Lena Becker (Demo)', 'Düsseldorf', 51.2277, 6.7735, 60], ['Murat Yılmaz (Demo)', 'Düsseldorf', 51.2277, 6.7735, 45], ['Anna Kowalski (Demo)', 'Neuss', 51.2042, 6.6879, 60], ['Jonas Weber (Demo)', 'Köln', 50.9375, 6.9603, 60], ['Sara Haddad (Demo)', 'Essen', 51.4556, 7.0116, 90], ['Tim Schulz (Demo)', 'Duisburg', 51.4344, 6.7623, 30]];
+const DEMO_TASK = { title:'Düsseldorf Bilk (Demo)', city:'Düsseldorf', lat:51.20655, lng:6.77655, minutes:10, notes:{ de:'800 Flyer der Pizzeria „Da Mario". Abholen am Eingang der Bilk Arcaden.', ru:'800 флаеров пиццерии «Da Mario». Забрать у входа в Bilk Arcaden.' } };
+async function demoRows(){ const { data, error } = await sb.from('workers').select('id,name,token').like('phone', DEMO_PHONE + '%').order('phone'); if(error) throw error; return data; }
+async function pushBatches(token, rid, pts, t0, step){
+  for(let i = 0; i < pts.length; i += 300){ const batch = pts.slice(i, i + 300).map((p, k) => ({ t:new Date(t0 + (i + k) * step).toISOString(), lat:+p[0].toFixed(6), lng:+p[1].toFixed(6), acc:5 })); const { error } = await sb.rpc('push_points', { p_token:token, p_route_id:rid, p_points:batch }); if(error) throw error; }
+}
+function demoSheet(){
+  const mo = modal(`<h2>${esc(t('demo'))}</h2>
+    <button class="btn primary" id="dC">${esc(t('demoCreate'))}</button>
+    <button class="btn ghost" id="dL">${esc(A.demo ? t('demoStopLive') : t('demoLive'))}</button>
+    <button class="btn ghost danger-text" id="dX">${esc(t('demoClean'))}</button>
+    <p class="small" id="dMsg">${esc(A.demoMsg || '')}</p><button class="btn ghost small" id="dClose">${esc(t('close'))}</button>`);
+  const msg = s => { A.demoMsg = s; const el = mo.querySelector('#dMsg'); if(el) el.textContent = s; };
+  mo.querySelector('#dClose').onclick = () => mo.remove();
+  mo.querySelector('#dC').onclick = async () => { mo.querySelector('#dC').disabled = true; try{ await demoCreate(msg); }catch(e){ msg(e.message); } mo.querySelector('#dC').disabled = false; };
+  mo.querySelector('#dX').onclick = async () => { if(A.demo) A.demo.stop = true; try{ await sb.from('workers').delete().like('phone', DEMO_PHONE + '%'); await sb.from('tasks').delete().like('title', '%(Demo)'); await loadAll(); msg(t('demoCleaned')); }catch(e){ msg(e.message); } };
+  mo.querySelector('#dL').onclick = async () => {
+    if(A.demo){ A.demo.stop = true; mo.remove(); return; }
+    mo.remove(); demoLive(msg).catch(e => { A.demo = null; toast(e.message); }); adminTab('map');
+  };
+}
+async function demoCreate(msg){
+  if((await demoRows()).length){ msg(t('demoExists')); return; }
+  msg(t('demoWorking'));
+  const { error:e1 } = await sb.from('workers').insert(DEMO_WORKERS.map((w, i) => ({ name:w[0], phone:DEMO_PHONE + (i + 1), cities:[{ name:w[1], lat:w[2], lng:w[3] }], zone_minutes:w[4], pin_hash:'demo', notes:'Demo' })));
+  if(e1) throw e1;
+  const rows = await demoRows();
+  const z = await isochrone(DEMO_TASK.lat, DEMO_TASK.lng, DEMO_TASK.minutes);
+  let g = null; try{ g = await Planner.loadZone(z.poly); }catch{}
+  const { data:tk, error } = await sb.from('tasks').insert({ title:DEMO_TASK.title, city_name:DEMO_TASK.city, start_lat:DEMO_TASK.lat, start_lng:DEMO_TASK.lng, walk_minutes:DEMO_TASK.minutes, zone_polygon:z.poly, work_date:new Date().toISOString().slice(0, 10), notes:DEMO_TASK.notes[I.lang] || DEMO_TASK.notes.de, created_by:A.user.id, street_m:g ? g.street_m : null }).select().single();
+  if(error) throw error;
+  if(g){ const routes = Planner.planRoutes(g, [DEMO_TASK.lat, DEMO_TASK.lng], 3); await savePlans(tk.id, routes.map((r, i) => ({ task_id:tk.id, idx:i, worker_id:rows[i].id, color:Planner.COLORS[i], path:r.path, length_m:r.length_m, street_m:r.street_m }))); }
+  else await sb.from('task_workers').insert([0, 1, 2].map(i => ({ task_id:tk.id, worker_id:rows[i].id })));
+  // yesterday: worker 1 already walked a third of route 1
+  try{
+    const { data:plans } = await sb.from('task_plans').select('*').eq('task_id', tk.id).order('idx');
+    const w = rows[0], path = plans && plans[0] ? Planner.densifyPath(plans[0].path, 5) : await loopPath(DEMO_TASK.lat, DEMO_TASK.lng);
+    const part = path.slice(0, Math.floor(path.length / 3)); const y = new Date(); y.setDate(y.getDate() - 1); y.setHours(10, 5, 0, 0);
+    const { data:rid } = await sb.rpc('start_route', { p_token:w.token, p_task_id:tk.id, p_started_at:y.toISOString() });
+    await pushBatches(w.token, rid, part, +y, 4000);
+    await sb.rpc('end_route', { p_token:w.token, p_route_id:rid, p_ended_at:new Date(+y + part.length * 4000).toISOString() });
+  }catch{}
+  await loadAll(); msg(t('demoCreated'));
+}
+async function demoLive(msg){
+  const rows = await demoRows();
+  const tk = A.tasks.find(x => x.title === DEMO_TASK.title);
+  if(rows.length < 3 || !tk){ toast(t('demoNeed')); return; }
+  const { data:plans } = await sb.from('task_plans').select('*').eq('task_id', tk.id).order('idx');
+  const walkers = [];
+  for(let i = 0; i < 3; i++){
+    const w = rows[i], p = (plans || []).find(x => x.worker_id === w.id);
+    let pts = p ? Planner.densifyPath(p.path, 5) : await loopPath(tk.start_lat, tk.start_lng, i * 2.1);
+    if(i === 0) pts = pts.slice(Math.floor(pts.length / 3));       // continues yesterday's work
+    pts = pts.slice(0, 900);                                         // ≈3 minutes
+    const { data:rid, error } = await sb.rpc('start_route', { p_token:w.token, p_task_id:tk.id, p_started_at:new Date().toISOString() }); if(error) throw error;
+    walkers.push({ w, rid, pts, i:0 });
+  }
+  A.demo = { stop:false };
+  const per = 10;
+  while(!A.demo.stop){
+    let left = 0;
+    for(const x of walkers){
+      if(x.i >= x.pts.length) continue;
+      const now = Date.now(), chunk = x.pts.slice(x.i, x.i + per).map((p, k) => ({ t:new Date(now - (per - 1 - k) * 200).toISOString(), lat:+p[0].toFixed(6), lng:+p[1].toFixed(6), acc:5 }));
+      x.i += per; left += Math.max(0, x.pts.length - x.i);
+      await sb.rpc('push_points', { p_token:x.w.token, p_route_id:x.rid, p_points:chunk });
+    }
+    const total = walkers.reduce((s, x) => s + x.pts.length, 0); msg(t('demoProgress', { p:Math.round(100 * (1 - left / total)) }));
+    if(!left) break;
+    await new Promise(r => setTimeout(r, 2000));
+  }
+  for(const x of walkers) await sb.rpc('end_route', { p_token:x.w.token, p_route_id:x.rid, p_ended_at:new Date().toISOString() });
+  A.demo = null; msg(t('demoDone'));
+}
+
+/* ---------- auth ---------- */
+export function viewAdminLogin(onBack){
+  plain(`<button class="link back-link" id="bk">← ${esc(t('back'))}</button>
+    <h1 class="hero">${esc(t('adminLogin'))}</h1>
+    <label class="f">${esc(t('email'))}</label><input class="in" id="aEmail" type="email" autocomplete="username">
+    <label class="f">${esc(t('password'))}</label><input class="in" id="aPass" type="password" autocomplete="current-password">
+    <button class="btn primary" id="aLogin" style="margin-top:18px">${esc(t('login'))}</button>
+    <button class="btn ghost" id="aSignup">${esc(t('adminSignup'))}</button><div class="err" id="aErr"></div>`);
+  $('#bk').onclick = onBack;
+  const creds = () => ({ email:$('#aEmail').value.trim(), password:$('#aPass').value });
+  $('#aLogin').onclick = async () => { $('#aErr').textContent = ''; const { error } = await sb.auth.signInWithPassword(creds()); if(error){ $('#aErr').textContent = error.message === 'Invalid login credentials' ? t('badLogin') : error.message; return; } const ok = await bootAdmin(); if(!ok) $('#aErr').textContent = t('adminNoAccess'); };
+  $('#aSignup').onclick = async () => {
+    $('#aErr').textContent = ''; const c = creds(); if(c.password.length < 8){ $('#aErr').textContent = t('pass8'); return; }
+    const { data, error } = await sb.auth.signUp({ ...c, options:{ emailRedirectTo:'https://urlose.github.io/flyermap/app/' } }); if(error){ $('#aErr').textContent = error.message; return; }
+    if(data.session){ const ok = await bootAdmin(); if(!ok) $('#aErr').textContent = t('adminNoAccess'); } else $('#aErr').textContent = t('adminConfirm');
+  };
+  $('#aPass').addEventListener('keydown', e => { if(e.key === 'Enter') $('#aLogin').click(); });
+}
+export async function bootAdmin(){
+  const { data:{ session } } = await sb.auth.getSession();
+  if(!session) return false;
+  const { data:ok, error } = await sb.rpc('become_admin');
+  if(error || !ok) return false;
+  A.user = session.user; UI.role = 'admin'; UI.onTab = adminTab;
+  await store.set('role', 'admin');
+  try{ await loadAll(); }catch{}
+  adminTab('tasks');
+  return true;
+}
