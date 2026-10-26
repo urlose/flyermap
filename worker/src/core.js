@@ -37,6 +37,7 @@ export function hav(a, b, c, d){ const R = 6371000, r = Math.PI / 180, x = Math.
 const dec = () => I.lang === 'ru' ? ',' : ',';
 export const fmtDist = m => m >= 1000 ? (m/1000).toFixed(1).replace('.', dec()) + ' ' + t('km') : Math.round(m) + ' ' + t('m');
 export const fmtH = m => (m / 1000 / 3).toFixed(1).replace('.', dec());
+export const fmtN = n => Math.round(n).toLocaleString(I.lang === 'ru' ? 'ru-RU' : 'de-DE');
 export const fmtTime = ms => { const s = Math.max(0, Math.floor(ms/1000)); const h = Math.floor(s/3600), m = Math.floor(s%3600/60), x = s%60; return (h ? h + ':' : '') + String(m).padStart(h ? 2 : 1, '0') + ':' + String(x).padStart(2, '0'); };
 export const loc = () => I.lang === 'ru' ? 'ru-RU' : 'de-DE';
 export function fmtDay(d){
@@ -62,7 +63,7 @@ export async function searchPlaces(q, citiesOnly, near){
     const p = f.properties, street = p.street ? p.street + (p.housenumber ? ' ' + p.housenumber : '') : '';
     const title = p.name || street || p.city || '';
     const sub = [p.name && street ? street : '', p.district || p.locality, p.city && p.city !== title ? p.city : '', !citiesOnly ? '' : p.state].filter(Boolean).join(', ');
-    return { name:title, city:p.city || (p.osm_key === 'place' ? p.name : '') || '', sub, lat:+f.geometry.coordinates[1].toFixed(6), lng:+f.geometry.coordinates[0].toFixed(6) };
+    return { name:title, city:p.city || (p.osm_key === 'place' ? p.name : '') || '', district:p.district || p.locality || (p.osm_value === 'suburb' || p.osm_value === 'quarter' ? p.name : '') || '', sub, lat:+f.geometry.coordinates[1].toFixed(6), lng:+f.geometry.coordinates[0].toFixed(6) };
   });
 }
 

@@ -1,4 +1,5 @@
 import { t, I } from './i18n.js';
+import './i18n2.js';
 import { store, $, esc, PRIVACY_URL } from './core.js';
 import { UI, plain, langSwitch } from './ui.js';
 import { W, bootWorker, viewWorkerStart, workerTab } from './worker.js';

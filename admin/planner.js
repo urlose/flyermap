@@ -11,7 +11,7 @@
   const R = 6371000, RAD = Math.PI / 180;
   const HIGHWAYS = 'primary|secondary|tertiary|unclassified|residential|living_street|pedestrian|road';
   const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
-  const WORKER_KM_PER_SHIFT = 8;   // street km one person covers in a shift (both sides, mailboxes)
+  const WORK_HOURS = 7;            // 8 h shift minus 1 h unpaid break
   const WALK_KMH = 3;              // effective speed while distributing
 
   function dist(a, b){
@@ -29,15 +29,13 @@
   function lineLen(c){ let s = 0; for(let i = 1; i < c.length; i++) s += dist(c[i-1], c[i]); return s; }
 
   /* ---------- 1. Overpass ---------- */
-  async function fetchStreets(poly, fetchImpl){
+  async function overpass(q, fetchImpl, timeoutMs){
     const f = fetchImpl || fetch;
-    const ps = poly.map(p => p[0].toFixed(6) + ' ' + p[1].toFixed(6)).join(' ');
-    const q = `[out:json][timeout:90];way["highway"~"^(${HIGHWAYS})$"]["access"!~"^(private|no)$"](poly:"${ps}");out body;>;out skel qt;`;
     let lastErr;
     for(const url of OVERPASS){
       try{
         const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-        const tm = ctrl ? setTimeout(() => ctrl.abort(), 60000) : null;
+        const tm = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs || 60000) : null;
         const r = await f(url, { method:'POST', headers:{ 'Content-Type':'application/x-www-form-urlencoded' }, body:'data=' + encodeURIComponent(q), signal: ctrl && ctrl.signal });
         if(tm) clearTimeout(tm);
         if(!r.ok) throw new Error('overpass ' + r.status);
@@ -45,6 +43,17 @@
       }catch(e){ lastErr = e; }
     }
     throw lastErr || new Error('overpass');
+  }
+  const HW_FILTER = `["highway"~"^(${HIGHWAYS})$"]["access"!~"^(private|no)$"]`;
+  async function fetchStreets(poly, fetchImpl){
+    const ps = poly.map(p => p[0].toFixed(6) + ' ' + p[1].toFixed(6)).join(' ');
+    return overpass(`[out:json][timeout:90];way${HW_FILTER}(poly:"${ps}");out body;>;out skel qt;`, fetchImpl);
+  }
+  async function fetchStreetsAround(c, r, fetchImpl){
+    return overpass(`[out:json][timeout:120];way${HW_FILTER}(around:${Math.round(r)},${c[0].toFixed(6)},${c[1].toFixed(6)});out body;>;out skel qt;`, fetchImpl, 90000);
+  }
+  async function fetchBuildings(c, r, fetchImpl){
+    return overpass(`[out:json][timeout:120];way["building"](around:${Math.round(r)},${c[0].toFixed(6)},${c[1].toFixed(6)});out geom tags;`, fetchImpl, 90000);
   }
 
   /* ---------- 2. graph ---------- */
@@ -142,11 +151,12 @@
   function pathFrom(tree, target){ const out = []; let x = target; while(tree.pe[x] !== -1){ out.push(tree.pe[x]); x = tree.pv[x]; } return out.reverse(); }
 
   /* ---------- 3. split ---------- */
-  function partition(g, start, n){
+  function partition(g, start, n, ids, weight){
     const cosLat = Math.cos(start[0] * RAD);
-    const items = g.edges.map((e, i) => {
-      const m = e.coords[Math.floor(e.coords.length / 2)];
-      return { i, len:e.len, ang:Math.atan2(m[0] - start[0], (m[1] - start[1]) * cosLat) };
+    const list = ids || g.edges.map((e, i) => i), wf = weight || (e => e.len);
+    const items = list.map(i => {
+      const e = g.edges[i], m = e.coords[Math.floor(e.coords.length / 2)];
+      return { i, len:wf(e), ang:Math.atan2(m[0] - start[0], (m[1] - start[1]) * cosLat) };
     }).sort((x, y) => x.ang - y.ang);
     if(n <= 1 || !items.length) return [items.map(x => x.i)];
     // rotate so the first cut falls into the widest empty angle
@@ -288,8 +298,117 @@
     return { samples, mark, markLine, addTrack, runs, nextIndex, pct: () => samples.length ? Math.round(100 * count / samples.length) : 0 };
   }
 
-  function suggestWorkers(streetMeters){ return Math.max(1, Math.round(streetMeters * 1.25 / 1000 / WORKER_KM_PER_SHIFT)); }
+  /* ---------- mailboxes (estimated from OSM buildings) ---------- */
+  const NO_MAILBOX = /^(garage|garages|shed|roof|carport|greenhouse|hut|cabin|barn|farm_auxiliary|stable|cowshed|sty|ruins|construction|service|parking|hangar|kiosk|toilets|bunker|digester|silo|tank|transformer_tower|water_tower|storage_tank|bridge|boathouse|container|allotment_house|gatehouse|church|chapel|mosque|synagogue|temple|cathedral|train_station|transportation|grandstand|stadium|pavilion|tower|industrial|warehouse|manufacture|power|substation)$/;
+  const HOUSE = /^(house|detached|semidetached_house|terrace|bungalow|villa|farm|cottage|houseboat|static_caravan)$/;
+  const FLATS = /^(apartments|residential|dormitory)$/;
+  function polyArea(geom){
+    if(!geom || geom.length < 3) return 0;
+    const lat0 = geom[0].lat, kx = Math.cos(lat0 * RAD) * R * RAD, ky = R * RAD;
+    let a = 0;
+    for(let i = 0; i < geom.length; i++){ const p = geom[i], q = geom[(i + 1) % geom.length]; a += (p.lon * kx) * (q.lat * ky) - (q.lon * kx) * (p.lat * ky); }
+    return Math.abs(a) / 2;
+  }
+  function estimateMailboxes(tags, area){
+    tags = tags || {};
+    if(tags.abandoned || tags.disused || tags['disused:building']) return 0;
+    const b = String(tags.building || 'yes');
+    const flats = parseInt(tags['building:flats'] || tags['addr:flats'], 10);
+    if(flats > 0) return Math.min(flats, 250);
+    if(NO_MAILBOX.test(b)) return 0;
+    const hasNr = !!tags['addr:housenumber'];
+    if(HOUSE.test(b)) return area < 25 ? 0 : 1;
+    const lv = parseFloat(tags['building:levels']);
+    const levels = lv > 0 ? lv : (area < 120 ? 2 : 4);
+    if(FLATS.test(b)) return Math.max(2, Math.min(250, Math.round(area * levels * 0.75 / 80)));
+    if(b === 'yes'){
+      if(area < 30 || (!hasNr && area < 60)) return 0;
+      return Math.max(1, Math.min(250, Math.round(area * levels * 0.75 / 80)));
+    }
+    return hasNr ? 1 : 0;   // commercial, retail, office, school, hotel …
+  }
+  function parseBuildings(osm){
+    const out = [];
+    for(const w of osm.elements || []){
+      if(w.type !== 'way' || !w.geometry) continue;
+      const area = polyArea(w.geometry), n = estimateMailboxes(w.tags, area);
+      if(!n) continue;
+      let la = 0, lo = 0; for(const p of w.geometry){ la += p.lat; lo += p.lon; }
+      out.push({ lat:la / w.geometry.length, lng:lo / w.geometry.length, n });
+    }
+    return out;
+  }
+  // snap every building to its nearest street edge (≤ maxSnap m); edge.mb = mailboxes, edge.boxes = [[lat,lng,n]]
+  function attachBuildings(g, buildings, maxSnap){
+    maxSnap = maxSnap || 70;
+    const cell = 80, lat0 = g.pts.length ? g.pts[0][0] : 51, kx = Math.cos(lat0 * RAD) * R * RAD, ky = R * RAD;
+    const key = (x, y) => Math.floor(x / cell) + ':' + Math.floor(y / cell), grid = new Map();
+    const add = (k, v) => { let l = grid.get(k); if(!l) grid.set(k, l = []); l.push(v); };
+    g.edges.forEach((e, ei) => {
+      e.mb = 0; e.boxes = [];
+      for(let i = 1; i < e.coords.length; i++){
+        const ax = e.coords[i-1][1] * kx, ay = e.coords[i-1][0] * ky, bx = e.coords[i][1] * kx, by = e.coords[i][0] * ky;
+        const L = Math.hypot(bx - ax, by - ay), steps = Math.max(1, Math.ceil(L / 30)), seen = new Set();
+        for(let s = 0; s <= steps; s++){ const x = ax + (bx - ax) * s / steps, y = ay + (by - ay) * s / steps; for(let dx = -1; dx <= 1; dx++) for(let dy = -1; dy <= 1; dy++){ const k = key(x + dx * cell, y + dy * cell); if(!seen.has(k)){ seen.add(k); add(k, [ei, ax, ay, bx, by]); } } }
+      }
+    });
+    let used = 0, dropped = 0;
+    for(const b of buildings){
+      const x = b.lng * kx, y = b.lat * ky, cand = grid.get(key(x, y));
+      let best = -1, bd = Infinity;
+      if(cand) for(const [ei, ax, ay, bx, by] of cand){
+        const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+        let t = l2 ? ((x - ax) * dx + (y - ay) * dy) / l2 : 0; t = Math.max(0, Math.min(1, t));
+        const d = Math.hypot(x - (ax + t * dx), y - (ay + t * dy));
+        if(d < bd){ bd = d; best = ei; }
+      }
+      if(best < 0 || bd > maxSnap){ dropped += b.n; continue; }
+      const e = g.edges[best]; e.mb += b.n; e.boxes.push([+b.lat.toFixed(6), +b.lng.toFixed(6), b.n]); used += b.n;
+    }
+    g.mailboxes = used; g.dropped_mb = dropped;
+    return g;
+  }
+  // grow the work area from the start (walking distance) until it holds `flyers` mailboxes
+  function selectForFlyers(g, start, flyers){
+    const root = nearestNode(g, start, g.pts.map((p, i) => i).filter(i => g.adj[i].length));
+    const tree = sssp(g, root), items = [];
+    g.edges.forEach((e, i) => { if(e.mb > 0) items.push({ i, k:(tree.d[e.a] + tree.d[e.b]) / 2 }); });
+    items.sort((x, y) => x.k - y.k);
+    let sum = 0; const ids = [];
+    for(const it of items){ if(sum >= flyers) break; ids.push(it.i); sum += g.edges[it.i].mb; }
+    return { ids, mailboxes:sum, reach_m:Math.round(ids.length ? items[ids.length - 1].k : 0) };
+  }
+  function hull(points){
+    const p = points.map(q => [q[1], q[0]]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    if(p.length < 3) return points.slice();
+    const cr = (o, a, b) => (a[0]-o[0]) * (b[1]-o[1]) - (a[1]-o[1]) * (b[0]-o[0]);
+    const lo = [], up = [];
+    for(const q of p){ while(lo.length >= 2 && cr(lo[lo.length-2], lo[lo.length-1], q) <= 0) lo.pop(); lo.push(q); }
+    for(let i = p.length - 1; i >= 0; i--){ const q = p[i]; while(up.length >= 2 && cr(up[up.length-2], up[up.length-1], q) <= 0) up.pop(); up.push(q); }
+    return lo.slice(0, -1).concat(up.slice(0, -1)).map(q => [q[1], q[0]]);
+  }
+  /* counts estimated delivered flyers: a mailbox counts when the walker passed within `tol` metres */
+  function makeBoxCounter(boxes, tol){
+    tol = tol || 30;
+    const done = new Uint8Array(boxes.length); let count = 0;
+    const total = boxes.reduce((s, b) => s + b[2], 0);
+    function visit(lat, lng){
+      for(let i = 0; i < boxes.length; i++){ if(done[i]) continue; if(dist([lat, lng], boxes[i]) <= tol){ done[i] = 1; count += boxes[i][2]; } }
+      return count;
+    }
+    return { visit, visitAll(pts){ for(const p of pts) visit(p[0], p[1]); return count; }, count:() => count, total };
+  }
+
+  function suggestWorkers(routeMeters, hoursPerDay, days){ return Math.max(1, Math.ceil(routeMeters / 1000 / WALK_KMH / ((hoursPerDay || WORK_HOURS) * (days || 1)))); }
   function hours(meters){ return meters / 1000 / WALK_KMH; }
+  /* does the plan fit the available time? */
+  function capacity(routes, flyers, opt){
+    const hpd = (opt && opt.hoursPerDay) || WORK_HOURS, days = (opt && opt.days) || 2, limit = hpd * days;
+    const totalH = routes.reduce((s, r) => s + hours(r.length_m), 0), over = routes.filter(r => hours(r.length_m) > limit).map(r => r.idx);
+    const cap = routes.length * limit, ok = totalH <= cap && !over.length;
+    const slowest = routes.reduce((m, r) => Math.max(m, hours(r.length_m)), 0);
+    return { ok, limit, totalH, slowest, over, suggestedFlyers: ok ? flyers : Math.max(0, Math.floor(flyers * Math.min(1, limit / (slowest || limit)) / 50) * 50) };
+  }
 
   /* ---------- orchestration ---------- */
   async function loadZone(poly, fetchImpl){
@@ -298,10 +417,36 @@
     g.street_m = Math.round(g.edges.reduce((s, e) => s + e.len, 0));
     return g;
   }
+  // main entry: streets + buildings around the start; grows the radius until enough mailboxes exist
+  async function loadForFlyers(start, flyers, opt){
+    opt = opt || {}; let r = opt.radius || 1500, last = null;
+    for(let round = 0; round < 5; round++){
+      const [osm, bld] = await Promise.all([fetchStreetsAround(start, r, opt.fetchImpl), fetchBuildings(start, r, opt.fetchImpl)]);
+      const g = largestComponent(buildGraph(osm, null));
+      attachBuildings(g, parseBuildings(bld));
+      g.radius = r; g.street_m = Math.round(g.edges.reduce((s, e) => s + e.len, 0)); last = g;
+      if(g.mailboxes >= flyers * 1.35 || r >= 7000) break;
+      r = Math.round(r * 1.6);
+    }
+    return last;
+  }
+  function planFlyers(g, start, flyers, n){
+    const sel = selectForFlyers(g, start, flyers);
+    const total = sel.ids.reduce((s, i) => s + g.edges[i].len, 0), mbTotal = sel.mailboxes || 1;
+    const w = e => 0.5 * e.len / (total || 1) + 0.5 * e.mb / mbTotal;
+    const parts = partition(g, start, n || 1, sel.ids, w);
+    const routes = parts.map((part, k) => {
+      const r = planPart(g, part, start);
+      const boxes = []; let mb = 0; for(const i of part){ mb += g.edges[i].mb; for(const b of g.edges[i].boxes) boxes.push(b); }
+      return { idx:k, ...r, mailboxes:mb, boxes, minutes:Math.round(hours(r.length_m) * 60) };
+    });
+    const pts = []; for(const i of sel.ids) for(const c of g.edges[i].coords) pts.push(c);
+    return { routes, mailboxes:sel.mailboxes, reach_m:sel.reach_m, zone:hull(pts), capacity:capacity(routes, flyers) };
+  }
   function planRoutes(g, start, n){
     return partition(g, start, n).map((part, k) => ({ idx:k, ...planPart(g, part, start) }));
   }
 
-  const api = { COLORS, densifyPath, makeTracker, fetchStreets, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, dist, inPoly, lineLen };
+  const api = { COLORS, densifyPath, makeTracker, makeBoxCounter, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH };
   if(typeof module !== 'undefined' && module.exports) module.exports = api; else root.Planner = api;
 })(typeof window !== 'undefined' ? window : globalThis);

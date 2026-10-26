@@ -133,9 +133,9 @@ function viewTasks(){
   document.querySelectorAll('.task-card').forEach(b => b.onclick = () => viewTask(b.dataset.id));
 }
 
-/* Routenerstellung: full map + search on top, sheet with zone/workers/routes */
+/* Routenerstellung: full map + search on top, sheet with flyers / workers / routes */
 function viewCreate(){
-  const d = { start:null, place:null, minutes:15, n:1, poly:null, g:null, routes:[], assign:{}, loading:false };
+  const d = { start:null, place:null, flyers:5000, n:1, nAuto:true, hours:7, quota:1500, days:2, g:null, plan:null, assign:{}, err:null, token:0 };
   const sf = searchField('cSearch', t('searchAddr'), c => { d.place = c; setStart(c.lat, c.lng); }, { near:() => d.start ? [d.start.lat, d.start.lng] : null });
   shell('tasks', `<div id="fullMap" class="fullmap"></div>
     <div class="map-top"><button class="icon-btn" id="cBack" aria-label="${esc(t('back'))}">${ICONS.back}</button><div class="grow">${sf.html}</div></div>
@@ -145,65 +145,105 @@ function viewCreate(){
   const m = makeMap($('#fullMap'), null, 13);
   const zoneLayer = L.layerGroup().addTo(m), planLayer = L.layerGroup().addTo(m);
   m.on('click', e => { d.place = null; setStart(e.latlng.lat, e.latlng.lng); });
+  const sheet = html => { $('#cSheet').innerHTML = html; };
+  const busy = txt => sheet(`<p class="muted small" style="margin:0">${esc(txt)}</p>`);
+  const startArr = () => [d.start.lat, d.start.lng];
   async function setStart(lat, lng){
-    d.start = { lat, lng }; zoneLayer.clearLayers(); planLayer.clearLayers();
-    L.marker([lat, lng], { icon:dot('pin-start', 26) }).addTo(zoneLayer); m.setView([lat, lng], 15, { animate:false });
-    sheet(`<p class="muted small" style="margin:0">${esc(t('buildingZone'))}</p>`);
-    const r = await isochrone(lat, lng, d.minutes); d.poly = r.poly;
-    zoneLayer.clearLayers(); const z = L.polygon(d.poly, { color:css('--brand'), weight:2, fillOpacity:.08, interactive:false }).addTo(zoneLayer);
-    L.marker([lat, lng], { icon:dot('pin-start', 26) }).addTo(zoneLayer); m.fitBounds(z.getBounds(), { paddingTopLeft:[24, 80], paddingBottomRight:[24, Math.round(innerHeight * .5)], maxZoom:17, animate:false });
-    sheet(`<p class="muted small" style="margin:0">${esc(t('streetsLoading'))}</p>`);
-    try{ d.g = await Planner.loadZone(d.poly); if(!d.g.edges.length) throw new Error('0'); d.n = Planner.suggestWorkers(d.g.street_m); d.err = null; }
-    catch(e){ d.g = null; d.err = e.message; }
-    plan(); renderSheet();
+    const tok = ++d.token; d.start = { lat, lng }; d.g = null; d.plan = null; d.err = null; d.assign = {};
+    zoneLayer.clearLayers(); planLayer.clearLayers();
+    L.marker([lat, lng], { icon:dot('pin-start', 26) }).addTo(zoneLayer); m.setView([lat, lng], 14, { animate:false });
+    busy(t('loadingArea'));
+    try{ d.g = await Planner.loadForFlyers([lat, lng], d.flyers); }catch(e){ d.err = e.message || 'net'; }
+    if(tok !== d.token) return;
+    recompute();
   }
-  function plan(){
-    planLayer.clearLayers(); d.routes = [];
-    if(!d.g) return;
-    d.routes = Planner.planRoutes(d.g, [d.start.lat, d.start.lng], d.n);
-    d.routes.forEach((r, i) => { if(r.path.length > 1) L.polyline(r.path, { color:Planner.COLORS[i % 10], weight:4, opacity:.85 }).addTo(planLayer); });
+  async function recompute(){
+    if(!d.start) return;
+    if(!d.g){ renderSheet(); return; }
+    const tok = ++d.token;
+    if(d.g.mailboxes < d.flyers * 1.05 && d.g.radius < 7000){
+      busy(t('loadingMore'));
+      try{ d.g = await Planner.loadForFlyers(startArr(), d.flyers, { radius:Math.round(d.g.radius * 1.6) }); }catch{}
+      if(tok !== d.token) return;
+    }
+    busy(t('calculating')); await new Promise(r => setTimeout(r, 30));
+    if(d.nAuto){
+      const sel = Planner.selectForFlyers(d.g, startArr(), d.flyers);
+      d.n = Math.min(20, Planner.suggestWorkers(sel.ids.reduce((s, i) => s + d.g.edges[i].len, 0) * 1.35, d.hours, d.days));
+    }
+    d.plan = Planner.planFlyers(d.g, startArr(), d.flyers, d.n);
+    draw(); renderSheet();
   }
-  function sheet(html){ $('#cSheet').innerHTML = html; }
+  function draw(){
+    zoneLayer.clearLayers(); planLayer.clearLayers();
+    if(d.plan.zone.length > 2) var z = L.polygon(d.plan.zone, { color:css('--brand'), weight:2, fillOpacity:.06, interactive:false }).addTo(zoneLayer);
+    L.marker(startArr(), { icon:dot('pin-start', 26) }).addTo(zoneLayer);
+    d.plan.routes.forEach((r, i) => { if(r.path.length > 1) L.polyline(r.path, { color:Planner.COLORS[i % 10], weight:4, opacity:.85 }).addTo(planLayer); });
+    if(z) m.fitBounds(z.getBounds(), { paddingTopLeft:[24, 80], paddingBottomRight:[24, Math.round(innerHeight * .5)], maxZoom:17, animate:false });
+  }
+  const num = (id, def) => { const v = parseFloat(($(id) || {}).value); return isFinite(v) ? v : def; };
+  function keep(){ return { title:$('#cTitle') ? $('#cTitle').value : '', date:$('#cDate') ? $('#cDate').value : '', notes:$('#cNotes') ? $('#cNotes').value : '', quota:$('#cQuota') ? $('#cQuota').value : d.quota }; }
+  function restore(k){ if($('#cTitle')) $('#cTitle').value = k.title; if($('#cDate')) $('#cDate').value = k.date; if($('#cNotes')) $('#cNotes').value = k.notes; if($('#cQuota')) $('#cQuota').value = k.quota; }
+  let saved = { title:'', date:'', notes:'', quota:1500 };
   function renderSheet(){
-    const title = d.place ? d.place.name : '';
+    const p = d.plan, title = saved.title || (d.place ? d.place.name : '');
+    const cap = p ? Planner.capacity(p.routes, d.flyers, { hoursPerDay:d.hours, days:d.days }) : null;
+    const km = p ? fmtDist(p.routes.reduce((s, r) => s + r.length_m, 0)) : '';
     sheet(`<button class="sheet-grip" id="grip" aria-label="Panel"></button>
       <label class="f">${esc(t('title'))}</label><input class="in" id="cTitle" value="${esc(title)}">
       <div class="steppers">
-        <div><label class="f">${esc(t('walkMin'))}</label><div class="stepper"><button data-s="min:-5">−</button><b id="vMin">${d.minutes}</b><button data-s="min:5">+</button></div></div>
-        <div><label class="f">${esc(t('workersCount'))}</label><div class="stepper"><button data-s="n:-1" ${d.g ? '' : 'disabled'}>−</button><b id="vN">${d.g ? d.n : '—'}</b><button data-s="n:1" ${d.g ? '' : 'disabled'}>+</button></div></div>
+        <div><label class="f">${esc(t('flyersCount'))}</label><div class="stepper"><button data-s="f:-500">−</button><input id="cFly" type="number" inputmode="numeric" min="100" step="100" value="${d.flyers}"><button data-s="f:500">+</button></div></div>
+        <div><label class="f">${esc(t('workersCount'))}</label><div class="stepper"><button data-s="n:-1" ${p ? '' : 'disabled'}>−</button><b id="vN">${p ? d.n : '—'}</b><button data-s="n:1" ${p ? '' : 'disabled'}>+</button></div></div>
       </div>
-      ${d.g ? `<p class="small muted">${esc(t('planSummary', { km:fmtDist(d.g.street_m), n:Planner.suggestWorkers(d.g.street_m) }))}</p>` : `<p class="small err">${esc(t('streetsFail', { e:d.err || '' }))}</p>`}
-      ${d.routes.map((r, i) => `<div class="route-row"><span class="swatch" style="background:${Planner.COLORS[i % 10]}"></span>
-        <div class="grow"><b>${esc(t('planRoute', { n:i + 1 }))}</b><span>${esc(t('routeInfo', { km:fmtDist(r.length_m), h:fmtH(r.length_m) }))}</span>
-        <select class="in small" data-r="${i}">${workerOptions(d.start.lat, d.start.lng, d.assign[i])}</select></div></div>`).join('')}
-      <div class="steppers"><div><label class="f">${esc(t('date'))}</label><input class="in" type="date" id="cDate"></div></div>
+      ${p ? `<p class="small muted" style="margin:8px 0 0">${esc(t('planSum', { mb:fmtN(p.mailboxes), km, h:fmtN(p.routes.reduce((s, r) => s + r.minutes, 0) / 60) }))}</p>
+        ${p.mailboxes < d.flyers * 0.95 ? `<p class="small err">${esc(t('areaSmall', { mb:fmtN(p.mailboxes) }))}</p>` : ''}
+        <div class="${cap.ok ? 'hint' : 'warnbox'}">${cap.ok ? esc(t('fitsOk', { d:d.days })) : `${esc(t('tooBig', { h:cap.slowest.toFixed(1).replace('.', ','), lim:cap.limit, d:d.days }))} <button class="link" id="cReduce">${esc(t('reduceTo', { f:fmtN(cap.suggestedFlyers) }))}</button> ${esc(t('moreWorkers'))}`}</div>`
+        : `<p class="small err">${esc(t('streetsFail', { e:d.err || '' }))}</p>`}
+      ${p ? p.routes.map((r, i) => `<div class="route-row"><span class="swatch" style="background:${Planner.COLORS[i % 10]}"></span>
+        <div class="grow"><b>${esc(t('planRoute', { n:i + 1 }))} <span class="muted">· ${esc(t('daysN', { n:Math.max(1, Math.ceil(r.minutes / 60 / d.hours)) }))}</span></b><span>${esc(t('routeLine', { km:fmtDist(r.length_m), h:fmtH(r.length_m), mb:fmtN(r.mailboxes) }))}</span>
+        <select class="in small" data-r="${i}">${workerOptions(d.start.lat, d.start.lng, d.assign[i])}</select></div></div>`).join('') : ''}
+      <div class="steppers"><div><label class="f">${esc(t('startDate'))}</label><input class="in" type="date" id="cDate"></div><div><label class="f">${esc(t('hoursDay'))}</label><input class="in" type="number" id="cHours" min="1" max="12" step="0.5" value="${d.hours}"></div></div>
+      <label class="f">${esc(t('quota'))}</label><input class="in" type="number" id="cQuota" min="200" step="100" value="${esc(saved.quota)}">
       <label class="f">${esc(t('note'))}</label><textarea class="in" id="cNotes" placeholder="${esc(t('notesPh'))}"></textarea>
-      <button class="btn primary" id="cSave" style="margin-top:12px">${esc(t('saveTask'))}</button><div class="err" id="cErr"></div>`);
+      <button class="btn primary" id="cSave" style="margin-top:12px" ${p ? '' : 'disabled'}>${esc(t('saveTask'))}</button><div class="err" id="cErr"></div>`);
+    restore(saved);
     $('#grip').onclick = () => $('#cSheet').classList.toggle('tall');
     document.querySelectorAll('[data-s]').forEach(b => b.onclick = () => {
-      const [k, v] = b.dataset.s.split(':'); const keep = { title:$('#cTitle').value, date:$('#cDate').value, notes:$('#cNotes').value };
-      if(k === 'min'){ d.minutes = Math.max(5, Math.min(45, d.minutes + +v)); d.place = d.place || null; setStart(d.start.lat, d.start.lng).then(() => restore(keep)); return; }
-      d.n = Math.max(1, Math.min(20, d.n + +v)); plan(); renderSheet(); restore(keep);
+      saved = keep(); const [k, v] = b.dataset.s.split(':');
+      if(k === 'f'){ d.flyers = Math.max(100, num('#cFly', d.flyers) + +v); d.nAuto = true; return recompute(); }
+      d.n = Math.max(1, Math.min(20, d.n + +v)); d.nAuto = false; d.assign = {}; recompute();
     });
+    $('#cFly').onchange = () => { saved = keep(); d.flyers = Math.max(100, Math.round(num('#cFly', d.flyers))); d.nAuto = true; recompute(); };
+    $('#cHours').onchange = () => { saved = keep(); d.hours = Math.max(1, Math.min(12, num('#cHours', 7))); if(d.nAuto) recompute(); else renderSheet(); };
+    const red = $('#cReduce'); if(red) red.onclick = () => { saved = keep(); d.flyers = Math.max(100, cap.suggestedFlyers); d.nAuto = false; recompute(); };
     document.querySelectorAll('[data-r]').forEach(s => s.onchange = () => { d.assign[+s.dataset.r] = s.value || null; });
     $('#cSave').onclick = save;
   }
-  function restore(k){ if($('#cTitle')) $('#cTitle').value = k.title; if($('#cDate')) $('#cDate').value = k.date; if($('#cNotes')) $('#cNotes').value = k.notes; }
   async function save(){
     const title = $('#cTitle').value.trim(); if(!title){ $('#cErr').textContent = t('needTitle'); return; }
     $('#cSave').disabled = true;
     try{
-      const { data:tk, error } = await sb.from('tasks').insert({ title, city_name:(d.place && d.place.city) || null, start_lat:d.start.lat, start_lng:d.start.lng, walk_minutes:d.minutes, zone_polygon:d.poly, work_date:$('#cDate').value || null, notes:$('#cNotes').value.trim() || null, created_by:A.user.id, street_m:d.g ? d.g.street_m : null }).select().single();
+      const pl = d.plan, quota = Math.max(200, Math.round(num('#cQuota', 1500))), date = $('#cDate').value || null;
+      const { data:tk, error } = await sb.from('tasks').insert({ title, city_name:(d.place && d.place.city) || null, district:(d.place && d.place.district) || null, start_lat:d.start.lat, start_lng:d.start.lng,
+        walk_minutes:15, zone_polygon:pl.zone, work_date:date, notes:$('#cNotes').value.trim() || null, created_by:A.user.id, street_m:d.g ? d.g.street_m : null,
+        flyers:d.flyers, quota_m30:quota, work_days:d.days, work_hours:d.hours, est_mailboxes:pl.mailboxes, route_m:pl.routes.reduce((s, r) => s + r.length_m, 0) }).select().single();
       if(error) throw error;
-      await savePlans(tk.id, d.routes.map((r, i) => ({ task_id:tk.id, idx:i, worker_id:d.assign[i] || null, color:Planner.COLORS[i % 10], path:r.path, length_m:r.length_m, street_m:r.street_m })));
+      await savePlans(tk, pl.routes.map((r, i) => ({ task_id:tk.id, idx:i, worker_id:d.assign[i] || null, color:Planner.COLORS[i % 10], path:r.path, length_m:r.length_m, street_m:r.street_m, mailboxes:r.mailboxes, boxes:r.boxes, minutes:r.minutes })));
       await loadTasks(); viewTask(tk.id);
     }catch(e){ $('#cErr').textContent = e.message; $('#cSave').disabled = false; }
   }
 }
-async function savePlans(taskId, rows){
-  if(rows.length){ const { error } = await sb.from('task_plans').insert(rows); if(error) throw error; }
+// saves plans, links workers and sends each assigned worker a notification
+async function savePlans(tk, rows){
+  let ins = [];
+  if(rows.length){ const r = await sb.from('task_plans').insert(rows).select(); if(r.error) throw r.error; ins = r.data || []; }
   const ws = [...new Set(rows.map(r => r.worker_id).filter(Boolean))];
-  if(ws.length) await sb.from('task_workers').upsert(ws.map(w => ({ task_id:taskId, worker_id:w })), { onConflict:'task_id,worker_id', ignoreDuplicates:true });
+  if(ws.length) await sb.from('task_workers').upsert(ws.map(w => ({ task_id:tk.id, worker_id:w })), { onConflict:'task_id,worker_id', ignoreDuplicates:true });
+  for(const p of ins) if(p.worker_id) await notifyAssigned(tk, p);
+}
+async function notifyAssigned(tk, p){
+  const date = tk.work_date ? fmtDay(tk.work_date) + ' · ' : '';
+  await sb.from('notifications').insert({ worker_id:p.worker_id, kind:'assigned', task_id:tk.id, plan_id:p.id, title:t('newTaskTitle', { title:tk.title }), body:t('newTaskBody', { date, mb:fmtN(p.mailboxes || 0), km:fmtDist(p.length_m || 0) }) });
 }
 
 /* task detail (sketch: info + map + routes) */
@@ -291,7 +331,7 @@ async function demoCreate(msg){
   let g = null; try{ g = await Planner.loadZone(z.poly); }catch{}
   const { data:tk, error } = await sb.from('tasks').insert({ title:DEMO_TASK.title, city_name:DEMO_TASK.city, start_lat:DEMO_TASK.lat, start_lng:DEMO_TASK.lng, walk_minutes:DEMO_TASK.minutes, zone_polygon:z.poly, work_date:new Date().toISOString().slice(0, 10), notes:DEMO_TASK.notes[I.lang] || DEMO_TASK.notes.de, created_by:A.user.id, street_m:g ? g.street_m : null }).select().single();
   if(error) throw error;
-  if(g){ const routes = Planner.planRoutes(g, [DEMO_TASK.lat, DEMO_TASK.lng], 3); await savePlans(tk.id, routes.map((r, i) => ({ task_id:tk.id, idx:i, worker_id:rows[i].id, color:Planner.COLORS[i], path:r.path, length_m:r.length_m, street_m:r.street_m }))); }
+  if(g){ const routes = Planner.planRoutes(g, [DEMO_TASK.lat, DEMO_TASK.lng], 3); await savePlans(tk, routes.map((r, i) => ({ task_id:tk.id, idx:i, worker_id:rows[i].id, color:Planner.COLORS[i], path:r.path, length_m:r.length_m, street_m:r.street_m }))); }
   else await sb.from('task_workers').insert([0, 1, 2].map(i => ({ task_id:tk.id, worker_id:rows[i].id })));
   // yesterday: worker 1 already walked a third of route 1
   try{
