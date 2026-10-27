@@ -5,7 +5,7 @@ name: TestFlight
 on:
   push:
     branches: [main]
-    paths: ['worker/**', '.github/workflows/testflight.yml']
+    paths: ['worker/**', 'admin/planner.js', '.github/workflows/testflight.yml']
   schedule:
     - cron: '17 6 1 * *'   # 1-го числа каждого месяца — свежая сборка, чтобы версия в TestFlight не истекала (90 дней)
   workflow_dispatch:

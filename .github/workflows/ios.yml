@@ -3,7 +3,7 @@ name: iOS app (unsigned IPA)
 on:
   push:
     branches: [main]
-    paths: ['worker/**', '.github/workflows/ios.yml']
+    paths: ['worker/**', 'admin/planner.js', '.github/workflows/ios.yml']
   # SideStore-сборка (без подписи). Для команды используется testflight.yml
   workflow_dispatch:
 
