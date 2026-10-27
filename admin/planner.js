@@ -615,35 +615,62 @@
     //    because the flyer count ran out right there) and leaving its side streets looks like a mistake and costs little.
     //    Small villages only: a town cut off at the flyer count stays cut. The surplus comes off elsewhere (E).
     if(flyers < 1e8){
+      // junctions within a short walk (120 m) of the walked streets: a village joined to the road by a short piece of
+      // street without mailboxes still counts as "right there"
+      const nearWalked = inSet => {
+        const on = new Uint8Array(n), dW = new Float64Array(n).fill(Infinity), hW = new Heap();
+        for(let i = 0; i < E; i++) if(inSet[i]) for(const v of [g.edges[i].a, g.edges[i].b]) if(dW[v]){ dW[v] = 0; hW.push(0, v); }
+        while(hW.size){ const [k, v] = hW.pop(); if(k > dW[v]) continue; on[v] = 1; for(const { e, to } of g.adj[v]){ const nd = k + g.edges[e].len; if(nd <= 120 && nd < dW[to]){ dW[to] = nd; hW.push(nd, to); } } }
+        return on;
+      };
       const protect = new Set();
-      for(let guard = 0; guard < 60; guard++){
+      // budget: 15 % over the flyer count, plus half of what can later come off the far end of a town cut at the count (F)
+      const bigMb = S.reduce((a, p) => { const all = p.c.items.reduce((x, it) => x + g.edges[it.i].mb, 0); return all > 0.1 * flyers ? a + p.items.reduce((x, it) => x + g.edges[it.i].mb, 0) : a; }, 0);
+      const budget = flyers * 1.15 + 0.5 * bigMb;
+      for(let guard = 0; guard < 200; guard++){
         let best = null;
-        const onWay = new Uint8Array(n); for(let i = 0; i < E; i++) if(cur.inSet[i]){ onWay[g.edges[i].a] = 1; onWay[g.edges[i].b] = 1; }
+        const onWay = nearWalked(cur.inSet);
         for(const c of cl){
           if(protect.has(c)) continue;
           let any = false, restMb = 0, restLen = 0, allMb = 0;
           for(const it of c.items){ const e = g.edges[it.i]; allMb += e.mb; if(cur.inSet[it.i] || onWay[e.a] || onWay[e.b]) any = true; if(!cur.inSet[it.i]){ restMb += e.mb; restLen += e.len; } }
           if(!any || !restMb || allMb > 0.1 * flyers || restMb * 1000 / (restLen + 1) < minDens) continue;   // touched, small, not a thin spur
-          const r = restMb / (restLen + 1);
-          if(!best || r > best.r) best = { c, r, restMb };
+          // only what is really right there: no new way out to it (its own streets, nothing more)
+          const p0 = S.find(x => x.c === c), S2 = p0 ? S.map(x => x === p0 ? { c, items:c.items.slice() } : x) : S.concat([{ c, items:c.items.slice() }]);
+          const b = build(S2), extra = b.cost - cur.cost;
+          if(extra > 1.35 * restLen * 1.3 + 200 + TRANSIT_W * 150){ protect.add(c); continue; }   // up to 150 m of way to it
+          const r = restMb / Math.max(1, extra);
+          if(!best || r > best.r) best = { c, r, restMb, S2, b };
         }
-        if(!best || cur.sum + best.restMb > 1.15 * flyers) break;
-        const p = S.find(x => x.c === best.c);
-        if(p) p.items = best.c.items.slice(); else S.push({ c:best.c, items:best.c.items.slice() });
-        protect.add(best.c); cur = build(S);
+        if(!best) break;
+        if(cur.sum + best.restMb > budget){ protect.add(best.c); continue; }   // too big for the budget: skip it, try the next
+        S = best.S2; cur = best.b; protect.add(best.c);
       }
-      // E. trim again: whole clusters only, never a completed one, and never one whose streets would stay half walked
+      // E. trim again: whole clusters only, never a completed one, never one left half walked or one the route passes by
       for(let guard = 0; guard < 400 && cur.sum > flyers && S.length > 1; guard++){
         let bi = -1, bb = null, br = -1;
         for(let k = 0; k < S.length; k++){
           if(protect.has(S[k].c)) continue;
           const b = build(S.filter((_, j) => j !== k)); if(b.sum < flyers) continue;
           if(S[k].c.items.some(it => b.inSet[it.i])) continue;
+          const nw = nearWalked(b.inSet); if(S[k].c.items.some(it => nw[g.edges[it.i].a] || nw[g.edges[it.i].b])) continue;   // would be passed by
           const r = (cur.cost - b.cost) / Math.max(1, cur.sum - b.sum);
           if(r > br){ br = r; bi = k; bb = b; }
         }
         if(bi < 0) break;
         S.splice(bi, 1); cur = bb;
+      }
+      // F. still too many mailboxes: take the surplus off the far end of a town that is cut off at the flyer count anyway
+      if(cur.sum > flyers * 1.01){
+        const bigC = p => !protect.has(p.c) && p.c.items.reduce((a, it) => a + g.edges[it.i].mb, 0) > 0.1 * flyers;
+        const far = []; S.forEach(p => { if(bigC(p)) for(const it of p.items) far.push(it); });
+        far.sort((x, y) => y.k - x.k);
+        const drop = new Set(); let extra = cur.sum - flyers;
+        for(const it of far){ const mb = g.edges[it.i].mb; if(mb && mb <= extra){ drop.add(it); extra -= mb; } if(extra < 0.005 * flyers) break; }
+        if(drop.size){
+          const S2 = S.map(p => ({ c:p.c, items:p.items.filter(it => !drop.has(it)) })).filter(p => p.items.length), b = build(S2);
+          if(b.sum >= flyers){ S = S2; cur = b; }
+        }
       }
     }
     const ids = []; let reach = 0; sum = 0;
