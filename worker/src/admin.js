@@ -5,8 +5,11 @@ import { sb, store, $, esc, css, hav, fmtDist, fmtH, fmtHm, fmtN, fmtDay, fmtDT,
 import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, labelIcon, fit, modal, confirmBox, toast, searchField, langSwitch, avatar, every, personIcon } from './ui.js';
 
 const GREEN = '#16A34A';
-// map data comes through our own server (edge function 'osm': retries, mirrors, cache)
-const osmProxy = async queries => { const { data, error } = await sb.functions.invoke('osm', { body:{ queries } }); if(error || !data || !data.results) throw new Error((error && error.message) || 'osm proxy'); return data.results; };
+// finished map-data answers are shared through our own server (edge function 'osm'): same area = instant for every admin
+const osmCache = {
+  async get(queries){ const { data, error } = await sb.functions.invoke('osm', { body:{ mode:'get', queries } }); if(error || !data || !data.results) throw new Error('cache'); return data.results; },
+  async put(items){ if(items.some(i => JSON.stringify(i.payload).length > 5e6)) return; await sb.functions.invoke('osm', { body:{ mode:'put', items } }); },
+};
 const KM_PER_MIN_TRANSIT = 0.75;
 export const A = { user:null, workers:[], tasks:[], live:[], demo:null, hooks:{}, filter:{ status:'open', from:'', to:'', city:'', district:'' } };
 
@@ -242,16 +245,20 @@ function viewCreate(){
     if(!full && $('#cFly')){ const sh = $('#cSheet'); sh.classList.add('calc'); let b = $('#cBusy'); if(!b){ b = document.createElement('div'); b.id = 'cBusy'; b.className = 'cbusy'; sh.appendChild(b); } b.textContent = '⏳ ' + txt; }
     else sheet(`<p class="muted small" style="margin:0">${esc(txt)}</p>`);
   };
+  // loading message with a running seconds counter, so a slow map server is visibly "working"
+  const withSecs = (txt, full) => { const t0 = Date.now(); busy(txt, full); const id = setInterval(() => { const s = Math.round((Date.now() - t0) / 1000); busy(txt + ' · ' + s + ' s', full); }, 1000); return () => clearInterval(id); };
   const startArr = () => [d.start.lat, d.start.lng];
   async function setStart(lat, lng, fromClick){
-    const tok = ++d.token; d.start = { lat, lng }; d.keepView = !!fromClick;   // a tap on the map keeps the zoom the admin chose d.g = null; d.plan = null; d.err = null; d.assign = {};
+    const tok = ++d.token; d.start = { lat, lng }; d.keepView = !!fromClick;   // a tap on the map keeps the zoom the admin chose
+    d.g = null; d.plan = null; d.err = null; d.assign = {};
     zoneLayer.clearLayers(); planLayer.clearLayers();
     L.marker([lat, lng], { icon:dot('pin-start', 26) }).addTo(zoneLayer); if(!fromClick) m.setView([lat, lng], 15, { animate:false });
-    busy(t('loadingArea'), true);
+    let stop = withSecs(t('loadingArea'), true);
     for(let attempt = 0; attempt < 2 && !d.g; attempt++){   // public map servers are sometimes busy: one automatic retry
-      try{ d.g = await Planner.loadForFlyers([lat, lng], d.flyers, { proxy:osmProxy }); d.err = null; }
-      catch(e){ d.err = /abort/i.test(e.message || '') ? t('mapSlow') : (e.message || 'net'); if(attempt === 0){ busy(t('retrying'), true); await new Promise(r => setTimeout(r, 4000)); if(tok !== d.token) return; } }
+      try{ d.g = await Planner.loadForFlyers([lat, lng], d.flyers, { cache:osmCache }); d.err = null; }
+      catch(e){ stop(); d.err = /abort/i.test(e.message || '') ? t('mapSlow') : (e.message || 'net'); if(attempt === 0){ stop = withSecs(t('retrying'), true); await new Promise(r => setTimeout(r, 4000)); if(tok !== d.token){ stop(); return; } } }
     }
+    stop();
     if(tok !== d.token) return;
     recompute();
   }
@@ -261,8 +268,9 @@ function viewCreate(){
     const tok = ++d.token;
     const reachNow = Planner.selectForFlyers(d.g, startArr(), d.flyers).reach_m; d.g.reach = reachNow;   // loaded square must stay clearly larger than what we walk
     if(((d.g.usable != null ? d.g.usable : d.g.mailboxes) < d.flyers * 1.05 || reachNow > 0.65 * d.g.radius) && d.g.radius < Planner.MAX_R){
-      busy(t('loadingMore'));
-      try{ d.g = await Planner.loadForFlyers(startArr(), d.flyers, { proxy:osmProxy, radius:Planner.nextRadius(d.g, d.flyers) }); }catch{}
+      const stop = withSecs(t('loadingMore'));
+      try{ d.g = await Planner.loadForFlyers(startArr(), d.flyers, { cache:osmCache, radius:Planner.nextRadius(d.g, d.flyers) }); }catch{}
+      stop();
       if(tok !== d.token) return;
     }
     busy(t('calculating')); await new Promise(r => setTimeout(r, 30));
@@ -448,7 +456,7 @@ async function demoCreate(msg){
   if(e1) throw e1;
   const rows = await demoRows();
   const start = [DEMO_TASK.lat, DEMO_TASK.lng];
-  const g = await Planner.loadForFlyers(start, DEMO_TASK.flyers, { proxy:osmProxy });
+  const g = await Planner.loadForFlyers(start, DEMO_TASK.flyers, { cache:osmCache });
   const pl = Planner.planFlyers(g, start, DEMO_TASK.flyers, 3);
   const today = new Date().toISOString().slice(0, 10), tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
   const { data:tk, error } = await sb.from('tasks').insert({ title:DEMO_TASK.title, city_name:DEMO_TASK.city, district:DEMO_TASK.district, start_lat:DEMO_TASK.lat, start_lng:DEMO_TASK.lng, walk_minutes:15, zone_polygon:pl.zone, work_date:today,

@@ -66,7 +66,8 @@
   // bounding-box filters use the index and are far faster on busy Overpass servers than "around" (which checks every node)
   const bbox = (c, r) => { const k = rc(c), dLat = r / 111320, dLng = r / (111320 * Math.cos(k[0] * RAD)); return [k[0] - dLat, k[1] - dLng, k[0] + dLat, k[1] + dLng].map(v => v.toFixed(5)).join(','); };
   const qStreets = (c, r) => `[out:json][timeout:80];way${HW_FILTER}(${bbox(c, r)});out body;>;out skel qt;`;
-  const qBuildings = (c, r) => `[out:json][timeout:80];way["building"](${bbox(c, r)});out geom tags;`;
+  // houses only need a centre point, everything else a footprint; garages, sheds etc. are not loaded at all
+  const qBuildings = (c, r) => { const bb = bbox(c, r); return `[out:json][timeout:80];way["building"~"^(${HOUSE_B})$"](${bb})->.h;way["building"]["building"!~"^(${HOUSE_B}|${NO_B})$"](${bb})->.o;.h out center tags;.o out geom tags;`; };
   async function fetchStreetsAround(c, r, fetchImpl){ return overpass(qStreets(c, r), fetchImpl, 75000); }
   async function fetchBuildings(c, r, fetchImpl){ return overpass(qBuildings(c, r), fetchImpl, 75000); }
 
@@ -312,8 +313,8 @@
   }
 
   /* ---------- mailboxes (estimated from OSM buildings) ---------- */
-  const NO_MAILBOX = /^(garage|garages|shed|roof|carport|greenhouse|hut|cabin|barn|farm_auxiliary|stable|cowshed|sty|ruins|construction|service|parking|hangar|kiosk|toilets|bunker|digester|silo|tank|transformer_tower|water_tower|storage_tank|bridge|boathouse|container|allotment_house|gatehouse|church|chapel|mosque|synagogue|temple|cathedral|train_station|transportation|grandstand|stadium|pavilion|tower|industrial|warehouse|manufacture|power|substation|commercial|retail|supermarket|shop|mall|office|hotel|hospital|clinic|school|university|college|kindergarten|public|civic|government|fire_station|sports_hall|sports_centre|gym|restaurant|cafe|fuel|petrol_station|bank|data_center|factory|works|laboratory|museum|theatre|cinema|library|prison|barracks|military)$/;
-  const HOUSE = /^(house|detached|semidetached_house|terrace|bungalow|villa|farm|cottage|houseboat|static_caravan)$/;
+  const NO_B = 'garage|garages|shed|roof|carport|greenhouse|hut|cabin|barn|farm_auxiliary|stable|cowshed|sty|ruins|construction|service|parking|hangar|kiosk|toilets|bunker|digester|silo|tank|transformer_tower|water_tower|storage_tank|bridge|boathouse|container|allotment_house|gatehouse|church|chapel|mosque|synagogue|temple|cathedral|train_station|transportation|grandstand|stadium|pavilion|tower|industrial|warehouse|manufacture|power|substation|commercial|retail|supermarket|shop|mall|office|hotel|hospital|clinic|school|university|college|kindergarten|public|civic|government|fire_station|sports_hall|sports_centre|gym|restaurant|cafe|fuel|petrol_station|bank|data_center|factory|works|laboratory|museum|theatre|cinema|library|prison|barracks|military', HOUSE_B = 'house|detached|semidetached_house|terrace|bungalow|villa|farm|cottage|houseboat|static_caravan';
+  const NO_MAILBOX = new RegExp('^(' + NO_B + ')$'), HOUSE = new RegExp('^(' + HOUSE_B + ')$');
   const FLATS = /^(apartments|residential|dormitory)$/;
   function polyArea(geom){
     if(!geom || geom.length < 3) return 0;
@@ -347,11 +348,16 @@
   function parseBuildings(osm){
     const out = [];
     for(const w of osm.elements || []){
-      if(w.type !== 'way' || !w.geometry) continue;
-      const area = polyArea(w.geometry), n = estimateMailboxes(w.tags, area);
-      if(!n) continue;
-      let la = 0, lo = 0; for(const p of w.geometry){ la += p.lat; lo += p.lon; }
-      out.push({ lat:la / w.geometry.length, lng:lo / w.geometry.length, n });
+      if(w.type !== 'way') continue;
+      if(w.geometry){
+        const area = polyArea(w.geometry), n = estimateMailboxes(w.tags, area);
+        if(!n) continue;
+        let la = 0, lo = 0; for(const p of w.geometry){ la += p.lat; lo += p.lon; }
+        out.push({ lat:la / w.geometry.length, lng:lo / w.geometry.length, n });
+      }else if(w.center){   // house types are loaded as centre point only; footprint size does not matter for them
+        const n = estimateMailboxes(w.tags, 100);
+        if(n) out.push({ lat:w.center.lat, lng:w.center.lon, n });
+      }
     }
     return out;
   }
@@ -473,11 +479,15 @@
   async function loadForFlyers(start, flyers, opt){
     opt = opt || {}; let r = Math.min(MAX_R, opt.radius || 1500), last = null;
     for(let round = 0; round < 6; round++){
-      let osm = null, bld = null;
-      if(opt.proxy){   // our own server fetches (and caches) the map data; fall back to direct access if it fails
-        try{ const res = await opt.proxy([qStreets(start, r), qBuildings(start, r)]); osm = res[0]; bld = res[1]; }catch(e){ osm = bld = null; }
+      const qs = [qStreets(start, r), qBuildings(start, r)], res = [null, null];
+      if(opt.cache){ try{ const hit = await opt.cache.get(qs); if(hit) hit.forEach((x, i) => { res[i] = x; }); }catch(e){ /* cache is optional */ } }
+      const miss = [0, 1].filter(i => !res[i]);
+      if(miss.length){
+        const got = await Promise.all(miss.map(i => overpass(qs[i], opt.fetchImpl, 75000)));
+        miss.forEach((i, k) => { res[i] = got[k]; });
+        if(opt.cache) opt.cache.put(miss.map(i => ({ q:qs[i], payload:res[i] }))).catch(() => {});
       }
-      if(!osm || !bld) [osm, bld] = await Promise.all([fetchStreetsAround(start, r, opt.fetchImpl), fetchBuildings(start, r, opt.fetchImpl)]);
+      const osm = res[0], bld = res[1];
       const g = largestComponent(buildGraph(osm, null));
       attachBuildings(g, parseBuildings(bld));
       g.radius = r; g.street_m = Math.round(g.edges.reduce((s, e) => s + e.len, 0)); last = g;
