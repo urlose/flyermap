@@ -500,16 +500,75 @@
     }
     return last;
   }
+  // Cuts the angular ring of selected street pieces into n arcs of about equal estimated time (walk + way out and back + mailboxes).
+  // Binary search on the time limit with a greedy sweep, repeated from several starting angles.
+  function balancedSplits(g, start, n, ids, tries){
+    const cosLat = Math.cos(start[0] * RAD), root = nearestNode(g, start, g.pts.map((_, i) => i)), dd = sssp(g, root).d;
+    const items = ids.map(i => {
+      const e = g.edges[i], m = e.coords[Math.floor(e.coords.length / 2)];
+      return { i, len:e.len, mb:e.mb, d:Math.min(dd[e.a], dd[e.b]), ang:Math.atan2(m[0] - start[0], (m[1] - start[1]) * cosLat) };
+    }).sort((x, y) => x.ang - y.ang);
+    const M = items.length, out = [];
+    if(M < n) return out;
+    const cost = (len, mb, far) => (1.35 * len + 2 * far) / 1000 / WALK_KMH * 60 + mb * BOX_SEC / 60;
+    for(let t = 0; t < tries; t++){
+      const off = Math.floor(t * M / tries), ring = items.slice(off).concat(items.slice(0, off));
+      const cut = T => {   // greedy: how many arcs are needed with limit T; returns cut indices or null
+        const cuts = []; let len = 0, mb = 0, far = 0, from = 0;
+        for(let k = 0; k < M; k++){
+          const x = ring[k], nl = len + x.len, nm = mb + x.mb, nf = Math.max(far, x.d);
+          if(k > from && cost(nl, nm, nf) > T){ cuts.push(k); if(cuts.length >= n) return null; from = k; len = x.len; mb = x.mb; far = x.d; }
+          else { len = nl; mb = nm; far = nf; }
+        }
+        return cuts;
+      };
+      let lo = 0, hi = cost(items.reduce((a, x) => a + x.len, 0), items.reduce((a, x) => a + x.mb, 0), Math.max(...items.map(x => x.d)));
+      let best = cut(hi);
+      for(let it = 0; it < 28; it++){ const mid = (lo + hi) / 2, c = cut(mid); if(c){ best = c; hi = mid; } else lo = mid; }
+      if(!best) continue;
+      const bounds = [0, ...best, M], parts = [];
+      for(let k = 0; k + 1 < bounds.length; k++) parts.push(ring.slice(bounds[k], bounds[k + 1]).map(x => x.i));
+      while(parts.length < n){   // fewer arcs than workers: split the biggest one in two
+        let bi = 0; parts.forEach((p, i) => { if(p.length > parts[bi].length) bi = i; });
+        const p = parts[bi]; if(p.length < 2) break; parts.splice(bi, 1, p.slice(0, p.length >> 1), p.slice(p.length >> 1));
+      }
+      if(parts.length === n) out.push(parts);
+    }
+    return out;
+  }
   function planFlyers(g, start, flyers, n){
     const sel = selectForFlyers(g, start, flyers);
     const total = sel.ids.reduce((s, i) => s + g.edges[i].len, 0), mbTotal = sel.mailboxes || 1;
     const w = e => 0.5 * e.len / (total || 1) + 0.5 * e.mb / mbTotal;
-    const parts = partition(g, start, n || 1, sel.ids, w);
-    const routes = parts.map((part, k) => {
+    const N = n || 1, build = parts => parts.map((part, k) => {
       const r = planPart(g, part, start);
       const boxes = []; let mb = 0; for(const i of part){ mb += g.edges[i].mb; for(const b of g.edges[i].boxes) boxes.push(b); }
       return { idx:k, ...r, mailboxes:mb, boxes, minutes:routeMinutes(r.length_m, mb) };
     });
+    // Equal slices of the street length give unequal days: the walk to far villages and back is not in the weights.
+    // So several candidate splits are built (equal slices + time-balanced cuts from different starting angles), each is
+    // routed for real, and the one where the slowest worker finishes earliest wins (ties: smallest spread).
+    const score = rs => { const m = rs.map(r => r.minutes); return Math.max(...m) * 1000 + (Math.max(...m) - Math.min(...m)); };
+    let bestParts = partition(g, start, N, sel.ids, w), routes = build(bestParts);
+    if(N > 1){
+      for(const parts of balancedSplits(g, start, N, sel.ids, 8)){
+        const rs = build(parts); if(score(rs) < score(routes)){ routes = rs; bestParts = parts; }
+      }
+      // fine tuning with the real routes: shift pieces at the borders from the slower worker to the faster neighbour
+      let parts = bestParts, cur = routes;
+      for(let it = 0; it < 8; it++){
+        const mins = cur.map(r => r.minutes), mean = mins.reduce((a, b) => a + b, 0) / N;
+        if(Math.max(...mins) <= mean * 1.05) break;
+        parts = parts.map(p => p.slice());
+        for(let k = 0; k < N; k++){
+          const j = (k + 1) % N, a = cur[k].minutes, b = cur[j].minutes;
+          if(a > b * 1.08 && parts[k].length > 1){ const m = Math.max(1, Math.min(parts[k].length - 1, Math.round(parts[k].length * Math.min(0.35, (a - b) / (2 * a))))); parts[j] = parts[k].splice(parts[k].length - m, m).concat(parts[j]); }
+          else if(b > a * 1.08 && parts[j].length > 1){ const m = Math.max(1, Math.min(parts[j].length - 1, Math.round(parts[j].length * Math.min(0.35, (b - a) / (2 * b))))); parts[k] = parts[k].concat(parts[j].splice(0, m)); }
+        }
+        cur = build(parts);
+        if(score(cur) < score(routes)){ routes = cur; bestParts = parts; }
+      }
+    }
     const pts = []; for(const i of sel.ids) for(const c of g.edges[i].coords) pts.push(c);
     return { routes, mailboxes:sel.mailboxes, reach_m:sel.reach_m, zone:hull(pts), capacity:capacity(routes, flyers) };
   }
