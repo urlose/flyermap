@@ -120,15 +120,36 @@ async function viewWorker(id){
       <div class="person-row big">${avatar(w.name, isLive(w) ? 'live' : '')}<div><b>${esc(w.name)}</b><span>${esc(w.phone)} · ${esc(t('lastActive', { a:ago(w.last_seen) }))}</span></div></div>
       <div class="tool-row"><a class="btn primary small" href="${telLink(w.phone)}">${esc(t('call'))}</a><a class="btn ghost small" target="_blank" href="${waLink(w.phone)}">WhatsApp</a></div>
       <div class="chips">${(w.cities || []).map(c => `<span class="chip">${esc(c.name)}</span>`).join('')}</div>
+      <h2 class="sec">${esc(t('route'))}</h2>
+      <div id="wMap" class="wmap"></div>
+      <div id="wRouteInfo" class="muted small" style="margin-bottom:6px"></div>
+      ${(routes || []).map(r => `<button class="row-line rbtn" data-r="${r.id}"><b>${esc(fmtDT(r.started_at))}</b><span>${esc(fmtDist(r.distance_m))} · ${esc(fmtHm(Math.max(0, ((r.ended_at ? new Date(r.ended_at) : Date.now()) - new Date(r.started_at)) / 60000 - (r.break_s || 0) / 60)) + ' ' + t('h'))}${r.ended_at ? '' : ' · ' + t('active')}</span></button>`).join('') || `<p class="muted small">—</p>`}
+      <h2 class="sec">${esc(t('settings'))}</h2>
       <label class="f">${esc(t('zoneLabel'))}</label>
       <select class="in" id="wzm">${[30, 45, 60, 75, 90, 120].map(m => `<option value="${m}" ${m === w.zone_minutes ? 'selected' : ''}>${m < 60 ? m + ' ' + t('min') : (m/60).toString().replace('.', ',') + ' ' + t('h')} (~${Math.round(m * KM_PER_MIN_TRANSIT)} km)</option>`).join('')}</select>
       <label class="f">${esc(t('notes'))}</label><textarea class="in" id="wnotes">${esc(w.notes || '')}</textarea>
       <button class="btn primary" id="wsave" style="margin-top:12px">${esc(t('save'))}</button>
-      <h2 class="sec">${esc(t('route'))}</h2>
-      ${(routes || []).map(r => `<div class="row-line"><b>${esc(fmtDT(r.started_at))}</b><span>${esc(fmtDist(r.distance_m))}${r.ended_at ? '' : ' · ' + t('active')}</span></div>`).join('') || `<p class="muted small">—</p>`}
       <button class="btn ghost danger-text" id="wdel" style="margin-top:20px">${esc(t('del'))}</button>
     </div>`);
   bindBack(viewPeople);
+  const wm = makeMap($('#wMap'), (w.last_lat != null) ? [w.last_lat, w.last_lng] : null, 14), wl = L.layerGroup().addTo(wm);
+  const showRoute = async r => {
+    document.querySelectorAll('.rbtn').forEach(x => x.classList.toggle('sel', x.dataset.r === r.id));
+    wl.clearLayers(); const b = L.latLngBounds([]);
+    try{
+      if(r.plan_id){ const { data:pl } = await sb.from('task_plans').select('path,color').eq('id', r.plan_id).maybeSingle(); if(pl && pl.path && pl.path.length > 1){ L.polyline(pl.path, { color:'#64748B', weight:4, opacity:.55, dashArray:'2 8', lineCap:'round' }).addTo(wl); pl.path.forEach(p => b.extend(p)); } }
+      const pts = await fetchPoints(r.id);
+      if(pts.length > 1){
+        const ll = pts.map(p => [p.lat, p.lng]); L.polyline(ll, { color:css('--route'), weight:5, opacity:.95 }).addTo(wl); ll.forEach(p => b.extend(p));
+        L.marker(ll[0], { icon:dot('start-dot', 16) }).addTo(wl);
+        if(r.ended_at) L.marker(ll[ll.length - 1], { icon:dot('end-dot', 16) }).addTo(wl); else L.marker(ll[ll.length - 1], { icon:personIcon(w.name, true, '') }).addTo(wl);
+      }
+    }catch{}
+    $('#wRouteInfo').textContent = fmtDT(r.started_at) + ' · ' + fmtDist(r.distance_m);
+    try{ if(b.isValid()) wm.fitBounds(b, { paddingTopLeft:[30, 70], paddingBottomRight:[30, 30], maxZoom:17, animate:false }); }catch{}
+  };
+  document.querySelectorAll('.rbtn').forEach(b => b.onclick = () => { const r = (routes || []).find(x => x.id === b.dataset.r); if(r){ showRoute(r); wm.getContainer().scrollIntoView({ behavior:'smooth', block:'center' }); } });
+  if(routes && routes[0]) showRoute(routes[0]);
   $('#wsave').onclick = async () => { const { error } = await sb.from('workers').update({ zone_minutes:+$('#wzm').value, notes:$('#wnotes').value.trim() || null }).eq('id', id); if(!error){ await loadWorkers(); toast(t('saved')); } };
   $('#wdel').onclick = async () => { if(!await confirmBox(t('del'), t('delWorkerQ', { name:w.name }), t('del'), true)) return; await sb.from('workers').delete().eq('id', id); await loadWorkers(); viewPeople(); };
 }
