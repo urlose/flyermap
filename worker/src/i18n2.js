@@ -68,3 +68,5 @@ Object.assign(T.de, { settings:'Einstellungen' });
 Object.assign(T.ru, { settings:'Настройки' });
 Object.assign(T.de, { mapSearchPh:'Stadt suchen – Mitarbeiter in der Nähe', nearN:'{n} in der Nähe von {c}', nearNone:'Niemand im Umkreis von {k} km um {c}', livesIn:'wohnt in {c}' });
 Object.assign(T.ru, { mapSearchPh:'Найти город — работники рядом', nearN:'{n} рядом с {c}', nearNone:'Никого в радиусе {k} км от {c}', livesIn:'живёт: {c}' });
+Object.assign(T.de, { mapSlow:'Kartenserver antwortet nicht (überlastet)', retrying:'Kartenserver ist langsam – neuer Versuch…', retryBtn:'Erneut versuchen' });
+Object.assign(T.ru, { mapSlow:'сервер карт не отвечает (перегружен)', retrying:'Сервер карт медленный — пробую ещё раз…', retryBtn:'Повторить' });

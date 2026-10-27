@@ -10,7 +10,7 @@
   'use strict';
   const R = 6371000, RAD = Math.PI / 180;
   const HIGHWAYS = 'primary|secondary|tertiary|unclassified|residential|living_street|pedestrian|road';
-  const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
+  const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
   const WORK_HOURS = 7;            // 8 h shift minus 1 h unpaid break
   const WALK_KMH = 3;              // effective walking speed while distributing
   const BOX_SEC = 5;               // handling time per mailbox (seconds)
@@ -47,7 +47,9 @@
           try{
             const r = await f(url, { method:'POST', headers:{ 'Content-Type':'application/x-www-form-urlencoded' }, body:'data=' + encodeURIComponent(q), signal: ctrl && ctrl.signal });
             if(!r.ok) throw new Error('overpass ' + r.status);
-            finish(resolve, await r.json());
+            const j = await r.json();
+            if(j && j.remark && /runtime error|out of memory|timed out/i.test(j.remark)) throw new Error('overpass ' + j.remark);   // busy server answers 200 with a partial result
+            finish(resolve, j);
           }catch(e){ lastErr = e; failed++; if(failed >= OVERPASS.length) finish(reject, lastErr || new Error('overpass')); else launch(); }
         })();
       };
@@ -60,10 +62,10 @@
     return overpass(`[out:json][timeout:90];way${HW_FILTER}(poly:"${ps}");out body;>;out skel qt;`, fetchImpl);
   }
   async function fetchStreetsAround(c, r, fetchImpl){
-    return overpass(`[out:json][timeout:120];way${HW_FILTER}(around:${Math.round(r)},${c[0].toFixed(6)},${c[1].toFixed(6)});out body;>;out skel qt;`, fetchImpl, 90000);
+    return overpass(`[out:json][timeout:80];way${HW_FILTER}(around:${Math.round(r)},${c[0].toFixed(6)},${c[1].toFixed(6)});out body;>;out skel qt;`, fetchImpl, 75000);
   }
   async function fetchBuildings(c, r, fetchImpl){
-    return overpass(`[out:json][timeout:120];way["building"](around:${Math.round(r)},${c[0].toFixed(6)},${c[1].toFixed(6)});out geom tags;`, fetchImpl, 90000);
+    return overpass(`[out:json][timeout:80];way["building"](around:${Math.round(r)},${c[0].toFixed(6)},${c[1].toFixed(6)});out geom tags;`, fetchImpl, 75000);
   }
 
   /* ---------- 2. graph ---------- */

@@ -245,7 +245,10 @@ function viewCreate(){
     zoneLayer.clearLayers(); planLayer.clearLayers();
     L.marker([lat, lng], { icon:dot('pin-start', 26) }).addTo(zoneLayer); m.setView([lat, lng], 14, { animate:false });
     busy(t('loadingArea'), true);
-    try{ d.g = await Planner.loadForFlyers([lat, lng], d.flyers); }catch(e){ d.err = e.message || 'net'; }
+    for(let attempt = 0; attempt < 2 && !d.g; attempt++){   // public map servers are sometimes busy: one automatic retry
+      try{ d.g = await Planner.loadForFlyers([lat, lng], d.flyers); d.err = null; }
+      catch(e){ d.err = /abort/i.test(e.message || '') ? t('mapSlow') : (e.message || 'net'); if(attempt === 0){ busy(t('retrying'), true); await new Promise(r => setTimeout(r, 4000)); if(tok !== d.token) return; } }
+    }
     if(tok !== d.token) return;
     recompute();
   }
@@ -292,7 +295,7 @@ function viewCreate(){
       ${p ? `<p class="small muted" style="margin:8px 0 0">${esc(t('planSum', { mb:fmtN(p.mailboxes), km, h:fmtHm(p.routes.reduce((s, r) => s + r.minutes, 0)) }))}</p>
         ${p.mailboxes < d.flyers * 0.95 ? `<p class="small err">${esc(t('areaSmall', { mb:fmtN(p.mailboxes) }))}</p>` : ''}
         <div class="${cap.ok ? 'hint' : 'warnbox'}">${cap.ok ? esc(t('fitsOk', { d:d.days })) : `${esc(t('tooBig', { h:cap.slowest.toFixed(1).replace('.', ','), lim:cap.limit, d:d.days }))} <button class="link" id="cReduce">${esc(t('reduceTo', { f:fmtN(cap.suggestedFlyers) }))}</button> ${esc(t('moreWorkers'))}`}</div>`
-        : `<p class="small err">${esc(t('streetsFail', { e:d.err || '' }))}</p>`}
+        : `<p class="small err">${esc(t('streetsFail', { e:d.err || '' }))}</p><button class="btn ghost small" id="cRetry">${esc(t('retryBtn'))}</button>`}
       ${p ? p.routes.map((r, i) => `<div class="route-row"><span class="swatch" style="background:${Planner.COLORS[i % 10]}"></span>
         <div class="grow"><b>${esc(t('planRoute', { n:i + 1 }))} <span class="muted">· ${esc(t('daysN', { n:Math.max(1, Math.ceil(r.minutes / 60 / d.hours)) }))}</span></b><span>${esc(t('routeLine', { km:fmtDist(r.length_m), h:fmtHm(r.minutes), mb:fmtN(r.mailboxes) }))}</span>
         <select class="in small" data-r="${i}">${workerOptions(d.start.lat, d.start.lng, d.assign[i])}</select></div></div>`).join('') : ''}
@@ -300,6 +303,7 @@ function viewCreate(){
       <label class="f">${esc(t('quota'))}</label><input class="in" type="number" id="cQuota" min="200" step="100" value="${esc(saved.quota)}">
       <label class="f">${esc(t('note'))}</label><textarea class="in" id="cNotes" placeholder="${esc(t('notesPh'))}"></textarea>
       <button class="btn primary" id="cSave" style="margin-top:12px" ${p ? '' : 'disabled'}>${esc(t('saveTask'))}</button><div class="err" id="cErr"></div>`);
+    if($('#cRetry')) $('#cRetry').onclick = () => setStart(d.start.lat, d.start.lng);
     restore(saved); $('#cSheet').classList.remove('calc'); $('#cSheet').scrollTop = sc;
     $('#grip').onclick = () => $('#cSheet').classList.toggle('tall');
     document.querySelectorAll('[data-s]').forEach(b => b.onclick = () => {
