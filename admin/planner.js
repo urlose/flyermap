@@ -9,7 +9,7 @@
 (function(root){
   'use strict';
   const R = 6371000, RAD = Math.PI / 180;
-  const HIGHWAYS = 'primary|secondary|tertiary|unclassified|residential|living_street|pedestrian|road';
+  const NO_WAY = 'motorway|motorway_link|trunk|trunk_link|footway|cycleway|path|steps|bridleway|construction|proposed|raceway|corridor|elevator|platform|bus_stop|track|bus_guideway|escape|rest_area|services';
   const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.openstreetmap.fr/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
   const WORK_HOURS = 7;            // 8 h shift minus 1 h unpaid break
   const WALK_KMH = 3;              // effective walking speed while distributing
@@ -56,7 +56,9 @@
       launch();
     });
   }
-  const HW_FILTER = `["highway"~"^(${HIGHWAYS})$"]["access"!~"^(private|no)$"]`;
+  // every road a person can walk along between houses (village lanes are often mapped as "service" or "unclassified");
+  // not motorways, paths/tracks, or parking aisles and private driveways
+  const HW_FILTER = `["highway"]["highway"!~"^(${NO_WAY})$"]["service"!~"^(parking_aisle|driveway|drive-through|emergency_access)$"]["access"!~"^(private|no)$"]`;
   async function fetchStreets(poly, fetchImpl){
     const ps = poly.map(p => p[0].toFixed(6) + ' ' + p[1].toFixed(6)).join(' ');
     return overpass(`[out:json][timeout:90];way${HW_FILTER}(poly:"${ps}");out body;>;out skel qt;`, fetchImpl);
