@@ -63,8 +63,10 @@
   }
   // the centre is rounded to ~100 m so that repeated plans for the same place hit the server-side cache
   const rc = c => [Math.round(c[0] * 1000) / 1000, Math.round(c[1] * 1000) / 1000];
-  const qStreets = (c, r) => { const k = rc(c); return `[out:json][timeout:80];way${HW_FILTER}(around:${Math.round(r)},${k[0].toFixed(3)},${k[1].toFixed(3)});out body;>;out skel qt;`; };
-  const qBuildings = (c, r) => { const k = rc(c); return `[out:json][timeout:80];way["building"](around:${Math.round(r)},${k[0].toFixed(3)},${k[1].toFixed(3)});out geom tags;`; };
+  // bounding-box filters use the index and are far faster on busy Overpass servers than "around" (which checks every node)
+  const bbox = (c, r) => { const k = rc(c), dLat = r / 111320, dLng = r / (111320 * Math.cos(k[0] * RAD)); return [k[0] - dLat, k[1] - dLng, k[0] + dLat, k[1] + dLng].map(v => v.toFixed(5)).join(','); };
+  const qStreets = (c, r) => `[out:json][timeout:80];way${HW_FILTER}(${bbox(c, r)});out body;>;out skel qt;`;
+  const qBuildings = (c, r) => `[out:json][timeout:80];way["building"](${bbox(c, r)});out geom tags;`;
   async function fetchStreetsAround(c, r, fetchImpl){ return overpass(qStreets(c, r), fetchImpl, 75000); }
   async function fetchBuildings(c, r, fetchImpl){ return overpass(qBuildings(c, r), fetchImpl, 75000); }
 

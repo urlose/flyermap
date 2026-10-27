@@ -22,7 +22,7 @@ async function sha(text: string) {
 }
 
 // first mirror at once, the next after 8 s (or at once when one fails); first good answer wins
-export function overpass(q: string, timeoutMs = 70000): Promise<unknown> {
+export function overpass(q: string, timeoutMs = 60000): Promise<unknown> {
   return new Promise((resolve, reject) => {
     let done = false, failed = 0, next = 0, lastErr = "";
     const timers: number[] = [], ctrls: AbortController[] = [];
@@ -37,7 +37,7 @@ export function overpass(q: string, timeoutMs = 70000): Promise<unknown> {
       const ctrl = new AbortController(); ctrls.push(ctrl); timers.push(setTimeout(() => ctrl.abort(), timeoutMs));
       (async () => {
         try {
-          const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": UA, "Accept": "application/json" }, body: "data=" + encodeURIComponent(q), signal: ctrl.signal });
+          const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": UA }, body: "data=" + encodeURIComponent(q), signal: ctrl.signal });
           if (!r.ok) throw new Error(`${r.status}`);
           const j = await r.json();
           if (j && j.remark && /runtime error|out of memory|timed out/i.test(j.remark)) throw new Error("remark: " + j.remark);
