@@ -2,6 +2,7 @@ import L from 'leaflet';
 import { registerPlugin } from '@capacitor/core';
 import { App } from '@capacitor/app';
 import Planner from '../../admin/planner.js';
+import { makeNav, dayProgress } from './nav.js';
 import { t, I } from './i18n.js';
 import { NATIVE, PRIVACY_URL, store, rpc, errText, $, esc, css, hav, fmtDist, fmtHm, fmtN, fmtTime, fmtDay, loopPath } from './core.js';
 import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, fit, modal, confirmBox, toast, cityPicker, langSwitch, avatar, every } from './ui.js';
@@ -225,11 +226,17 @@ async function drawCoverage(m, task, below){
     below && below.forEach(l => l.bringToFront());
   }catch{}
 }
-function drawTaskBase(m, task){
+function drawTaskBase(m, task, dayIdx){
   let b = L.latLngBounds([[task.start_lat, task.start_lng]]);
   if(task.zone_polygon){ const z = L.polygon(task.zone_polygon, { color:css('--brand'), weight:2, fillOpacity:.06, interactive:false }).addTo(m); b = z.getBounds(); }
-  let planLine = null;
-  if(task.plan && task.plan.path && task.plan.path.length > 1){ planLine = L.polyline(task.plan.path, { color:task.plan.color || '#2563EB', weight:5, opacity:.75, lineJoin:'round' }).addTo(m); b = planLine.getBounds(); }
+  let planLine = null; const pl = task.plan;
+  if(pl && pl.path && pl.path.length > 1){
+    const col = pl.color || '#2563EB', days = pl.days && pl.days.length > 1 ? pl.days : null;
+    if(days){   // several working days: today's loop is drawn strong, the other days faded (alternating dashes tell them apart)
+      planLine = L.featureGroup(days.map((d, k) => { const on = dayIdx == null || dayIdx === k; return L.polyline(pl.path.slice(d.i0, d.i1 + 1), { color:col, weight:on ? 5 : 3, opacity:on ? .8 : .3, dashArray:k % 2 ? '9 7' : null, lineJoin:'round' }).addTo(m); }));
+    }else planLine = L.polyline(pl.path, { color:col, weight:5, opacity:.75, lineJoin:'round' }).addTo(m);
+    b = planLine.getBounds();
+  }
   L.marker([task.start_lat, task.start_lng], { icon:dot('pin-start', 24) }).addTo(m);
   return { b, planLine };
 }
@@ -253,6 +260,7 @@ function viewTaskDetail(task){
         ${task.quota_m30 ? `<div><span>${esc(t('quotaInfo'))}</span><b>${fmtN(task.quota_m30)} m / 30 ${esc(t('min'))}</b></div>` : ''}
         ${task.notes ? `<div><span>${esc(t('note'))}</span><b>${esc(task.notes)}</b></div>` : ''}
       </div>
+      ${plan && plan.days && plan.days.length > 1 ? `<h2 class="sec">${esc(t('route'))}:</h2><div class="info">${plan.days.map((d, k) => `<div><span>${esc(t('dayN', { n:k + 1 }))}${dayList(plan)[k] ? ' · ' + esc(fmtDay(dayList(plan)[k])) : ''}</span><b>${esc(t('routeLine', { km:fmtDist(d.length_m), h:fmtHm(d.minutes || 0), mb:fmtN(d.mailboxes || 0) }))} <i id="dp${k}"></i></b></div>`).join('')}</div>` : ''}
       <div class="mapbox" id="tdMap"></div>
       ${plan ? '' : `<p class="note">${esc(t('noPlan'))}</p>`}
       ${plan && st === 'offered' ? `<h2 class="sec">${esc(t('pickDays'))}</h2><p class="small muted" style="margin-top:-6px">${esc(t('dayHint', { h:(plan.minutes / 60).toFixed(1).replace('.', ','), n:need }))}</p>
@@ -268,6 +276,13 @@ function viewTaskDetail(task){
   const { b, planLine } = drawTaskBase(m, task); fit(m, b, 16);
   drawCoverage(m, task, planLine ? [planLine] : []);
   if($('#go')) $('#go').onclick = () => beginRoute(task);
+  if(plan && plan.days && plan.days.length > 1 && st === 'accepted'){   // how much of each day is already walked → which day comes next
+    rpc('plan_progress', { p_token:W.token, p_plan_id:plan.id }).then(prev => {
+      const tr = Planner.makeTracker(plan.path); tr.addTrack(prev || []);
+      const pc = dayProgress(plan, tr); pc.forEach((p, k) => { const el = $('#dp' + k); if(el) el.textContent = p >= 95 ? '✓' : p ? '· ' + p + '%' : ''; });
+      const next = pc.findIndex(p => p < 95), go = $('#go'); if(go && next >= 0) go.textContent = t('startDayN', { n:next + 1 });
+    }).catch(() => {});
+  }
   if($('#acc')) $('#acc').onclick = async () => {
     const dates = [...document.querySelectorAll('[data-day]')].map(i => i.value).filter(Boolean);
     if(dates.length < need || new Set(dates).size !== dates.length){ $('#accErr').textContent = t('e_date_required'); return; }
@@ -300,6 +315,7 @@ function viewTracking(){
   const hasPlan = !!W.tracker, paused = !!W.route.paused, quota = task && task.quota_m30;
   shell('map', `<div id="fullMap" class="fullmap"></div>
     <button class="icon-btn map-btn" id="recenter" aria-label="center">${ICONS.locate}</button>
+    ${hasPlan ? `<div class="nav" id="nav"><div class="nav-ic" id="navIc"></div><div class="nav-tx"><b id="navMain"></b><span id="navSub"></span></div><a class="nav-ext" id="navExt" target="_blank" rel="noopener" aria-label="${esc(t('navExt'))}">${ICONS.map}</a></div>` : ''}
     <div class="float-card">
       <div class="fc-row">${paused ? `<span class="rec paused">${esc(t('pauseRunning'))}</span><b id="sPause">0:00</b>` : `<span class="rec">${esc(t('recording'))}</span><span class="muted small" id="gps">${esc(W.sim ? t('demoRunning') : t('gpsWait'))}</span>`}</div>
       ${task ? `<div class="fc-title">${esc(task.title)}</div>` : ''}
@@ -315,7 +331,11 @@ function viewTracking(){
   if(!paused) keepAwake(true);
   const last = W.track[W.track.length - 1];
   const m = makeMap($('#fullMap'), last ? [last[0], last[1]] : task ? [task.start_lat, task.start_lng] : null, 16);
-  if(task){ const base = drawTaskBase(m, task); if(!last) fit(m, base.b, 40); drawCoverage(m, task, []); }
+  // navigation along the planned line: which working day we are on, and the next turn
+  const plan = task && task.plan, nav = hasPlan && plan && plan.path && plan.path.length > 1 ? makeNav(plan) : null;
+  if(nav){ nav.setPosFromSample(W.tracker.nextIndex()); if(W.route.dayIdx == null){ W.route.dayIdx = nav.dayAt(); saveRoute(); } }
+  const dayIdx = nav ? W.route.dayIdx : null;
+  if(task){ const base = drawTaskBase(m, task, dayIdx); if(!last) fit(m, base.b, 40); drawCoverage(m, task, []); }
   const doneLayer = L.layerGroup().addTo(m);
   const trackLine = L.polyline(W.track.map(p => [p[0], p[1]]), { color:css('--route'), weight:3, opacity:.8 }).addTo(m);
   let meMarker = null; view.follow = true;
@@ -337,17 +357,34 @@ function viewTracking(){
       $('#quotaTxt').textContent = t('quotaLine', { a:fmtN(got), b:fmtN(quota) });
     }
   };
-  let lastDraw = 0;
+  let lastDraw = 0, lastOff = 0;
+  const ARROW = { start:0, S:0, SL:-45, SR:45, L:-90, R:90, U:180 };
+  const updateNav = () => {
+    if(!nav || !$('#nav')) return;
+    const n = nav.next(dayIdx), s = n.step[1], multi = nav.days.length > 1;
+    let main, sub = '', icon;
+    if(lastOff > 60){ main = t('navOff', { d:fmtDist(lastOff) }); icon = `<svg viewBox="0 0 24 24" style="transform:rotate(180deg)"><path d="M12 3v16M6 9l6-6 6 6"/></svg>`; }
+    else if(n.lastOfDay){ main = t('navIn', { d:fmtDist(n.dist) }) + ' · ' + (multi && dayIdx < nav.days.length - 1 ? t('dayDone', { n:dayIdx + 1 }) : t('navEnd')); icon = ICONS.flag; if(n.dist < 25) main = multi && dayIdx < nav.days.length - 1 ? t('dayDone', { n:dayIdx + 1 }) : t('navEnd'); }
+    else {
+      const nm = n.step[2]; main = t('navIn', { d:fmtDist(n.dist) }) + ' · ' + t('nav' + s); sub = nm ? t('navOnto', { name:nm }) : '';
+      icon = `<svg viewBox="0 0 24 24" style="transform:rotate(${ARROW[s] || 0}deg)"><path d="M12 3v16M6 9l6-6 6 6"/></svg>`;
+      if(n.then) sub += (sub ? ' · ' : '') + t('navThen', { s:t('nav' + n.then.step[1]) + ' (' + fmtDist(Math.max(0, n.then.dist - n.dist)) + ')' });
+    }
+    $('#navIc').innerHTML = icon; $('#navMain').textContent = main; $('#navSub').textContent = sub;
+    const at = n.at || nav.path[nav.path.length - 1]; $('#navExt').href = 'https://www.google.com/maps/dir/?api=1&destination=' + at[0] + ',' + at[1] + '&travelmode=walking';
+  };
   view.me = (lat, lng) => { if(!meMarker) meMarker = L.marker([lat, lng], { icon:dot('me-dot', 20), zIndexOffset:1000 }).addTo(m); else meMarker.setLatLng([lat, lng]); };
   view.update = (lat, lng) => {
     trackLine.addLatLng([lat, lng]); view.me(lat, lng);
+    if(nav){ lastOff = nav.locate(lat, lng).off; updateNav(); }
     if(view.follow) m.panTo([lat, lng], { animate:true });
     if(Date.now() - lastDraw > 800){ lastDraw = Date.now(); drawDone(); stats(); }
     updateSync();
   };
   view.refreshDemo = () => { const b = $('#demo'); if(b) b.textContent = W.sim ? t('demoStop') : t('demoWalk'); };
   if(last) view.me(last[0], last[1]);
-  drawDone(); stats(); every(1000, stats); updateSync();
+  if(nav && last) lastOff = nav.locate(last[0], last[1]).off;
+  updateNav(); drawDone(); stats(); every(1000, stats); updateSync();
   $('#stop').onclick = finishRoute;
   if($('#pause')) $('#pause').onclick = pauseRoute;
   if($('#resume')) $('#resume').onclick = resumeRoute;

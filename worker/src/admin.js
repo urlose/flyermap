@@ -139,7 +139,7 @@ function viewPeople(){
   };
   $('#wQ').oninput = render; render();
   $('#tOut').onclick = async () => { if(await confirmBox(t('logout'), t('logoutQ'), t('logout'))){ await sb.auth.signOut(); for(const k of ['role', 'token', 'me', 'canAdmin']) await store.del(k); A.hooks.loggedOut && A.hooks.loggedOut(); } };
-  $('#tWork').onclick = () => A.hooks.switchRole && A.hooks.switchRole('worker');
+  $('#tWork').onclick = openAsWorker;
   $('#tInv').onclick = () => {
     const mo = modal(`<h2>${esc(t('inviteAdmin'))}</h2><label class="f">${esc(t('invitePhone'))}</label><input class="in" id="invE" type="tel" placeholder="+49 170 1234567"><button class="btn primary" id="invB" style="margin-top:12px">${esc(t('inviteAdmin'))}</button><div class="err" id="invErr"></div>`);
     mo.querySelector('#invB').onclick = async () => { const ph = normPhone(mo.querySelector('#invE').value); if(!ph){ mo.querySelector('#invErr').textContent = t('badPhone'); return; } const { error } = await sb.from('admin_phone_invites').upsert({ phone:ph }); if(error) mo.querySelector('#invErr').textContent = error.message; else { mo.remove(); toast(t('invitePhoneSent')); } };
@@ -227,8 +227,10 @@ function viewTasks(){
 }
 
 /* Routenerstellung: full map + search on top, sheet with flyers / workers / routes */
-function viewCreate(){
+function viewCreate(edit){
+  const tkE = edit && edit.tk;   // editing an existing task: same screen, prefilled, saves over the old routes
   const d = { start:null, place:null, flyers:5000, n:1, nAuto:true, hours:7, quota:1500, days:2, g:null, plan:null, assign:{}, err:null, token:0 };
+  if(tkE) Object.assign(d, { flyers:tkE.flyers || 5000, hours:+tkE.work_hours || 7, quota:tkE.quota_m30 || 1500, days:tkE.work_days || 2, n:Math.max(1, edit.plans.length), nAuto:false });
   const sf = searchField('cSearch', t('searchAddr'), (c, q) => { d.place = c; if(q) q.value = c.name + (c.sub ? ', ' + c.sub : ''); setStart(c.lat, c.lng); }, { near:() => d.start ? [d.start.lat, d.start.lng] : null });
   shell('tasks', `<div id="fullMap" class="fullmap"></div>
     <div class="map-top"><button class="icon-btn" id="cBack" aria-label="${esc(t('back'))}">${ICONS.back}</button><div class="grow">${sf.html}</div></div>
@@ -275,11 +277,12 @@ function viewCreate(){
     }
     busy(t('calculating')); await new Promise(r => setTimeout(r, 30));
     if(tok !== d.token) return;
-    if(d.nAuto){
+    {   // the number of workers is never changed automatically; we only suggest what would fit the time best
       const sel = Planner.selectForFlyers(d.g, startArr(), d.flyers);
-      d.n = Math.min(20, Planner.suggestWorkers(Planner.routeMinutes(sel.ids.reduce((s, i) => s + d.g.edges[i].len, 0) * 1.35, sel.mailboxes), d.hours, d.days));
+      d.sug = Math.min(20, Planner.suggestWorkers(Planner.routeMinutes(sel.ids.reduce((s, i) => s + d.g.edges[i].len, 0) * 1.35, sel.mailboxes), d.hours, d.days));
     }
-    d.plan = Planner.planFlyers(d.g, startArr(), d.flyers, d.n);
+    d.plan = Planner.planFlyers(d.g, startArr(), d.flyers, d.n, { days:d.days, hoursPerDay:d.hours });
+    if(tkE && !d.prefilled){ d.prefilled = true; edit.plans.forEach(p => { if(p.worker_id && p.idx < d.plan.routes.length) d.assign[p.idx] = p.worker_id; }); }
     draw(); renderSheet();
   }
   function draw(){
@@ -292,7 +295,7 @@ function viewCreate(){
   const num = (id, def) => { const v = parseFloat(($(id) || {}).value); return isFinite(v) ? v : def; };
   function keep(){ return { title:$('#cTitle') ? $('#cTitle').value : '', date:$('#cDate') ? $('#cDate').value : '', notes:$('#cNotes') ? $('#cNotes').value : '', quota:$('#cQuota') ? $('#cQuota').value : d.quota }; }
   function restore(k){ if($('#cTitle') && k.title) $('#cTitle').value = k.title; if($('#cDate')) $('#cDate').value = k.date; if($('#cNotes')) $('#cNotes').value = k.notes; if($('#cQuota')) $('#cQuota').value = k.quota; }
-  let saved = { title:'', date:'', notes:'', quota:1500 };
+  let saved = tkE ? { title:tkE.title, date:tkE.work_date ? String(tkE.work_date).slice(0, 10) : '', notes:tkE.notes || '', quota:tkE.quota_m30 || 1500 } : { title:'', date:'', notes:'', quota:1500 };
   function renderSheet(){
     const sc = ($('#cSheet') || {}).scrollTop || 0;
     const p = d.plan, title = saved.title || (d.place ? d.place.name : '');
@@ -304,12 +307,14 @@ function viewCreate(){
         <div><label class="f">${esc(t('flyersCount'))}</label><div class="stepper"><button data-s="f:-500">−</button><input id="cFly" type="number" inputmode="numeric" min="100" step="100" value="${d.flyers}"><button data-s="f:500">+</button></div></div>
         <div><label class="f">${esc(t('workersCount'))}</label><div class="stepper"><button data-s="n:-1" ${p ? '' : 'disabled'}>−</button><b id="vN">${p ? d.n : '—'}</b><button data-s="n:1" ${p ? '' : 'disabled'}>+</button></div></div>
       </div>
+      ${p && d.sug && d.sug !== d.n ? `<div class="hint">${esc(t('sugWorkers', { n:d.sug, d:d.days }))} <button class="link" id="cSug">${esc(t('applySug'))}</button></div>` : ''}
       ${p ? `<p class="small muted" style="margin:8px 0 0">${esc(t('planSum', { mb:fmtN(p.mailboxes), km, h:fmtHm(p.routes.reduce((s, r) => s + r.minutes, 0)) }))}</p>
         ${p.mailboxes < d.flyers * 0.95 ? `<p class="small err">${esc(t('areaSmall', { mb:fmtN(p.mailboxes) }))}</p>` : ''}
         <div class="${cap.ok ? 'hint' : 'warnbox'}">${cap.ok ? esc(t('fitsOk', { d:d.days })) : `${esc(t('tooBig', { h:cap.slowest.toFixed(1).replace('.', ','), lim:cap.limit, d:d.days }))} <button class="link" id="cReduce">${esc(t('reduceTo', { f:fmtN(cap.suggestedFlyers) }))}</button> ${esc(t('moreWorkers'))}`}</div>`
         : `<p class="small err">${esc(t('streetsFail', { e:d.err || '' }))}</p><button class="btn ghost small" id="cRetry">${esc(t('retryBtn'))}</button>`}
       ${p ? p.routes.map((r, i) => `<div class="route-row"><span class="swatch" style="background:${Planner.COLORS[i % 10]}"></span>
         <div class="grow"><b>${esc(t('planRoute', { n:i + 1 }))} <span class="muted">· ${esc(t('daysN', { n:Math.max(1, Math.ceil(r.minutes / 60 / d.hours)) }))}</span></b><span>${esc(t('routeLine', { km:fmtDist(r.length_m), h:fmtHm(r.minutes), mb:fmtN(r.mailboxes) }))}</span>
+        ${dayLines(r.days)}
         <select class="in small" data-r="${i}">${workerOptions(d.start.lat, d.start.lng, d.assign[i])}</select></div></div>`).join('') : ''}
       <div class="steppers"><div><label class="f">${esc(t('startDate'))}</label><input class="in" type="date" id="cDate"></div><div><label class="f">${esc(t('hoursDay'))}</label><input class="in" type="number" id="cHours" min="1" max="12" step="0.5" value="${d.hours}"></div></div>
       <label class="f">${esc(t('quota'))}</label><input class="in" type="number" id="cQuota" min="200" step="100" value="${esc(saved.quota)}">
@@ -325,7 +330,8 @@ function viewCreate(){
       d.n = Math.max(1, Math.min(20, d.n + +v)); $('#vN').textContent = d.n; d.nAuto = false; d.assign = {}; later();
     });
     $('#cFly').onchange = () => { saved = keep(); d.flyers = Math.max(100, Math.round(num('#cFly', d.flyers))); d.nAuto = true; recompute(); };
-    $('#cHours').onchange = () => { saved = keep(); d.hours = Math.max(1, Math.min(12, num('#cHours', 7))); if(d.nAuto) recompute(); else renderSheet(); };
+    $('#cHours').onchange = () => { saved = keep(); d.hours = Math.max(1, Math.min(12, num('#cHours', 7))); recompute(); };
+    const sg = $('#cSug'); if(sg) sg.onclick = () => { saved = keep(); d.n = d.sug; d.assign = {}; recompute(); };
     const red = $('#cReduce'); if(red) red.onclick = () => { saved = keep(); d.flyers = Math.max(100, cap.suggestedFlyers); d.nAuto = false; recompute(); };
     document.querySelectorAll('[data-r]').forEach(s => s.onchange = () => { d.assign[+s.dataset.r] = s.value || null; });
     $('#cSave').onclick = save;
@@ -335,14 +341,22 @@ function viewCreate(){
     $('#cSave').disabled = true;
     try{
       const pl = d.plan, quota = Math.max(200, Math.round(num('#cQuota', 1500))), date = $('#cDate').value || null;
-      const { data:tk, error } = await sb.from('tasks').insert({ title, city_name:(d.place && d.place.city) || null, district:(d.place && d.place.district) || null, start_lat:d.start.lat, start_lng:d.start.lng,
-        walk_minutes:15, zone_polygon:pl.zone, work_date:date, notes:$('#cNotes').value.trim() || null, created_by:A.user.id, street_m:d.g ? d.g.street_m : null,
-        flyers:d.flyers, quota_m30:quota, work_days:d.days, work_hours:d.hours, est_mailboxes:pl.mailboxes, route_m:pl.routes.reduce((s, r) => s + r.length_m, 0) }).select().single();
-      if(error) throw error;
-      await savePlans(tk, pl.routes.map((r, i) => ({ task_id:tk.id, idx:i, worker_id:d.assign[i] || null, color:Planner.COLORS[i % 10], path:r.path, length_m:r.length_m, street_m:r.street_m, mailboxes:r.mailboxes, boxes:r.boxes, minutes:r.minutes })));
+      const row = { title, city_name:(d.place && d.place.city) || (tkE && tkE.city_name) || null, district:(d.place && d.place.district) || (tkE && tkE.district) || null, start_lat:d.start.lat, start_lng:d.start.lng,
+        walk_minutes:15, zone_polygon:pl.zone, work_date:date, notes:$('#cNotes').value.trim() || null, street_m:d.g ? d.g.street_m : null,
+        flyers:d.flyers, quota_m30:quota, work_days:d.days, work_hours:d.hours, est_mailboxes:pl.mailboxes, route_m:pl.routes.reduce((s, r) => s + r.length_m, 0) };
+      let tk;
+      if(tkE){
+        const u = await sb.from('tasks').update(row).eq('id', tkE.id).select().single(); if(u.error) throw u.error; tk = u.data;
+        const x1 = await sb.from('task_plans').delete().eq('task_id', tkE.id); if(x1.error) throw x1.error;
+        await sb.from('task_workers').delete().eq('task_id', tkE.id);
+      }else{
+        const ins = await sb.from('tasks').insert({ ...row, created_by:A.user.id }).select().single(); if(ins.error) throw ins.error; tk = ins.data;
+      }
+      await savePlans(tk, pl.routes.map((r, i) => ({ task_id:tk.id, idx:i, worker_id:d.assign[i] || null, color:Planner.COLORS[i % 10], path:r.path, length_m:r.length_m, street_m:r.street_m, mailboxes:r.mailboxes, boxes:r.boxes, minutes:r.minutes, days:r.days, steps:r.steps })));
       await loadTasks(); viewTask(tk.id);
     }catch(e){ $('#cErr').textContent = e.message; $('#cSave').disabled = false; }
   }
+  if(tkE) setStart(tkE.start_lat, tkE.start_lng);
 }
 // saves plans, links workers and sends each assigned worker a notification
 async function savePlans(tk, rows){
@@ -357,7 +371,28 @@ async function notifyAssigned(tk, p){
   await sb.from('notifications').insert({ worker_id:p.worker_id, kind:'assigned', task_id:tk.id, plan_id:p.id, title:t('newTaskTitle', { title:tk.title }), body:t('newTaskBody', { date, mb:fmtN(p.mailboxes || 0), km:fmtDist(p.length_m || 0) }) });
 }
 
+/* edit an existing task: texts / date / pace right here; flyers, workers and routes only while nobody has walked yet */
+function editTaskSheet(tk, plans, routes){
+  const day = tk.work_date ? String(tk.work_date).slice(0, 10) : '';
+  const mo = modal(`<h2>${esc(t('editTask'))}</h2>
+    <label class="f">${esc(t('title'))}</label><input class="in" id="eTitle" value="${esc(tk.title)}">
+    <div class="steppers"><div><label class="f">${esc(t('startDate'))}</label><input class="in" type="date" id="eDate" value="${esc(day)}"></div><div><label class="f">${esc(t('hoursDay'))}</label><input class="in" type="number" id="eHours" min="1" max="12" step="0.5" value="${+tk.work_hours || 7}"></div></div>
+    <label class="f">${esc(t('quota'))}</label><input class="in" type="number" id="eQuota" min="200" step="100" value="${tk.quota_m30 || 1500}">
+    <label class="f">${esc(t('note'))}</label><textarea class="in" id="eNotes">${esc(tk.notes || '')}</textarea>
+    <button class="btn primary" id="eSave" style="margin-top:12px">${esc(t('save'))}</button>
+    ${routes.length ? `<p class="small muted">${esc(t('editNoReplan'))}</p>` : `<button class="btn ghost" id="eReplan">${esc(t('replan'))}</button>`}
+    <button class="btn ghost small" id="eClose">${esc(t('close'))}</button><div class="err" id="eErr"></div>`);
+  mo.querySelector('#eClose').onclick = () => mo.remove();
+  mo.querySelector('#eSave').onclick = async () => {
+    const title = mo.querySelector('#eTitle').value.trim(); if(!title){ mo.querySelector('#eErr').textContent = t('needTitle'); return; }
+    const { error } = await sb.from('tasks').update({ title, work_date:mo.querySelector('#eDate').value || null, work_hours:Math.max(1, Math.min(12, parseFloat(mo.querySelector('#eHours').value) || 7)), quota_m30:Math.max(200, Math.round(+mo.querySelector('#eQuota').value || 1500)), notes:mo.querySelector('#eNotes').value.trim() || null }).eq('id', tk.id);
+    if(error){ mo.querySelector('#eErr').textContent = error.message; return; }
+    mo.remove(); await loadTasks(); toast(t('saved')); viewTask(tk.id);
+  };
+  const rp = mo.querySelector('#eReplan'); if(rp) rp.onclick = () => { mo.remove(); viewCreate({ tk, plans }); };
+}
 /* task detail: info + map + routes with status, worker assignment and progress */
+const dayLines = days => (days && days.length > 1) ? days.map((x, k) => `<span class="small day-line"><b>${esc(t('dayN', { n:k + 1 }))}:</b> ${esc(t('routeLine', { km:fmtDist(x.length_m), h:fmtHm(x.minutes), mb:fmtN(x.mailboxes) }))}</span>`).join('') : '';
 const stText = p => p.status === 'accepted' ? t('stAccepted') : p.status === 'declined' ? t('stDeclined') : p.status === 'done' ? t('stDone') : t('stOffered');
 const stCls = p => p.status === 'accepted' || p.status === 'done' ? 'live' : p.status === 'declined' ? 'bad' : 'warn';
 async function viewTask(id){
@@ -382,11 +417,12 @@ async function viewTask(id){
       ${(plans || []).length ? plans.map(p => { const w = wById(p.worker_id); return `<div class="route-row"><span class="swatch" style="background:${esc(p.color || '#2563EB')}"></span>
         <div class="grow"><b>${esc(t('planRoute', { n:p.idx + 1 }))} <span class="muted" id="pp${p.idx}"></span></b>
         <span>${esc(t('routeLine', { km:fmtDist(p.length_m), h:fmtHm(p.minutes || 0), mb:fmtN(p.mailboxes || 0) }))}</span>
+        ${dayLines(p.days)}
         <div class="bar"><i id="pb${p.idx}"></i></div><span id="pf${p.idx}" style="margin-top:4px"></span>
         ${p.worker_id ? `<span class="pill ${stCls(p)}">${esc(stText(p))}${p.status === 'accepted' && (p.work_dates || []).length ? ' · ' + esc(p.work_dates.map(fmtDay).join(', ')) : ''}</span>` : ''}
         <div class="rr-act"><select class="in small" data-plan="${p.id}">${workerOptions(tk.start_lat, tk.start_lng, p.worker_id)}</select>${w ? `<a class="btn ghost small" target="_blank" href="${waLink(w.phone, invite(w))}">${esc(t('write'))}</a>` : ''}</div>
         <span class="small">${esc(t('replaceHint'))}</span></div></div>`; }).join('') : `<p class="muted small">${esc(t('noPlans'))}</p>`}
-      <div class="tool-row" style="margin-top:16px"><button class="btn ghost small" id="tDone">${esc(tk.status === 'open' ? t('finish') : t('reopen'))}</button><button class="btn ghost small danger-text" id="tDel">${esc(t('del'))}</button></div>
+      <div class="tool-row" style="margin-top:16px"><button class="btn ghost small" id="tEdit">${esc(t('editTask'))}</button><button class="btn ghost small" id="tDone">${esc(tk.status === 'open' ? t('finish') : t('reopen'))}</button><button class="btn ghost small danger-text" id="tDel">${esc(t('del'))}</button></div>
       <p class="small muted">${esc(t('desktop'))}</p>
     </div>`);
   bindBack(viewTasks);
@@ -408,6 +444,7 @@ async function viewTask(id){
     }
     await loadTasks(); toast(t('saved')); viewTask(id);
   });
+  $('#tEdit').onclick = () => editTaskSheet(tk, plans || [], routes || []);
   $('#tDone').onclick = async () => { await sb.from('tasks').update({ status:tk.status === 'open' ? 'done' : 'open' }).eq('id', id); await loadTasks(); viewTask(id); };
   $('#tDel').onclick = async () => { if(!await confirmBox(t('del'), t('delTaskQ'), t('del'), true)) return; await sb.from('tasks').delete().eq('id', id); await loadTasks(); viewTasks(); };
   // progress per route: all tracks recorded on that plan (also by a previous worker)
@@ -424,6 +461,25 @@ async function viewTask(id){
     const pct = tr.pct(); const el = $('#pp' + p.idx); if(el) el.textContent = '· ' + t('done', { p:pct }); const bar = $('#pb' + p.idx); if(bar) bar.style.width = pct + '%';
     const pf = $('#pf' + p.idx); if(pf && ct) pf.textContent = t('flyersDone', { a:fmtN(ct.count()), b:fmtN(ct.total) });
   }
+}
+
+/* ---------- worker view for the admin (no SMS needed): own number, or a test worker ---------- */
+async function openAsWorker(){
+  const hasPhone = !!(A.user && A.user.phone);
+  const { data:tw } = await sb.from('workers').select('id,name,token,phone').like('phone', DEMO_PHONE + '%').order('phone');
+  const mo = modal(`<h2>${esc(t('testTitle'))}</h2><p class="muted small">${esc(t('testHint'))}</p>
+    ${hasPhone ? `<button class="btn primary" id="oOwn">${esc(t('testOwn'))}</button>` : ''}
+    ${(tw || []).map((w, i) => `<button class="btn ${hasPhone || i ? 'ghost' : 'primary'}" data-w="${i}">${esc(w.name)}</button>`).join('')}
+    <button class="btn ghost" id="oNew">${esc(t('testCreate'))}</button><div class="err" id="oErr"></div>`);
+  const enter = async token => { mo.remove(); A.hooks.openWorkerToken && await A.hooks.openWorkerToken(token); };
+  if(hasPhone) mo.querySelector('#oOwn').onclick = () => { mo.remove(); A.hooks.switchRole && A.hooks.switchRole('worker'); };
+  mo.querySelectorAll('[data-w]').forEach(b => b.onclick = () => enter(tw[+b.dataset.w].token));
+  mo.querySelector('#oNew').onclick = async () => {
+    const n = (tw || []).length + 1;
+    const { data, error } = await sb.from('workers').insert({ name:t('testWorkerName') + (n > 1 ? ' ' + n : ''), phone:DEMO_PHONE + 'T' + n + Date.now().toString().slice(-4), cities:[{ name:'Düsseldorf', lat:51.2277, lng:6.7735 }], zone_minutes:60, pin_hash:'demo', notes:'Demo' }).select('id,token').single();
+    if(error){ mo.querySelector('#oErr').textContent = error.message; return; }
+    await loadWorkers(); enter(data.token);
+  };
 }
 
 /* ---------- DEMO (pitch) ---------- */
@@ -457,12 +513,12 @@ async function demoCreate(msg){
   const rows = await demoRows();
   const start = [DEMO_TASK.lat, DEMO_TASK.lng];
   const g = await Planner.loadForFlyers(start, DEMO_TASK.flyers, { cache:osmCache });
-  const pl = Planner.planFlyers(g, start, DEMO_TASK.flyers, 3);
+  const pl = Planner.planFlyers(g, start, DEMO_TASK.flyers, 3, { days:2, hoursPerDay:7 });
   const today = new Date().toISOString().slice(0, 10), tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
   const { data:tk, error } = await sb.from('tasks').insert({ title:DEMO_TASK.title, city_name:DEMO_TASK.city, district:DEMO_TASK.district, start_lat:DEMO_TASK.lat, start_lng:DEMO_TASK.lng, walk_minutes:15, zone_polygon:pl.zone, work_date:today,
     notes:DEMO_TASK.notes[I.lang] || DEMO_TASK.notes.de, created_by:A.user.id, street_m:g.street_m, flyers:DEMO_TASK.flyers, quota_m30:1500, work_days:2, work_hours:7, est_mailboxes:pl.mailboxes, route_m:pl.routes.reduce((x, r) => x + r.length_m, 0) }).select().single();
   if(error) throw error;
-  const r = await sb.from('task_plans').insert(pl.routes.map((x, i) => ({ task_id:tk.id, idx:i, worker_id:rows[i].id, color:Planner.COLORS[i], path:x.path, length_m:x.length_m, street_m:x.street_m, mailboxes:x.mailboxes, boxes:x.boxes, minutes:x.minutes, status:'accepted', work_dates:[today, tomorrow] })));
+  const r = await sb.from('task_plans').insert(pl.routes.map((x, i) => ({ task_id:tk.id, idx:i, worker_id:rows[i].id, color:Planner.COLORS[i], path:x.path, length_m:x.length_m, street_m:x.street_m, mailboxes:x.mailboxes, boxes:x.boxes, minutes:x.minutes, days:x.days, steps:x.steps, status:'accepted', work_dates:[today, tomorrow] })));
   if(r.error) throw r.error;
   await sb.from('task_workers').insert([0, 1, 2].map(i => ({ task_id:tk.id, worker_id:rows[i].id })));
   // yesterday: worker 1 already walked a third of route 1

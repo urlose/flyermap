@@ -12,7 +12,7 @@
   const NO_WAY = 'motorway|motorway_link|trunk|trunk_link|footway|cycleway|path|steps|bridleway|construction|proposed|raceway|corridor|elevator|platform|bus_stop|track|bus_guideway|escape|rest_area|services';
   const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.openstreetmap.fr/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
   const WORK_HOURS = 7;            // 8 h shift minus 1 h unpaid break
-  const WALK_KMH = 3;              // effective walking speed while distributing
+  const WALK_KMH = 2.5;            // effective walking speed while distributing (with a bag of flyers)
   const BOX_SEC = 5;               // handling time per mailbox (seconds)
 
   function dist(a, b){
@@ -194,11 +194,15 @@
     for(const v of among){ const d = dist(g.pts[v], p); if(d < bd){ bd = d; best = v; } }
     return best;
   }
-  function planPart(g, req, start){
-    if(!req.length) return { path:[], length_m:0, street_m:0, edges:0 };
+  const bearing = (a, b) => Math.atan2((b[1] - a[1]) * Math.cos(a[0] * RAD), b[0] - a[0]) / RAD;
+  const turnCode = d => { const a = Math.abs(d); return a < 25 ? 'S' : a < 60 ? (d < 0 ? 'SL' : 'SR') : a < 150 ? (d < 0 ? 'L' : 'R') : 'U'; };
+  // rootNode (optional): common start/end junction, so that several day-loops of one worker all begin and end at the same place
+  function planPart(g, req, start, rootNode){
+    if(!req.length) return { path:[], length_m:0, street_m:0, edges:0, steps:[] };
     const inst = req.map(e => ({ e, dead:false }));
     const touched = new Set(); for(const e of req){ touched.add(g.edges[e].a); touched.add(g.edges[e].b); }
-    const root = nearestNode(g, start, touched);
+    if(rootNode != null) touched.add(rootNode);
+    const root = rootNode != null ? rootNode : nearestNode(g, start, touched);
     // union-find to connect separated pieces of the part
     const par = new Map(); const find = x => { while(par.get(x) !== x){ par.set(x, par.get(par.get(x))); x = par.get(x); } return x; };
     const uni = (a, b) => { if(!par.has(a)) par.set(a, a); if(!par.has(b)) par.set(b, b); par.set(find(a), find(b)); };
@@ -259,14 +263,26 @@
     }
     circuit.reverse();
     const path = []; let length = 0, street = 0;
+    // turn-by-turn steps: [path index, turn code (S SL SR L R U), street name]
+    const steps = []; let prevB = null, prevName = null;
     for(const step of circuit){
       if(step.i < 0) continue;
       const ed = g.edges[inst[step.i].e];
       const c = step.from === ed.a ? ed.coords : ed.coords.slice().reverse();
+      const at = path.length ? path.length - 1 : 0;
+      let j = 1; while(j < c.length - 1 && dist(c[0], c[j]) < 4) j++;
+      const b0 = bearing(c[0], c[j]); let turn = 0;
+      if(prevB != null){ turn = b0 - prevB; while(turn > 180) turn -= 360; while(turn < -180) turn += 360; }
+      const nm = ed.name || '';
+      if(prevB == null) steps.push([at, 'start', nm]);
+      else if(Math.abs(turn) >= 25 || (nm && nm !== prevName)) steps.push([at, turnCode(turn), nm]);
+      let k = c.length - 2; while(k > 0 && dist(c[c.length - 1], c[k]) < 4) k--;
+      prevB = bearing(c[k], c[c.length - 1]); prevName = nm || prevName;
       for(const p of (path.length ? c.slice(1) : c)) path.push([+p[0].toFixed(6), +p[1].toFixed(6)]);
       length += ed.len; if(!inst[step.i].dead) street += ed.len;
     }
-    return { path, length_m:Math.round(length), street_m:Math.round(street), edges:req.length, covered:used.reduce((s, x) => s + x, 0) === inst.length };
+    if(path.length) steps.push([path.length - 1, 'end', '']);
+    return { path, steps, root, length_m:Math.round(length), street_m:Math.round(street), edges:req.length, covered:used.reduce((s, x) => s + x, 0) === inst.length };
   }
 
   /* ---------- progress: which parts of a planned path are already walked ---------- */
@@ -311,7 +327,7 @@
       return out;
     }
     function nextIndex(){ for(let i = 0; i < samples.length; i++) if(!done[i]) return i; return -1; }
-    return { samples, mark, markLine, addTrack, runs, nextIndex, pct: () => samples.length ? Math.round(100 * count / samples.length) : 0 };
+    return { samples, mark, markLine, addTrack, runs, nextIndex, isDone:i => !!done[i], pct: () => samples.length ? Math.round(100 * count / samples.length) : 0 };
   }
 
   /* ---------- mailboxes (estimated from OSM buildings) ---------- */
@@ -414,10 +430,24 @@
     const thr = Math.max(6, Math.min(25, 0.3 * D)), drop = new Uint8Array(n);
     for(const v of pre){ if(tree.pe[v] === -1) continue; if(drop[tree.pv[v]]) drop[v] = 1; else if(tree.d[v] > 300 && Lc[v] > 0 && B[v] / Lc[v] * 1000 < thr) drop[v] = 1; }
     const kept = items.filter(it => { if(drop[it.v]){ skipped += g.edges[it.i].mb; return false; } return true; });
-    kept.sort((x, y) => x.k - y.k);
-    let sum = 0; const ids = [];
-    for(const it of kept){ if(sum >= flyers) break; ids.push(it.i); sum += g.edges[it.i].mb; }
-    return { ids, mailboxes:sum, skipped_mb:skipped, reach_m:Math.round(ids.length ? kept[ids.length - 1].k : 0) };
+    // 3. group the remaining street pieces into villages (connected pieces) and take the most efficient villages first:
+    //    mailboxes per metre walked, including the way there and back. A dense village a bit further away beats a thin one nearby.
+    const uf = Int32Array.from({ length:n }, (_, i) => i), find = x => { while(uf[x] !== x){ uf[x] = uf[uf[x]]; x = uf[x]; } return x; };
+    kept.forEach(it => { const e = g.edges[it.i]; uf[find(e.a)] = find(e.b); });
+    const groups = new Map();
+    for(const it of kept){
+      const e = g.edges[it.i], r = find(e.a); let c = groups.get(r);
+      if(!c){ c = { items:[], mb:0, len:0, d:Infinity }; groups.set(r, c); }
+      c.items.push(it); c.mb += e.mb; c.len += e.len; c.d = Math.min(c.d, it.k);
+    }
+    const order = [...groups.values()].map(c => ({ ...c, eff:c.mb / (1.35 * c.len + 2 * c.d + 200) })).sort((x, y) => y.eff - x.eff);
+    let sum = 0, reach = 0; const ids = [];
+    for(const c of order){
+      if(sum >= flyers) break;
+      c.items.sort((x, y) => x.k - y.k);
+      for(const it of c.items){ if(sum >= flyers) break; ids.push(it.i); sum += g.edges[it.i].mb; if(it.k > reach) reach = it.k; }
+    }
+    return { ids, mailboxes:sum, skipped_mb:skipped, reach_m:Math.round(reach) };
   }
   const MAX_R = 6000;
   // radius for the next map-data round. The loaded square must be clearly larger than the area we actually use,
@@ -536,12 +566,13 @@
     }
     return out;
   }
-  function planFlyers(g, start, flyers, n){
+  function planFlyers(g, start, flyers, n, opt){
+    opt = opt || {};
     const sel = selectForFlyers(g, start, flyers);
     const total = sel.ids.reduce((s, i) => s + g.edges[i].len, 0), mbTotal = sel.mailboxes || 1;
     const w = e => 0.5 * e.len / (total || 1) + 0.5 * e.mb / mbTotal;
-    const N = n || 1, build = parts => parts.map((part, k) => {
-      const r = planPart(g, part, start);
+    const N = n || 1, build = (parts, rootNode) => parts.map((part, k) => {
+      const r = planPart(g, part, start, rootNode);
       const boxes = []; let mb = 0; for(const i of part){ mb += g.edges[i].mb; for(const b of g.edges[i].boxes) boxes.push(b); }
       return { idx:k, ...r, mailboxes:mb, boxes, minutes:routeMinutes(r.length_m, mb) };
     });
@@ -569,6 +600,34 @@
         if(score(cur) < score(routes)){ routes = cur; bestParts = parts; }
       }
     }
+    // one worker needing more than a working day gets separate loops per day, all starting and ending at the same junction
+    const hpd = opt.hoursPerDay || WORK_HOURS, maxDays = opt.days || 1;
+    const dayInfo = r => ({ length_m:r.length_m, street_m:r.street_m, minutes:r.minutes, mailboxes:r.mailboxes });
+    const withDays = (part, k, base) => {
+      const nd = Math.min(maxDays, Math.max(1, Math.ceil(base.minutes / 60 / hpd)));
+      if(nd < 2 || part.length < nd) return { ...base, days:[{ i0:0, i1:Math.max(0, base.path.length - 1), ...dayInfo(base) }] };
+      const cands = [partition(g, start, nd, part, w), ...balancedSplits(g, start, nd, part, 4)];
+      let best = null;
+      for(const ps of cands){
+        const rs = build(ps.filter(x => x.length), base.root);
+        if(rs.length < 2) continue;
+        const mx = Math.max(...rs.map(r => r.minutes)), mn = Math.min(...rs.map(r => r.minutes));
+        if(!best || mx * 1000 + (mx - mn) < best.sc){ best = { rs, sc:mx * 1000 + (mx - mn) }; }
+      }
+      if(!best) return { ...base, days:[{ i0:0, i1:Math.max(0, base.path.length - 1), ...dayInfo(base) }] };
+      const path = [], steps = [], boxes = [], days = [];
+      for(const d of best.rs){
+        const off = path.length ? path.length - 1 : 0, i0 = off;
+        for(const q of (path.length ? d.path.slice(1) : d.path)) path.push(q);
+        for(const st of d.steps) steps.push([off + st[0], st[1], st[2]]);
+        for(const b of d.boxes) boxes.push(b);
+        days.push({ i0, i1:path.length - 1, ...dayInfo(d) });
+      }
+      const sum = k => days.reduce((a, d) => a + d[k], 0);
+      return { ...base, path, steps, boxes, days, length_m:sum('length_m'), street_m:sum('street_m'), minutes:sum('minutes'), mailboxes:sum('mailboxes') };
+    };
+    if(maxDays > 1) routes = bestParts.map((part, k) => withDays(part, k, routes[k]));
+    else routes = routes.map(r => ({ ...r, days:[{ i0:0, i1:Math.max(0, r.path.length - 1), length_m:r.length_m, street_m:r.street_m, minutes:r.minutes, mailboxes:r.mailboxes }] }));
     const pts = []; for(const i of sel.ids) for(const c of g.edges[i].coords) pts.push(c);
     return { routes, mailboxes:sel.mailboxes, reach_m:sel.reach_m, zone:hull(pts), capacity:capacity(routes, flyers) };
   }

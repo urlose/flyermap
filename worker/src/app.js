@@ -1,8 +1,9 @@
 import { t, I } from './i18n.js';
 import './i18n2.js';
+import './i18n3.js';
 import { store } from './core.js';
 import { UI } from './ui.js';
-import { W, bootWorker, workerTab } from './worker.js';
+import { W, bootWorker, workerTab, acceptToken } from './worker.js';
 import { A, bootAdmin, adminTab } from './admin.js';
 import { viewLogin, switchRole } from './auth.js';
 
@@ -20,6 +21,8 @@ W.hooks.loggedOut = viewLogin;
 W.hooks.switchRole = switchRole;
 A.hooks.loggedOut = viewLogin;
 A.hooks.switchRole = switchRole;
+// admin opens the worker view of a test worker without any SMS login (the admin session stays, so "switch to admin" works)
+A.hooks.openWorkerToken = async token => { await store.set('canAdmin', true); await acceptToken(token); };
 
 (async function boot(){
   I.lang = await store.get('lang') || 'de';          // German by default
