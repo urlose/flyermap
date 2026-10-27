@@ -382,11 +382,17 @@
   function selectForFlyers(g, start, flyers){
     const root = nearestNode(g, start, g.pts.map((p, i) => i).filter(i => g.adj[i].length));
     const tree = sssp(g, root), items = [];
-    g.edges.forEach((e, i) => { if(e.mb > 0) items.push({ i, k:(tree.d[e.a] + tree.d[e.b]) / 2 }); });
+    // skip long, nearly empty roads (fields, forest tracks, a lone farm at the end of a road):
+    // walking them costs far more time than the few mailboxes there are worth
+    let sm = 0, sl = 0; g.edges.forEach(e => { if(e.mb > 0){ sm += e.mb; sl += e.len; } });
+    const minDens = Math.max(4, Math.min(15, 0.25 * (sl ? sm / sl * 1000 : 0)));   // mailboxes per km
+    const sparse = e => e.len > 100 && e.mb * 1000 / e.len < minDens;
+    let skipped = 0;
+    g.edges.forEach((e, i) => { if(e.mb > 0){ if(sparse(e)){ skipped += e.mb; return; } items.push({ i, k:(tree.d[e.a] + tree.d[e.b]) / 2 }); } });
     items.sort((x, y) => x.k - y.k);
     let sum = 0; const ids = [];
     for(const it of items){ if(sum >= flyers) break; ids.push(it.i); sum += g.edges[it.i].mb; }
-    return { ids, mailboxes:sum, reach_m:Math.round(ids.length ? items[ids.length - 1].k : 0) };
+    return { ids, mailboxes:sum, skipped_mb:skipped, reach_m:Math.round(ids.length ? items[ids.length - 1].k : 0) };
   }
   function hull(points){
     const p = points.map(q => [q[1], q[0]]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);

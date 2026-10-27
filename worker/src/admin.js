@@ -223,7 +223,7 @@ function viewTasks(){
 /* Routenerstellung: full map + search on top, sheet with flyers / workers / routes */
 function viewCreate(){
   const d = { start:null, place:null, flyers:5000, n:1, nAuto:true, hours:7, quota:1500, days:2, g:null, plan:null, assign:{}, err:null, token:0 };
-  const sf = searchField('cSearch', t('searchAddr'), c => { d.place = c; setStart(c.lat, c.lng); }, { near:() => d.start ? [d.start.lat, d.start.lng] : null });
+  const sf = searchField('cSearch', t('searchAddr'), (c, q) => { d.place = c; if(q) q.value = c.name + (c.sub ? ', ' + c.sub : ''); setStart(c.lat, c.lng); }, { near:() => d.start ? [d.start.lat, d.start.lng] : null });
   shell('tasks', `<div id="fullMap" class="fullmap"></div>
     <div class="map-top"><button class="icon-btn" id="cBack" aria-label="${esc(t('back'))}">${ICONS.back}</button><div class="grow">${sf.html}</div></div>
     <div class="sheet" id="cSheet"><p class="muted small" style="margin:0">${esc(t('tapMap'))}</p></div>`, { map:true });
@@ -231,15 +231,20 @@ function viewCreate(){
   $('#cBack').onclick = viewTasks;
   const m = makeMap($('#fullMap'), null, 13);
   const zoneLayer = L.layerGroup().addTo(m), planLayer = L.layerGroup().addTo(m);
-  m.on('click', e => { d.place = null; setStart(e.latlng.lat, e.latlng.lng); });
+  m.on('click', e => { d.place = null; const qi = $('#cSearch'); if(qi) qi.value = ''; setStart(e.latlng.lat, e.latlng.lng); });
   const sheet = html => { $('#cSheet').innerHTML = html; };
-  const busy = txt => sheet(`<p class="muted small" style="margin:0">${esc(txt)}</p>`);
+  // while recalculating keep the sheet where it is (no flicker) and show a small status in the corner;
+  // only a brand-new start point replaces the sheet with a plain loading message
+  const busy = (txt, full) => {
+    if(!full && $('#cFly')){ const sh = $('#cSheet'); sh.classList.add('calc'); let b = $('#cBusy'); if(!b){ b = document.createElement('div'); b.id = 'cBusy'; b.className = 'cbusy'; sh.appendChild(b); } b.textContent = '⏳ ' + txt; }
+    else sheet(`<p class="muted small" style="margin:0">${esc(txt)}</p>`);
+  };
   const startArr = () => [d.start.lat, d.start.lng];
   async function setStart(lat, lng){
     const tok = ++d.token; d.start = { lat, lng }; d.g = null; d.plan = null; d.err = null; d.assign = {};
     zoneLayer.clearLayers(); planLayer.clearLayers();
     L.marker([lat, lng], { icon:dot('pin-start', 26) }).addTo(zoneLayer); m.setView([lat, lng], 14, { animate:false });
-    busy(t('loadingArea'));
+    busy(t('loadingArea'), true);
     try{ d.g = await Planner.loadForFlyers([lat, lng], d.flyers); }catch(e){ d.err = e.message || 'net'; }
     if(tok !== d.token) return;
     recompute();
@@ -254,6 +259,7 @@ function viewCreate(){
       if(tok !== d.token) return;
     }
     busy(t('calculating')); await new Promise(r => setTimeout(r, 30));
+    if(tok !== d.token) return;
     if(d.nAuto){
       const sel = Planner.selectForFlyers(d.g, startArr(), d.flyers);
       d.n = Math.min(20, Planner.suggestWorkers(Planner.routeMinutes(sel.ids.reduce((s, i) => s + d.g.edges[i].len, 0) * 1.35, sel.mailboxes), d.hours, d.days));
@@ -273,6 +279,7 @@ function viewCreate(){
   function restore(k){ if($('#cTitle') && k.title) $('#cTitle').value = k.title; if($('#cDate')) $('#cDate').value = k.date; if($('#cNotes')) $('#cNotes').value = k.notes; if($('#cQuota')) $('#cQuota').value = k.quota; }
   let saved = { title:'', date:'', notes:'', quota:1500 };
   function renderSheet(){
+    const sc = ($('#cSheet') || {}).scrollTop || 0;
     const p = d.plan, title = saved.title || (d.place ? d.place.name : '');
     const cap = p ? Planner.capacity(p.routes, d.flyers, { hoursPerDay:d.hours, days:d.days }) : null;
     const km = p ? fmtDist(p.routes.reduce((s, r) => s + r.length_m, 0)) : '';
@@ -293,12 +300,13 @@ function viewCreate(){
       <label class="f">${esc(t('quota'))}</label><input class="in" type="number" id="cQuota" min="200" step="100" value="${esc(saved.quota)}">
       <label class="f">${esc(t('note'))}</label><textarea class="in" id="cNotes" placeholder="${esc(t('notesPh'))}"></textarea>
       <button class="btn primary" id="cSave" style="margin-top:12px" ${p ? '' : 'disabled'}>${esc(t('saveTask'))}</button><div class="err" id="cErr"></div>`);
-    restore(saved);
+    restore(saved); $('#cSheet').classList.remove('calc'); $('#cSheet').scrollTop = sc;
     $('#grip').onclick = () => $('#cSheet').classList.toggle('tall');
     document.querySelectorAll('[data-s]').forEach(b => b.onclick = () => {
-      saved = keep(); const [k, v] = b.dataset.s.split(':');
-      if(k === 'f'){ d.flyers = Math.max(100, num('#cFly', d.flyers) + +v); d.nAuto = true; return recompute(); }
-      d.n = Math.max(1, Math.min(20, d.n + +v)); d.nAuto = false; d.assign = {}; recompute();
+      const [k, v] = b.dataset.s.split(':');
+      const later = () => { clearTimeout(d.tm); d.tm = setTimeout(() => { saved = keep(); recompute(); }, 450); };   // several quick taps = one recalculation
+      if(k === 'f'){ d.flyers = Math.max(100, num('#cFly', d.flyers) + +v); $('#cFly').value = d.flyers; d.nAuto = true; return later(); }
+      d.n = Math.max(1, Math.min(20, d.n + +v)); $('#vN').textContent = d.n; d.nAuto = false; d.assign = {}; later();
     });
     $('#cFly').onchange = () => { saved = keep(); d.flyers = Math.max(100, Math.round(num('#cFly', d.flyers))); d.nAuto = true; recompute(); };
     $('#cHours').onchange = () => { saved = keep(); d.hours = Math.max(1, Math.min(12, num('#cHours', 7))); if(d.nAuto) recompute(); else renderSheet(); };
