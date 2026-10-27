@@ -411,10 +411,15 @@
     for(const it of kept){ if(sum >= flyers) break; ids.push(it.i); sum += g.edges[it.i].mb; }
     return { ids, mailboxes:sum, skipped_mb:skipped, reach_m:Math.round(ids.length ? kept[ids.length - 1].k : 0) };
   }
-  // radius for the next map-data round: scale by area so one step is usually enough
+  const MAX_R = 6000;
+  // radius for the next map-data round. The loaded square must be clearly larger than the area we actually use,
+  // otherwise villages near the edge are cut off and look poorer than they are.
   function nextRadius(g, flyers){
-    const need = flyers * 1.35, have = Math.max(1, g.usable != null ? g.usable : (g.mailboxes || 1));
-    return Math.min(4000, Math.round(Math.max(g.radius * 1.3, g.radius * Math.sqrt(need / have) * 1.1)));
+    const need = flyers * 1.15, have = Math.max(1, g.usable != null ? g.usable : (g.mailboxes || 1));
+    let r = g.radius * 1.3;
+    if(have < need) r = Math.max(r, g.radius * Math.sqrt(need / have) * 1.1);
+    if(g.reach) r = Math.max(r, g.reach / 0.6);
+    return Math.min(MAX_R, Math.round(r));
   }
   function hull(points){
     const p = points.map(q => [q[1], q[0]]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
@@ -466,8 +471,8 @@
   }
   // main entry: streets + buildings around the start; grows the radius until enough mailboxes exist
   async function loadForFlyers(start, flyers, opt){
-    opt = opt || {}; let r = Math.min(4000, opt.radius || 1500), last = null;
-    for(let round = 0; round < 5; round++){
+    opt = opt || {}; let r = Math.min(MAX_R, opt.radius || 1500), last = null;
+    for(let round = 0; round < 6; round++){
       let osm = null, bld = null;
       if(opt.proxy){   // our own server fetches (and caches) the map data; fall back to direct access if it fails
         try{ const res = await opt.proxy([qStreets(start, r), qBuildings(start, r)]); osm = res[0]; bld = res[1]; }catch(e){ osm = bld = null; }
@@ -477,7 +482,8 @@
       attachBuildings(g, parseBuildings(bld));
       g.radius = r; g.street_m = Math.round(g.edges.reduce((s, e) => s + e.len, 0)); last = g;
       g.usable = selectForFlyers(g, start, 1e9).mailboxes;   // what is really worth walking (poor spurs excluded)
-      if(g.usable >= flyers * 1.15 || r >= 4000) break;
+      g.reach = selectForFlyers(g, start, flyers).reach_m;
+      if((g.usable >= flyers * 1.15 && g.reach <= 0.65 * r) || r >= MAX_R) break;
       r = nextRadius(g, flyers);
     }
     return last;
@@ -499,6 +505,6 @@
     return partition(g, start, n).map((part, k) => ({ idx:k, ...planPart(g, part, start) }));
   }
 
-  const api = { COLORS, densifyPath, makeTracker, makeBoxCounter, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
+  const api = { COLORS, densifyPath, makeTracker, makeBoxCounter, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
   if(typeof module !== 'undefined' && module.exports) module.exports = api; else root.Planner = api;
 })(typeof window !== 'undefined' ? window : globalThis);

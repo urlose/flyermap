@@ -259,7 +259,8 @@ function viewCreate(){
     if(!d.start) return;
     if(!d.g){ renderSheet(); return; }
     const tok = ++d.token;
-    if((d.g.usable != null ? d.g.usable : d.g.mailboxes) < d.flyers * 1.05 && d.g.radius < 4000){
+    const reachNow = Planner.selectForFlyers(d.g, startArr(), d.flyers).reach_m; d.g.reach = reachNow;   // loaded square must stay clearly larger than what we walk
+    if(((d.g.usable != null ? d.g.usable : d.g.mailboxes) < d.flyers * 1.05 || reachNow > 0.65 * d.g.radius) && d.g.radius < Planner.MAX_R){
       busy(t('loadingMore'));
       try{ d.g = await Planner.loadForFlyers(startArr(), d.flyers, { proxy:osmProxy, radius:Planner.nextRadius(d.g, d.flyers) }); }catch{}
       if(tok !== d.token) return;
