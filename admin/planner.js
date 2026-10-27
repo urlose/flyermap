@@ -30,20 +30,29 @@
   function lineLen(c){ let s = 0; for(let i = 1; i < c.length; i++) s += dist(c[i-1], c[i]); return s; }
 
   /* ---------- 1. Overpass ---------- */
-  async function overpass(q, fetchImpl, timeoutMs){
-    const f = fetchImpl || fetch;
-    let lastErr;
-    for(const url of OVERPASS){
-      try{
-        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-        const tm = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs || 60000) : null;
-        const r = await f(url, { method:'POST', headers:{ 'Content-Type':'application/x-www-form-urlencoded' }, body:'data=' + encodeURIComponent(q), signal: ctrl && ctrl.signal });
-        if(tm) clearTimeout(tm);
-        if(!r.ok) throw new Error('overpass ' + r.status);
-        return await r.json();
-      }catch(e){ lastErr = e; }
-    }
-    throw lastErr || new Error('overpass');
+  // Public Overpass servers are often busy: start the first mirror at once, the next one after 10 s
+  // (or immediately if one fails) and take whichever answers first.
+  function overpass(q, fetchImpl, timeoutMs){
+    const f = fetchImpl || fetch, total = timeoutMs || 60000;
+    return new Promise((resolve, reject) => {
+      let done = false, failed = 0, next = 0, lastErr; const ctrls = [], timers = [];
+      const finish = (fn, v) => { if(done) return; done = true; timers.forEach(clearTimeout); ctrls.forEach(c => { try{ c.abort(); }catch{} }); fn(v); };
+      const launch = () => {
+        if(done || next >= OVERPASS.length) return;
+        const url = OVERPASS[next++];
+        if(next < OVERPASS.length) timers.push(setTimeout(launch, 10000));
+        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null; if(ctrl) ctrls.push(ctrl);
+        const tm = ctrl ? setTimeout(() => ctrl.abort(), total) : null; if(tm) timers.push(tm);
+        (async () => {
+          try{
+            const r = await f(url, { method:'POST', headers:{ 'Content-Type':'application/x-www-form-urlencoded' }, body:'data=' + encodeURIComponent(q), signal: ctrl && ctrl.signal });
+            if(!r.ok) throw new Error('overpass ' + r.status);
+            finish(resolve, await r.json());
+          }catch(e){ lastErr = e; failed++; if(failed >= OVERPASS.length) finish(reject, lastErr || new Error('overpass')); else launch(); }
+        })();
+      };
+      launch();
+    });
   }
   const HW_FILTER = `["highway"~"^(${HIGHWAYS})$"]["access"!~"^(private|no)$"]`;
   async function fetchStreets(poly, fetchImpl){
