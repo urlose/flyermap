@@ -246,17 +246,17 @@ function viewCreate(){
     else sheet(`<p class="muted small" style="margin:0">${esc(txt)}</p>`);
   };
   // loading message with a running seconds counter, so a slow map server is visibly "working"
-  const withSecs = (txt, full) => { const t0 = Date.now(); busy(txt, full); const id = setInterval(() => { const s = Math.round((Date.now() - t0) / 1000); busy(txt + ' · ' + s + ' s', full); }, 1000); return () => clearInterval(id); };
+  const withSecs = (txt, full, tok) => { const t0 = Date.now(); busy(txt, full); const id = setInterval(() => { if(tok !== d.token){ clearInterval(id); return; } const s = Math.round((Date.now() - t0) / 1000); busy(txt + ' · ' + s + ' s', full); }, 1000); return () => clearInterval(id); };   // a superseded request must never paint over the newer one
   const startArr = () => [d.start.lat, d.start.lng];
   async function setStart(lat, lng, fromClick){
     const tok = ++d.token; d.start = { lat, lng }; d.keepView = !!fromClick;   // a tap on the map keeps the zoom the admin chose
     d.g = null; d.plan = null; d.err = null; d.assign = {};
     zoneLayer.clearLayers(); planLayer.clearLayers();
     L.marker([lat, lng], { icon:dot('pin-start', 26) }).addTo(zoneLayer); if(!fromClick) m.setView([lat, lng], 15, { animate:false });
-    let stop = withSecs(t('loadingArea'), true);
-    for(let attempt = 0; attempt < 2 && !d.g; attempt++){   // public map servers are sometimes busy: one automatic retry
-      try{ d.g = await Planner.loadForFlyers([lat, lng], d.flyers, { cache:osmCache }); d.err = null; }
-      catch(e){ stop(); d.err = /abort/i.test(e.message || '') ? t('mapSlow') : (e.message || 'net'); if(attempt === 0){ stop = withSecs(t('retrying'), true); await new Promise(r => setTimeout(r, 4000)); if(tok !== d.token){ stop(); return; } } }
+    let stop = withSecs(t('loadingArea'), true, tok), got = null;
+    for(let attempt = 0; attempt < 2 && !got; attempt++){   // public map servers are sometimes busy: one automatic retry
+      try{ got = await Planner.loadForFlyers([lat, lng], d.flyers, { cache:osmCache }); if(tok === d.token){ d.g = got; d.err = null; } }
+      catch(e){ stop(); if(tok !== d.token) return; d.err = /abort/i.test(e.message || '') ? t('mapSlow') : (e.message || 'net'); if(attempt === 0){ stop = withSecs(t('retrying'), true, tok); await new Promise(r => setTimeout(r, 4000)); if(tok !== d.token){ stop(); return; } } }
     }
     stop();
     if(tok !== d.token) return;
@@ -268,8 +268,8 @@ function viewCreate(){
     const tok = ++d.token;
     const reachNow = Planner.selectForFlyers(d.g, startArr(), d.flyers).reach_m; d.g.reach = reachNow;   // loaded square must stay clearly larger than what we walk
     if(((d.g.usable != null ? d.g.usable : d.g.mailboxes) < d.flyers * 1.05 || reachNow > 0.65 * d.g.radius) && d.g.radius < Planner.MAX_R){
-      const stop = withSecs(t('loadingMore'));
-      try{ d.g = await Planner.loadForFlyers(startArr(), d.flyers, { cache:osmCache, radius:Planner.nextRadius(d.g, d.flyers) }); }catch{}
+      const stop = withSecs(t('loadingMore'), false, tok);
+      try{ const more = await Planner.loadForFlyers(startArr(), d.flyers, { cache:osmCache, radius:Planner.nextRadius(d.g, d.flyers) }); if(tok === d.token) d.g = more; }catch{}
       stop();
       if(tok !== d.token) return;
     }
