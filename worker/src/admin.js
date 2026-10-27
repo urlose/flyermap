@@ -110,8 +110,47 @@ function viewLive(){
 }
 
 /* ---------- MITARBEITER: admin profile + team ---------- */
-function viewPeople(){
+/* ---------- working days (routes): shared by the Mitarbeiter list and the worker page ---------- */
+const dayKey = r => new Date(r.started_at).toLocaleDateString('sv-SE');   // local YYYY-MM-DD
+const workMin = r => Math.max(0, ((r.ended_at ? new Date(r.ended_at) : Date.now()) - new Date(r.started_at)) / 60000 - (r.break_s || 0) / 60);
+const placeTxt = r => [r.place, r.task_title].filter(Boolean).join(' · ');
+const hhmm = d => new Date(d).toLocaleTimeString(loc(), { hour:'2-digit', minute:'2-digit' });
+const dayFilter = () => A.dFilter || (A.dFilter = { from:'', to:'', place:'' });
+const dayMatches = (r, f) => { const d = dayKey(r); return (!f.from || d >= f.from) && (!f.to || d <= f.to) && (!f.place || r.place === f.place); };
+const filterOn = f => !!(f.from || f.to || f.place);
+const dayLine = (r, cls) => `<button class="row-line rbtn ${cls || ''}" data-r="${r.id}" data-w="${r.worker_id}"><div class="rb-main"><b>${esc(new Date(r.started_at).toLocaleDateString(loc(), { weekday:'short', day:'2-digit', month:'2-digit', year:'2-digit' }))} · ${esc(hhmm(r.started_at))}–${esc(r.ended_at ? hhmm(r.ended_at) : t('active'))}</b><small data-place="${r.id}">${esc(placeTxt(r) || '…')}</small></div><span>${esc(fmtDist(r.distance_m || 0))} · ${esc(fmtHm(workMin(r)) + ' ' + t('h'))}</span></button>`;
+const daysSum = list => list.length ? t('daysSum', { n:list.length, km:fmtDist(list.reduce((a, r) => a + (r.distance_m || 0), 0)), h:fmtHm(list.reduce((a, r) => a + workMin(r), 0)) }) : '';
+// days without an order (or whose order was deleted): name the place from the first GPS point, once, and keep it
+async function fillPlaces(list, done){
+  let changed = false;
+  for(const r of list.filter(x => !x.place).slice(0, 15)){
+    try{
+      const { data:p0 } = await sb.from('route_points').select('lat,lng').eq('route_id', r.id).order('t').limit(1);
+      if(!p0 || !p0[0]) continue;
+      const pl = await reversePlace(p0[0].lat, p0[0].lng); if(!pl) continue;
+      r.place = pl; changed = true; sb.from('routes').update({ place:pl }).eq('id', r.id).then(() => {}, () => {});
+      document.querySelectorAll(`[data-place="${r.id}"]`).forEach(el => { el.textContent = placeTxt(r); });
+    }catch{}
+  }
+  if(changed && done) done();
+}
+// filter controls (date range, quick days, place)
+function dayFilterHtml(f, places){
+  const iso = d => d.toLocaleDateString('sv-SE'), today = new Date(), yest = new Date(Date.now() - 864e5), wk = new Date(Date.now() - 6 * 864e5);
+  const quick = [['dToday', iso(today), iso(today)], ['dYesterday', iso(yest), iso(yest)], ['d7', iso(wk), iso(today)]];
+  return `<div class="chips" style="margin:0 0 8px">${quick.map(([k, a, b]) => `<button class="chip ${f.from === a && f.to === b ? 'on' : ''}" data-q="${a}|${b}" style="padding:7px 14px">${esc(t(k))}</button>`).join('')}<button class="chip ${filterOn(f) ? '' : 'on'}" data-q="|" style="padding:7px 14px">${esc(t('fAll'))}</button></div>
+    <div class="steppers"><div><label class="f">${esc(t('fFrom'))}</label><input class="in small" type="date" id="dfFrom" value="${esc(f.from)}"></div><div><label class="f">${esc(t('fTo'))}</label><input class="in small" type="date" id="dfTo" value="${esc(f.to)}"></div><div><label class="f">${esc(t('place'))}</label><select class="in small" id="dfPlace"><option value="">${esc(t('fAll'))}</option>${places.map(p => `<option ${p === f.place ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></div></div>`;
+}
+function bindDayFilter(f, again){
+  document.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { const [a, z] = b.dataset.q.split('|'); f.from = a; f.to = z; if(!a) f.place = ''; again(); });
+  $('#dfFrom').onchange = e => { f.from = e.target.value; again(); };
+  $('#dfTo').onchange = e => { f.to = e.target.value; again(); };
+  $('#dfPlace').onchange = e => { f.place = e.target.value; again(); };
+}
+
+async function viewPeople(){
   let place = null;
+  const f = dayFilter();
   const sf = searchField('wCity', t('whoPh'), c => { place = c; render(); }, { citiesOnly:true });
   shell('people', `${topbar(t('tabPeople'))}
     <div class="pad">
@@ -119,25 +158,39 @@ function viewPeople(){
       <div class="tool-row"><button class="btn ghost small" id="tDemo">${esc(t('demo'))}</button><button class="btn ghost small" id="tInv">${esc(t('inviteAdmin'))}</button><button class="btn ghost small" id="tWork">${esc(t('switchToWorker'))}</button><button class="btn ghost small" id="tOut">${esc(t('logout'))}</button></div>
       ${langSwitch(I.lang)}
       <h2 class="sec">${esc(t('workersN', { n:A.workers.length }))}</h2>
-      <label class="f">${esc(t('whoCanGo'))}</label>${sf.html}
+      <label class="f">${esc(t('workedWhen'))}</label>
+      <div id="dFilter"></div>
+      <label class="f" style="margin-top:12px">${esc(t('whoCanGo'))}</label>${sf.html}
       <div class="searchbox" style="margin-top:8px"><span class="sb-ic">${ICONS.search}</span><input id="wQ" class="sb-in" placeholder="${esc(t('searchNamePhone'))}"></div>
       <div id="wList" style="margin-top:12px"></div>
     </div>`);
   sf.bind();
+  let days = [];   // all working days (newest first), loaded below
   const render = () => {
+    const places = [...new Set(days.map(r => r.place).filter(Boolean))].sort(); if(f.place && !places.includes(f.place)) f.place = '';
+    $('#dFilter').innerHTML = dayFilterHtml(f, places); bindDayFilter(f, render);
+    const on = filterOn(f), hit = on ? days.filter(r => dayMatches(r, f)) : [], byW = new Map();
+    for(const r of hit){ if(!byW.has(r.worker_id)) byW.set(r.worker_id, []); byW.get(r.worker_id).push(r); }
     const q = $('#wQ').value.trim().toLowerCase();
     let list = A.workers.map(w => ({ w, ...(place ? distTo(w, place.lat, place.lng) : { km:null }) }));
+    if(on) list = list.filter(x => byW.has(x.w.id));
     if(place) list = list.filter(x => x.km <= zoneKm(x.w)).sort((a, b) => a.km - b.km);
     if(q) list = list.filter(x => (x.w.name + ' ' + x.w.phone).toLowerCase().includes(q));
-    $('#wList').innerHTML = (place ? `<div class="hint">${esc(t('canReach', { n:list.length, city:place.name }))} <button class="link" id="wClr">${esc(t('reset'))}</button></div>` : '') +
+    const shown = on ? list.flatMap(x => byW.get(x.w.id)) : [];
+    $('#wList').innerHTML = (on ? `<div class="hint">${esc(shown.length ? t('workedSum', { w:list.length, d:daysSum(shown) }) : t('noDaysRange'))}</div>` : '') +
+      (place ? `<div class="hint">${esc(t('canReach', { n:list.length, city:place.name }))} <button class="link" id="wClr">${esc(t('reset'))}</button></div>` : '') +
       (list.length ? list.map(({ w, km }) => `<div class="card worker-card"><button class="wc-main" data-id="${w.id}">${avatar(w.name, isLive(w) ? 'live' : '')}
         <div><b>${esc(w.name)}</b><span>${esc((w.cities || []).map(c => c.name).join(', '))}${km != null ? ' · ' + Math.round(km) + ' km' : ''} · ${esc(t('zoneChip', { n:w.zone_minutes }))}</span></div></button>
+        ${on ? `<div class="wc-days">${byW.get(w.id).map(r => dayLine(r)).join('')}</div>` : ''}
         <div class="wc-act"><a class="btn ghost small" href="${telLink(w.phone)}">${esc(t('call'))}</a><a class="btn ghost small" target="_blank" href="${waLink(w.phone)}">WhatsApp</a></div></div>`).join('')
-       : `<div class="empty">${esc(A.workers.length ? t('notFound') : t('noWorkers'))}</div>`);
+       : on ? '' : `<div class="empty">${esc(A.workers.length ? t('notFound') : t('noWorkers'))}</div>`);
     const clr = $('#wClr'); if(clr) clr.onclick = () => { place = null; $('#wCity').value = ''; render(); };
     document.querySelectorAll('.wc-main').forEach(b => b.onclick = () => viewWorker(b.dataset.id));
+    document.querySelectorAll('.wc-days .rbtn').forEach(b => b.onclick = () => viewWorker(b.dataset.w, viewPeople, b.dataset.r));
   };
   $('#wQ').oninput = render; render();
+  sb.from('routes').select('id,worker_id,task_id,plan_id,started_at,ended_at,distance_m,break_s,place,task_title').order('started_at', { ascending:false }).limit(2000)
+    .then(({ data }) => { if(!document.getElementById('dFilter')) return; days = data || []; render(); fillPlaces(days, () => { if(document.getElementById('dFilter')) render(); }); });
   $('#tOut').onclick = async () => { if(await confirmBox(t('logout'), t('logoutQ'), t('logout'))){ await sb.auth.signOut(); for(const k of ['role', 'token', 'me', 'canAdmin']) await store.del(k); A.hooks.loggedOut && A.hooks.loggedOut(); } };
   $('#tWork').onclick = openAsWorker;
   $('#tInv').onclick = () => {
@@ -147,24 +200,19 @@ function viewPeople(){
   $('#tDemo').onclick = demoSheet;
 }
 
-async function viewWorker(id, back){
+async function viewWorker(id, back, focusId){
   back = back || viewPeople;
   const w = wById(id); if(!w) return back();
   const { data:routes } = await sb.from('routes').select('*').eq('worker_id', id).order('started_at', { ascending:false }).limit(300);
-  const all = routes || [], wf = A.wFilter && A.wFilter.id === id ? A.wFilter : (A.wFilter = { id, from:'', to:'', place:'' });
-  const dayKey = r => new Date(r.started_at).toLocaleDateString('sv-SE');   // local YYYY-MM-DD
-  const workMin = r => Math.max(0, ((r.ended_at ? new Date(r.ended_at) : Date.now()) - new Date(r.started_at)) / 60000 - (r.break_s || 0) / 60);
-  const placeTxt = r => [r.place, r.task_title].filter(Boolean).join(' · ');
-  const places = () => [...new Set(all.map(r => r.place).filter(Boolean))].sort();
+  const all = routes || [], f = dayFilter();
+  let useFilter = filterOn(f);
   shell('people', `${topbar(w.name, true)}
     <div class="pad">
       <div class="person-row big">${avatar(w.name, isLive(w) ? 'live' : '')}<div><b>${esc(w.name)}</b><span>${esc(w.phone)} · ${esc(t('lastActive', { a:ago(w.last_seen) }))}</span></div></div>
       <div class="tool-row"><a class="btn primary small" href="${telLink(w.phone)}">${esc(t('call'))}</a><a class="btn ghost small" target="_blank" href="${waLink(w.phone)}">WhatsApp</a></div>
       <div class="chips">${(w.cities || []).map(c => `<span class="chip">${esc(c.name)}</span>`).join('')}</div>
       <h2 class="sec">${esc(t('workDays'))}</h2>
-      <div class="steppers"><div><label class="f">${esc(t('fFrom'))}</label><input class="in small" type="date" id="wfFrom" value="${esc(wf.from)}"></div><div><label class="f">${esc(t('fTo'))}</label><input class="in small" type="date" id="wfTo" value="${esc(wf.to)}"></div></div>
-      <div class="steppers" style="margin-top:8px"><div><label class="f">${esc(t('place'))}</label><select class="in small" id="wfPlace"></select></div><div style="flex:0 0 auto;align-self:flex-end"><button class="btn ghost small" id="wfReset">${esc(t('reset'))}</button></div></div>
-      <div id="wDaysSum" class="muted small" style="margin:10px 0 2px"></div>
+      <div id="wDaysSum" class="muted small" style="margin:0 0 2px"></div>
       <div id="wMap" class="wmap"></div>
       <div id="wRouteInfo" class="muted small" style="margin-bottom:6px"></div>
       <div id="wDays"></div>
@@ -192,37 +240,18 @@ async function viewWorker(id, back){
     $('#wRouteInfo').textContent = [fmtDT(r.started_at), placeTxt(r), fmtDist(r.distance_m || 0)].filter(Boolean).join(' · ');
     try{ if(b.isValid()) wm.fitBounds(b, { paddingTopLeft:[30, 70], paddingBottomRight:[30, 30], maxZoom:17, animate:false }); }catch{}
   };
-  // working days: filter by date range and place; each line says when and where
+  // working days: the ones of the filter chosen on the Mitarbeiter page (or all); each line says when and where
   const renderDays = () => {
-    const ps = places(); if(wf.place && !ps.includes(wf.place)) wf.place = '';
-    $('#wfPlace').innerHTML = `<option value="">${esc(t('fAll'))}</option>` + ps.map(p => `<option ${p === wf.place ? 'selected' : ''}>${esc(p)}</option>`).join('');
-    const list = all.filter(r => { const d = dayKey(r); return (!wf.from || d >= wf.from) && (!wf.to || d <= wf.to) && (!wf.place || r.place === wf.place); });
-    const km = list.reduce((a, r) => a + (r.distance_m || 0), 0), min = list.reduce((a, r) => a + workMin(r), 0);
-    $('#wDaysSum').textContent = list.length ? t('daysSum', { n:list.length, km:fmtDist(km), h:fmtHm(min) }) : '';
-    const tm = d => new Date(d).toLocaleTimeString(loc(), { hour:'2-digit', minute:'2-digit' });
-    $('#wDays').innerHTML = list.map(r => `<button class="row-line rbtn" data-r="${r.id}"><div class="rb-main"><b>${esc(new Date(r.started_at).toLocaleDateString(loc(), { weekday:'short', day:'2-digit', month:'2-digit', year:'2-digit' }))} · ${esc(tm(r.started_at))}–${esc(r.ended_at ? tm(r.ended_at) : t('active'))}</b><small data-place="${r.id}">${esc(placeTxt(r) || '…')}</small></div><span>${esc(fmtDist(r.distance_m || 0))} · ${esc(fmtHm(workMin(r)) + ' ' + t('h'))}</span></button>`).join('') || `<p class="muted small">${esc(t(all.length ? 'noDaysRange' : 'noDays'))}</p>`;
-    document.querySelectorAll('.rbtn').forEach(b => b.onclick = () => { const r = all.find(x => x.id === b.dataset.r); if(r){ showRoute(r); wm.getContainer().scrollIntoView({ behavior:'smooth', block:'center' }); } });
+    const list = useFilter ? all.filter(r => dayMatches(r, f)) : all;
+    $('#wDaysSum').innerHTML = esc(daysSum(list)) + (useFilter ? ` · ${esc(t('filtered'))} <button class="link" id="wAll">${esc(t('showAllDays'))}</button>` : '');
+    $('#wDays').innerHTML = list.map(r => dayLine(r)).join('') || `<p class="muted small">${esc(t(all.length ? 'noDaysRange' : 'noDays'))}</p>`;
+    document.querySelectorAll('#wDays .rbtn').forEach(b => b.onclick = () => { const r = all.find(x => x.id === b.dataset.r); if(r){ showRoute(r); wm.getContainer().scrollIntoView({ behavior:'smooth', block:'center' }); } });
+    const wa = $('#wAll'); if(wa) wa.onclick = () => { useFilter = false; renderDays(); };
     return list;
   };
-  const refilter = () => { const list = renderDays(); if(list[0]) showRoute(list[0]); else { wl.clearLayers(); $('#wRouteInfo').textContent = ''; } };
-  $('#wfFrom').onchange = e => { wf.from = e.target.value; refilter(); };
-  $('#wfTo').onchange = e => { wf.to = e.target.value; refilter(); };
-  $('#wfPlace').onchange = e => { wf.place = e.target.value; refilter(); };
-  $('#wfReset').onclick = () => { wf.from = wf.to = wf.place = ''; $('#wfFrom').value = $('#wfTo').value = ''; refilter(); };
-  refilter();
-  // days without an order (or whose order was deleted): name the place from the first GPS point, once, and keep it
-  (async () => {
-    for(const r of all.filter(x => !x.place).slice(0, 15)){
-      try{
-        const { data:p0 } = await sb.from('route_points').select('lat,lng').eq('route_id', r.id).order('t').limit(1);
-        if(!p0 || !p0[0]) continue;
-        const pl = await reversePlace(p0[0].lat, p0[0].lng); if(!pl) continue;
-        r.place = pl; sb.from('routes').update({ place:pl }).eq('id', r.id).then(() => {}, () => {});
-        const el = document.querySelector(`[data-place="${r.id}"]`); if(el) el.textContent = placeTxt(r);
-      }catch{}
-    }
-    if(document.getElementById('wfPlace')) renderDays();
-  })();
+  const list0 = renderDays(), first = (focusId && all.find(r => r.id === focusId)) || list0[0];
+  if(first) showRoute(first);
+  fillPlaces(all, () => { if(document.getElementById('wDays')) renderDays(); });
   $('#wsave').onclick = async () => { const { error } = await sb.from('workers').update({ zone_minutes:+$('#wzm').value, notes:$('#wnotes').value.trim() || null }).eq('id', id); if(!error){ await loadWorkers(); toast(t('saved')); } };
   $('#wdel').onclick = async () => { if(!await confirmBox(t('del'), t('delWorkerQ', { name:w.name }), t('del'), true)) return; await sb.from('workers').delete().eq('id', id); await loadWorkers(); back(); };
 }
