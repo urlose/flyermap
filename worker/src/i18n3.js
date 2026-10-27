@@ -7,6 +7,7 @@ Object.assign(T.de, {
   startDayN:'Tag {n} starten', dayDone:'Tag {n} ist geschafft – zurück zum Start.', dayStatus:'Heute: Tag {n}', navOpen:'Navigation',
   navStart:'Folge der Linie', navS:'Geradeaus weiter', navSL:'Leicht links', navSR:'Leicht rechts', navL:'Links abbiegen', navR:'Rechts abbiegen', navU:'Wenden', navEnd:'Ende der Route – zurück am Startpunkt',
   sugWorkers:'Empfehlung: {n} Mitarbeiter, damit alles in {d} Tagen fertig wird.', applySug:'Übernehmen',
+  changeStart:'Startpunkt ändern', pickStartNow:'Neuen Startpunkt auf der Karte antippen · Abbrechen',
   navIn:'In {d}', navOnto:'auf {name}', navAhead:'Weiter auf {name}', navOff:'Abseits der Route ({d})', navExt:'In Karten-App öffnen', navThen:'Danach: {s}',
 });
 Object.assign(T.ru, {
@@ -16,5 +17,6 @@ Object.assign(T.ru, {
   startDayN:'Начать день {n}', dayDone:'День {n} закончен — возвращайтесь на старт.', dayStatus:'Сегодня: день {n}', navOpen:'Навигация',
   navStart:'Идите по линии', navS:'Прямо', navSL:'Чуть левее', navSR:'Чуть правее', navL:'Налево', navR:'Направо', navU:'Развернуться', navEnd:'Конец маршрута — вы у точки старта',
   sugWorkers:'Рекомендуем {n} работников, чтобы уложиться в {d} дн.', applySug:'Принять',
+  changeStart:'Изменить старт', pickStartNow:'Нажмите на карту — новый старт · Отмена',
   navIn:'Через {d}', navOnto:'на {name}', navAhead:'Дальше по {name}', navOff:'Вы вне маршрута ({d})', navExt:'Открыть в приложении карт', navThen:'Затем: {s}',
 });

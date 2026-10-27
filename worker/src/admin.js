@@ -234,12 +234,26 @@ function viewCreate(edit){
   const sf = searchField('cSearch', t('searchAddr'), (c, q) => { d.place = c; if(q) q.value = c.name + (c.sub ? ', ' + c.sub : ''); setStart(c.lat, c.lng); }, { near:() => d.start ? [d.start.lat, d.start.lng] : null });
   shell('tasks', `<div id="fullMap" class="fullmap"></div>
     <div class="map-top"><button class="icon-btn" id="cBack" aria-label="${esc(t('back'))}">${ICONS.back}</button><div class="grow">${sf.html}</div></div>
+    <button class="chip pick-btn" id="cPick" hidden></button>
     <div class="sheet" id="cSheet"><p class="muted small" style="margin:0">${esc(t('tapMap'))}</p></div>`, { map:true });
   sf.bind();
   $('#cBack').onclick = viewTasks;
   const m = makeMap($('#fullMap'), null, 13);
   const zoneLayer = L.layerGroup().addTo(m), planLayer = L.layerGroup().addTo(m);
-  m.on('click', e => { d.place = null; const qi = $('#cSearch'); if(qi) qi.value = ''; setStart(e.latlng.lat, e.latlng.lng, true); });
+  // once a start point exists, a tap on the map does nothing (no accidental moves while looking at the routes);
+  // the start is moved only through the "change start" button (then the next tap) or a new address search
+  const updPick = () => {
+    const b = $('#cPick'); if(!b) return;
+    b.hidden = !d.start; b.classList.toggle('on', !!d.pick);
+    b.textContent = d.pick ? t('pickStartNow') : '📍 ' + t('changeStart');
+    m.getContainer().style.cursor = d.pick ? 'crosshair' : '';
+  };
+  $('#cPick').onclick = () => { d.pick = !d.pick; updPick(); };
+  m.on('click', e => {
+    if(d.start && !d.pick) return;
+    d.pick = false; d.place = null; const qi = $('#cSearch'); if(qi) qi.value = '';
+    setStart(e.latlng.lat, e.latlng.lng, true);
+  });
   const sheet = html => { $('#cSheet').innerHTML = html; };
   // while recalculating keep the sheet where it is (no flicker) and show a small status in the corner;
   // only a brand-new start point replaces the sheet with a plain loading message
@@ -252,6 +266,7 @@ function viewCreate(edit){
   const startArr = () => [d.start.lat, d.start.lng];
   async function setStart(lat, lng, fromClick){
     const tok = ++d.token; d.start = { lat, lng }; d.keepView = !!fromClick;   // a tap on the map keeps the zoom the admin chose
+    d.pick = false; updPick();
     d.g = null; d.plan = null; d.err = null; d.assign = {};
     zoneLayer.clearLayers(); planLayer.clearLayers();
     L.marker([lat, lng], { icon:dot('pin-start', 26) }).addTo(zoneLayer); if(!fromClick) m.setView([lat, lng], 15, { animate:false });
