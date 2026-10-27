@@ -384,18 +384,33 @@
   // grow the work area from the start (walking distance) until it holds `flyers` mailboxes
   function selectForFlyers(g, start, flyers){
     const root = nearestNode(g, start, g.pts.map((p, i) => i).filter(i => g.adj[i].length));
-    const tree = sssp(g, root), items = [];
-    // skip long, nearly empty roads (fields, forest tracks, a lone farm at the end of a road):
-    // walking them costs far more time than the few mailboxes there are worth
+    const tree = sssp(g, root), n = g.pts.length, items = [];
+    // 1. skip long, nearly empty roads (fields, forest tracks, a lone farm at the end of a road)
     let sm = 0, sl = 0; g.edges.forEach(e => { if(e.mb > 0){ sm += e.mb; sl += e.len; } });
-    const minDens = Math.max(4, Math.min(15, 0.25 * (sl ? sm / sl * 1000 : 0)));   // mailboxes per km
+    const D = sl ? sm / sl * 1000 : 0;                                   // average mailboxes per km of street
+    const minDens = Math.max(4, Math.min(15, 0.25 * D));
     const sparse = e => e.len > 100 && e.mb * 1000 / e.len < minDens;
     let skipped = 0;
-    g.edges.forEach((e, i) => { if(e.mb > 0){ if(sparse(e)){ skipped += e.mb; return; } items.push({ i, k:(tree.d[e.a] + tree.d[e.b]) / 2 }); } });
-    items.sort((x, y) => x.k - y.k);
+    g.edges.forEach((e, i) => { if(e.mb > 0){ if(sparse(e)){ skipped += e.mb; return; } items.push({ i, k:(tree.d[e.a] + tree.d[e.b]) / 2, v:tree.d[e.a] <= tree.d[e.b] ? e.b : e.a }); } });
+    // 2. drop poor branches: along the shortest-path tree from the start, a branch (road out to somewhere) is only worth walking
+    //    if it brings enough mailboxes per km (walking out and back). Rich far villages survive, long empty spurs do not.
+    const B = new Float64Array(n), Lc = new Float64Array(n), kids = Array.from({ length:n }, () => []);
+    for(let v = 0; v < n; v++) if(tree.pe[v] !== -1) kids[tree.pv[v]].push(v);
+    const pre = [], st = [root]; while(st.length){ const v = st.pop(); pre.push(v); for(const c of kids[v]) st.push(c); }
+    items.forEach(it => { const e = g.edges[it.i]; B[it.v] += e.mb; Lc[it.v] += e.len; });
+    for(let q = pre.length - 1; q >= 0; q--){ const v = pre[q]; if(tree.pe[v] === -1) continue; Lc[v] += g.edges[tree.pe[v]].len; B[tree.pv[v]] += B[v]; Lc[tree.pv[v]] += Lc[v]; }
+    const thr = Math.max(6, Math.min(25, 0.3 * D)), drop = new Uint8Array(n);
+    for(const v of pre){ if(tree.pe[v] === -1) continue; if(drop[tree.pv[v]]) drop[v] = 1; else if(tree.d[v] > 300 && Lc[v] > 0 && B[v] / Lc[v] * 1000 < thr) drop[v] = 1; }
+    const kept = items.filter(it => { if(drop[it.v]){ skipped += g.edges[it.i].mb; return false; } return true; });
+    kept.sort((x, y) => x.k - y.k);
     let sum = 0; const ids = [];
-    for(const it of items){ if(sum >= flyers) break; ids.push(it.i); sum += g.edges[it.i].mb; }
-    return { ids, mailboxes:sum, skipped_mb:skipped, reach_m:Math.round(ids.length ? items[ids.length - 1].k : 0) };
+    for(const it of kept){ if(sum >= flyers) break; ids.push(it.i); sum += g.edges[it.i].mb; }
+    return { ids, mailboxes:sum, skipped_mb:skipped, reach_m:Math.round(ids.length ? kept[ids.length - 1].k : 0) };
+  }
+  // radius for the next map-data round: scale by area so one step is usually enough
+  function nextRadius(g, flyers){
+    const need = flyers * 1.35, have = Math.max(1, g.usable != null ? g.usable : (g.mailboxes || 1));
+    return Math.min(4000, Math.round(Math.max(g.radius * 1.3, g.radius * Math.sqrt(need / have) * 1.1)));
   }
   function hull(points){
     const p = points.map(q => [q[1], q[0]]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
@@ -457,8 +472,9 @@
       const g = largestComponent(buildGraph(osm, null));
       attachBuildings(g, parseBuildings(bld));
       g.radius = r; g.street_m = Math.round(g.edges.reduce((s, e) => s + e.len, 0)); last = g;
-      if(g.mailboxes >= flyers * 1.35 || r >= 4000) break;
-      r = Math.min(4000, Math.round(r * 1.5));
+      g.usable = selectForFlyers(g, start, 1e9).mailboxes;   // what is really worth walking (poor spurs excluded)
+      if(g.usable >= flyers * 1.15 || r >= 4000) break;
+      r = nextRadius(g, flyers);
     }
     return last;
   }
@@ -479,6 +495,6 @@
     return partition(g, start, n).map((part, k) => ({ idx:k, ...planPart(g, part, start) }));
   }
 
-  const api = { COLORS, densifyPath, makeTracker, makeBoxCounter, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
+  const api = { COLORS, densifyPath, makeTracker, makeBoxCounter, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
   if(typeof module !== 'undefined' && module.exports) module.exports = api; else root.Planner = api;
 })(typeof window !== 'undefined' ? window : globalThis);

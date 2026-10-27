@@ -259,9 +259,9 @@ function viewCreate(){
     if(!d.start) return;
     if(!d.g){ renderSheet(); return; }
     const tok = ++d.token;
-    if(d.g.mailboxes < d.flyers * 1.05 && d.g.radius < 4000){
+    if((d.g.usable != null ? d.g.usable : d.g.mailboxes) < d.flyers * 1.05 && d.g.radius < 4000){
       busy(t('loadingMore'));
-      try{ d.g = await Planner.loadForFlyers(startArr(), d.flyers, { proxy:osmProxy, radius:Math.min(4000, Math.round(d.g.radius * 1.5)) }); }catch{}
+      try{ d.g = await Planner.loadForFlyers(startArr(), d.flyers, { proxy:osmProxy, radius:Planner.nextRadius(d.g, d.flyers) }); }catch{}
       if(tok !== d.token) return;
     }
     busy(t('calculating')); await new Promise(r => setTimeout(r, 30));
