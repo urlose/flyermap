@@ -611,6 +611,41 @@
       if(bi < 0) break;
       S.splice(bi, 1); cur = bb;
     }
+    // D. a village the route walks through or touches anyway is done completely. Walking its main road (on the way to somewhere else, or
+    //    because the flyer count ran out right there) and leaving its side streets looks like a mistake and costs little.
+    //    Small villages only: a town cut off at the flyer count stays cut. The surplus comes off elsewhere (E).
+    if(flyers < 1e8){
+      const protect = new Set();
+      for(let guard = 0; guard < 60; guard++){
+        let best = null;
+        const onWay = new Uint8Array(n); for(let i = 0; i < E; i++) if(cur.inSet[i]){ onWay[g.edges[i].a] = 1; onWay[g.edges[i].b] = 1; }
+        for(const c of cl){
+          if(protect.has(c)) continue;
+          let any = false, restMb = 0, restLen = 0, allMb = 0;
+          for(const it of c.items){ const e = g.edges[it.i]; allMb += e.mb; if(cur.inSet[it.i] || onWay[e.a] || onWay[e.b]) any = true; if(!cur.inSet[it.i]){ restMb += e.mb; restLen += e.len; } }
+          if(!any || !restMb || allMb > 0.1 * flyers || restMb * 1000 / (restLen + 1) < minDens) continue;   // touched, small, not a thin spur
+          const r = restMb / (restLen + 1);
+          if(!best || r > best.r) best = { c, r, restMb };
+        }
+        if(!best || cur.sum + best.restMb > 1.15 * flyers) break;
+        const p = S.find(x => x.c === best.c);
+        if(p) p.items = best.c.items.slice(); else S.push({ c:best.c, items:best.c.items.slice() });
+        protect.add(best.c); cur = build(S);
+      }
+      // E. trim again: whole clusters only, never a completed one, and never one whose streets would stay half walked
+      for(let guard = 0; guard < 400 && cur.sum > flyers && S.length > 1; guard++){
+        let bi = -1, bb = null, br = -1;
+        for(let k = 0; k < S.length; k++){
+          if(protect.has(S[k].c)) continue;
+          const b = build(S.filter((_, j) => j !== k)); if(b.sum < flyers) continue;
+          if(S[k].c.items.some(it => b.inSet[it.i])) continue;
+          const r = (cur.cost - b.cost) / Math.max(1, cur.sum - b.sum);
+          if(r > br){ br = r; bi = k; bb = b; }
+        }
+        if(bi < 0) break;
+        S.splice(bi, 1); cur = bb;
+      }
+    }
     const ids = []; let reach = 0; sum = 0;
     for(let i = 0; i < E; i++) if(cur.inSet[i]){ ids.push(i); sum += g.edges[i].mb; const k = (tree.d[g.edges[i].a] + tree.d[g.edges[i].b]) / 2; if(k > reach) reach = k; }
     return { ids, mailboxes:sum, skipped_mb:skipped, reach_m:Math.round(reach) };
