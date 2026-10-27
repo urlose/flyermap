@@ -1,6 +1,7 @@
 // Login by phone (SMS code only once), then choose admin or worker
 import { t, I } from './i18n.js';
 import { sb, store, errText, $, esc, PRIVACY_URL, normPhone } from './core.js';
+import { legalLinks, bindLegal, legalModal } from './legalview.js';
 import { UI, plain, cityPicker, langSwitch, toast } from './ui.js';
 import { acceptToken } from './worker.js';
 import { bootAdmin, viewAdminLogin } from './admin.js';
@@ -17,8 +18,9 @@ export function viewLogin(){
       <button class="btn primary big" id="lSend">${esc(t('sendCode'))}</button><div class="err" id="lErr"></div>
       ${langSwitch(I.lang)}
       <p class="small center"><button class="link" id="lEmail">${esc(t('emailAdmin'))}</button></p>
-      <p class="small center"><a href="${PRIVACY_URL}#${I.lang}" class="muted">${esc(t('privacy'))}</a></p>
+      ${legalLinks()}
     </div>`);
+  bindLegal(viewLogin);
   $('#lEmail').onclick = () => viewAdminLogin(viewLogin);
   $('#lPhone').addEventListener('keydown', e => { if(e.key === 'Enter') $('#lSend').click(); });
   $('#lSend').onclick = async () => {
@@ -86,8 +88,9 @@ function viewProfileForm(signOut){
     <label class="f">${esc(t('name'))}</label><input class="in" id="rName" autocomplete="name">
     <label class="f">${esc(t('cities'))}</label>${cp.html}
     <button class="btn primary big" id="rGo" style="margin-top:18px">${esc(t('continue'))}</button><div class="err" id="rErr"></div>
-    <p class="small muted">${esc(t('regAgree'))} <a href="${PRIVACY_URL}#${I.lang}">${esc(t('privacy'))}</a>.</p>`);
+    <p class="small muted">${esc(t('regAgree'))} <button class="link" id="rPriv">${esc(t('privacy'))}</button>.</p>`);
   cp.bind();
+  $('#rPriv').onclick = () => legalModal('privacy');
   $('#rGo').onclick = async () => {
     const name = $('#rName').value.trim(), cities = cp.get();
     if(name.length < 2){ $('#rErr').textContent = t('e_name_required'); return; }

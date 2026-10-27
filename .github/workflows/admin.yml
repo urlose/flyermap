@@ -38,6 +38,7 @@ jobs:
           cp -R admin/. site/
           rm -f site/.gitignore
           cp -R worker/www site/app
+          node worker/scripts/legal-pages.mjs site
           ls -R site | head -40
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

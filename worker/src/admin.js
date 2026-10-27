@@ -3,6 +3,7 @@ import Planner from '../../admin/planner.js';
 import { t, I } from './i18n.js';
 import { sb, store, $, esc, css, hav, fmtDist, fmtH, fmtHm, fmtN, fmtDay, fmtDT, ago, waLink, telLink, loopPath, normPhone, loc, reversePlace } from './core.js';
 import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, labelIcon, fit, modal, confirmBox, toast, searchField, langSwitch, avatar, every, personIcon } from './ui.js';
+import { legalLinks, bindLegal } from './legalview.js';
 
 const GREEN = '#16A34A';
 // finished map-data answers are shared through our own server (edge function 'osm'): same area = instant for every admin
@@ -163,8 +164,9 @@ async function viewPeople(){
       <label class="f" style="margin-top:12px">${esc(t('whoCanGo'))}</label>${sf.html}
       <div class="searchbox" style="margin-top:8px"><span class="sb-ic">${ICONS.search}</span><input id="wQ" class="sb-in" placeholder="${esc(t('searchNamePhone'))}"></div>
       <div id="wList" style="margin-top:12px"></div>
+      ${legalLinks()}
     </div>`);
-  sf.bind();
+  sf.bind(); bindLegal(viewPeople);
   let days = [];   // all working days (newest first), loaded below
   const render = () => {
     const places = [...new Set(days.map(r => r.place).filter(Boolean))].sort(); if(f.place && !places.includes(f.place)) f.place = '';
@@ -230,14 +232,14 @@ async function viewWorker(id, back, focusId){
     wl.clearLayers(); const b = L.latLngBounds([]);
     try{
       if(r.plan_id){ const { data:pl } = await sb.from('task_plans').select('path,color').eq('id', r.plan_id).maybeSingle(); if(pl && pl.path && pl.path.length > 1){ L.polyline(pl.path, { color:'#64748B', weight:4, opacity:.55, dashArray:'2 8', lineCap:'round' }).addTo(wl); pl.path.forEach(p => b.extend(p)); } }
-      const pts = await fetchPoints(r.id);
+      const pts = r.track_deleted_at ? [] : await fetchPoints(r.id);
       if(pts.length > 1){
         const ll = pts.map(p => [p.lat, p.lng]); L.polyline(ll, { color:css('--route'), weight:5, opacity:.95 }).addTo(wl); ll.forEach(p => b.extend(p));
         L.marker(ll[0], { icon:dot('start-dot', 16) }).addTo(wl);
         if(r.ended_at) L.marker(ll[ll.length - 1], { icon:dot('end-dot', 16) }).addTo(wl); else L.marker(ll[ll.length - 1], { icon:personIcon(w.name, true, '') }).addTo(wl);
       }
     }catch{}
-    $('#wRouteInfo').textContent = [fmtDT(r.started_at), placeTxt(r), fmtDist(r.distance_m || 0)].filter(Boolean).join(' · ');
+    $('#wRouteInfo').textContent = [fmtDT(r.started_at), placeTxt(r), fmtDist(r.distance_m || 0), r.track_deleted_at ? t('trackDeleted') : ''].filter(Boolean).join(' · ');
     try{ if(b.isValid()) wm.fitBounds(b, { paddingTopLeft:[30, 70], paddingBottomRight:[30, 30], maxZoom:17, animate:false }); }catch{}
   };
   // working days: the ones of the filter chosen on the Mitarbeiter page (or all); each line says when and where

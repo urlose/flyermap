@@ -3,6 +3,7 @@ import { registerPlugin } from '@capacitor/core';
 import { App } from '@capacitor/app';
 import Planner from '../../admin/planner.js';
 import { makeNav, dayProgress } from './nav.js';
+import { locationNote, legalLinks, bindLegal } from './legalview.js';
 import { t, I } from './i18n.js';
 import { NATIVE, PRIVACY_URL, store, rpc, errText, $, esc, css, hav, fmtDist, fmtHm, fmtN, fmtTime, fmtDay, loopPath } from './core.js';
 import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, fit, modal, confirmBox, toast, cityPicker, langSwitch, avatar, every } from './ui.js';
@@ -151,6 +152,7 @@ async function atStartOrAsk(task){
   });
 }
 export async function beginRoute(task){
+  if(!await locationNote(W.me, async v => { await rpc('ack_privacy', { p_token:W.token, p_version:v }); if(W.me){ W.me.privacy_version = v; await store.set('me', W.me); } })) return;
   if(!await atStartOrAsk(task)) return;
   const plan = task && task.plan;
   W.route = { id:null, taskId:task ? task.id : null, planId:plan ? plan.id : null, task:task || null, startedAt:Date.now(), endedAt:null, distance:0, paused:false, pausedAt:null, breakMs:0, ops:[] };
@@ -448,9 +450,9 @@ function viewProfile(){
       ${W.canAdmin ? `<button class="btn ghost" id="pAdmin">${esc(t('switchToAdmin'))}</button>` : ''}
       <button class="btn ghost" id="pOut" style="margin-top:20px">${esc(t('logout'))}</button>
       <button class="btn ghost danger-text" id="pDel">${esc(t('delAcc'))}</button>
-      <p class="small center"><a href="${PRIVACY_URL}#${I.lang}" class="muted">${esc(t('privacy'))}</a></p>
+      ${legalLinks()}
     </div>`);
-  cp.bind();
+  cp.bind(); bindLegal(viewProfile);
   $('#pSave').onclick = async () => {
     if(!cp.get().length){ $('#pErr').textContent = t('e_city_required'); return; }
     $('#pSave').disabled = true;
