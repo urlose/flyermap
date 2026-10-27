@@ -50,6 +50,19 @@ export function makeNav(plan){
       if(best && best.d <= 60) pos = Math.max(pos - 3, best.pos);   // never jump backwards
       return { off:Math.round(best ? best.d : 0), pos };
     },
+    // the stretch right in front of the walker (from the current position, about `meters` along the line, not past the
+    // end of the day): drawn bright on the map so the next steps stand out from the rest of the route
+    ahead(dayIdx, meters){
+      if(path.length < 2) return [];
+      const day = days[Math.max(0, Math.min(days.length - 1, dayIdx || 0))], j = Math.floor(pos), f = pos - j;
+      const out = [j < path.length - 1 ? [path[j][0] + (path[j + 1][0] - path[j][0]) * f, path[j][1] + (path[j + 1][1] - path[j][1]) * f] : path[j]];
+      const here = cum[j] + (j < path.length - 1 ? f * (cum[j + 1] - cum[j]) : 0);
+      for(let i = j + 1; i <= day.i1 && i < path.length; i++){
+        if(cum[i] - here > meters){ const a = path[i - 1], b = path[i], need = meters - (cum[i - 1] - here), L = cum[i] - cum[i - 1] || 1, t = Math.max(0, Math.min(1, need / L)); out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]); break; }
+        out.push(path[i]);
+      }
+      return out;
+    },
     // next instruction inside the given day: { step, dist (m), then }
     next(dayIdx){
       const day = days[Math.max(0, Math.min(days.length - 1, dayIdx || 0))], endIdx = day.i1;

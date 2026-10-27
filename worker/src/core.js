@@ -68,6 +68,15 @@ export async function searchPlaces(q, citiesOnly, near){
   });
 }
 
+// place name for a point: "district, town" (Photon reverse geocoding)
+export async function reversePlace(lat, lng){
+  const r = await fetch(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}&lang=de&limit=1`); if(!r.ok) return null;
+  const f = ((await r.json()).features || [])[0]; if(!f) return null;
+  const p = f.properties, town = p.city || p.town || p.village || (p.osm_key === 'place' ? p.name : '') || p.county || '';
+  const part = p.district || p.locality || p.suburb || '';
+  return [part && part !== town ? part : '', town].filter(Boolean).join(', ') || null;
+}
+
 /* ---------- walking zone (Valhalla) ---------- */
 export function circlePoly(lat, lng, meters, n = 48){ const o = []; for(let i = 0; i < n; i++){ const a = i / n * 2 * Math.PI; o.push([lat + meters/111320*Math.cos(a), lng + meters/(111320*Math.cos(lat*Math.PI/180))*Math.sin(a)]); } return o; }
 export async function isochrone(lat, lng, min){

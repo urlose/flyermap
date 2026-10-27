@@ -1,7 +1,7 @@
 import L from 'leaflet';
 import Planner from '../../admin/planner.js';
 import { t, I } from './i18n.js';
-import { sb, store, $, esc, css, hav, fmtDist, fmtH, fmtHm, fmtN, fmtDay, fmtDT, ago, waLink, telLink, loopPath, normPhone } from './core.js';
+import { sb, store, $, esc, css, hav, fmtDist, fmtH, fmtHm, fmtN, fmtDay, fmtDT, ago, waLink, telLink, loopPath, normPhone, loc, reversePlace } from './core.js';
 import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, labelIcon, fit, modal, confirmBox, toast, searchField, langSwitch, avatar, every, personIcon } from './ui.js';
 
 const GREEN = '#16A34A';
@@ -150,16 +150,24 @@ function viewPeople(){
 async function viewWorker(id, back){
   back = back || viewPeople;
   const w = wById(id); if(!w) return back();
-  const { data:routes } = await sb.from('routes').select('*').eq('worker_id', id).order('started_at', { ascending:false }).limit(30);
+  const { data:routes } = await sb.from('routes').select('*').eq('worker_id', id).order('started_at', { ascending:false }).limit(300);
+  const all = routes || [], wf = A.wFilter && A.wFilter.id === id ? A.wFilter : (A.wFilter = { id, from:'', to:'', place:'' });
+  const dayKey = r => new Date(r.started_at).toLocaleDateString('sv-SE');   // local YYYY-MM-DD
+  const workMin = r => Math.max(0, ((r.ended_at ? new Date(r.ended_at) : Date.now()) - new Date(r.started_at)) / 60000 - (r.break_s || 0) / 60);
+  const placeTxt = r => [r.place, r.task_title].filter(Boolean).join(' · ');
+  const places = () => [...new Set(all.map(r => r.place).filter(Boolean))].sort();
   shell('people', `${topbar(w.name, true)}
     <div class="pad">
       <div class="person-row big">${avatar(w.name, isLive(w) ? 'live' : '')}<div><b>${esc(w.name)}</b><span>${esc(w.phone)} · ${esc(t('lastActive', { a:ago(w.last_seen) }))}</span></div></div>
       <div class="tool-row"><a class="btn primary small" href="${telLink(w.phone)}">${esc(t('call'))}</a><a class="btn ghost small" target="_blank" href="${waLink(w.phone)}">WhatsApp</a></div>
       <div class="chips">${(w.cities || []).map(c => `<span class="chip">${esc(c.name)}</span>`).join('')}</div>
-      <h2 class="sec">${esc(t('route'))}</h2>
+      <h2 class="sec">${esc(t('workDays'))}</h2>
+      <div class="steppers"><div><label class="f">${esc(t('fFrom'))}</label><input class="in small" type="date" id="wfFrom" value="${esc(wf.from)}"></div><div><label class="f">${esc(t('fTo'))}</label><input class="in small" type="date" id="wfTo" value="${esc(wf.to)}"></div></div>
+      <div class="steppers" style="margin-top:8px"><div><label class="f">${esc(t('place'))}</label><select class="in small" id="wfPlace"></select></div><div style="flex:0 0 auto;align-self:flex-end"><button class="btn ghost small" id="wfReset">${esc(t('reset'))}</button></div></div>
+      <div id="wDaysSum" class="muted small" style="margin:10px 0 2px"></div>
       <div id="wMap" class="wmap"></div>
       <div id="wRouteInfo" class="muted small" style="margin-bottom:6px"></div>
-      ${(routes || []).map(r => `<button class="row-line rbtn" data-r="${r.id}"><b>${esc(fmtDT(r.started_at))}</b><span>${esc(fmtDist(r.distance_m))} · ${esc(fmtHm(Math.max(0, ((r.ended_at ? new Date(r.ended_at) : Date.now()) - new Date(r.started_at)) / 60000 - (r.break_s || 0) / 60)) + ' ' + t('h'))}${r.ended_at ? '' : ' · ' + t('active')}</span></button>`).join('') || `<p class="muted small">—</p>`}
+      <div id="wDays"></div>
       <h2 class="sec">${esc(t('settings'))}</h2>
       <label class="f">${esc(t('zoneLabel'))}</label>
       <select class="in" id="wzm">${[30, 45, 60, 75, 90, 120].map(m => `<option value="${m}" ${m === w.zone_minutes ? 'selected' : ''}>${m < 60 ? m + ' ' + t('min') : (m/60).toString().replace('.', ',') + ' ' + t('h')} (~${Math.round(m * KM_PER_MIN_TRANSIT)} km)</option>`).join('')}</select>
@@ -181,11 +189,40 @@ async function viewWorker(id, back){
         if(r.ended_at) L.marker(ll[ll.length - 1], { icon:dot('end-dot', 16) }).addTo(wl); else L.marker(ll[ll.length - 1], { icon:personIcon(w.name, true, '') }).addTo(wl);
       }
     }catch{}
-    $('#wRouteInfo').textContent = fmtDT(r.started_at) + ' · ' + fmtDist(r.distance_m);
+    $('#wRouteInfo').textContent = [fmtDT(r.started_at), placeTxt(r), fmtDist(r.distance_m || 0)].filter(Boolean).join(' · ');
     try{ if(b.isValid()) wm.fitBounds(b, { paddingTopLeft:[30, 70], paddingBottomRight:[30, 30], maxZoom:17, animate:false }); }catch{}
   };
-  document.querySelectorAll('.rbtn').forEach(b => b.onclick = () => { const r = (routes || []).find(x => x.id === b.dataset.r); if(r){ showRoute(r); wm.getContainer().scrollIntoView({ behavior:'smooth', block:'center' }); } });
-  if(routes && routes[0]) showRoute(routes[0]);
+  // working days: filter by date range and place; each line says when and where
+  const renderDays = () => {
+    const ps = places(); if(wf.place && !ps.includes(wf.place)) wf.place = '';
+    $('#wfPlace').innerHTML = `<option value="">${esc(t('fAll'))}</option>` + ps.map(p => `<option ${p === wf.place ? 'selected' : ''}>${esc(p)}</option>`).join('');
+    const list = all.filter(r => { const d = dayKey(r); return (!wf.from || d >= wf.from) && (!wf.to || d <= wf.to) && (!wf.place || r.place === wf.place); });
+    const km = list.reduce((a, r) => a + (r.distance_m || 0), 0), min = list.reduce((a, r) => a + workMin(r), 0);
+    $('#wDaysSum').textContent = list.length ? t('daysSum', { n:list.length, km:fmtDist(km), h:fmtHm(min) }) : '';
+    const tm = d => new Date(d).toLocaleTimeString(loc(), { hour:'2-digit', minute:'2-digit' });
+    $('#wDays').innerHTML = list.map(r => `<button class="row-line rbtn" data-r="${r.id}"><div class="rb-main"><b>${esc(new Date(r.started_at).toLocaleDateString(loc(), { weekday:'short', day:'2-digit', month:'2-digit', year:'2-digit' }))} · ${esc(tm(r.started_at))}–${esc(r.ended_at ? tm(r.ended_at) : t('active'))}</b><small data-place="${r.id}">${esc(placeTxt(r) || '…')}</small></div><span>${esc(fmtDist(r.distance_m || 0))} · ${esc(fmtHm(workMin(r)) + ' ' + t('h'))}</span></button>`).join('') || `<p class="muted small">${esc(t(all.length ? 'noDaysRange' : 'noDays'))}</p>`;
+    document.querySelectorAll('.rbtn').forEach(b => b.onclick = () => { const r = all.find(x => x.id === b.dataset.r); if(r){ showRoute(r); wm.getContainer().scrollIntoView({ behavior:'smooth', block:'center' }); } });
+    return list;
+  };
+  const refilter = () => { const list = renderDays(); if(list[0]) showRoute(list[0]); else { wl.clearLayers(); $('#wRouteInfo').textContent = ''; } };
+  $('#wfFrom').onchange = e => { wf.from = e.target.value; refilter(); };
+  $('#wfTo').onchange = e => { wf.to = e.target.value; refilter(); };
+  $('#wfPlace').onchange = e => { wf.place = e.target.value; refilter(); };
+  $('#wfReset').onclick = () => { wf.from = wf.to = wf.place = ''; $('#wfFrom').value = $('#wfTo').value = ''; refilter(); };
+  refilter();
+  // days without an order (or whose order was deleted): name the place from the first GPS point, once, and keep it
+  (async () => {
+    for(const r of all.filter(x => !x.place).slice(0, 15)){
+      try{
+        const { data:p0 } = await sb.from('route_points').select('lat,lng').eq('route_id', r.id).order('t').limit(1);
+        if(!p0 || !p0[0]) continue;
+        const pl = await reversePlace(p0[0].lat, p0[0].lng); if(!pl) continue;
+        r.place = pl; sb.from('routes').update({ place:pl }).eq('id', r.id).then(() => {}, () => {});
+        const el = document.querySelector(`[data-place="${r.id}"]`); if(el) el.textContent = placeTxt(r);
+      }catch{}
+    }
+    if(document.getElementById('wfPlace')) renderDays();
+  })();
   $('#wsave').onclick = async () => { const { error } = await sb.from('workers').update({ zone_minutes:+$('#wzm').value, notes:$('#wnotes').value.trim() || null }).eq('id', id); if(!error){ await loadWorkers(); toast(t('saved')); } };
   $('#wdel').onclick = async () => { if(!await confirmBox(t('del'), t('delWorkerQ', { name:w.name }), t('del'), true)) return; await sb.from('workers').delete().eq('id', id); await loadWorkers(); back(); };
 }

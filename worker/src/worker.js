@@ -116,7 +116,42 @@ let wakeLock = null;
 async function keepAwake(on){ try{ if(on && !NATIVE && 'wakeLock' in navigator && !wakeLock) wakeLock = await navigator.wakeLock.request('screen'); if(!on && wakeLock){ await wakeLock.release(); wakeLock = null; } }catch{} }
 document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible' && W.route && !W.route.endedAt){ wakeLock = null; keepAwake(true); } });
 
+// one position fix (native: through the background plugin, which also asks for permission)
+function hereOnce(ms){
+  return new Promise(resolve => {
+    let done = false, id = null; const fin = v => { if(done) return; done = true; if(id != null){ if(String(id).startsWith('web:')) navigator.geolocation.clearWatch(+String(id).slice(4)); else BackgroundGeolocation.removeWatcher({ id }).catch(() => {}); } resolve(v); };
+    setTimeout(() => fin(null), ms || 20000);
+    if(NATIVE){
+      BackgroundGeolocation.addWatcher({ requestPermissions:true, stale:false }, (loc, err) => { if(err){ if(err.code === 'NOT_AUTHORIZED') showLocDenied(); fin(null); return; } if(loc && loc.accuracy <= 100) fin({ lat:loc.latitude, lng:loc.longitude, acc:loc.accuracy }); }).then(x => { id = x; if(done) BackgroundGeolocation.removeWatcher({ id:x }).catch(() => {}); }, () => fin(null));
+    }else if(navigator.geolocation){
+      id = 'web:' + navigator.geolocation.watchPosition(p => { if(p.coords.accuracy <= 100) fin({ lat:p.coords.latitude, lng:p.coords.longitude, acc:p.coords.accuracy }); }, () => fin(null), { enableHighAccuracy:true, maximumAge:15000 });
+    }else fin(null);
+  });
+}
+const START_RADIUS = 150;   // metres from the start point within which the working day can begin
+const AHEAD_M = 400;        // bright stretch of the route in front of the walker
+// the working day starts only at the start point: checks the position first; a test worker / admin may override
+async function atStartOrAsk(task){
+  if(!task || task.start_lat == null) return true;
+  const mo = modal(`<h2>${esc(t('startCheck'))}</h2><p class="muted">${esc(t('startLocating'))}</p>`);
+  const here = await hereOnce(20000); mo.remove();
+  const tester = W.canAdmin || String((W.me && W.me.phone) || '').startsWith('+4900000000');
+  const d = here ? hav(here.lat, here.lng, task.start_lat, task.start_lng) : null;
+  if(d != null && d - Math.min(here.acc || 0, 50) <= START_RADIUS) return true;
+  return new Promise(resolve => {
+    const m2 = modal(`<h2>${esc(t('notAtStart'))}</h2>
+      <p>${esc(d == null ? t('startNoGps') : t('startTooFar', { d:fmtDist(d), r:START_RADIUS + ' ' + t('m') }))}</p>
+      <a class="btn primary" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${task.start_lat},${task.start_lng}&travelmode=walking">${esc(t('toStart'))}</a>
+      <button class="btn ghost" data-again>${esc(t('checkAgain'))}</button>
+      ${tester ? `<button class="btn ghost" data-force>${esc(t('startAnyway'))}</button>` : ''}
+      <button class="btn ghost" data-n>${esc(t('cancel'))}</button>`);
+    m2.querySelector('[data-n]').onclick = () => { m2.remove(); resolve(false); };
+    m2.querySelector('[data-again]').onclick = async () => { m2.remove(); resolve(await atStartOrAsk(task)); };
+    const f = m2.querySelector('[data-force]'); if(f) f.onclick = () => { m2.remove(); resolve(true); };
+  });
+}
 export async function beginRoute(task){
+  if(!await atStartOrAsk(task)) return;
   const plan = task && task.plan;
   W.route = { id:null, taskId:task ? task.id : null, planId:plan ? plan.id : null, task:task || null, startedAt:Date.now(), endedAt:null, distance:0, paused:false, pausedAt:null, breakMs:0, ops:[] };
   W.queue = []; W.track = []; W.tracker = null; W.counter = null; W.prev = null;
@@ -226,15 +261,15 @@ async function drawCoverage(m, task, below){
     below && below.forEach(l => l.bringToFront());
   }catch{}
 }
-function drawTaskBase(m, task, dayIdx){
+function drawTaskBase(m, task, dayIdx, dim){
   let b = L.latLngBounds([[task.start_lat, task.start_lng]]);
   if(task.zone_polygon){ const z = L.polygon(task.zone_polygon, { color:css('--brand'), weight:2, fillOpacity:.06, interactive:false }).addTo(m); b = z.getBounds(); }
   let planLine = null; const pl = task.plan;
   if(pl && pl.path && pl.path.length > 1){
     const col = pl.color || '#2563EB', days = pl.days && pl.days.length > 1 ? pl.days : null;
     if(days){   // several working days: today's loop is drawn strong, the other days faded (alternating dashes tell them apart)
-      planLine = L.featureGroup(days.map((d, k) => { const on = dayIdx == null || dayIdx === k; return L.polyline(pl.path.slice(d.i0, d.i1 + 1), { color:col, weight:on ? 5 : 3, opacity:on ? .8 : .3, dashArray:k % 2 ? '9 7' : null, lineJoin:'round' }).addTo(m); }));
-    }else planLine = L.polyline(pl.path, { color:col, weight:5, opacity:.75, lineJoin:'round' }).addTo(m);
+      planLine = L.featureGroup(days.map((d, k) => { const on = dayIdx == null || dayIdx === k; return L.polyline(pl.path.slice(d.i0, d.i1 + 1), { color:col, weight:on ? (dim ? 4 : 5) : 3, opacity:on ? (dim ? .35 : .8) : (dim ? .15 : .3), dashArray:k % 2 ? '9 7' : null, lineJoin:'round' }).addTo(m); }));
+    }else planLine = L.polyline(pl.path, { color:col, weight:dim ? 4 : 5, opacity:dim ? .35 : .75, lineJoin:'round' }).addTo(m);
     b = planLine.getBounds();
   }
   L.marker([task.start_lat, task.start_lng], { icon:dot('pin-start', 24) }).addTo(m);
@@ -335,8 +370,17 @@ function viewTracking(){
   const plan = task && task.plan, nav = hasPlan && plan && plan.path && plan.path.length > 1 ? makeNav(plan) : null;
   if(nav){ nav.setPosFromSample(W.tracker.nextIndex()); if(W.route.dayIdx == null){ W.route.dayIdx = nav.dayAt(); saveRoute(); } }
   const dayIdx = nav ? W.route.dayIdx : null;
-  if(task){ const base = drawTaskBase(m, task, dayIdx); if(!last) fit(m, base.b, 40); drawCoverage(m, task, []); }
+  if(task){ const base = drawTaskBase(m, task, dayIdx, !!nav); if(!last) fit(m, base.b, 40); drawCoverage(m, task, []); }
   const doneLayer = L.layerGroup().addTo(m);
+  // the next ~400 m of the route bright and thick, the rest of the day faded: the walker sees where to go now
+  const aheadLayer = L.layerGroup().addTo(m), aheadCol = (plan && plan.color) || '#2563EB';
+  const drawAhead = () => {
+    if(!nav) return; aheadLayer.clearLayers();
+    const pts = nav.ahead(dayIdx, AHEAD_M); if(pts.length < 2) return;
+    L.polyline(pts, { color:'#fff', weight:11, opacity:.9, lineJoin:'round', lineCap:'round', interactive:false }).addTo(aheadLayer);
+    L.polyline(pts, { color:aheadCol, weight:7, opacity:1, lineJoin:'round', lineCap:'round', interactive:false }).addTo(aheadLayer);
+    L.marker(pts[pts.length - 1], { icon:dot('ahead-dot', 12), interactive:false }).addTo(aheadLayer);
+  };
   const trackLine = L.polyline(W.track.map(p => [p[0], p[1]]), { color:css('--route'), weight:3, opacity:.8 }).addTo(m);
   let meMarker = null; view.follow = true;
   m.on('dragstart', () => { view.follow = false; });
@@ -376,7 +420,7 @@ function viewTracking(){
   view.me = (lat, lng) => { if(!meMarker) meMarker = L.marker([lat, lng], { icon:dot('me-dot', 20), zIndexOffset:1000 }).addTo(m); else meMarker.setLatLng([lat, lng]); };
   view.update = (lat, lng) => {
     trackLine.addLatLng([lat, lng]); view.me(lat, lng);
-    if(nav){ lastOff = nav.locate(lat, lng).off; updateNav(); }
+    if(nav){ lastOff = nav.locate(lat, lng).off; updateNav(); drawAhead(); }
     if(view.follow) m.panTo([lat, lng], { animate:true });
     if(Date.now() - lastDraw > 800){ lastDraw = Date.now(); drawDone(); stats(); }
     updateSync();
@@ -384,7 +428,7 @@ function viewTracking(){
   view.refreshDemo = () => { const b = $('#demo'); if(b) b.textContent = W.sim ? t('demoStop') : t('demoWalk'); };
   if(last) view.me(last[0], last[1]);
   if(nav && last) lastOff = nav.locate(last[0], last[1]).off;
-  updateNav(); drawDone(); stats(); every(1000, stats); updateSync();
+  updateNav(); drawAhead(); drawDone(); stats(); every(1000, stats); updateSync();
   $('#stop').onclick = finishRoute;
   if($('#pause')) $('#pause').onclick = pauseRoute;
   if($('#resume')) $('#resume').onclick = resumeRoute;
