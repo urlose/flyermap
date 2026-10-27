@@ -10,7 +10,7 @@
   'use strict';
   const R = 6371000, RAD = Math.PI / 180;
   const HIGHWAYS = 'primary|secondary|tertiary|unclassified|residential|living_street|pedestrian|road';
-  const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+  const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.openstreetmap.fr/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
   const WORK_HOURS = 7;            // 8 h shift minus 1 h unpaid break
   const WALK_KMH = 3;              // effective walking speed while distributing
   const BOX_SEC = 5;               // handling time per mailbox (seconds)
@@ -40,7 +40,7 @@
       const launch = () => {
         if(done || next >= OVERPASS.length) return;
         const url = OVERPASS[next++];
-        if(next < OVERPASS.length) timers.push(setTimeout(launch, 10000));
+        if(next < OVERPASS.length) timers.push(setTimeout(launch, 6000));
         const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null; if(ctrl) ctrls.push(ctrl);
         const tm = ctrl ? setTimeout(() => ctrl.abort(), total) : null; if(tm) timers.push(tm);
         (async () => {
