@@ -13,6 +13,8 @@
   const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.openstreetmap.fr/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
   const WORK_HOURS = 7;            // 8 h shift minus 1 h unpaid break
   const WALK_KMH = 2.5;            // effective walking speed while distributing (with a bag of flyers)
+  // way to a village counts 3x its length: out and back, plus the extra loops when the work is split between workers and days
+  const TRANSIT_W = 3;
   const BOX_SEC = 5;               // handling time per mailbox (seconds)
 
   function dist(a, b){
@@ -430,23 +432,102 @@
     const thr = Math.max(6, Math.min(25, 0.3 * D)), drop = new Uint8Array(n);
     for(const v of pre){ if(tree.pe[v] === -1) continue; if(drop[tree.pv[v]]) drop[v] = 1; else if(tree.d[v] > 300 && Lc[v] > 0 && B[v] / Lc[v] * 1000 < thr) drop[v] = 1; }
     const kept = items.filter(it => { if(drop[it.v]){ skipped += g.edges[it.i].mb; return false; } return true; });
-    // 3. group the remaining street pieces into villages (connected pieces) and take the most efficient villages first:
-    //    mailboxes per metre walked, including the way there and back. A dense village a bit further away beats a thin one nearby.
+    // 3. villages = dense clusters of street pieces. Long, thin connecting roads do NOT glue villages together (otherwise a poor
+    //    connector drags a rich village down and the pieces taken from such a blob are random).
+    //    Clusters are taken greedily by mailboxes per metre of NEW walking: the way out is paid only once, so a village that lies
+    //    on the way to an already chosen one is almost free and comes next. Mailboxes along the way are delivered on the way.
+    const denseThr = Math.max(12, Math.min(45, 0.25 * D));
     const uf = Int32Array.from({ length:n }, (_, i) => i), find = x => { while(uf[x] !== x){ uf[x] = uf[uf[x]]; x = uf[x]; } return x; };
-    kept.forEach(it => { const e = g.edges[it.i]; uf[find(e.a)] = find(e.b); });
+    const isDense = it => { const e = g.edges[it.i]; return e.len <= 100 || e.mb * 1000 / e.len >= denseThr; };
+    kept.forEach(it => { if(isDense(it)){ const e = g.edges[it.i]; uf[find(e.a)] = find(e.b); } });
     const groups = new Map();
     for(const it of kept){
-      const e = g.edges[it.i], r = find(e.a); let c = groups.get(r);
-      if(!c){ c = { items:[], mb:0, len:0, d:Infinity }; groups.set(r, c); }
-      c.items.push(it); c.mb += e.mb; c.len += e.len; c.d = Math.min(c.d, it.k);
+      const e = g.edges[it.i], key = isDense(it) ? find(e.a) : 'x' + it.i; let c = groups.get(key);
+      if(!c) groups.set(key, c = { items:[], entry:e.a });
+      c.items.push(it);
+      for(const v of [e.a, e.b]) if(tree.d[v] < tree.d[c.entry]) c.entry = v;
     }
-    const order = [...groups.values()].map(c => ({ ...c, eff:c.mb / (1.35 * c.len + 2 * c.d + 200) })).sort((x, y) => y.eff - x.eff);
-    let sum = 0, reach = 0; const ids = [];
-    for(const c of order){
-      if(sum >= flyers) break;
-      c.items.sort((x, y) => x.k - y.k);
-      for(const it of c.items){ if(sum >= flyers) break; ids.push(it.i); sum += g.edges[it.i].mb; if(it.k > reach) reach = it.k; }
+    const cl = [...groups.values()], E = g.edges.length, taken = new Uint8Array(E), reached = new Uint8Array(n);
+    cl.forEach((c, i) => { c.ix = i; });
+    let alive = new Set(), sum = 0;
+    const take = i => { if(!taken[i]){ taken[i] = 1; sum += g.edges[i].mb; } };
+    const markPath = c => { let x = c.entry; while(tree.pe[x] !== -1){ take(tree.pe[x]); reached[g.edges[tree.pe[x]].a] = 1; reached[g.edges[tree.pe[x]].b] = 1; x = tree.pv[x]; } };
+    const transit = c => { const path = []; let x = c.entry, len = 0; while(!reached[x] && tree.pe[x] !== -1){ path.push(tree.pe[x]); len += g.edges[tree.pe[x]].len; x = tree.pv[x]; } return { path, len }; };
+    // start again from a given set of chosen clusters {c, items}
+    const reset = (list, forbid) => {
+      taken.fill(0); reached.fill(0); reached[root] = 1; sum = 0;
+      const inList = new Set(list.map(p => p.c)); alive = new Set();
+      cl.forEach((c, i) => { if(!inList.has(c) && !(forbid && forbid.has(c))) alive.add(i); });
+      for(const p of list){ markPath(p.c); for(const it of p.items){ take(it.i); reached[g.edges[it.i].a] = 1; reached[g.edges[it.i].b] = 1; } }
+    };
+    // best remaining cluster by mailboxes per metre of NEW walking (the way out is paid once; a village on the way is nearly free)
+    const bestCluster = () => {
+      let best = null;
+      for(const ci of alive){
+        const c = cl[ci]; let mb = 0, len = 0;
+        for(const it of c.items) if(!taken[it.i]){ mb += g.edges[it.i].mb; len += g.edges[it.i].len; }
+        if(!mb){ alive.delete(ci); continue; }
+        const tr = transit(c), c0 = 1.35 * len + TRANSIT_W * tr.len + 200, score = mb / c0;
+        if(!best || score > best.score) best = { ci, c, tr, mb, score };
+      }
+      return best;
+    };
+    const pick = (best, limit) => {
+      const { ci, c, tr } = best; alive.delete(ci);
+      for(const ei of tr.path) take(ei);                                   // houses on the way out are served on the way
+      const items = c.items.filter(it => !taken[it.i]).sort((x, y) => x.k - y.k), used = [];
+      for(const it of items){ if(sum >= limit) break; take(it.i); used.push(it); }
+      for(const it of c.items){ if(taken[it.i]){ reached[g.edges[it.i].a] = 1; reached[g.edges[it.i].b] = 1; } }
+      for(const ei of tr.path){ reached[g.edges[ei].a] = 1; reached[g.edges[ei].b] = 1; }
+      return { c, items:used.length ? used : c.items };
+    };
+    // the chosen street pieces of every cluster + the road from the start to it (walked once out and back)
+    const build = list => {
+      const inSet = new Uint8Array(E), isItem = new Uint8Array(E); let sm = 0, c = 0;
+      const add = (i, it) => { if(it) isItem[i] = 1; if(!inSet[i]){ inSet[i] = 1; sm += g.edges[i].mb; } };
+      for(const p of list){ for(const it of p.items) add(it.i, true); let x = p.c.entry; while(tree.pe[x] !== -1){ add(tree.pe[x], false); x = tree.pv[x]; } }
+      for(let i = 0; i < E; i++) if(inSet[i]) c += g.edges[i].len * (isItem[i] ? 1.35 : TRANSIT_W);
+      return { inSet, sum:sm, cost:c + 200 * list.length };
+    };
+    // greedy until the flyers are covered (a small overshoot is better than a village left half walked)
+    const grow = (list, forbid) => {
+      reset(list, forbid); const out = list.slice();
+      while(sum < flyers){ const best = bestCluster(); if(!best) break; out.push(pick(best, sum + best.mb - flyers <= 0.05 * flyers ? Infinity : flyers)); }
+      return out;
+    };
+    let S = grow([], null), cur = build(S);
+    // A. exchange: drop the dearest cluster and cover the gap with a cheaper combination (a greedy pick of a big far village
+    //    often costs more than a nearer village plus a few small ones)
+    for(let round = 0; round < 15 && flyers < 1e8; round++){
+      const cand = S.map((p, k) => { const b = build(S.filter((_, j) => j !== k)); return { k, r:(cur.cost - b.cost) / Math.max(1, cur.sum - b.sum) }; }).sort((x, y) => y.r - x.r).slice(0, 6);
+      let done = false;
+      for(const { k } of cand){
+        const S2 = grow(S.filter((_, j) => j !== k), new Set([S[k].c])), b2 = build(S2);
+        if(b2.sum >= flyers && b2.cost < cur.cost * 0.995){ S = S2; cur = b2; done = true; break; }
+      }
+      if(!done) break;
     }
+    // B. along the way: villages the route passes anyway cost almost nothing (more than needed is fine, it is trimmed below)
+    if(flyers < 1e8){
+      reset(S, null);
+      for(let guard = 0; guard < 400; guard++){
+        const best = bestCluster(); if(!best || best.score < 0.9 * cur.sum / cur.cost || sum + best.mb > 1.35 * flyers) break;
+        S.push(pick(best, Infinity)); cur = build(S);
+      }
+    }
+    // C. trim: while the flyers stay covered, drop the cluster that saves the most walking per mailbox lost
+    for(let guard = 0; guard < 400 && cur.sum > flyers && S.length > 1; guard++){
+      let bi = -1, bb = null, br = -1;
+      for(let k = 0; k < S.length; k++){
+        const b = build(S.filter((_, j) => j !== k)); if(b.sum < flyers) continue;
+        const r = (cur.cost - b.cost) / Math.max(1, cur.sum - b.sum);
+        if(r > br){ br = r; bi = k; bb = b; }
+      }
+      if(bi < 0) break;
+      S.splice(bi, 1); cur = bb;
+    }
+    const ids = []; let reach = 0; sum = 0;
+    for(let i = 0; i < E; i++) if(cur.inSet[i]){ ids.push(i); sum += g.edges[i].mb; const k = (tree.d[g.edges[i].a] + tree.d[g.edges[i].b]) / 2; if(k > reach) reach = k; }
     return { ids, mailboxes:sum, skipped_mb:skipped, reach_m:Math.round(reach) };
   }
   const MAX_R = 6000;
