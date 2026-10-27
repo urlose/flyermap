@@ -45,17 +45,34 @@ export function adminTab(tab){
 }
 
 /* ---------- KARTE: who is where right now ---------- */
+const MAPQ = { place:null, km:25 };
 function viewLive(){
+  let m = null, layer = null, fitted = false, tickFn = null;
+  const sf = searchField('mapQ', t('mapSearchPh'), c => { MAPQ.place = c; refit(); tickFn && tickFn(); }, { citiesOnly:true });
   shell('map', `<div id="fullMap" class="fullmap"></div>
+    <div class="map-search">${sf.html}<div class="rad-row hidden" id="radRow"></div></div>
     <div class="float-card"><div class="fc-row"><b id="liveCount">…</b><span class="muted small" id="liveUpd"></span></div><div class="live-list" id="liveList"></div></div>`, { map:true });
-  const m = makeMap($('#fullMap'), null, 12);
-  const layer = L.layerGroup().addTo(m); let fitted = false;
+  sf.bind();
+  m = makeMap($('#fullMap'), MAPQ.place ? [MAPQ.place.lat, MAPQ.place.lng] : null, 12);
+  layer = L.layerGroup().addTo(m);
+  const refit = () => { if(MAPQ.place){ fitted = true; m.fitBounds(L.latLng(MAPQ.place.lat, MAPQ.place.lng).toBounds(MAPQ.km * 2000), { padding:[20, 20], animate:false }); } };
+  const radRow = () => {
+    const r = $('#radRow'); if(!r) return; r.classList.toggle('hidden', !MAPQ.place);
+    r.innerHTML = MAPQ.place ? `<b class="rad-city">${esc(MAPQ.place.name)}</b>` + [10, 25, 50, 100].map(k => `<button class="chip ${k === MAPQ.km ? 'on' : ''}" data-k="${k}">${k} km</button>`).join('') + `<button class="chip" id="radX" aria-label="clear">×</button>` : '';
+    r.querySelectorAll('[data-k]').forEach(bn => bn.onclick = () => { MAPQ.km = +bn.dataset.k; refit(); tickFn(); });
+    const x = $('#radX'); if(x) x.onclick = () => { MAPQ.place = null; $('#mapQ').value = ''; fitted = false; tickFn(); };
+  };
   const tick = async () => {
     try{ await Promise.all([loadWorkers(), loadLive()]); }catch{ return; }
     const live = A.workers.filter(isLive);
     // everybody with a known position is shown: live = green person, otherwise grey person + approximate area
     const known = A.workers.filter(w => w.last_lat != null && w.last_lng != null);
     layer.clearLayers(); const b = L.latLngBounds([]);
+    const pl = MAPQ.place;
+    if(pl){
+      L.circle([pl.lat, pl.lng], { radius:MAPQ.km * 1000, color:'#2563EB', weight:2, fillColor:'#2563EB', fillOpacity:.06, interactive:false }).addTo(layer);
+      L.circleMarker([pl.lat, pl.lng], { radius:6, color:'#fff', weight:3, fillColor:'#2563EB', fillOpacity:1, interactive:false }).addTo(layer);
+    }
     for(const w of known){
       const on = isLive(w), p = [w.last_lat, w.last_lng];
       if(!on) L.circle(p, { radius:350, color:'#94A3B8', weight:1, fillColor:'#94A3B8', fillOpacity:.15, interactive:false }).addTo(layer);
@@ -64,13 +81,26 @@ function viewLive(){
       if(on) fetchPoints(w.active_route_id).then(pts => { if(pts.length > 1) L.polyline(pts.map(q => [q.lat, q.lng]), { color:css('--route'), weight:4, opacity:.85 }).addTo(layer); }).catch(() => {});
     }
     if(!$('#liveCount')) return;
-    const off = known.length - live.length;
-    $('#liveCount').textContent = (live.length ? t('liveNow', { n:live.length }) : t('nobodyLive')) + (off ? ' · ' + t('offlineN', { n:off }) : '');
+    radRow();
     $('#liveUpd').textContent = t('updated', { x:t('justNow') });
-    $('#liveList').innerHTML = known.map(w => `<button class="live-chip" data-id="${w.id}"><span class="dotc ${isLive(w) ? pace(w).cls : 'pause'}"></span>${esc(w.name)}${isLive(w) ? (pace(w).label ? ' · ' + esc(pace(w).label) : '') : ' · ' + esc(ago(w.last_seen))}</button>`).join('');
-    document.querySelectorAll('.live-chip').forEach(c => c.onclick = () => { const w = wById(c.dataset.id); if(w) m.setView([w.last_lat, w.last_lng], 16); });
-    if(!fitted && known.length){ fit(m, b, 80); fitted = true; }
+    if(pl){
+      // workers near the searched city: by last known position or by home city
+      const near = A.workers.map(w => {
+        const dLast = w.last_lat != null ? hav(pl.lat, pl.lng, w.last_lat, w.last_lng) / 1000 : Infinity, dh = distTo(w, pl.lat, pl.lng);
+        return dLast <= dh.km ? { w, km:dLast, why:'' } : { w, km:dh.km, why:dh.city ? t('livesIn', { c:dh.city.name }) : '' };
+      }).filter(x => x.km <= MAPQ.km).sort((a, c) => a.km - c.km);
+      $('#liveCount').textContent = near.length ? t('nearN', { n:near.length, c:pl.name }) : t('nearNone', { k:MAPQ.km, c:pl.name });
+      $('#liveList').innerHTML = near.map(({ w, km, why }) => `<button class="live-chip" data-id="${w.id}"><span class="dotc ${isLive(w) ? pace(w).cls : 'pause'}"></span>${esc(w.name)} · ${Math.round(km)} km${why ? ' · ' + esc(why) : ''}</button>`).join('');
+      document.querySelectorAll('.live-chip').forEach(c => c.onclick = () => viewWorker(c.dataset.id));
+    } else {
+      const off = known.length - live.length;
+      $('#liveCount').textContent = (live.length ? t('liveNow', { n:live.length }) : t('nobodyLive')) + (off ? ' · ' + t('offlineN', { n:off }) : '');
+      $('#liveList').innerHTML = known.map(w => `<button class="live-chip" data-id="${w.id}"><span class="dotc ${isLive(w) ? pace(w).cls : 'pause'}"></span>${esc(w.name)}${isLive(w) ? (pace(w).label ? ' · ' + esc(pace(w).label) : '') : ' · ' + esc(ago(w.last_seen))}</button>`).join('');
+      document.querySelectorAll('.live-chip').forEach(c => c.onclick = () => { const w = wById(c.dataset.id); if(w) m.setView([w.last_lat, w.last_lng], 16); });
+    }
+    if(!fitted){ if(pl) refit(); else if(known.length){ fit(m, b, 80); fitted = true; } }
   };
+  tickFn = tick; radRow();
   tick(); every(A.demo ? 3000 : 6000, tick);
 }
 
