@@ -190,6 +190,91 @@
     return parts;
   }
 
+  /* ---------- 3b. keep every worker's area in one piece ---------- */
+  // street pieces of one part that hang together (share a junction)
+  function pieces(g, ids){
+    const set = new Set(ids), seen = new Set(), out = [];
+    for(const i of ids){
+      if(seen.has(i)) continue;
+      const st = [i], c = []; seen.add(i);
+      while(st.length){ const e = st.pop(); c.push(e); for(const v of [g.edges[e].a, g.edges[e].b]) for(const { e:f } of g.adj[v]) if(set.has(f) && !seen.has(f)){ seen.add(f); st.push(f); } }
+      out.push(c);
+    }
+    return out;
+  }
+  // which parts use a junction (junction → Map(part → number of street ends))
+  function owners(g, parts){
+    const own = new Map();
+    parts.forEach((p, k) => { for(const e of p) for(const v of [g.edges[e].a, g.edges[e].b]){ let m = own.get(v); if(!m) own.set(v, m = new Map()); m.set(k, (m.get(k) || 0) + 1); } });
+    return own;
+  }
+  // A sector cut around the start often leaves a few streets of a far village to one worker while a neighbour walks the rest of
+  // that village: the worker has to walk all the way there for a handful of mailboxes. Such detached bits go to the neighbour
+  // whose area they touch most. Big second areas (more than 30 % of the part) stay: those are planned on purpose.
+  function tidyParts(g, parts){
+    parts = parts.map(p => p.slice());
+    const lenOf = c => c.reduce((s, e) => s + g.edges[e].len, 0);
+    for(let round = 0; round < 20; round++){
+      let moved = false;
+      for(let k = 0; k < parts.length; k++){
+        const ps = pieces(g, parts[k]); if(ps.length < 2) continue;
+        ps.sort((a, b) => lenOf(b) - lenOf(a));
+        const own = owners(g, parts), keep = ps[0].slice(), all = lenOf(parts[k]);
+        for(const c of ps.slice(1)){
+          if(lenOf(c) > 0.3 * all){ for(const e of c) keep.push(e); continue; }   // a real second area of this worker, not a stray bit
+          const touch = new Map();
+          for(const e of c) for(const v of [g.edges[e].a, g.edges[e].b]){ const m = own.get(v); if(m) for(const [q, cnt] of m) if(q !== k) touch.set(q, (touch.get(q) || 0) + cnt); }
+          if(!touch.size){ for(const e of c) keep.push(e); continue; }   // reachable only over roads nobody walks: leave it
+          let bq = -1, bc = -1; for(const [q, cnt] of touch) if(cnt > bc){ bc = cnt; bq = q; }
+          for(const e of c) parts[bq].push(e); moved = true;
+        }
+        parts[k] = keep;
+      }
+      if(!moved) break;
+    }
+    return parts;
+  }
+  const edgeMin = x => 1.35 * x.len / 1000 / WALK_KMH * 60 + x.mb * BOX_SEC / 60;   // rough minutes for one street piece
+  // neighbouring parts of P (they share a junction)
+  function neighbours(g, parts, P, own){
+    const nb = new Set();
+    for(const e of parts[P]) for(const v of [g.edges[e].a, g.edges[e].b]){ const m = own.get(v); if(m) for(const q of m.keys()) if(q !== P) nb.add(q); }
+    return nb;
+  }
+  // P hands a connected strip along its border with Q to Q (breadth first from the border), worth about `want` minutes
+  function shiftStrip(g, parts, P, Q, want, own){
+    const inP = new Set(parts[P]), take = new Set(), seen = new Set(), queue = [];
+    for(const e of parts[P]) for(const v of [g.edges[e].a, g.edges[e].b]){ const m = own.get(v); if(m && m.has(Q) && !seen.has(e)){ seen.add(e); queue.push(e); } }
+    let got = 0;
+    for(let h = 0; h < queue.length && got < want && take.size < inP.size - 1; h++){
+      const e = queue[h]; take.add(e); got += edgeMin(g.edges[e]);
+      for(const v of [g.edges[e].a, g.edges[e].b]) for(const { e:f } of g.adj[v]) if(inP.has(f) && !seen.has(f)){ seen.add(f); queue.push(f); }
+    }
+    if(!take.size) return null;
+    const out = parts.map(p => p.slice());
+    out[P] = out[P].filter(e => !take.has(e)); for(const e of take) out[Q].push(e);
+    return tidyParts(g, out);
+  }
+  // evens out the parts (rough minutes) without tearing them: the slowest part hands a strip to its fastest neighbour
+  function balanceParts(g, parts, rounds){
+    const cost = p => p.reduce((s, e) => s + edgeMin(g.edges[e]), 0);
+    parts = tidyParts(g, parts);
+    for(let it = 0; it < (rounds || 40); it++){
+      const c = parts.map(cost), mean = c.reduce((a, b) => a + b, 0) / parts.length, own = owners(g, parts);
+      let next = null;
+      for(const P of c.map((x, k) => k).sort((a, b) => c[b] - c[a])){
+        if(c[P] <= mean * 1.03) break;
+        const nb = [...neighbours(g, parts, P, own)].filter(q => c[q] < c[P]).sort((a, b) => c[a] - c[b]);
+        if(!nb.length) continue;
+        next = shiftStrip(g, parts, P, nb[0], (c[P] - c[nb[0]]) / 2, own);
+        if(next) break;
+      }
+      if(!next) break;
+      parts = next;
+    }
+    return parts;
+  }
+
   /* ---------- 4. route per part ---------- */
   function nearestNode(g, p, among){
     let best = -1, bd = Infinity;
@@ -655,30 +740,39 @@
     const N = n || 1, build = (parts, rootNode) => parts.map((part, k) => {
       const r = planPart(g, part, start, rootNode);
       const boxes = []; let mb = 0; for(const i of part){ mb += g.edges[i].mb; for(const b of g.edges[i].boxes) boxes.push(b); }
-      return { idx:k, ...r, mailboxes:mb, boxes, minutes:routeMinutes(r.length_m, mb) };
+      return { idx:k, ...r, part, mailboxes:mb, boxes, minutes:routeMinutes(r.length_m, mb) };
     });
     // Equal slices of the street length give unequal days: the walk to far villages and back is not in the weights.
     // So several candidate splits are built (equal slices + time-balanced cuts from different starting angles), each is
-    // routed for real, and the one where the slowest worker finishes earliest wins (ties: smallest spread).
-    const score = rs => { const m = rs.map(r => r.minutes); return Math.max(...m) * 1000 + (Math.max(...m) - Math.min(...m)); };
-    let bestParts = partition(g, start, N, sel.ids, w), routes = build(bestParts);
+    // every split is cleaned up so each worker gets ONE connected area (no detached streets inside a colleague's area), evened out
+    // along the borders, routed for real, and scored: the slowest worker first, total walking second.
+    const score = rs => { const m = rs.map(r => r.minutes), mx = Math.max(...m), sum = m.reduce((a, b) => a + b, 0); return mx + 0.3 * sum / m.length + 0.01 * (mx - Math.min(...m)); };
+    let bestParts = null, routes = null, builds = 0;
+    const tryParts = parts => { const rs = build(parts); builds++; if(!routes || score(rs) < score(routes)){ routes = rs; bestParts = parts; return true; } return false; };
+    // every candidate with its stray bits handed over; the three best are also evened out along the borders
+    const cands = [partition(g, start, N, sel.ids, w), ...(N > 1 ? balancedSplits(g, start, N, sel.ids, 8) : [])];
+    const tried = cands.map(raw => { const t = tidyParts(g, raw), rs = build(t); builds++; if(!routes || score(rs) < score(routes)){ routes = rs; bestParts = t; } return { t, sc:score(rs) }; });
+    if(N > 1) for(const { t } of tried.sort((a, b) => a.sc - b.sc).slice(0, 3)) tryParts(balanceParts(g, t));
     if(N > 1){
-      for(const parts of balancedSplits(g, start, N, sel.ids, 8)){
-        const rs = build(parts); if(score(rs) < score(routes)){ routes = rs; bestParts = parts; }
-      }
-      // fine tuning with the real routes: shift pieces at the borders from the slower worker to the faster neighbour
-      let parts = bestParts, cur = routes;
-      for(let it = 0; it < 8; it++){
-        const mins = cur.map(r => r.minutes), mean = mins.reduce((a, b) => a + b, 0) / N;
-        if(Math.max(...mins) <= mean * 1.05) break;
-        parts = parts.map(p => p.slice());
-        for(let k = 0; k < N; k++){
-          const j = (k + 1) % N, a = cur[k].minutes, b = cur[j].minutes;
-          if(a > b * 1.08 && parts[k].length > 1){ const m = Math.max(1, Math.min(parts[k].length - 1, Math.round(parts[k].length * Math.min(0.35, (a - b) / (2 * a))))); parts[j] = parts[k].splice(parts[k].length - m, m).concat(parts[j]); }
-          else if(b > a * 1.08 && parts[j].length > 1){ const m = Math.max(1, Math.min(parts[j].length - 1, Math.round(parts[j].length * Math.min(0.35, (b - a) / (2 * b))))); parts[k] = parts[k].concat(parts[j].splice(0, m)); }
+      // fine tuning with the real routes: the slowest worker hands streets at the border to a faster neighbour
+      // (a strip grown from the shared border, or the last pieces of its sector), stray bits are cleaned up again
+      for(let it = 0; it < 10 && builds < 30; it++){
+        const m = routes.map(r => r.minutes), own = owners(g, bestParts), P = m.indexOf(Math.max(...m));
+        let better = false;
+        for(const Q of [...neighbours(g, bestParts, P, own)].filter(q => m[q] < m[P] * 0.95).sort((a, b) => m[a] - m[b]).slice(0, 2)){
+          for(const f of [0.5, 0.25]){ const parts = shiftStrip(g, bestParts, P, Q, (m[P] - m[Q]) * f, own); if(parts && tryParts(parts)){ better = true; break; } }
+          if(better) break;
         }
-        cur = build(parts);
-        if(score(cur) < score(routes)){ routes = cur; bestParts = parts; }
+        if(!better){   // the old way: neighbours in the ring of sectors swap their border pieces
+          const parts = bestParts.map(p => p.slice());
+          for(let k = 0; k < N; k++){
+            const j = (k + 1) % N, a = m[k], b = m[j];
+            if(a > b * 1.08 && parts[k].length > 1){ const c = Math.max(1, Math.min(parts[k].length - 1, Math.round(parts[k].length * Math.min(0.35, (a - b) / (2 * a))))); parts[j] = parts[k].splice(parts[k].length - c, c).concat(parts[j]); }
+            else if(b > a * 1.08 && parts[j].length > 1){ const c = Math.max(1, Math.min(parts[j].length - 1, Math.round(parts[j].length * Math.min(0.35, (b - a) / (2 * b))))); parts[k] = parts[k].concat(parts[j].splice(0, c)); }
+          }
+          better = tryParts(tidyParts(g, parts));
+        }
+        if(!better) break;
       }
     }
     // one worker needing more than a working day gets separate loops per day, all starting and ending at the same junction
@@ -687,13 +781,14 @@
     const withDays = (part, k, base) => {
       const nd = Math.min(maxDays, Math.max(1, Math.ceil(base.minutes / 60 / hpd)));
       if(nd < 2 || part.length < nd) return { ...base, days:[{ i0:0, i1:Math.max(0, base.path.length - 1), ...dayInfo(base) }] };
-      const cands = [partition(g, start, nd, part, w), ...balancedSplits(g, start, nd, part, 4)];
+      const cands = [partition(g, start, nd, part, w), ...balancedSplits(g, start, nd, part, 4)].flatMap(ps => { const t = tidyParts(g, ps); return [ps, t, balanceParts(g, t)]; });
       let best = null;
       for(const ps of cands){
         const rs = build(ps.filter(x => x.length), base.root);
         if(rs.length < 2) continue;
         const mx = Math.max(...rs.map(r => r.minutes)), mn = Math.min(...rs.map(r => r.minutes));
-        if(!best || mx * 1000 + (mx - mn) < best.sc){ best = { rs, sc:mx * 1000 + (mx - mn) }; }
+        const sc = mx + 0.3 * rs.reduce((a, r) => a + r.minutes, 0) / rs.length + 0.01 * (mx - mn);
+        if(!best || sc < best.sc){ best = { rs, sc }; }
       }
       if(!best) return { ...base, days:[{ i0:0, i1:Math.max(0, base.path.length - 1), ...dayInfo(base) }] };
       const path = [], steps = [], boxes = [], days = [];
