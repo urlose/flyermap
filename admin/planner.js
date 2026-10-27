@@ -312,7 +312,7 @@
   }
 
   /* ---------- mailboxes (estimated from OSM buildings) ---------- */
-  const NO_MAILBOX = /^(garage|garages|shed|roof|carport|greenhouse|hut|cabin|barn|farm_auxiliary|stable|cowshed|sty|ruins|construction|service|parking|hangar|kiosk|toilets|bunker|digester|silo|tank|transformer_tower|water_tower|storage_tank|bridge|boathouse|container|allotment_house|gatehouse|church|chapel|mosque|synagogue|temple|cathedral|train_station|transportation|grandstand|stadium|pavilion|tower|industrial|warehouse|manufacture|power|substation)$/;
+  const NO_MAILBOX = /^(garage|garages|shed|roof|carport|greenhouse|hut|cabin|barn|farm_auxiliary|stable|cowshed|sty|ruins|construction|service|parking|hangar|kiosk|toilets|bunker|digester|silo|tank|transformer_tower|water_tower|storage_tank|bridge|boathouse|container|allotment_house|gatehouse|church|chapel|mosque|synagogue|temple|cathedral|train_station|transportation|grandstand|stadium|pavilion|tower|industrial|warehouse|manufacture|power|substation|commercial|retail|supermarket|shop|mall|office|hotel|hospital|clinic|school|university|college|kindergarten|public|civic|government|fire_station|sports_hall|sports_centre|gym|restaurant|cafe|fuel|petrol_station|bank|data_center|factory|works|laboratory|museum|theatre|cinema|library|prison|barracks|military)$/;
   const HOUSE = /^(house|detached|semidetached_house|terrace|bungalow|villa|farm|cottage|houseboat|static_caravan)$/;
   const FLATS = /^(apartments|residential|dormitory)$/;
   function polyArea(geom){
@@ -326,6 +326,8 @@
     tags = tags || {};
     if(tags.abandoned || tags.disused || tags['disused:building']) return 0;
     const b = String(tags.building || 'yes');
+    // shops, offices, restaurants, workshops … are no letterboxes for flyers (unless the building is explicitly residential)
+    const business = tags.shop || tags.office || tags.amenity || tags.craft || tags.tourism || tags.industrial || tags.healthcare || tags.leisure;
     const flats = parseInt(tags['building:flats'] || tags['addr:flats'], 10);
     if(flats > 0) return Math.min(flats, 250);
     if(NO_MAILBOX.test(b)) return 0;
@@ -334,11 +336,13 @@
     const lv = parseFloat(tags['building:levels']);
     const levels = lv > 0 ? lv : (area < 120 ? 2 : 4);
     if(FLATS.test(b)) return Math.max(2, Math.min(250, Math.round(area * levels * 0.75 / 80)));
+    if(business) return 0;
     if(b === 'yes'){
       if(area < 30 || (!hasNr && area < 60)) return 0;
+      if(!(lv > 0) && area > 900) return 0;   // large box without levels: almost always a shop, hall or factory
       return Math.max(1, Math.min(250, Math.round(area * levels * 0.75 / 80)));
     }
-    return hasNr ? 1 : 0;   // commercial, retail, office, school, hotel …
+    return 0;   // any other building type is not counted
   }
   function parseBuildings(osm){
     const out = [];
