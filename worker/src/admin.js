@@ -5,6 +5,8 @@ import { sb, store, $, esc, css, hav, fmtDist, fmtH, fmtHm, fmtN, fmtDay, fmtDT,
 import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, labelIcon, fit, modal, confirmBox, toast, searchField, langSwitch, avatar, every, personIcon } from './ui.js';
 
 const GREEN = '#16A34A';
+// map data comes through our own server (edge function 'osm': retries, mirrors, cache)
+const osmProxy = async queries => { const { data, error } = await sb.functions.invoke('osm', { body:{ queries } }); if(error || !data || !data.results) throw new Error((error && error.message) || 'osm proxy'); return data.results; };
 const KM_PER_MIN_TRANSIT = 0.75;
 export const A = { user:null, workers:[], tasks:[], live:[], demo:null, hooks:{}, filter:{ status:'open', from:'', to:'', city:'', district:'' } };
 
@@ -76,7 +78,7 @@ function viewLive(){
     for(const w of known){
       const on = isLive(w), p = [w.last_lat, w.last_lng];
       if(!on) L.circle(p, { radius:350, color:'#94A3B8', weight:1, fillColor:'#94A3B8', fillOpacity:.15, interactive:false }).addTo(layer);
-      L.marker(p, { icon:personIcon(w.name, on, on ? '' : ago(w.last_seen)), zIndexOffset:on ? 800 : 400 }).addTo(layer);
+      L.marker(p, { icon:personIcon(w.name, on, on ? '' : ago(w.last_seen)), zIndexOffset:on ? 800 : 400 }).on('click', () => viewWorker(w.id, viewLive)).addTo(layer);
       b.extend(p);
       if(on) fetchPoints(w.active_route_id).then(pts => { if(pts.length > 1) L.polyline(pts.map(q => [q.lat, q.lng]), { color:css('--route'), weight:4, opacity:.85 }).addTo(layer); }).catch(() => {});
     }
@@ -91,12 +93,12 @@ function viewLive(){
       }).filter(x => x.km <= MAPQ.km).sort((a, c) => a.km - c.km);
       $('#liveCount').textContent = near.length ? t('nearN', { n:near.length, c:pl.name }) : t('nearNone', { k:MAPQ.km, c:pl.name });
       $('#liveList').innerHTML = near.map(({ w, km, why }) => `<button class="live-chip" data-id="${w.id}"><span class="dotc ${isLive(w) ? pace(w).cls : 'pause'}"></span>${esc(w.name)} · ${Math.round(km)} km${why ? ' · ' + esc(why) : ''}</button>`).join('');
-      document.querySelectorAll('.live-chip').forEach(c => c.onclick = () => viewWorker(c.dataset.id));
+      document.querySelectorAll('.live-chip').forEach(c => c.onclick = () => viewWorker(c.dataset.id, viewLive));
     } else {
       const off = known.length - live.length;
       $('#liveCount').textContent = (live.length ? t('liveNow', { n:live.length }) : t('nobodyLive')) + (off ? ' · ' + t('offlineN', { n:off }) : '');
       $('#liveList').innerHTML = known.map(w => `<button class="live-chip" data-id="${w.id}"><span class="dotc ${isLive(w) ? pace(w).cls : 'pause'}"></span>${esc(w.name)}${isLive(w) ? (pace(w).label ? ' · ' + esc(pace(w).label) : '') : ' · ' + esc(ago(w.last_seen))}</button>`).join('');
-      document.querySelectorAll('.live-chip').forEach(c => c.onclick = () => { const w = wById(c.dataset.id); if(w) m.setView([w.last_lat, w.last_lng], 16); });
+      document.querySelectorAll('.live-chip').forEach(c => c.onclick = () => viewWorker(c.dataset.id, viewLive));
     }
     if(!fitted){ if(pl) refit(); else if(known.length){ fit(m, b, 80); fitted = true; } }
   };
@@ -142,8 +144,9 @@ function viewPeople(){
   $('#tDemo').onclick = demoSheet;
 }
 
-async function viewWorker(id){
-  const w = wById(id); if(!w) return viewPeople();
+async function viewWorker(id, back){
+  back = back || viewPeople;
+  const w = wById(id); if(!w) return back();
   const { data:routes } = await sb.from('routes').select('*').eq('worker_id', id).order('started_at', { ascending:false }).limit(30);
   shell('people', `${topbar(w.name, true)}
     <div class="pad">
@@ -161,7 +164,7 @@ async function viewWorker(id){
       <button class="btn primary" id="wsave" style="margin-top:12px">${esc(t('save'))}</button>
       <button class="btn ghost danger-text" id="wdel" style="margin-top:20px">${esc(t('del'))}</button>
     </div>`);
-  bindBack(viewPeople);
+  bindBack(back);
   const wm = makeMap($('#wMap'), (w.last_lat != null) ? [w.last_lat, w.last_lng] : null, 14), wl = L.layerGroup().addTo(wm);
   const showRoute = async r => {
     document.querySelectorAll('.rbtn').forEach(x => x.classList.toggle('sel', x.dataset.r === r.id));
@@ -181,7 +184,7 @@ async function viewWorker(id){
   document.querySelectorAll('.rbtn').forEach(b => b.onclick = () => { const r = (routes || []).find(x => x.id === b.dataset.r); if(r){ showRoute(r); wm.getContainer().scrollIntoView({ behavior:'smooth', block:'center' }); } });
   if(routes && routes[0]) showRoute(routes[0]);
   $('#wsave').onclick = async () => { const { error } = await sb.from('workers').update({ zone_minutes:+$('#wzm').value, notes:$('#wnotes').value.trim() || null }).eq('id', id); if(!error){ await loadWorkers(); toast(t('saved')); } };
-  $('#wdel').onclick = async () => { if(!await confirmBox(t('del'), t('delWorkerQ', { name:w.name }), t('del'), true)) return; await sb.from('workers').delete().eq('id', id); await loadWorkers(); viewPeople(); };
+  $('#wdel').onclick = async () => { if(!await confirmBox(t('del'), t('delWorkerQ', { name:w.name }), t('del'), true)) return; await sb.from('workers').delete().eq('id', id); await loadWorkers(); back(); };
 }
 
 /* ---------- AUFTRÄGE ---------- */
@@ -246,7 +249,7 @@ function viewCreate(){
     L.marker([lat, lng], { icon:dot('pin-start', 26) }).addTo(zoneLayer); m.setView([lat, lng], 14, { animate:false });
     busy(t('loadingArea'), true);
     for(let attempt = 0; attempt < 2 && !d.g; attempt++){   // public map servers are sometimes busy: one automatic retry
-      try{ d.g = await Planner.loadForFlyers([lat, lng], d.flyers); d.err = null; }
+      try{ d.g = await Planner.loadForFlyers([lat, lng], d.flyers, { proxy:osmProxy }); d.err = null; }
       catch(e){ d.err = /abort/i.test(e.message || '') ? t('mapSlow') : (e.message || 'net'); if(attempt === 0){ busy(t('retrying'), true); await new Promise(r => setTimeout(r, 4000)); if(tok !== d.token) return; } }
     }
     if(tok !== d.token) return;
@@ -258,7 +261,7 @@ function viewCreate(){
     const tok = ++d.token;
     if(d.g.mailboxes < d.flyers * 1.05 && d.g.radius < 4000){
       busy(t('loadingMore'));
-      try{ d.g = await Planner.loadForFlyers(startArr(), d.flyers, { radius:Math.min(4000, Math.round(d.g.radius * 1.5)) }); }catch{}
+      try{ d.g = await Planner.loadForFlyers(startArr(), d.flyers, { proxy:osmProxy, radius:Math.min(4000, Math.round(d.g.radius * 1.5)) }); }catch{}
       if(tok !== d.token) return;
     }
     busy(t('calculating')); await new Promise(r => setTimeout(r, 30));
@@ -444,7 +447,7 @@ async function demoCreate(msg){
   if(e1) throw e1;
   const rows = await demoRows();
   const start = [DEMO_TASK.lat, DEMO_TASK.lng];
-  const g = await Planner.loadForFlyers(start, DEMO_TASK.flyers);
+  const g = await Planner.loadForFlyers(start, DEMO_TASK.flyers, { proxy:osmProxy });
   const pl = Planner.planFlyers(g, start, DEMO_TASK.flyers, 3);
   const today = new Date().toISOString().slice(0, 10), tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
   const { data:tk, error } = await sb.from('tasks').insert({ title:DEMO_TASK.title, city_name:DEMO_TASK.city, district:DEMO_TASK.district, start_lat:DEMO_TASK.lat, start_lng:DEMO_TASK.lng, walk_minutes:15, zone_polygon:pl.zone, work_date:today,

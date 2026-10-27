@@ -61,14 +61,13 @@
     const ps = poly.map(p => p[0].toFixed(6) + ' ' + p[1].toFixed(6)).join(' ');
     return overpass(`[out:json][timeout:90];way${HW_FILTER}(poly:"${ps}");out body;>;out skel qt;`, fetchImpl);
   }
-  async function fetchStreetsAround(c, r, fetchImpl){
-    return overpass(`[out:json][timeout:80];way${HW_FILTER}(around:${Math.round(r)},${c[0].toFixed(6)},${c[1].toFixed(6)});out body;>;out skel qt;`, fetchImpl, 75000);
-  }
-  async function fetchBuildings(c, r, fetchImpl){
-    return overpass(`[out:json][timeout:80];way["building"](around:${Math.round(r)},${c[0].toFixed(6)},${c[1].toFixed(6)});out geom tags;`, fetchImpl, 75000);
-  }
+  // the centre is rounded to ~100 m so that repeated plans for the same place hit the server-side cache
+  const rc = c => [Math.round(c[0] * 1000) / 1000, Math.round(c[1] * 1000) / 1000];
+  const qStreets = (c, r) => { const k = rc(c); return `[out:json][timeout:80];way${HW_FILTER}(around:${Math.round(r)},${k[0].toFixed(3)},${k[1].toFixed(3)});out body;>;out skel qt;`; };
+  const qBuildings = (c, r) => { const k = rc(c); return `[out:json][timeout:80];way["building"](around:${Math.round(r)},${k[0].toFixed(3)},${k[1].toFixed(3)});out geom tags;`; };
+  async function fetchStreetsAround(c, r, fetchImpl){ return overpass(qStreets(c, r), fetchImpl, 75000); }
+  async function fetchBuildings(c, r, fetchImpl){ return overpass(qBuildings(c, r), fetchImpl, 75000); }
 
-  /* ---------- 2. graph ---------- */
   function buildGraph(osm, poly){
     const nodes = new Map();
     for(const e of osm.elements) if(e.type === 'node') nodes.set(e.id, [e.lat, e.lon]);
@@ -448,7 +447,11 @@
   async function loadForFlyers(start, flyers, opt){
     opt = opt || {}; let r = Math.min(4000, opt.radius || 1500), last = null;
     for(let round = 0; round < 5; round++){
-      const [osm, bld] = await Promise.all([fetchStreetsAround(start, r, opt.fetchImpl), fetchBuildings(start, r, opt.fetchImpl)]);
+      let osm = null, bld = null;
+      if(opt.proxy){   // our own server fetches (and caches) the map data; fall back to direct access if it fails
+        try{ const res = await opt.proxy([qStreets(start, r), qBuildings(start, r)]); osm = res[0]; bld = res[1]; }catch(e){ osm = bld = null; }
+      }
+      if(!osm || !bld) [osm, bld] = await Promise.all([fetchStreetsAround(start, r, opt.fetchImpl), fetchBuildings(start, r, opt.fetchImpl)]);
       const g = largestComponent(buildGraph(osm, null));
       attachBuildings(g, parseBuildings(bld));
       g.radius = r; g.street_m = Math.round(g.edges.reduce((s, e) => s + e.len, 0)); last = g;
