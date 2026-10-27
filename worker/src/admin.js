@@ -234,7 +234,7 @@ function viewCreate(){
   $('#cBack').onclick = viewTasks;
   const m = makeMap($('#fullMap'), null, 13);
   const zoneLayer = L.layerGroup().addTo(m), planLayer = L.layerGroup().addTo(m);
-  m.on('click', e => { d.place = null; const qi = $('#cSearch'); if(qi) qi.value = ''; setStart(e.latlng.lat, e.latlng.lng); });
+  m.on('click', e => { d.place = null; const qi = $('#cSearch'); if(qi) qi.value = ''; setStart(e.latlng.lat, e.latlng.lng, true); });
   const sheet = html => { $('#cSheet').innerHTML = html; };
   // while recalculating keep the sheet where it is (no flicker) and show a small status in the corner;
   // only a brand-new start point replaces the sheet with a plain loading message
@@ -243,10 +243,10 @@ function viewCreate(){
     else sheet(`<p class="muted small" style="margin:0">${esc(txt)}</p>`);
   };
   const startArr = () => [d.start.lat, d.start.lng];
-  async function setStart(lat, lng){
-    const tok = ++d.token; d.start = { lat, lng }; d.g = null; d.plan = null; d.err = null; d.assign = {};
+  async function setStart(lat, lng, fromClick){
+    const tok = ++d.token; d.start = { lat, lng }; d.keepView = !!fromClick;   // a tap on the map keeps the zoom the admin chose d.g = null; d.plan = null; d.err = null; d.assign = {};
     zoneLayer.clearLayers(); planLayer.clearLayers();
-    L.marker([lat, lng], { icon:dot('pin-start', 26) }).addTo(zoneLayer); m.setView([lat, lng], 14, { animate:false });
+    L.marker([lat, lng], { icon:dot('pin-start', 26) }).addTo(zoneLayer); if(!fromClick) m.setView([lat, lng], 15, { animate:false });
     busy(t('loadingArea'), true);
     for(let attempt = 0; attempt < 2 && !d.g; attempt++){   // public map servers are sometimes busy: one automatic retry
       try{ d.g = await Planner.loadForFlyers([lat, lng], d.flyers, { proxy:osmProxy }); d.err = null; }
@@ -279,7 +279,7 @@ function viewCreate(){
     if(d.plan.zone.length > 2) var z = L.polygon(d.plan.zone, { color:css('--brand'), weight:2, fillOpacity:.06, interactive:false }).addTo(zoneLayer);
     L.marker(startArr(), { icon:dot('pin-start', 26) }).addTo(zoneLayer);
     d.plan.routes.forEach((r, i) => { if(r.path.length > 1) L.polyline(r.path, { color:Planner.COLORS[i % 10], weight:4, opacity:.85 }).addTo(planLayer); });
-    if(z) m.fitBounds(z.getBounds(), { paddingTopLeft:[24, 80], paddingBottomRight:[24, Math.round(innerHeight * .5)], maxZoom:17, animate:false });
+    if(z && !d.keepView) m.fitBounds(z.getBounds(), { paddingTopLeft:[24, 80], paddingBottomRight:[24, Math.round(innerHeight * .5)], maxZoom:17, animate:false });
   }
   const num = (id, def) => { const v = parseFloat(($(id) || {}).value); return isFinite(v) ? v : def; };
   function keep(){ return { title:$('#cTitle') ? $('#cTitle').value : '', date:$('#cDate') ? $('#cDate').value : '', notes:$('#cNotes') ? $('#cNotes').value : '', quota:$('#cQuota') ? $('#cQuota').value : d.quota }; }
