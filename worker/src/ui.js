@@ -107,3 +107,6 @@ export function langSwitch(cur){
 }
 export const avatar = (name, cls = '') => `<div class="avatar ${cls}">${ICONS.person}</div>`;
 export const colorOf = i => css('--c' + (i % 10)) || '#2563EB';
+
+export const personIcon = (name, on, sub) => L.divIcon({ className:'', iconSize:[40, 40], iconAnchor:[20, 20],
+  html:`<div class="pin-wrap"><div class="person ${on ? 'on' : 'off'}"><svg viewBox="0 0 24 24" width="22" height="22" fill="#fff"><circle cx="12" cy="7.5" r="4"/><path d="M4 21c0-4.6 3.6-8 8-8s8 3.4 8 8z"/></svg></div><span class="pin-label">${esc(name)}${sub ? '<br><small>' + esc(sub) + '</small>' : ''}</span></div>` });

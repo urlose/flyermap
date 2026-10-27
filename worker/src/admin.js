@@ -2,7 +2,7 @@ import L from 'leaflet';
 import Planner from '../../admin/planner.js';
 import { t, I } from './i18n.js';
 import { sb, store, $, esc, css, hav, fmtDist, fmtH, fmtHm, fmtN, fmtDay, fmtDT, ago, waLink, telLink, loopPath, normPhone } from './core.js';
-import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, labelIcon, fit, modal, confirmBox, toast, searchField, langSwitch, avatar, every } from './ui.js';
+import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, labelIcon, fit, modal, confirmBox, toast, searchField, langSwitch, avatar, every, personIcon } from './ui.js';
 
 const GREEN = '#16A34A';
 const KM_PER_MIN_TRANSIT = 0.75;
@@ -53,18 +53,23 @@ function viewLive(){
   const tick = async () => {
     try{ await Promise.all([loadWorkers(), loadLive()]); }catch{ return; }
     const live = A.workers.filter(isLive);
+    // everybody with a known position is shown: live = green person, otherwise grey person + approximate area
+    const known = A.workers.filter(w => w.last_lat != null && w.last_lng != null);
     layer.clearLayers(); const b = L.latLngBounds([]);
-    for(const w of live){
-      L.marker([w.last_lat, w.last_lng], { icon:labelIcon('me-dot', w.name), zIndexOffset:500 }).addTo(layer);
-      b.extend([w.last_lat, w.last_lng]);
-      fetchPoints(w.active_route_id).then(pts => { if(pts.length > 1) L.polyline(pts.map(p => [p.lat, p.lng]), { color:css('--route'), weight:4, opacity:.85 }).addTo(layer); }).catch(() => {});
+    for(const w of known){
+      const on = isLive(w), p = [w.last_lat, w.last_lng];
+      if(!on) L.circle(p, { radius:350, color:'#94A3B8', weight:1, fillColor:'#94A3B8', fillOpacity:.15, interactive:false }).addTo(layer);
+      L.marker(p, { icon:personIcon(w.name, on, on ? '' : ago(w.last_seen)), zIndexOffset:on ? 800 : 400 }).addTo(layer);
+      b.extend(p);
+      if(on) fetchPoints(w.active_route_id).then(pts => { if(pts.length > 1) L.polyline(pts.map(q => [q.lat, q.lng]), { color:css('--route'), weight:4, opacity:.85 }).addTo(layer); }).catch(() => {});
     }
     if(!$('#liveCount')) return;
-    $('#liveCount').textContent = live.length ? t('liveNow', { n:live.length }) : t('nobodyLive');
+    const off = known.length - live.length;
+    $('#liveCount').textContent = (live.length ? t('liveNow', { n:live.length }) : t('nobodyLive')) + (off ? ' · ' + t('offlineN', { n:off }) : '');
     $('#liveUpd').textContent = t('updated', { x:t('justNow') });
-    $('#liveList').innerHTML = live.map(w => `<button class="live-chip" data-id="${w.id}"><span class="dotc ${pace(w).cls}"></span>${esc(w.name)}${pace(w).label ? ' · ' + esc(pace(w).label) : ''}</button>`).join('');
-    document.querySelectorAll('.live-chip').forEach(c => c.onclick = () => { const w = wById(c.dataset.id); if(w) m.setView([w.last_lat, w.last_lng], 17); });
-    if(!fitted && live.length){ fit(m, b, 60); fitted = true; }
+    $('#liveList').innerHTML = known.map(w => `<button class="live-chip" data-id="${w.id}"><span class="dotc ${isLive(w) ? pace(w).cls : 'pause'}"></span>${esc(w.name)}${isLive(w) ? (pace(w).label ? ' · ' + esc(pace(w).label) : '') : ' · ' + esc(ago(w.last_seen))}</button>`).join('');
+    document.querySelectorAll('.live-chip').forEach(c => c.onclick = () => { const w = wById(c.dataset.id); if(w) m.setView([w.last_lat, w.last_lng], 16); });
+    if(!fitted && known.length){ fit(m, b, 80); fitted = true; }
   };
   tick(); every(A.demo ? 3000 : 6000, tick);
 }
