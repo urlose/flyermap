@@ -6,12 +6,12 @@ import { makeNav, dayProgress } from './nav.js';
 import { locationNote, legalLinks, bindLegal } from './legalview.js';
 import { t, I } from './i18n.js';
 import { NATIVE, PRIVACY_URL, store, rpc, errText, $, esc, css, hav, fmtDist, fmtHm, fmtN, fmtTime, fmtDay, loopPath } from './core.js';
-import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, fit, modal, confirmBox, toast, cityPicker, langSwitch, avatar, every } from './ui.js';
+import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, fit, modal, confirmBox, toast, cityPicker, langSwitch, themeSwitch, statusPill, emptyState, avatar, every } from './ui.js';
 
 const BackgroundGeolocation = registerPlugin('BackgroundGeolocation');
 const GREEN = '#16A34A';
 
-export const W = { canAdmin:false, token:null, me:null, route:null, queue:[], track:[], busy:false, watcherId:null, focus:null, tracker:null, counter:null, prev:null, sim:null, flushFailed:false, hooks:{} };
+export const W = { gps:{ state:'wait', acc:null, at:0 }, canAdmin:false, token:null, me:null, route:null, queue:[], track:[], busy:false, watcherId:null, focus:null, tracker:null, counter:null, prev:null, sim:null, flushFailed:false, hooks:{} };
 const tasks = () => (W.me && W.me.tasks) || [];
 
 /* ================= sync ================= */
@@ -73,8 +73,9 @@ function ensureTracker(){
 function onLocation(lat, lng, acc, time, sim){
   if(!W.route || W.route.endedAt || W.route.paused) return;
   if(W.sim && !sim) return;
-  if(acc != null && acc > 50){ setGps(false); return; }
-  setGps(true);
+  W.gps.at = Date.now(); W.gps.acc = acc == null ? null : Math.round(acc);
+  if(acc != null && acc > 50){ setGps('weak'); return; }
+  setGps('ok');
   const last = W.track[W.track.length - 1];
   if(last && sim === 'first'){ /* demo jumps to its own start */ }
   else if(last){
@@ -94,12 +95,13 @@ function onLocation(lat, lng, acc, time, sim){
 }
 async function startWatching(){
   if(W.watcherId) return;
+  W.gps = { state:'wait', acc:null, at:0 };
   if(NATIVE){
     W.watcherId = await BackgroundGeolocation.addWatcher({ backgroundTitle:t('bgTitle'), backgroundMessage:t('bgMsg'), requestPermissions:true, stale:false, distanceFilter:5 },
-      (loc, err) => { if(err){ if(err.code === 'NOT_AUTHORIZED') showLocDenied(); return; } if(loc) onLocation(loc.latitude, loc.longitude, loc.accuracy, loc.time || Date.now()); });
+      (loc, err) => { if(err){ if(err.code === 'NOT_AUTHORIZED'){ setGps('denied'); showLocDenied(); } else setGps('off'); return; } if(loc) onLocation(loc.latitude, loc.longitude, loc.accuracy, loc.time || Date.now()); });
   }else if(navigator.geolocation){
-    W.watcherId = 'web:' + navigator.geolocation.watchPosition(p => onLocation(p.coords.latitude, p.coords.longitude, p.coords.accuracy, p.timestamp), () => {}, { enableHighAccuracy:true, maximumAge:0 });
-  }
+    W.watcherId = 'web:' + navigator.geolocation.watchPosition(p => onLocation(p.coords.latitude, p.coords.longitude, p.coords.accuracy, p.timestamp), e => setGps(e && e.code === 1 ? 'denied' : e && e.code === 2 ? 'off' : 'wait'), { enableHighAccuracy:true, maximumAge:0 });
+  }else setGps('off');
 }
 async function stopWatching(){
   if(!W.watcherId) return;
@@ -215,8 +217,25 @@ function stopDemoWalk(){ if(W.sim && W.sim.timer) clearInterval(W.sim.timer); W.
 
 /* ================= views ================= */
 const view = {};   // hooks of the current map screen
-function setGps(ok){ const g = $('#gps'); if(g && !W.sim) g.textContent = ok ? t('onRoute') : t('gpsWait'); }
-function updateSync(){ const el = $('#sync'); if(el) el.textContent = (W.queue.length && W.flushFailed) ? t('pending', { n:W.queue.length }) : t('synced'); }
+// GPS indicator — only about the position signal, never about the route (a route can run while GPS is still searching)
+// states: wait (searching) · ok (fix, ±m) · weak (inaccurate) · stale (no fix for 60 s) · denied (no permission) · off (location services off)
+function setGps(state){ if(state) W.gps.state = state; renderGps(); }
+function renderGps(){
+  const g = $('#gps'); if(!g) return;
+  if(W.sim){ g.className = 'gps ok'; g.innerHTML = ICONS.gps + esc(t('demoRunning')); return; }
+  let st = W.gps.state;
+  if((st === 'ok' || st === 'weak') && Date.now() - W.gps.at > 60e3) st = 'stale';
+  const cls = { ok:'ok', weak:'warn', stale:'warn', wait:'', denied:'bad', off:'bad' }[st] || '';
+  const txt = st === 'ok' ? t('gps_ok', { m:W.gps.acc != null ? W.gps.acc : '?' }) : st === 'weak' ? t('gps_weak', { m:W.gps.acc }) : t('gps_' + st);
+  g.className = 'gps ' + cls; g.innerHTML = ICONS.gps + esc(txt);
+}
+// sending is a third, separate state: points are queued while there is no connection and sent later
+function updateSync(){
+  const el = $('#sync'); if(!el) return;
+  const fail = W.queue.length && (W.flushFailed || !navigator.onLine);
+  el.className = 'sync' + (fail ? ' danger-text' : '');
+  el.textContent = fail ? t('pending', { n:W.queue.length }) : t('synced');
+}
 
 export function workerTab(tab){
   for(const k of Object.keys(view)) delete view[k];
@@ -228,29 +247,32 @@ export function workerTab(tab){
 function planInfo(task){ return task.plan ? t('routeInfo', { km:fmtDist(task.plan.length_m), h:fmtHm(task.plan.minutes || 0) }) : '—'; }
 
 const dayList = pl => (pl && pl.work_dates || []).map(d => String(d).slice(0, 10)).sort();
-const stClass = p => !p ? '' : p.status === 'accepted' ? '' : p.status === 'declined' ? 'bad' : 'warn';
+const stClass = p => !p ? '' : p.status === 'accepted' ? '' : p.status === 'declined' ? 'bad' : p.status === 'done' ? 'ok' : 'warn';
+const accClass = p => ({ '':'acc-info', bad:'acc-bad', ok:'acc-ok', warn:'acc-warn' }[stClass(p)] || 'acc-neutral');
 const stLabel = p => !p ? '' : p.status === 'accepted' ? t('stAccepted') : p.status === 'declined' ? t('stDeclined') : p.status === 'done' ? t('stDone') : t('stNew');
 function taskDates(tk){ const d = dayList(tk.plan); return d.length ? d.map(fmtDay).join(', ') : fmtDay(tk.work_date); }
 function viewTasks(){
   const list = tasks(), unread = ((W.me && W.me.inbox) || []).filter(n => !n.read).length;
-  shell('tasks', `<header class="topbar"><h1>${esc(t('myTasks'))}</h1><button class="icon-btn" id="bell" aria-label="${esc(t('inbox'))}" style="margin-left:auto;position:relative">${ICONS.bell}${unread ? `<span class="badge">${unread}</span>` : ''}</button></header>
+  const nNew = list.filter(x => x.plan && x.plan.status === 'offered').length, nAcc = list.filter(x => x.plan && x.plan.status === 'accepted').length;
+  shell('tasks', `${topbar(t('myTasks'), null, `<button class="icon-btn" id="rf" aria-label="${esc(t('refresh'))}">${ICONS.refresh}</button><button class="icon-btn" id="bell" aria-label="${esc(t('inbox'))}" style="position:relative">${ICONS.bell}${unread ? `<span class="badge">${unread}</span>` : ''}</button>`)}
     <div class="pad">
-      ${list.length ? list.map((tk, i) => `<button class="card task-card" data-i="${i}">
-        <div class="tc-main"><b>${esc(tk.title)}</b><span>${esc([taskDates(tk), tk.district || tk.city_name].filter(Boolean).join(' · '))}</span>
-        ${tk.plan ? `<span>${esc(t('routeLine', { km:fmtDist(tk.plan.length_m), h:fmtHm(tk.plan.minutes || 0), mb:fmtN(tk.plan.mailboxes || 0) }))}</span><span class="pill ${stClass(tk.plan)}">${esc(stLabel(tk.plan))}</span>` : ''}</div>${ICONS.chevron}</button>`).join('')
-        : `<div class="empty">${esc(t('noTasks'))}</div>`}
-      <button class="btn ghost" id="free" style="margin-top:14px">${esc(t('freeRoute'))}</button>
-      <button class="btn ghost small" id="rf">${esc(t('refresh'))}</button>
+      ${list.length ? `<div class="kpis two"><div class="kpi k-warn"><b>${nNew}</b><span>${esc(t('kNew'))}</span></div><div class="kpi k-info"><b>${nAcc}</b><span>${esc(t('stAccepted'))}</span></div></div>` : ''}
+      ${list.length ? list.map((tk, i) => `<button class="card acc ${accClass(tk.plan)} task-card" data-i="${i}">
+        <div class="tc-main"><b>${esc(tk.title)}</b>
+        <div class="tc-meta"><i>${ICONS.calendar}${esc(taskDates(tk))}</i>${tk.district || tk.city_name ? `<i>${ICONS.pin}${esc([tk.district, tk.city_name].filter(Boolean).join(', '))}</i>` : ''}${tk.plan ? `<i>${ICONS.route}${esc(fmtDist(tk.plan.length_m))} · ${esc(fmtHm(tk.plan.minutes || 0))} ${esc(t('h'))}</i><i>${ICONS.mail}${esc(fmtN(tk.plan.mailboxes || 0))}</i>` : ''}</div>
+        ${tk.plan ? statusPill(stClass(tk.plan) || 'info', stLabel(tk.plan)) : ''}</div>${ICONS.chevron}</button>`).join('')
+        : emptyState(t('noTasks'), 'flag')}
+      <button class="btn ghost" id="free" style="margin-top:16px">${ICONS.route}${esc(t('freeRoute'))}</button>
       ${NATIVE ? '' : `<p class="note">${esc(t('webNote'))}</p>`}
     </div>`);
   document.querySelectorAll('.task-card').forEach(b => b.onclick = () => viewTaskDetail(list[+b.dataset.i]));
   $('#bell').onclick = viewInbox;
   $('#free').onclick = () => beginRoute(null);
-  $('#rf').onclick = async () => { $('#rf').disabled = true; await loadMe(); viewTasks(); };
+  $('#rf').onclick = async () => { const b = $('#rf'); b.disabled = true; b.style.opacity = .5; try{ await loadMe(); }catch{ toast(t('netErr')); } viewTasks(); };
 }
 function viewInbox(){
   const items = (W.me && W.me.inbox) || [];
-  shell('tasks', `${topbar(t('inbox'), true)}<div class="pad">${items.length ? items.map((n, i) => `<button class="notif ${n.read ? '' : 'new'}" data-i="${i}"><b>${esc(n.title)}</b><span>${esc(n.body || '')}</span></button>`).join('') : `<div class="empty">${esc(t('noInbox'))}</div>`}</div>`);
+  shell('tasks', `${topbar(t('inbox'), true)}<div class="pad">${items.length ? items.map((n, i) => `<button class="notif ${n.read ? '' : 'new'}" data-i="${i}"><b>${esc(n.title)}</b><span>${esc(n.body || '')}</span></button>`).join('') : emptyState(t('noInbox'), 'bell')}</div>`);
   bindBack(viewTasks);
   document.querySelectorAll('.notif').forEach(b => b.onclick = () => { const n = items[+b.dataset.i]; const tk = tasks().find(x => x.id === n.task_id); if(tk) viewTaskDetail(tk); });
   if(items.some(n => !n.read)){ rpc('mark_notifications_read', { p_token:W.token }).then(() => { items.forEach(n => { n.read = true; }); store.set('me', W.me); }).catch(() => {}); }
@@ -286,8 +308,7 @@ function viewTaskDetail(task){
   const st = plan ? plan.status : null;
   shell('tasks', `${topbar(t('yourTask'), true)}
     <div class="pad">
-      <div class="person-row">${avatar(me.name)}<div><b>${esc(me.name || '')}</b><span>${esc(t('worker'))}</span></div></div>
-      <h2 class="sec">${esc(t('taskInfo'))}:</h2>
+      <div class="sec-row" style="margin-top:4px"><h2>${esc(task.title)}</h2>${plan ? statusPill(stClass(plan) || 'info', stLabel(plan)) : ''}</div>
       <div class="info">
         <div><span>${esc(t('route'))}</span><b>${esc(task.title)}</b></div>
         <div><span>${esc(t('place'))}</span><b>${esc([task.district, task.city_name].filter(Boolean).join(', ') || '—')}</b></div>
@@ -305,8 +326,8 @@ function viewTaskDetail(task){
         <button class="btn primary" id="acc">${esc(t('accept'))}</button><button class="btn ghost" id="dec">${esc(t('decline'))}</button><div class="err" id="accErr"></div>` : ''}
       ${plan && st === 'accepted' ? `<p class="hint">${esc(t('yourDates'))}: <b>${esc(dayList(plan).map(fmtDay).join(', '))}</b></p>` : ''}
       ${plan && st === 'declined' ? `<p class="note">${esc(t('stDeclined'))}</p>` : ''}
-      ${(!plan || st === 'accepted') ? `<button class="btn primary" id="go">${esc(t('startRoute'))}</button>` : ''}
-      <a class="btn ghost" href="https://maps.apple.com/?daddr=${task.start_lat},${task.start_lng}&dirflg=r">${esc(t('directions'))}</a>
+      ${(!plan || st === 'accepted') ? `<button class="btn primary big" id="go">${ICONS.play}<span>${esc(t('startRoute'))}</span></button>` : ''}
+      <a class="btn ghost" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${task.start_lat},${task.start_lng}&travelmode=transit">${ICONS.pin}${esc(t('directions'))}</a>
     </div>`);
   bindBack(() => workerTab('tasks'));
   const m = makeMap($('#tdMap'), [task.start_lat, task.start_lng], 14, { dragging:true });
@@ -316,8 +337,8 @@ function viewTaskDetail(task){
   if(plan && plan.days && plan.days.length > 1 && st === 'accepted'){   // how much of each day is already walked → which day comes next
     rpc('plan_progress', { p_token:W.token, p_plan_id:plan.id }).then(prev => {
       const tr = Planner.makeTracker(plan.path); tr.addTrack(prev || []);
-      const pc = dayProgress(plan, tr); pc.forEach((p, k) => { const el = $('#dp' + k); if(el) el.textContent = p >= 95 ? '✓' : p ? '· ' + p + '%' : ''; });
-      const next = pc.findIndex(p => p < 95), go = $('#go'); if(go && next >= 0) go.textContent = t('startDayN', { n:next + 1 });
+      const pc = dayProgress(plan, tr); pc.forEach((p, k) => { const el = $('#dp' + k); if(el) el.innerHTML = p >= 95 ? statusPill('ok', t('stDone')) : p ? '· ' + p + '%' : ''; });
+      const next = pc.findIndex(p => p < 95), go = $('#go'); if(go && next >= 0) go.querySelector('span').textContent = t('startDayN', { n:next + 1 });
     }).catch(() => {});
   }
   if($('#acc')) $('#acc').onclick = async () => {
@@ -339,8 +360,8 @@ function viewMap(){
   shell('map', `<div id="fullMap" class="fullmap"></div>
     <div class="float-card">${task ? `
       <div class="fc-head"><div><b>${esc(task.title)}</b><span>${esc([fmtDay(task.work_date), planInfo(task)].join(' · '))}</span></div></div>
-      <button class="btn primary" id="go">${esc(t('startRoute'))}</button>` : `
-      <p class="muted" style="margin:0 0 10px">${esc(t('noActive'))}</p><button class="btn ghost" id="toTasks">${esc(t('openTasks'))}</button>`}
+      <button class="btn primary big" id="go">${ICONS.play}${esc(t('startRoute'))}</button>` : `
+      <p class="muted" style="margin:0 0 10px">${esc(t('noActive'))}</p><button class="btn ghost" id="toTasks">${ICONS.flag}${esc(t('openTasks'))}</button>`}
     </div>`, { map:true });
   const m = makeMap($('#fullMap'), task ? [task.start_lat, task.start_lng] : null, 14);
   if(task){ const { b, planLine } = drawTaskBase(m, task); fit(m, b, 40); drawCoverage(m, task, planLine ? [planLine] : []); $('#go').onclick = () => beginRoute(task); }
@@ -354,7 +375,7 @@ function viewTracking(){
     <button class="icon-btn map-btn" id="recenter" aria-label="center">${ICONS.locate}</button>
     ${hasPlan ? `<div class="nav" id="nav"><div class="nav-ic" id="navIc"></div><div class="nav-tx"><b id="navMain"></b><span id="navSub"></span></div><a class="nav-ext" id="navExt" target="_blank" rel="noopener" aria-label="${esc(t('navExt'))}">${ICONS.map}</a></div>` : ''}
     <div class="float-card">
-      <div class="fc-row">${paused ? `<span class="rec paused">${esc(t('pauseRunning'))}</span><b id="sPause">0:00</b>` : `<span class="rec">${esc(t('recording'))}</span><span class="muted small" id="gps">${esc(W.sim ? t('demoRunning') : t('gpsWait'))}</span>`}</div>
+      <div class="fc-row">${paused ? `<span class="rec paused">${esc(t('pauseRunning'))}</span><b id="sPause">0:00</b>` : `<span class="rec">${esc(t('recording'))}</span><span class="gps" id="gps" role="status"></span>`}</div>
       ${task ? `<div class="fc-title">${esc(task.title)}</div>` : ''}
       <div class="stats"><div><span>${esc(t('netTime'))}</span><b id="sT">0:00</b></div><div><span>${esc(t('dist'))}</span><b id="sD">0 m</b></div>${W.counter ? `<div><span>${esc(t('flyersEst'))}</span><b id="sF">0</b></div>` : hasPlan ? `<div><span>${esc(t('progress'))}</span><b id="sP">0%</b></div>` : ''}</div>
       ${hasPlan ? `<div class="bar"><i id="sBar"></i></div>${W.counter ? `<p class="small muted" style="margin:6px 0 0" id="sFl"></p>` : ''}` : ''}
@@ -430,7 +451,7 @@ function viewTracking(){
   view.refreshDemo = () => { const b = $('#demo'); if(b) b.textContent = W.sim ? t('demoStop') : t('demoWalk'); };
   if(last) view.me(last[0], last[1]);
   if(nav && last) lastOff = nav.locate(last[0], last[1]).off;
-  updateNav(); drawAhead(); drawDone(); stats(); every(1000, stats); updateSync();
+  updateNav(); drawAhead(); drawDone(); stats(); renderGps(); every(1000, () => { stats(); renderGps(); updateSync(); }); updateSync();
   $('#stop').onclick = finishRoute;
   if($('#pause')) $('#pause').onclick = pauseRoute;
   if($('#resume')) $('#resume').onclick = resumeRoute;
@@ -443,22 +464,27 @@ function viewProfile(){
   shell('people', `${topbar(t('tabProfile'))}
     <div class="pad">
       <div class="person-row big">${avatar(me.name)}<div><b>${esc(me.name || '')}</b><span>${esc(me.phone || '')}</span></div></div>
-      <label class="f">${esc(t('name'))}</label><input class="in" id="pName" value="${esc(me.name)}">
-      <label class="f">${esc(t('cities'))}</label>${cp.html}
-      <button class="btn primary" id="pSave" style="margin-top:16px">${esc(t('save'))}</button><div class="err" id="pErr"></div>
-      ${langSwitch(I.lang)}
-      ${W.canAdmin ? `<button class="btn ghost" id="pAdmin">${esc(t('switchToAdmin'))}</button>` : ''}
-      <button class="btn ghost" id="pOut" style="margin-top:20px">${esc(t('logout'))}</button>
+      <div class="card" style="display:block;margin-top:16px">
+        <label class="f" for="pName" style="margin-top:0">${esc(t('name'))}</label><input class="in" id="pName" value="${esc(me.name)}" autocomplete="name">
+        <label class="f">${esc(t('cities'))}</label>${cp.html}
+        <button class="btn primary" id="pSave" style="margin-top:16px">${esc(t('save'))}</button><div class="err" id="pErr" role="alert"></div>
+      </div>
+      <h2 class="sec">${esc(t('settings'))}</h2>
+      <div class="card" style="display:block">${themeSwitch(W.theme)}${langSwitch(I.lang, true)}</div>
+      ${W.canAdmin ? `<button class="btn ghost" id="pAdmin">${ICONS.users}${esc(t('switchToAdmin'))}</button>` : ''}
+      <h2 class="sec">${esc(t('account'))}</h2>
+      <button class="btn ghost" id="pOut">${esc(t('logout'))}</button>
       <button class="btn ghost danger-text" id="pDel">${esc(t('delAcc'))}</button>
       ${legalLinks()}
     </div>`);
   cp.bind(); bindLegal(viewProfile);
+  store.get('theme').then(v => { W.theme = v; document.querySelectorAll('[data-theme-set]').forEach(b => { const on = b.dataset.themeSet === (v || 'system'); b.classList.toggle('on', on); b.setAttribute('aria-checked', on); }); });
   $('#pSave').onclick = async () => {
     if(!cp.get().length){ $('#pErr').textContent = t('e_city_required'); return; }
-    $('#pSave').disabled = true;
+    $('#pSave').disabled = true; $('#pSave').classList.add('loading'); $('#pErr').textContent = '';
     try{ await rpc('update_worker_profile', { p_token:W.token, p_name:$('#pName').value, p_cities:cp.get() }); await loadMe(); toast(t('saved')); }
     catch(e){ $('#pErr').textContent = errText(e); }
-    $('#pSave').disabled = false;
+    $('#pSave').disabled = false; $('#pSave').classList.remove('loading');
   };
   if($('#pAdmin')) $('#pAdmin').onclick = () => W.hooks.switchRole && W.hooks.switchRole('admin');
   $('#pOut').onclick = async () => { if(await confirmBox(t('logout'), t('logoutQ'), t('logout'))) forceLogout(); };

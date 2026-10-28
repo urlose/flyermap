@@ -222,8 +222,8 @@ export function legalPage(kind){
 <html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>FlyerMap – ${e(T.de)}</title>
 <style>
-:root{--bg:#FFFFFF;--ink:#18212F;--muted:#5D6878;--line:#DCE1E7;--accent:#0E9F8E}
-@media (prefers-color-scheme: dark){:root{--bg:#11161D;--ink:#E6EBF1;--muted:#9AA6B5;--line:#2A3542;--accent:#2DD4BF}}
+:root{--bg:#FFFFFF;--ink:#18212F;--muted:#5D6878;--line:#DCE1E7;--accent:#2563EB}
+@media (prefers-color-scheme: dark){:root{--bg:#0B1220;--ink:#F1F5F9;--muted:#A3B1C4;--line:#29364A;--accent:#60A5FA}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif}
 main{max-width:720px;margin:0 auto;padding:32px 16px 64px}h1{font-size:28px;line-height:1.2;margin:0 0 6px}h2{font-size:19px;margin:28px 0 8px}
 .muted{color:var(--muted)}nav{display:flex;gap:14px;margin:18px 0 8px;border-bottom:1px solid var(--line);padding-bottom:10px;flex-wrap:wrap}

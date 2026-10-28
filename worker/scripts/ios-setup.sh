@@ -3,7 +3,7 @@
 set -euo pipefail
 
 npx cap add ios --packagemanager SPM
-npx -y @capacitor/assets@3 generate --ios --iconBackgroundColor '#0E9F8E' || echo "icon generation skipped"
+npx -y @capacitor/assets@3 generate --ios --iconBackgroundColor '#2563EB' || echo "icon generation skipped"
 
 PL=ios/App/App/Info.plist
 pb() { /usr/libexec/PlistBuddy -c "$1" "$PL"; }

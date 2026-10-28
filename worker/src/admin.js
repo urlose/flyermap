@@ -2,7 +2,7 @@ import L from 'leaflet';
 import Planner from '../../admin/planner.js';
 import { t, I } from './i18n.js';
 import { sb, store, $, esc, css, hav, fmtDist, fmtH, fmtHm, fmtN, fmtDay, fmtDT, ago, waLink, telLink, loopPath, normPhone, loc, reversePlace } from './core.js';
-import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, labelIcon, fit, modal, confirmBox, toast, searchField, langSwitch, avatar, every, personIcon } from './ui.js';
+import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, labelIcon, fit, modal, confirmBox, toast, searchField, langSwitch, themeSwitch, statusPill, emptyState, avatar, every, personIcon } from './ui.js';
 import { legalLinks, bindLegal } from './legalview.js';
 import { makePlanEngine } from './planengine.js';
 import { openMapView } from './routeview.js';
@@ -59,11 +59,11 @@ export function adminTab(tab){
 /* ---------- KARTE: who is where right now ---------- */
 const MAPQ = { place:null, km:25 };
 function viewLive(){
-  let m = null, layer = null, fitted = false, tickFn = null;
+  let m = null, layer = null, fitted = false, tickFn = null, lastOk = 0;
   const sf = searchField('mapQ', t('mapSearchPh'), c => { MAPQ.place = c; refit(); tickFn && tickFn(); }, { citiesOnly:true });
   shell('map', `<div id="fullMap" class="fullmap"></div>
     <div class="map-search">${sf.html}<div class="rad-row hidden" id="radRow"></div></div>
-    <div class="float-card"><div class="fc-row"><b id="liveCount">…</b><span class="muted small" id="liveUpd"></span></div><div class="live-list" id="liveList"></div></div>`, { map:true });
+    <div class="float-card"><div class="fc-row"><b id="liveCount">${esc(t('loadingShort'))}</b><span class="muted small" id="liveUpd" role="status"></span></div><div class="live-list" id="liveList"></div></div>`, { map:true });
   sf.bind();
   m = makeMap($('#fullMap'), MAPQ.place ? [MAPQ.place.lat, MAPQ.place.lng] : null, 12);
   layer = L.layerGroup().addTo(m);
@@ -75,7 +75,9 @@ function viewLive(){
     const x = $('#radX'); if(x) x.onclick = () => { MAPQ.place = null; $('#mapQ').value = ''; fitted = false; tickFn(); };
   };
   const tick = async () => {
-    try{ await Promise.all([loadWorkers(), loadLive()]); }catch{ return; }
+    try{ await Promise.all([loadWorkers(), loadLive()]); lastOk = Date.now(); }
+    catch{ const u = $('#liveUpd'); if(u){ u.textContent = t('staleData', { x:lastOk ? new Date(lastOk).toLocaleTimeString(loc(), { hour:'2-digit', minute:'2-digit' }) : '—' }); u.classList.add('danger-text'); } return; }
+    { const u = $('#liveUpd'); if(u) u.classList.remove('danger-text'); }
     const live = A.workers.filter(isLive);
     // where to draw a worker: live = real position; otherwise the recent position (kept 12 h after work) or the home city
     // from the profile (the GPS position itself is not kept longer, see purge_old_data)
@@ -170,19 +172,27 @@ async function viewPeople(){
   let place = null;
   const f = dayFilter();
   const sf = searchField('wCity', t('whoPh'), c => { place = c; render(); }, { citiesOnly:true });
+  const nLive = A.workers.filter(isLive).length;
   shell('people', `${topbar(t('tabPeople'))}
     <div class="pad">
-      <div class="person-row big">${avatar()}<div><b>${esc(A.user?.phone ? '+' + A.user.phone.replace(/^\+/, '') : (A.user?.email || ''))}</b><span>${esc(t('admin'))}</span></div></div>
-      <div class="tool-row"><button class="btn ghost small" id="tDemo">${esc(t('demo'))}</button><button class="btn ghost small" id="tInv">${esc(t('inviteAdmin'))}</button><button class="btn ghost small" id="tWork">${esc(t('switchToWorker'))}</button><button class="btn ghost small" id="tOut">${esc(t('logout'))}</button></div>
-      ${langSwitch(I.lang)}
-      <h2 class="sec">${esc(t('workersN', { n:A.workers.length }))}</h2>
+      <div class="kpis two"><div class="kpi k-info"><b>${A.workers.length}</b><span>${esc(t('kTotal'))}</span></div><div class="kpi k-ok"><b>${nLive}</b><span>${esc(t('stLive'))}</span></div></div>
+      <div class="searchbox"><span class="sb-ic">${ICONS.search}</span><input id="wQ" class="sb-in" placeholder="${esc(t('searchNamePhone'))}" aria-label="${esc(t('searchNamePhone'))}"></div>
+      <label class="f">${esc(t('whoCanGo'))}</label>${sf.html}
       <label class="f">${esc(t('workedWhen'))}</label>
       <div id="dFilter"></div>
-      <label class="f" style="margin-top:12px">${esc(t('whoCanGo'))}</label>${sf.html}
-      <div class="searchbox" style="margin-top:8px"><span class="sb-ic">${ICONS.search}</span><input id="wQ" class="sb-in" placeholder="${esc(t('searchNamePhone'))}"></div>
-      <div id="wList" style="margin-top:12px"></div>
+      <div class="sec-row"><h2>${esc(t('workersN', { n:A.workers.length }))}</h2></div>
+      <div id="wList"></div>
+      <h2 class="sec">${esc(t('accountSettings'))}</h2>
+      <div class="card" style="display:block">
+        <div class="person-row" style="padding-top:0">${avatar()}<div><b>${esc(A.user?.phone ? '+' + A.user.phone.replace(/^\+/, '') : (A.user?.email || ''))}</b><span>${esc(t('admin'))}</span></div></div>
+        ${themeSwitch(A.theme)}
+        ${langSwitch(I.lang, true)}
+        <div class="tool-row" style="margin-top:16px"><button class="btn ghost small" id="tInv">${ICONS.users}${esc(t('inviteAdmin'))}</button><button class="btn ghost small" id="tWork">${ICONS.route}${esc(t('switchToWorker'))}</button><button class="btn ghost small" id="tDemo">${esc(t('demo'))}</button></div>
+        <button class="btn ghost danger-text" id="tOut" style="margin-top:8px">${esc(t('logout'))}</button>
+      </div>
       ${legalLinks()}
     </div>`);
+  store.get('theme').then(v => { A.theme = v; document.querySelectorAll('[data-theme-set]').forEach(b => { const on = b.dataset.themeSet === (v || 'system'); b.classList.toggle('on', on); b.setAttribute('aria-checked', on); }); });
   sf.bind(); bindLegal(viewPeople);
   let days = [];   // all working days (newest first), loaded below
   const render = () => {
@@ -199,10 +209,10 @@ async function viewPeople(){
     $('#wList').innerHTML = (on ? `<div class="hint">${esc(shown.length ? t('workedSum', { w:list.length, d:daysSum(shown) }) : t('noDaysRange'))}</div>` : '') +
       (place ? `<div class="hint">${esc(t('canReach', { n:list.length, city:place.name }))} <button class="link" id="wClr">${esc(t('reset'))}</button></div>` : '') +
       (list.length ? list.map(({ w, km }) => `<div class="card worker-card"><button class="wc-main" data-id="${w.id}">${avatar(w.name, isLive(w) ? 'live' : '')}
-        <div><b>${esc(w.name)}</b><span>${esc((w.cities || []).map(c => c.name).join(', '))}${km != null ? ' · ' + Math.round(km) + ' km' : ''} · ${esc(t('zoneChip', { n:w.zone_minutes }))}</span></div></button>
+        <div class="grow"><b>${esc(w.name)}</b><span>${esc((w.cities || []).map(c => c.name).join(', '))}${km != null ? ' · ' + Math.round(km) + ' km' : ''} · ${esc(t('zoneChip', { n:w.zone_minutes }))}</span><span>${isLive(w) ? statusPill('live', t('stLive')) : esc(t('lastActive', { a:ago(w.last_seen) }))}</span></div>${ICONS.chevron}</button>
         ${on ? `<div class="wc-days">${byW.get(w.id).map(r => dayLine(r)).join('')}</div>` : ''}
-        <div class="wc-act"><a class="btn ghost small" href="${telLink(w.phone)}">${esc(t('call'))}</a><a class="btn ghost small" target="_blank" href="${waLink(w.phone)}">WhatsApp</a></div></div>`).join('')
-       : on ? '' : `<div class="empty">${esc(A.workers.length ? t('notFound') : t('noWorkers'))}</div>`);
+        <div class="wc-act"><a class="btn ghost small" href="${telLink(w.phone)}">${ICONS.phone}${esc(t('call'))}</a><a class="btn ghost small" target="_blank" rel="noopener" href="${waLink(w.phone)}">${ICONS.chat}WhatsApp</a></div></div>`).join('')
+       : on ? '' : emptyState(A.workers.length ? t('notFound') : t('noWorkers'), A.workers.length ? 'search' : 'users'));
     const clr = $('#wClr'); if(clr) clr.onclick = () => { place = null; $('#wCity').value = ''; render(); };
     document.querySelectorAll('.wc-main').forEach(b => b.onclick = () => viewWorker(b.dataset.id));
     document.querySelectorAll('.wc-days .rbtn').forEach(b => b.onclick = () => viewDayMap(b.dataset.r, viewPeople));
@@ -228,12 +238,12 @@ async function viewWorker(id, back, focusId){
   shell('people', `${topbar(w.name, true)}
     <div class="pad">
       <div class="person-row big">${avatar(w.name, isLive(w) ? 'live' : '')}<div><b>${esc(w.name)}</b><span>${esc(w.phone)} · ${esc(t('lastActive', { a:ago(w.last_seen) }))}</span></div></div>
-      <div class="tool-row"><a class="btn primary small" href="${telLink(w.phone)}">${esc(t('call'))}</a><a class="btn ghost small" target="_blank" href="${waLink(w.phone)}">WhatsApp</a></div>
+      <div class="tool-row"><a class="btn primary small" href="${telLink(w.phone)}">${ICONS.phone}${esc(t('call'))}</a><a class="btn ghost small" target="_blank" rel="noopener" href="${waLink(w.phone)}">${ICONS.chat}WhatsApp</a></div>
       <div class="chips">${(w.cities || []).map(c => `<span class="chip">${esc(c.name)}</span>`).join('')}</div>
       <h2 class="sec">${esc(t('workDays'))}</h2>
       <div id="wDaysSum" class="muted small" style="margin:0 0 2px"></div>
       <div id="wMap" class="wmap"></div>
-      <div class="rinfo-row"><div id="wRouteInfo" class="muted small"></div><button class="btn ghost small" id="wBig" hidden>⤢ ${esc(t('rvBig'))}</button></div>
+      <div class="rinfo-row"><div id="wRouteInfo" class="muted small"></div><button class="btn ghost small" id="wBig" hidden>${ICONS.expand}${esc(t('rvBig'))}</button></div>
       <div id="wDays"></div>
       <h2 class="sec">${esc(t('settings'))}</h2>
       <label class="f">${esc(t('zoneLabel'))}</label>
@@ -348,35 +358,47 @@ function taskMatches(tk){
   const f = A.filter, d = tk.work_date ? String(tk.work_date).slice(0, 10) : '';
   if(f.status === 'open' && tk.status !== 'open') return false;
   if(f.status === 'done' && tk.status === 'open') return false;
+  if(f.status === 'live' && !taskLive(tk)) return false;
   if(f.city && tk.city_name !== f.city) return false;
   if(f.district && tk.district !== f.district) return false;
   if(f.from && (!d || d < f.from)) return false;
   if(f.to && (!d || d > f.to)) return false;
   return true;
 }
+// an order is "unterwegs" while one of its workers records a route right now (GPS alone is not enough: the route must be running)
+const taskLive = tk => tk.status === 'open' && (A.live || []).some(r => r.task_id === tk.id && !r.paused_at);
+const taskState = tk => tk.status !== 'open' ? ['ok', t('stDoneTask')] : taskLive(tk) ? ['live', t('stLive')] : (tk.task_workers || []).length ? ['info', t('stPlanned')] : ['neutral', t('stNoWorkers')];
+const accOf = k => ({ ok:'acc-ok', live:'acc-ok', info:'acc-info', warn:'acc-warn', bad:'acc-bad', neutral:'acc-neutral' }[k]);
 function viewTasks(){
-  const live = new Set(A.workers.filter(isLive).map(w => w.id));
   const opts = k => [...new Set(A.tasks.map(x => x[k]).filter(Boolean))].sort();
-  const sel = (id, label, list, cur) => `<div><label class="f">${esc(label)}</label><select class="in small" id="${id}"><option value="">${esc(t('fAll'))}</option>${list.map(v => `<option ${v === cur ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></div>`;
-  const card = tk => `<button class="card task-card" data-id="${tk.id}"><div class="tc-main"><b>${esc(tk.title)}</b>
-    <span>${esc([fmtDay(tk.work_date), tk.district || tk.city_name, tk.flyers ? fmtN(tk.flyers) + ' ' + t('flyers') : '', tk.task_workers.length + ' ' + t('tabPeople')].filter(Boolean).join(' · '))}</span>
-    ${tk.task_workers.some(x => live.has(x.worker_id)) ? `<span class="pill live">${esc(t('active'))}</span>` : ''}</div>${ICONS.chevron}</button>`;
+  const sel = (id, label, list, cur) => `<div><label class="f" for="${id}">${esc(label)}</label><select class="in small" id="${id}"><option value="">${esc(t('fAll'))}</option>${list.map(v => `<option ${v === cur ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></div>`;
+  const card = tk => { const [k, txt] = taskState(tk); return `<button class="card acc ${accOf(k)} task-card" data-id="${tk.id}"><div class="tc-main"><b>${esc(tk.title)}</b>
+    <div class="tc-meta"><i>${ICONS.calendar}${esc(fmtDay(tk.work_date))}</i>${tk.district || tk.city_name ? `<i>${ICONS.pin}${esc([tk.district, tk.city_name].filter(Boolean).join(', '))}</i>` : ''}${tk.flyers ? `<i>${ICONS.mail}${esc(fmtN(tk.flyers))}</i>` : ''}<i>${ICONS.users}${(tk.task_workers || []).length}</i></div>
+    ${statusPill(k, txt)}</div>${ICONS.chevron}</button>`; };
   const f = A.filter, list = A.tasks.filter(taskMatches);
+  const nOpen = A.tasks.filter(x => x.status === 'open').length, nLive = A.tasks.filter(taskLive).length, nDone = A.tasks.length - nOpen;
+  const nf = ['city', 'district', 'from', 'to'].filter(k => f[k]).length;
   shell('tasks', `${topbar(t('tasks'))}
     <div class="pad">
-      <button class="card create-card" id="create"><span class="cc-ic">${ICONS.plus}</span><div><b>${esc(t('createTask'))}</b><span>${esc(t('createTaskSub'))}</span></div></button>
-      <div class="chips" style="margin:0 0 10px">${[['open', t('fOpen')], ['done', t('fDone')], ['all', t('fAll')]].map(([k, l]) => `<button class="chip ${f.status === k ? 'on' : ''}" data-st="${k}" style="padding:7px 14px">${esc(l)}</button>`).join('')}</div>
-      <div class="steppers">${sel('fCity', t('fCity'), opts('city_name'), f.city)}${sel('fDist', t('fDistrict'), opts('district'), f.district)}</div>
-      <div class="steppers"><div><label class="f">${esc(t('fFrom'))}</label><input class="in small" type="date" id="fFrom" value="${esc(f.from)}"></div><div><label class="f">${esc(t('fTo'))}</label><input class="in small" type="date" id="fTo" value="${esc(f.to)}"></div></div>
-      <div style="height:14px"></div>
-      ${list.length ? list.map(card).join('') : `<div class="empty">${esc(A.tasks.length ? t('noMatch') : t('noOpenTasks'))}</div>`}
-    </div>`);
-  $('#create').onclick = viewCreate;
+      <div class="kpis"><div class="kpi k-info"><b>${nOpen}</b><span>${esc(t('fOpen'))}</span></div><div class="kpi k-ok"><b>${nLive}</b><span>${esc(t('stLive'))}</span></div><div class="kpi k-neutral"><b>${nDone}</b><span>${esc(t('fDone'))}</span></div></div>
+      <div class="chips" style="margin:0 0 10px">${[['open', t('fOpen')], ['live', t('stLive')], ['done', t('fDone')], ['all', t('fAll')]].map(([k, l]) => `<button class="chip ${f.status === k ? 'on' : ''}" data-st="${k}" aria-pressed="${f.status === k}">${esc(l)}</button>`).join('')}</div>
+      <details class="filters" ${nf ? 'open' : ''}><summary>${ICONS.search}${esc(t('filter'))}${nf ? `<span class="cnt">${nf}</span>` : ''}</summary><div class="f-body">
+        <div class="steppers">${sel('fCity', t('fCity'), opts('city_name'), f.city)}${sel('fDist', t('fDistrict'), opts('district'), f.district)}</div>
+        <div class="steppers"><div><label class="f" for="fFrom">${esc(t('fFrom'))}</label><input class="in small" type="date" id="fFrom" value="${esc(f.from)}"></div><div><label class="f" for="fTo">${esc(t('fTo'))}</label><input class="in small" type="date" id="fTo" value="${esc(f.to)}"></div></div>
+        ${nf ? `<button class="link" id="fReset" style="margin-top:8px">${esc(t('reset'))}</button>` : ''}</div></details>
+      ${list.length ? list.map(card).join('') : A.tasks.length ? emptyState(t('noMatch'), 'search') : `${emptyState(t('noOpenTasks'), 'flag')}<button class="btn primary" id="create" style="margin-top:12px">${ICONS.plus}${esc(t('createTask'))}</button>`}
+    </div>`, { fab:t('createTask') });
+  $('#fab').onclick = () => viewCreate();
+  if($('#create')) $('#create').onclick = () => viewCreate();
   const again = () => viewTasks();
   document.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { f.status = b.dataset.st; again(); });
   $('#fCity').onchange = e => { f.city = e.target.value; again(); }; $('#fDist').onchange = e => { f.district = e.target.value; again(); };
   $('#fFrom').onchange = e => { f.from = e.target.value; again(); }; $('#fTo').onchange = e => { f.to = e.target.value; again(); };
+  if($('#fReset')) $('#fReset').onclick = () => { f.city = f.district = f.from = f.to = ''; again(); };
   document.querySelectorAll('.task-card').forEach(b => b.onclick = () => viewTask(b.dataset.id));
+  // live routes decide "unterwegs": refresh them once and redraw if something changed
+  const before = JSON.stringify((A.live || []).map(r => r.id + r.paused_at));
+  loadLive().then(() => { if(document.querySelector('.task-card, .kpis') && UI.tab === 'tasks' && !document.getElementById('cSheet') && JSON.stringify((A.live || []).map(r => r.id + r.paused_at)) !== before) viewTasks(); }).catch(() => {});
 }
 
 /* Routenerstellung: full map + search on top, sheet with flyers / workers / routes */
@@ -388,7 +410,7 @@ function viewCreate(edit){
   shell('tasks', `<div id="fullMap" class="fullmap"></div>
     <div class="map-top"><button class="icon-btn" id="cBack" aria-label="${esc(t('back'))}">${ICONS.back}</button><div class="grow">${sf.html}</div></div>
     <button class="chip pick-btn" id="cPick" hidden></button>
-    <div class="sheet" id="cSheet"><p class="muted small" style="margin:0">${esc(t('tapMap'))}</p></div>`, { map:true });
+    <div class="sheet" id="cSheet"></div>`, { map:true });
   sf.bind();
   $('#cBack').onclick = () => { d.token++; viewTasks(); };
   const m = makeMap($('#fullMap'), null, 13);
@@ -398,7 +420,7 @@ function viewCreate(edit){
   const updPick = () => {
     const b = $('#cPick'); if(!b) return;
     b.hidden = !d.start; b.classList.toggle('on', !!d.pick);
-    b.textContent = d.pick ? t('pickStartNow') : '📍 ' + t('changeStart');
+    b.innerHTML = d.pick ? esc(t('pickStartNow')) : ICONS.pin + esc(t('changeStart'));
     m.getContainer().style.cursor = d.pick ? 'crosshair' : '';
   };
   $('#cPick').onclick = () => { d.pick = !d.pick; updPick(); };
@@ -414,8 +436,10 @@ function viewCreate(edit){
   const busy = (txt, full) => {
     if(!alive()) return;
     d.busy = true; const sv = $('#cSave'); if(sv) sv.disabled = true;
-    if(!full && $('#cFly')){ const sh = $('#cSheet'); sh.classList.add('calc'); let b = $('#cBusy'); if(!b){ b = document.createElement('div'); b.id = 'cBusy'; b.className = 'cbusy'; sh.appendChild(b); } b.textContent = '⏳ ' + txt; }
-    else sheet(`<p class="muted small" style="margin:0">${esc(txt)}</p>`);
+    const sh = $('#cSheet'); if(!$('#cWz')) renderSheet();
+    if(full && d.step >= 2) sh.classList.add('calc');
+    let b = $('#cBusy'); if(!b){ b = document.createElement('div'); b.id = 'cBusy'; b.className = 'cbusy'; b.setAttribute('role', 'status'); sh.appendChild(b); } b.textContent = txt;
+    const nx = $('#cNext') || $('#cSave'); if(nx && d.step >= 2) nx.disabled = true;
   };
   // status with a running seconds counter, so a slow map server is visibly "working"; the text follows the planner's stage
   const progress = (tok, full) => {
@@ -463,58 +487,108 @@ function viewCreate(edit){
     if(z && !d.keepView) m.fitBounds(z.getBounds(), { paddingTopLeft:[24, 80], paddingBottomRight:[24, Math.round(innerHeight * .5)], maxZoom:17, animate:false });
   }
   const num = (id, def) => { const v = parseFloat(($(id) || {}).value); return isFinite(v) ? v : def; };
-  function keep(){ return { title:$('#cTitle') ? $('#cTitle').value : '', date:$('#cDate') ? $('#cDate').value : '', notes:$('#cNotes') ? $('#cNotes').value : '', quota:$('#cQuota') ? $('#cQuota').value : d.quota }; }
-  function restore(k){ if($('#cTitle') && k.title) $('#cTitle').value = k.title; if($('#cDate')) $('#cDate').value = k.date; if($('#cNotes')) $('#cNotes').value = k.notes; if($('#cQuota')) $('#cQuota').value = k.quota; }
+  // values typed in any step survive re-renders and step changes (only fields that are on screen are read)
+  function keep(){
+    const k = { ...saved }, v = id => $(id) ? $(id).value : undefined;
+    if(v('#cTitle') !== undefined) k.title = v('#cTitle');
+    if(v('#cDate') !== undefined) k.date = v('#cDate');
+    if(v('#cNotes') !== undefined) k.notes = v('#cNotes');
+    if(v('#cQuota') !== undefined) k.quota = v('#cQuota');
+    return k;
+  }
+  function restore(k){ if($('#cTitle')) $('#cTitle').value = k.title || ''; if($('#cDate')) $('#cDate').value = k.date || ''; if($('#cNotes')) $('#cNotes').value = k.notes || ''; if($('#cQuota')) $('#cQuota').value = k.quota; }
   let saved = tkE ? { title:tkE.title, date:tkE.work_date ? String(tkE.work_date).slice(0, 10) : '', notes:tkE.notes || '', quota:tkE.quota_m30 || 1500 } : { title:'', date:'', notes:'', quota:1500 };
+  // five steps on top of the live map: 1 start · 2 route · 3 time · 4 workers · 5 review. Planning keeps running underneath.
+  const STEPS = ['wzStart', 'wzRoute', 'wzTime', 'wzTeam', 'wzReview'];
+  d.step = tkE ? 2 : 1;
+  const canReach = k => k === 1 || (!!d.start && (k === 2 || (!!d.plan && !d.busy)));
+  const goStep = k => { if(!canReach(k)) return; saved = keep(); d.step = k; const sh = $('#cSheet'); if(sh){ sh.scrollTop = 0; if(k >= 2) sh.classList.add('tall'); } renderSheet(); };
   function renderSheet(){
     if(!alive()) return;
-    const sc = ($('#cSheet') || {}).scrollTop || 0;
+    if($('#cWz')) saved = keep();
+    const sc = d.step === d.lastStep ? (($('#cSheet') || {}).scrollTop || 0) : 0; d.lastStep = d.step;
     const p = d.plan, title = saved.title || (d.place ? d.place.name : '');
+    if(!saved.title && title) saved.title = title;
     const cap = p ? Planner.capacity(p.routes, d.flyers, { hoursPerDay:d.hours, days:d.days }) : null;
     const km = p ? fmtDist(p.routes.reduce((s, r) => s + r.length_m, 0)) : '';
-    sheet(`<button class="sheet-grip" id="grip" aria-label="Panel"></button>
-      <label class="f">${esc(t('title'))}</label><input class="in" id="cTitle" value="${esc(title)}">
-      <div class="steppers">
-        <div><label class="f">${esc(t('flyersCount'))}</label><div class="stepper"><button data-s="f:-500">−</button><input id="cFly" type="number" inputmode="numeric" min="100" step="100" value="${d.flyers}"><button data-s="f:500">+</button></div></div>
-        <div><label class="f">${esc(t('workersCount'))}</label><div class="stepper"><button data-s="n:-1" ${p ? '' : 'disabled'}>−</button><b id="vN">${p ? d.n : '—'}</b><button data-s="n:1" ${p ? '' : 'disabled'}>+</button></div></div>
-      </div>
-      ${p && d.sug && d.sug !== d.n ? `<div class="hint">${esc(t('sugWorkers', { n:d.sug, d:d.days }))} <button class="link" id="cSug">${esc(t('applySug'))}</button></div>` : ''}
-      ${p ? `<p class="small muted" style="margin:8px 0 0">${esc(t('planSum', { mb:fmtN(p.mailboxes), km, h:fmtHm(p.routes.reduce((s, r) => s + r.minutes, 0)) }))}</p>
-        ${p.mailboxes < d.flyers * 0.95 ? `<p class="small err">${esc(t('areaSmall', { mb:fmtN(p.mailboxes) }))}</p>` : ''}
-        <div class="${cap.ok ? 'hint' : 'warnbox'}">${cap.ok ? esc(t('fitsOk', { d:d.days })) : `${esc(t('tooBig', { h:cap.slowest.toFixed(1).replace('.', ','), lim:cap.limit, d:d.days }))} <button class="link" id="cReduce">${esc(t('reduceTo', { f:fmtN(cap.suggestedFlyers) }))}</button> ${esc(t('moreWorkers'))}`}</div>`
-        : `<p class="small err">${esc(t('streetsFail', { e:d.err || '' }))}</p><button class="btn ghost small" id="cRetry">${esc(t('retryBtn'))}</button>`}
-      ${p ? p.routes.map((r, i) => `<div class="route-row"><span class="swatch" style="background:${Planner.COLORS[i % 10]}"></span>
+    const routeRow = (r, i, withSelect) => `<div class="route-row"><span class="swatch" style="background:${Planner.COLORS[i % 10]}"></span>
         <div class="grow"><b>${esc(t('planRoute', { n:i + 1 }))} <span class="muted">· ${esc(t('daysN', { n:Math.max(1, Math.ceil(r.minutes / 60 / d.hours)) }))}</span></b><span>${esc(t('routeLine', { km:fmtDist(r.length_m), h:fmtHm(r.minutes), mb:fmtN(r.mailboxes) }))}</span>
         ${dayLines(r.days)}
-        <select class="in small" data-r="${i}">${workerOptions(d.start.lat, d.start.lng, d.assign[i])}</select></div></div>`).join('') : ''}
-      <div class="steppers"><div><label class="f">${esc(t('startDate'))}</label><input class="in" type="date" id="cDate"></div><div><label class="f">${esc(t('hoursDay'))}</label><input class="in" type="number" id="cHours" min="1" max="12" step="0.5" value="${d.hours}"></div></div>
-      <label class="f">${esc(t('quota'))}</label><input class="in" type="number" id="cQuota" min="200" step="100" value="${esc(saved.quota)}">
-      <label class="f">${esc(t('note'))}</label><textarea class="in" id="cNotes" placeholder="${esc(t('notesPh'))}"></textarea>
-      <button class="btn primary" id="cSave" style="margin-top:12px" ${p && !d.busy ? '' : 'disabled'}>${esc(t('saveTask'))}</button><div class="err" id="cErr"></div>`);
-    if($('#cRetry')) $('#cRetry').onclick = () => setStart(d.start.lat, d.start.lng);
+        ${withSelect ? `<select class="in small" data-r="${i}" aria-label="${esc(t('planRoute', { n:i + 1 }))}">${workerOptions(d.start.lat, d.start.lng, d.assign[i])}</select>` : ''}</div></div>`;
+    const planBlock = () => p ? `<p class="small muted" style="margin:10px 0 0">${esc(t('planSum', { mb:fmtN(p.mailboxes), km, h:fmtHm(p.routes.reduce((s, r) => s + r.minutes, 0)) }))}</p>
+        ${p.mailboxes < d.flyers * 0.95 ? `<p class="small err">${esc(t('areaSmall', { mb:fmtN(p.mailboxes) }))}</p>` : ''}
+        <div class="${cap.ok ? 'hint' : 'warnbox'}">${cap.ok ? esc(t('fitsOk', { d:d.days })) : `${esc(t('tooBig', { h:cap.slowest.toFixed(1).replace('.', ','), lim:cap.limit, d:d.days }))} <button class="link" id="cReduce">${esc(t('reduceTo', { f:fmtN(cap.suggestedFlyers) }))}</button> ${esc(t('moreWorkers'))}`}</div>`
+      : d.err ? `<p class="small err">${esc(t('streetsFail', { e:d.err }))}</p><button class="btn ghost small" id="cRetry">${ICONS.refresh}${esc(t('retryBtn'))}</button>` : `<p class="small muted" style="margin:10px 0 0">${esc(t('calculating'))}</p>`;
+    let body = '';
+    if(d.step === 1) body = `
+      <label class="f" for="cTitle">${esc(t('title'))}</label><input class="in" id="cTitle" value="${esc(title)}" autocomplete="off">
+      <label class="f">${esc(t('startPoint'))}</label>
+      <div class="note" style="margin:0;display:flex;gap:10px;align-items:flex-start">${ICONS.pin.replace('<svg', '<svg width="20" height="20" style="fill:none;stroke:currentColor;stroke-width:2;flex:none;margin-top:1px"')}<span>${d.start ? esc(d.place ? [d.place.name, d.place.sub].filter(Boolean).join(', ') : d.start.lat.toFixed(5) + ', ' + d.start.lng.toFixed(5)) : esc(t('tapMap'))}</span></div>`;
+    else if(d.step === 2) body = `
+      <div class="steppers">
+        <div><label class="f">${esc(t('flyersCount'))}</label><div class="stepper"><button data-s="f:-500" aria-label="−500">−</button><input id="cFly" type="number" inputmode="numeric" min="100" step="100" value="${d.flyers}"><button data-s="f:500" aria-label="+500">+</button></div></div>
+        <div><label class="f">${esc(t('workersCount'))}</label><div class="stepper"><button data-s="n:-1" ${p ? '' : 'disabled'} aria-label="−1">−</button><b id="vN">${p ? d.n : '—'}</b><button data-s="n:1" ${p ? '' : 'disabled'} aria-label="+1">+</button></div></div>
+      </div>
+      ${p && d.sug && d.sug !== d.n ? `<div class="hint">${esc(t('sugWorkers', { n:d.sug, d:d.days }))} <button class="link" id="cSug">${esc(t('applySug'))}</button></div>` : ''}
+      ${planBlock()}
+      ${p ? p.routes.map((r, i) => routeRow(r, i, false)).join('') : ''}`;
+    else if(d.step === 3) body = `
+      <div class="steppers"><div><label class="f" for="cDate">${esc(t('startDate'))}</label><input class="in" type="date" id="cDate"></div><div><label class="f" for="cHours">${esc(t('hoursDay'))}</label><input class="in" type="number" id="cHours" min="1" max="12" step="0.5" value="${d.hours}"></div></div>
+      <label class="f" for="cQuota">${esc(t('quota'))}</label><input class="in" type="number" id="cQuota" min="200" step="100" value="${esc(saved.quota)}">
+      <label class="f" for="cNotes">${esc(t('note'))}</label><textarea class="in" id="cNotes" placeholder="${esc(t('notesPh'))}"></textarea>
+      ${p ? `<div class="${cap.ok ? 'hint' : 'warnbox'}">${cap.ok ? esc(t('fitsOk', { d:d.days })) : esc(t('tooBig', { h:cap.slowest.toFixed(1).replace('.', ','), lim:cap.limit, d:d.days }))}</div>` : ''}`;
+    else if(d.step === 4) body = `<p class="small muted" style="margin:0 0 4px">${esc(t('assignHint'))}</p>${p ? p.routes.map((r, i) => routeRow(r, i, true)).join('') : ''}`;
+    else {
+      const assigned = p ? p.routes.filter((_, i) => d.assign[i]).length : 0;
+      body = `<div class="review">
+        <div><span>${esc(t('title'))}</span><b>${esc(saved.title || '—')}</b></div>
+        <div><span>${esc(t('place'))}</span><b>${esc(d.place ? [d.place.district, d.place.city].filter(Boolean).join(', ') || d.place.name : (tkE ? [tkE.district, tkE.city_name].filter(Boolean).join(', ') : '—'))}</b></div>
+        <div><span>${esc(t('flyersCount'))}</span><b>${esc(fmtN(d.flyers))}${p ? ' · ' + esc(t('mbApprox', { n:fmtN(p.mailboxes) })) : ''}</b></div>
+        <div><span>${esc(t('workersCount'))}</span><b>${p ? p.routes.length : '—'} · ${esc(t('assignedN', { a:assigned, n:p ? p.routes.length : 0 }))}</b></div>
+        <div><span>${esc(t('dist2'))}</span><b>${esc(km)} · ${esc(fmtHm(p ? p.routes.reduce((s, r) => s + r.minutes, 0) : 0))} ${esc(t('h'))}</b></div>
+        <div><span>${esc(t('startDate'))}</span><b>${esc(saved.date ? fmtDay(saved.date) : t('noDate'))} · ${esc(String(d.hours).replace('.', ','))} ${esc(t('h'))}/${esc(t('dayShort'))}</b></div>
+        <div><span>${esc(t('quota'))}</span><b>${esc(fmtN(+saved.quota || 1500))} m / 30 ${esc(t('min'))}</b></div>
+        ${saved.notes ? `<div><span>${esc(t('note'))}</span><b>${esc(saved.notes)}</b></div>` : ''}
+      </div>
+      ${p && !cap.ok ? `<div class="warnbox">${esc(t('tooBig', { h:cap.slowest.toFixed(1).replace('.', ','), lim:cap.limit, d:d.days }))}</div>` : ''}<div class="err" id="cErr"></div>`;
+    }
+    const last = d.step === 5, nextOk = last ? (!!p && !d.busy) : canReach(d.step + 1);
+    sheet(`<button class="sheet-grip" id="grip" aria-label="${esc(t('panel'))}"></button>
+      <div class="wz" id="cWz">${STEPS.map((k, i) => `<button class="${i + 1 === d.step ? 'on' : i + 1 < d.step ? 'done' : ''}" data-step="${i + 1}" ${canReach(i + 1) ? '' : 'disabled'} aria-current="${i + 1 === d.step ? 'step' : 'false'}"><i></i><span>${i + 1} ${esc(t(k))}</span></button>`).join('')}</div>
+      ${body}
+      <div class="wz-nav">${d.step > 1 ? `<button class="btn ghost" id="cPrev">${esc(t('back'))}</button>` : ''}
+        <button class="btn primary" id="${last ? 'cSave' : 'cNext'}" ${nextOk ? '' : 'disabled'}>${esc(last ? t('saveTask') : t('next'))}</button></div>`);
     restore(saved); $('#cSheet').classList.remove('calc'); $('#cSheet').scrollTop = sc;
     $('#grip').onclick = () => $('#cSheet').classList.toggle('tall');
+    document.querySelectorAll('[data-step]').forEach(b => b.onclick = () => goStep(+b.dataset.step));
+    if($('#cPrev')) $('#cPrev').onclick = () => goStep(d.step - 1);
+    if($('#cNext')) $('#cNext').onclick = () => {
+      if(d.step === 1){ saved = keep(); if(!(saved.title || '').trim()){ toast(t('needTitle')); $('#cTitle').focus(); return; } }
+      goStep(d.step + 1);
+    };
+    if($('#cRetry')) $('#cRetry').onclick = () => setStart(d.start.lat, d.start.lng);
     document.querySelectorAll('[data-s]').forEach(b => b.onclick = () => {
       const [k, v] = b.dataset.s.split(':');
       const later = () => { clearTimeout(d.tm); d.tm = setTimeout(() => { saved = keep(); recompute(); }, 450); };   // several quick taps = one recalculation
       if(k === 'f'){ d.flyers = Math.max(100, num('#cFly', d.flyers) + +v); $('#cFly').value = d.flyers; d.nAuto = true; return later(); }
       d.n = Math.max(1, Math.min(20, d.n + +v)); $('#vN').textContent = d.n; d.nAuto = false; d.assign = {}; later();
     });
-    $('#cFly').onchange = () => { saved = keep(); d.flyers = Math.max(100, Math.round(num('#cFly', d.flyers))); d.nAuto = true; recompute(); };
-    $('#cHours').onchange = () => { saved = keep(); d.hours = Math.max(1, Math.min(12, num('#cHours', 7))); recompute(); };
+    if($('#cFly')) $('#cFly').onchange = () => { saved = keep(); d.flyers = Math.max(100, Math.round(num('#cFly', d.flyers))); d.nAuto = true; recompute(); };
+    if($('#cHours')) $('#cHours').onchange = () => { saved = keep(); d.hours = Math.max(1, Math.min(12, num('#cHours', 7))); recompute(); };
     const sg = $('#cSug'); if(sg) sg.onclick = () => { saved = keep(); d.n = d.sug; d.assign = {}; recompute(); };
     const red = $('#cReduce'); if(red) red.onclick = () => { saved = keep(); d.flyers = Math.max(100, cap.suggestedFlyers); d.nAuto = false; recompute(); };
     document.querySelectorAll('[data-r]').forEach(s => s.onchange = () => { d.assign[+s.dataset.r] = s.value || null; });
-    $('#cSave').onclick = save;
+    if($('#cSave')) $('#cSave').onclick = save;
   }
   async function save(){
     if(d.busy || !d.plan) return;   // a recalculation is running: the plan on screen is not the final one yet
-    const title = $('#cTitle').value.trim(); if(!title){ $('#cErr').textContent = t('needTitle'); return; }
-    $('#cSave').disabled = true;
+    saved = keep();
+    const title = (saved.title || '').trim(); if(!title){ goStep(1); toast(t('needTitle')); return; }
+    $('#cSave').disabled = true; $('#cSave').classList.add('loading');
     try{
-      const pl = d.plan, quota = Math.max(200, Math.round(num('#cQuota', 1500))), date = $('#cDate').value || null;
+      const pl = d.plan, quota = Math.max(200, Math.round(+saved.quota || 1500)), date = saved.date || null;
       const row = { title, city_name:(d.place && d.place.city) || (tkE && tkE.city_name) || null, district:(d.place && d.place.district) || (tkE && tkE.district) || null, start_lat:d.start.lat, start_lng:d.start.lng,
-        walk_minutes:15, zone_polygon:pl.zone, work_date:date, notes:$('#cNotes').value.trim() || null, street_m:d.streetM || null,
+        walk_minutes:15, zone_polygon:pl.zone, work_date:date, notes:(saved.notes || '').trim() || null, street_m:d.streetM || null,
         flyers:d.flyers, quota_m30:quota, work_days:d.days, work_hours:d.hours, est_mailboxes:pl.mailboxes, route_m:pl.routes.reduce((s, r) => s + r.length_m, 0) };
       let tk;
       if(tkE){
@@ -526,8 +600,9 @@ function viewCreate(edit){
       }
       await savePlans(tk, pl.routes.map((r, i) => ({ task_id:tk.id, idx:i, worker_id:d.assign[i] || null, color:Planner.COLORS[i % 10], path:r.path, length_m:r.length_m, street_m:r.street_m, mailboxes:r.mailboxes, boxes:r.boxes, minutes:r.minutes, days:r.days, steps:r.steps })));
       await loadTasks(); viewTask(tk.id);
-    }catch(e){ $('#cErr').textContent = e.message; $('#cSave').disabled = false; }
+    }catch(e){ if($('#cErr')) $('#cErr').textContent = e.message; else toast(e.message); const sv = $('#cSave'); if(sv){ sv.disabled = false; sv.classList.remove('loading'); } }
   }
+  renderSheet();
   if(tkE) setStart(tkE.start_lat, tkE.start_lng);
 }
 // saves plans, links workers and sends each assigned worker a notification
@@ -566,7 +641,7 @@ function editTaskSheet(tk, plans, routes){
 /* task detail: info + map + routes with status, worker assignment and progress */
 const dayLines = days => (days && days.length > 1) ? days.map((x, k) => `<span class="small day-line"><b>${esc(t('dayN', { n:k + 1 }))}:</b> ${esc(t('routeLine', { km:fmtDist(x.length_m), h:fmtHm(x.minutes), mb:fmtN(x.mailboxes) }))}</span>`).join('') : '';
 const stText = p => p.status === 'accepted' ? t('stAccepted') : p.status === 'declined' ? t('stDeclined') : p.status === 'done' ? t('stDone') : t('stOffered');
-const stCls = p => p.status === 'accepted' || p.status === 'done' ? 'live' : p.status === 'declined' ? 'bad' : 'warn';
+const stCls = p => p.status === 'done' ? 'ok' : p.status === 'accepted' ? '' : p.status === 'declined' ? 'bad' : 'neutral';   // angeboten = neutral, angenommen = blau, erledigt = grün, abgelehnt = rot
 async function viewTask(id){
   const tk = A.tasks.find(x => x.id === id); if(!tk) return viewTasks();
   const [{ data:plans }, { data:routes }] = await Promise.all([sb.from('task_plans').select('*').eq('task_id', id).order('idx'), sb.from('routes').select('*').eq('task_id', id)]);
@@ -585,17 +660,17 @@ async function viewTask(id){
         ${tk.notes ? `<div><span>${esc(t('note'))}</span><b>${esc(tk.notes)}</b></div>` : ''}
       </div>
       <div class="mapbox" id="tMap"></div>
-      <div class="rinfo-row"><span></span><button class="btn ghost small" id="tBig">⤢ ${esc(t('rvBig'))}</button></div>
+      <div class="rinfo-row"><span>${statusPill(...taskState(tk))}</span><button class="btn ghost small" id="tBig">${ICONS.expand}${esc(t('rvBig'))}</button></div>
       <h2 class="sec">${esc(t('routesOf'))}</h2>
       ${(plans || []).length ? plans.map(p => { const w = wById(p.worker_id); return `<div class="route-row"><span class="swatch" style="background:${esc(p.color || '#2563EB')}"></span>
         <div class="grow"><b>${esc(t('planRoute', { n:p.idx + 1 }))} <span class="muted" id="pp${p.idx}"></span></b>
         <span>${esc(t('routeLine', { km:fmtDist(p.length_m), h:fmtHm(p.minutes || 0), mb:fmtN(p.mailboxes || 0) }))}</span>
         ${dayLines(p.days)}
         <div class="bar"><i id="pb${p.idx}"></i></div><span id="pf${p.idx}" style="margin-top:4px"></span>
-        ${p.worker_id ? `<span class="pill ${stCls(p)}">${esc(stText(p))}${p.status === 'accepted' && (p.work_dates || []).length ? ' · ' + esc(p.work_dates.map(fmtDay).join(', ')) : ''}</span>` : ''}
-        <div class="rr-act"><select class="in small" data-plan="${p.id}">${workerOptions(tk.start_lat, tk.start_lng, p.worker_id)}</select>${w ? `<a class="btn ghost small" target="_blank" href="${waLink(w.phone, invite(w))}">${esc(t('write'))}</a>` : ''}</div>
+        ${p.worker_id ? `<span class="pill ${(A.live || []).some(r => r.plan_id === p.id && !r.paused_at) ? 'live' : stCls(p)}">${(A.live || []).some(r => r.plan_id === p.id && !r.paused_at) ? esc(t('stLive')) + ' · ' : ''}${esc(stText(p))}${p.status === 'accepted' && (p.work_dates || []).length ? ' · ' + esc(p.work_dates.map(fmtDay).join(', ')) : ''}</span>` : ''}
+        <div class="rr-act"><select class="in small" data-plan="${p.id}">${workerOptions(tk.start_lat, tk.start_lng, p.worker_id)}</select>${w ? `<a class="btn ghost small" target="_blank" rel="noopener" href="${waLink(w.phone, invite(w))}">${ICONS.chat}${esc(t('write'))}</a>` : ''}</div>
         <span class="small">${esc(t('replaceHint'))}</span></div></div>`; }).join('') : `<p class="muted small">${esc(t('noPlans'))}</p>`}
-      <div class="tool-row" style="margin-top:16px"><button class="btn ghost small" id="tEdit">${esc(t('editTask'))}</button><button class="btn ghost small" id="tDone">${esc(tk.status === 'open' ? t('finish') : t('reopen'))}</button><button class="btn ghost small danger-text" id="tDel">${esc(t('del'))}</button></div>
+      <div class="tool-row" style="margin-top:16px"><button class="btn ghost small" id="tEdit">${ICONS.edit}${esc(t('editTask'))}</button><button class="btn ghost small" id="tDone">${ICONS.check}${esc(tk.status === 'open' ? t('finish') : t('reopen'))}</button><button class="btn ghost small danger-text" id="tDel">${esc(t('del'))}</button></div>
       <p class="small muted">${esc(t('desktop'))}</p>
     </div>`);
   bindBack(viewTasks);

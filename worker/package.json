@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "@capacitor/cli": "8.5.3",
+    "@fontsource-variable/inter": "^5.2.5",
     "esbuild": "0.25.10"
   }
 }
