@@ -71,8 +71,19 @@ function viewLive(){
   const tick = async () => {
     try{ await Promise.all([loadWorkers(), loadLive()]); }catch{ return; }
     const live = A.workers.filter(isLive);
-    // everybody with a known position is shown: live = green person, otherwise grey person + approximate area
-    const known = A.workers.filter(w => w.last_lat != null && w.last_lng != null);
+    // where to draw a worker: live = real position; otherwise the recent position (kept 12 h after work) or the home city
+    // from the profile (the GPS position itself is not kept longer, see purge_old_data)
+    const home = w => (w.cities || []).find(c => c && c.lat != null && c.lng != null);
+    const posOf = new Map(), perCity = new Map();
+    for(const w of A.workers){
+      if(isLive(w) || (w.last_lat != null && w.last_lng != null)){ posOf.set(w.id, { p:[w.last_lat, w.last_lng], city:null }); continue; }
+      const c = home(w); if(!c) continue;
+      const k = c.lat.toFixed(3) + ',' + c.lng.toFixed(3), i = perCity.get(k) || 0; perCity.set(k, i + 1);
+      // several workers from the same city: small ring around the centre so the markers do not cover each other
+      const a = i * 2.4, r = i ? 0.004 + 0.0012 * i : 0;
+      posOf.set(w.id, { p:[c.lat + r * Math.sin(a), c.lng + r * Math.cos(a) / Math.cos(c.lat * Math.PI / 180)], city:c.name });
+    }
+    const known = A.workers.filter(w => posOf.has(w.id));
     layer.clearLayers(); const b = L.latLngBounds([]);
     const pl = MAPQ.place;
     if(pl){
@@ -80,9 +91,9 @@ function viewLive(){
       L.circleMarker([pl.lat, pl.lng], { radius:6, color:'#fff', weight:3, fillColor:'#2563EB', fillOpacity:1, interactive:false }).addTo(layer);
     }
     for(const w of known){
-      const on = isLive(w), p = [w.last_lat, w.last_lng];
-      if(!on) L.circle(p, { radius:350, color:'#94A3B8', weight:1, fillColor:'#94A3B8', fillOpacity:.15, interactive:false }).addTo(layer);
-      L.marker(p, { icon:personIcon(w.name, on, on ? '' : ago(w.last_seen)), zIndexOffset:on ? 800 : 400 }).on('click', () => viewWorker(w.id, viewLive)).addTo(layer);
+      const on = isLive(w), { p, city } = posOf.get(w.id);
+      if(!on && !city) L.circle(p, { radius:350, color:'#94A3B8', weight:1, fillColor:'#94A3B8', fillOpacity:.15, interactive:false }).addTo(layer);
+      L.marker(p, { icon:personIcon(w.name, on, on ? '' : city ? city : ago(w.last_seen)), zIndexOffset:on ? 800 : city ? 300 : 400 }).on('click', () => viewWorker(w.id, viewLive)).addTo(layer);
       b.extend(p);
       if(on) fetchPoints(w.active_route_id).then(pts => { if(pts.length > 1) L.polyline(pts.map(q => [q.lat, q.lng]), { color:css('--route'), weight:4, opacity:.85 }).addTo(layer); }).catch(() => {});
     }
@@ -101,7 +112,7 @@ function viewLive(){
     } else {
       const off = known.length - live.length;
       $('#liveCount').textContent = (live.length ? t('liveNow', { n:live.length }) : t('nobodyLive')) + (off ? ' · ' + t('offlineN', { n:off }) : '');
-      $('#liveList').innerHTML = known.map(w => `<button class="live-chip" data-id="${w.id}"><span class="dotc ${isLive(w) ? pace(w).cls : 'pause'}"></span>${esc(w.name)}${isLive(w) ? (pace(w).label ? ' · ' + esc(pace(w).label) : '') : ' · ' + esc(ago(w.last_seen))}</button>`).join('');
+      $('#liveList').innerHTML = known.map(w => { const c = posOf.get(w.id).city; return `<button class="live-chip" data-id="${w.id}"><span class="dotc ${isLive(w) ? pace(w).cls : 'pause'}"></span>${esc(w.name)}${isLive(w) ? (pace(w).label ? ' · ' + esc(pace(w).label) : '') : ' · ' + esc(c ? t('livesIn', { c }) : ago(w.last_seen))}</button>`; }).join('');
       document.querySelectorAll('.live-chip').forEach(c => c.onclick = () => viewWorker(c.dataset.id, viewLive));
     }
     if(!fitted){ if(pl) refit(); else if(known.length){ fit(m, b, 80); fitted = true; } }

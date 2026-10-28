@@ -62,7 +62,7 @@ Object.assign(T.de, { walkedLbl:'Gelaufen' });
 Object.assign(T.ru, { walkedLbl:'Пройдено' });
 Object.assign(T.de, { newNotif:'Neue Benachrichtigung: neuer Auftrag' });
 Object.assign(T.ru, { newNotif:'Новое уведомление: новое задание' });
-Object.assign(T.de, { offlineN:'{n} zuletzt gesehen' });
+Object.assign(T.de, { offlineN:'{n} nicht unterwegs' });
 Object.assign(T.ru, { offlineN:'{n} не на маршруте' });
 Object.assign(T.de, { settings:'Einstellungen' });
 Object.assign(T.ru, { settings:'Настройки' });
