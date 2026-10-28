@@ -4,14 +4,20 @@ import { t, I } from './i18n.js';
 import { sb, store, $, esc, css, hav, fmtDist, fmtH, fmtHm, fmtN, fmtDay, fmtDT, ago, waLink, telLink, loopPath, normPhone, loc, reversePlace } from './core.js';
 import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, labelIcon, fit, modal, confirmBox, toast, searchField, langSwitch, avatar, every, personIcon } from './ui.js';
 import { legalLinks, bindLegal } from './legalview.js';
+import { makePlanEngine } from './planengine.js';
+import { openMapView } from './routeview.js';
 
 const GREEN = '#16A34A';
 // finished map-data answers are shared through our own server (edge function 'osm'): same area = instant for every admin
 const osmCache = {
   async get(queries){ const { data, error } = await sb.functions.invoke('osm', { body:{ mode:'get', queries } }); if(error || !data || !data.results) throw new Error('cache'); return data.results; },
   async put(items){ if(items.some(i => JSON.stringify(i.payload).length > 5e6)) return; await sb.functions.invoke('osm', { body:{ mode:'put', items } }); },
+  async putChecked(items){ await sb.functions.invoke('osm', { body:{ mode:'put', items } }); },   // size already checked in the planner worker
 };
 const KM_PER_MIN_TRANSIT = 0.75;
+// route planning runs in a background worker (the screen never freezes); one engine for the session keeps the loaded map
+let engine = null;
+const planEngine = () => engine || (engine = makePlanEngine(osmCache));
 export const A = { user:null, workers:[], tasks:[], live:[], demo:null, hooks:{}, filter:{ status:'open', from:'', to:'', city:'', district:'' } };
 
 /* ---------- data ---------- */
@@ -131,7 +137,7 @@ const dayFilter = () => A.dFilter || (A.dFilter = { from:'', to:'', place:'' });
 const dayMatches = (r, f) => { const d = dayKey(r); return (!f.from || d >= f.from) && (!f.to || d <= f.to) && (!f.place || r.place === f.place); };
 const filterOn = f => !!(f.from || f.to || f.place);
 const dayLine = (r, cls) => `<button class="row-line rbtn ${cls || ''}" data-r="${r.id}" data-w="${r.worker_id}"><div class="rb-main"><b>${esc(new Date(r.started_at).toLocaleDateString(loc(), { weekday:'short', day:'2-digit', month:'2-digit', year:'2-digit' }))} · ${esc(hhmm(r.started_at))}–${esc(r.ended_at ? hhmm(r.ended_at) : t('active'))}</b><small data-place="${r.id}">${esc(placeTxt(r) || '…')}</small></div><span>${esc(fmtDist(r.distance_m || 0))} · ${esc(fmtHm(workMin(r)) + ' ' + t('h'))}</span></button>`;
-const daysSum = list => list.length ? t('daysSum', { n:list.length, km:fmtDist(list.reduce((a, r) => a + (r.distance_m || 0), 0)), h:fmtHm(list.reduce((a, r) => a + workMin(r), 0)) }) : '';
+const daysSum = list => list.length ? t(list.length === 1 ? 'daysSum1' : 'daysSum', { n:list.length, km:fmtDist(list.reduce((a, r) => a + (r.distance_m || 0), 0)), h:fmtHm(list.reduce((a, r) => a + workMin(r), 0)) }) : '';
 // days without an order (or whose order was deleted): name the place from the first GPS point, once, and keep it
 async function fillPlaces(list, done){
   let changed = false;
@@ -199,7 +205,7 @@ async function viewPeople(){
        : on ? '' : `<div class="empty">${esc(A.workers.length ? t('notFound') : t('noWorkers'))}</div>`);
     const clr = $('#wClr'); if(clr) clr.onclick = () => { place = null; $('#wCity').value = ''; render(); };
     document.querySelectorAll('.wc-main').forEach(b => b.onclick = () => viewWorker(b.dataset.id));
-    document.querySelectorAll('.wc-days .rbtn').forEach(b => b.onclick = () => viewWorker(b.dataset.w, viewPeople, b.dataset.r));
+    document.querySelectorAll('.wc-days .rbtn').forEach(b => b.onclick = () => viewDayMap(b.dataset.r, viewPeople));
   };
   $('#wQ').oninput = render; render();
   sb.from('routes').select('id,worker_id,task_id,plan_id,started_at,ended_at,distance_m,break_s,place,task_title').order('started_at', { ascending:false }).limit(2000)
@@ -227,7 +233,7 @@ async function viewWorker(id, back, focusId){
       <h2 class="sec">${esc(t('workDays'))}</h2>
       <div id="wDaysSum" class="muted small" style="margin:0 0 2px"></div>
       <div id="wMap" class="wmap"></div>
-      <div id="wRouteInfo" class="muted small" style="margin-bottom:6px"></div>
+      <div class="rinfo-row"><div id="wRouteInfo" class="muted small"></div><button class="btn ghost small" id="wBig" hidden>⤢ ${esc(t('rvBig'))}</button></div>
       <div id="wDays"></div>
       <h2 class="sec">${esc(t('settings'))}</h2>
       <label class="f">${esc(t('zoneLabel'))}</label>
@@ -238,7 +244,9 @@ async function viewWorker(id, back, focusId){
     </div>`);
   bindBack(back);
   const wm = makeMap($('#wMap'), (w.last_lat != null) ? [w.last_lat, w.last_lng] : null, 14), wl = L.layerGroup().addTo(wm);
+  let curDay = null;
   const showRoute = async r => {
+    curDay = r; const bg = $('#wBig'); if(bg){ bg.hidden = false; bg.onclick = () => viewDayMap(r.id, () => viewWorker(id, back, r.id)); }
     document.querySelectorAll('.rbtn').forEach(x => x.classList.toggle('sel', x.dataset.r === r.id));
     wl.clearLayers(); const b = L.latLngBounds([]);
     try{
@@ -267,6 +275,72 @@ async function viewWorker(id, back, focusId){
   fillPlaces(all, () => { if(document.getElementById('wDays')) renderDays(); });
   $('#wsave').onclick = async () => { const { error } = await sb.from('workers').update({ zone_minutes:+$('#wzm').value, notes:$('#wnotes').value.trim() || null }).eq('id', id); if(!error){ await loadWorkers(); toast(t('saved')); } };
   $('#wdel').onclick = async () => { if(!await confirmBox(t('del'), t('delWorkerQ', { name:w.name }), t('del'), true)) return; await sb.from('workers').delete().eq('id', id); await loadWorkers(); back(); };
+}
+
+/* ---------- big map views (also for screenshots for clients) ---------- */
+const nameOf = id => (wById(id) || {}).name || '—';
+// one working day of one worker: walked GPS track, planned route, the planned streets covered that day
+async function viewDayMap(routeId, back){
+  const { data:r } = await sb.from('routes').select('*').eq('id', routeId).maybeSingle(); if(!r) return back();
+  const [pl, pts] = await Promise.all([
+    r.plan_id ? sb.from('task_plans').select('path,color,boxes,idx').eq('id', r.plan_id).maybeSingle().then(x => x.data) : null,
+    r.track_deleted_at ? [] : fetchPoints(r.id).catch(() => []),
+  ]);
+  const ll = pts.map(p => [p.lat, p.lng]), col = (pl && pl.color) || '#2563EB';
+  let pct = null, fl = null, runs = [];
+  if(pl && pl.path && pl.path.length > 1 && ll.length > 1){
+    const tr = Planner.makeTracker(pl.path); tr.addTrack(ll); runs = tr.runs(); pct = tr.pct();
+    if(pl.boxes && pl.boxes.length){ const ct = Planner.makeBoxCounter(pl.boxes); ct.visitAll(ll); fl = ct.count(); }
+  }
+  const d0 = new Date(r.started_at);
+  openMapView({
+    title:nameOf(r.worker_id), anonTitle:t('rvDistributor'), hasNames:true,
+    lines:[d0.toLocaleDateString(loc(), { weekday:'long', day:'2-digit', month:'2-digit', year:'numeric' }) + ' · ' + hhmm(r.started_at) + '–' + (r.ended_at ? hhmm(r.ended_at) : t('active')), placeTxt(r)],
+    stats:[[t('rvDist'), fmtDist(r.distance_m || 0)], [t('rvWork'), fmtHm(workMin(r)) + ' ' + t('h')], fl != null ? [t('rvFlyers'), '≈ ' + fmtN(fl)] : null, pct != null ? [t('rvDayShare'), pct + ' %'] : null],
+    note:r.track_deleted_at ? t('trackDeleted') : (ll.length < 2 ? t('rvNoTrack') : ''),
+    layers:[
+      { key:'plan', label:pl ? t('rvPlan') : '', on:!!pl, add:g => { if(pl && pl.path && pl.path.length > 1) L.polyline(pl.path, { color:col, weight:4, opacity:.45, dashArray:'6 7', lineJoin:'round' }).addTo(g); } },
+      { key:'done', label:runs.length ? t('rvDone') : '', add:g => runs.forEach(x => L.polyline(x, { color:GREEN, weight:8, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g)) },
+      { key:'gps', label:ll.length > 1 ? t('rvGps') : '', add:g => {
+        if(ll.length < 2) return;
+        L.polyline(ll, { color:'#1D4ED8', weight:3, opacity:.95, lineJoin:'round' }).addTo(g);
+        L.marker(ll[0], { icon:dot('start-dot', 16) }).addTo(g); L.marker(ll[ll.length - 1], { icon:dot(r.ended_at ? 'end-dot' : 'me-dot', r.ended_at ? 16 : 20) }).addTo(g);
+      } },
+    ],
+    back,
+  });
+}
+// a whole order: every route in its colour, what has been covered in green, the GPS tracks of all days
+async function viewTaskMap(id, back){
+  const tk = A.tasks.find(x => x.id === id); if(!tk) return back();
+  const [{ data:plans }, { data:routes }] = await Promise.all([sb.from('task_plans').select('*').eq('task_id', id).order('idx'), sb.from('routes').select('*').eq('task_id', id)]);
+  const tracks = await Promise.all((routes || []).map(r => r.track_deleted_at ? [] : fetchPoints(r.id).then(p => p.map(q => [q.lat, q.lng])).catch(() => [])));
+  const byPlan = {}, trackCol = {};
+  (routes || []).forEach((r, i) => {
+    const pid = r.plan_id || ((plans || []).find(p => p.worker_id === r.worker_id) || {}).id; if(!pid) return;
+    (byPlan[pid] = byPlan[pid] || []).push(tracks[i]); trackCol[i] = ((plans || []).find(p => p.id === pid) || {}).color;
+  });
+  let doneM = 0, allM = 0, flAll = 0, hasFl = false;
+  const res = (plans || []).map(p => {
+    const tr = p.path && p.path.length > 1 ? Planner.makeTracker(p.path) : null, ct = p.boxes && p.boxes.length ? Planner.makeBoxCounter(p.boxes) : null;
+    for(const pts of byPlan[p.id] || []){ if(tr) tr.addTrack(pts); if(ct) ct.visitAll(pts); }
+    const pct = tr ? tr.pct() : 0; doneM += pct * (p.length_m || 0) / 100; allM += p.length_m || 0; if(ct){ flAll += ct.count(); hasFl = true; }
+    return { p, runs:tr ? tr.runs() : [], pct, fl:ct ? ct.count() : null };
+  });
+  const walked = (routes || []).reduce((a, r) => a + (r.distance_m || 0), 0), days = new Set((routes || []).map(dayKey)).size;
+  openMapView({
+    title:tk.title, hasNames:true,
+    lines:[[tk.district, tk.city_name].filter(Boolean).join(', '), tk.work_date ? fmtDay(tk.work_date) : ''],
+    stats:[tk.flyers ? [t('flyers'), fmtN(tk.flyers)] : null, hasFl ? [t('rvFlyers'), '≈ ' + fmtN(flAll)] : null, [t('rvDist'), fmtDist(walked)], allM ? [t('rvDayShare2'), Math.round(100 * doneM / allM) + ' %'] : null, days ? [t('rvDays'), String(days)] : null],
+    legend:res.map(({ p, pct, fl }) => ({ color:p.color || '#2563EB', label:(p.worker_id ? nameOf(p.worker_id) : t('planRoute', { n:p.idx + 1 })), anonLabel:t('planRoute', { n:p.idx + 1 }), sub:pct + ' %' + (fl != null ? ' · ≈ ' + fmtN(fl) + ' ' + t('flyers') : '') })),
+    layers:[
+      { key:'zone', on:false, add:g => { if(tk.zone_polygon) L.polygon(tk.zone_polygon, { color:css('--brand'), weight:2, fillOpacity:.05, interactive:false }).addTo(g); } },
+      { key:'plan', label:t('rvPlan'), add:g => { (plans || []).forEach(p => { if(p.path && p.path.length > 1) L.polyline(p.path, { color:p.color || '#2563EB', weight:4, opacity:.5, lineJoin:'round' }).addTo(g); }); L.marker([tk.start_lat, tk.start_lng], { icon:dot('pin-start', 24) }).addTo(g); } },
+      { key:'done', label:t('rvDone'), add:g => res.forEach(x => x.runs.forEach(run => L.polyline(run, { color:GREEN, weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g))) },
+      { key:'gps', label:tracks.some(x => x.length > 1) ? t('rvGps') : '', on:false, add:g => tracks.forEach((ll, i) => { if(ll.length > 1) L.polyline(ll, { color:trackCol[i] || '#1D4ED8', weight:2.5, opacity:.95 }).addTo(g); }) },
+    ],
+    back,
+  });
 }
 
 /* ---------- AUFTRÄGE ---------- */
@@ -316,7 +390,7 @@ function viewCreate(edit){
     <button class="chip pick-btn" id="cPick" hidden></button>
     <div class="sheet" id="cSheet"><p class="muted small" style="margin:0">${esc(t('tapMap'))}</p></div>`, { map:true });
   sf.bind();
-  $('#cBack').onclick = viewTasks;
+  $('#cBack').onclick = () => { d.token++; viewTasks(); };
   const m = makeMap($('#fullMap'), null, 13);
   const zoneLayer = L.layerGroup().addTo(m), planLayer = L.layerGroup().addTo(m);
   // once a start point exists, a tap on the map does nothing (no accidental moves while looking at the routes);
@@ -333,49 +407,51 @@ function viewCreate(edit){
     d.pick = false; d.place = null; const qi = $('#cSearch'); if(qi) qi.value = '';
     setStart(e.latlng.lat, e.latlng.lng, true);
   });
-  const sheet = html => { $('#cSheet').innerHTML = html; };
+  const alive = () => !!document.getElementById('cSheet');   // false once the admin left this screen
+  const sheet = html => { const el = $('#cSheet'); if(el) el.innerHTML = html; };
   // while recalculating keep the sheet where it is (no flicker) and show a small status in the corner;
-  // only a brand-new start point replaces the sheet with a plain loading message
+  // only a brand-new start point replaces the sheet with a plain loading message. Saving waits for the new plan.
   const busy = (txt, full) => {
+    if(!alive()) return;
+    d.busy = true; const sv = $('#cSave'); if(sv) sv.disabled = true;
     if(!full && $('#cFly')){ const sh = $('#cSheet'); sh.classList.add('calc'); let b = $('#cBusy'); if(!b){ b = document.createElement('div'); b.id = 'cBusy'; b.className = 'cbusy'; sh.appendChild(b); } b.textContent = '⏳ ' + txt; }
     else sheet(`<p class="muted small" style="margin:0">${esc(txt)}</p>`);
   };
-  // loading message with a running seconds counter, so a slow map server is visibly "working"
-  const withSecs = (txt, full, tok) => { const t0 = Date.now(); busy(txt, full); const id = setInterval(() => { if(tok !== d.token){ clearInterval(id); return; } const s = Math.round((Date.now() - t0) / 1000); busy(txt + ' · ' + s + ' s', full); }, 1000); return () => clearInterval(id); };   // a superseded request must never paint over the newer one
+  // status with a running seconds counter, so a slow map server is visibly "working"; the text follows the planner's stage
+  const progress = (tok, full) => {
+    const t0 = Date.now(); let txt = t('calculating');
+    const show = () => { if(tok !== d.token || !alive()){ clearInterval(id); return; } const s = Math.round((Date.now() - t0) / 1000); busy(s >= 1 ? txt + ' · ' + s + ' s' : txt, full); };
+    const id = setInterval(show, 1000); show();
+    return { stage:k => { txt = t(k); full = full && k !== 'calculating'; show(); }, stop:() => clearInterval(id) };
+  };
   const startArr = () => [d.start.lat, d.start.lng];
+  const errText2 = e => /abort/i.test((e && e.message) || '') ? t('mapSlow') : ((e && e.message) || 'net');
   async function setStart(lat, lng, fromClick){
     const tok = ++d.token; d.start = { lat, lng }; d.keepView = !!fromClick;   // a tap on the map keeps the zoom the admin chose
     d.pick = false; updPick();
-    d.g = null; d.plan = null; d.err = null; d.assign = {};
+    d.loaded = false; d.plan = null; d.err = null; d.assign = {};
     zoneLayer.clearLayers(); planLayer.clearLayers();
     L.marker([lat, lng], { icon:dot('pin-start', 26) }).addTo(zoneLayer); if(!fromClick) m.setView([lat, lng], 15, { animate:false });
-    let stop = withSecs(t('loadingArea'), true, tok), got = null;
-    for(let attempt = 0; attempt < 2 && !got; attempt++){   // public map servers are sometimes busy: one automatic retry
-      try{ got = await Planner.loadForFlyers([lat, lng], d.flyers, { cache:osmCache }); if(tok === d.token){ d.g = got; d.err = null; } }
-      catch(e){ stop(); if(tok !== d.token) return; d.err = /abort/i.test(e.message || '') ? t('mapSlow') : (e.message || 'net'); if(attempt === 0){ stop = withSecs(t('retrying'), true, tok); await new Promise(r => setTimeout(r, 4000)); if(tok !== d.token){ stop(); return; } } }
+    let pr = progress(tok, true); pr.stage('loadingArea');
+    for(let attempt = 0; attempt < 2 && !d.loaded; attempt++){   // public map servers are sometimes busy: one automatic retry
+      try{ const r = await planEngine().run('load', { start:[lat, lng], flyers:d.flyers }, pr.stage); if(tok !== d.token) return pr.stop(); if(!r || !r.skipped) d.loaded = true; }
+      catch(e){ pr.stop(); if(tok !== d.token) return; d.err = errText2(e); if(attempt === 0){ pr = progress(tok, true); pr.stage('retrying'); await new Promise(r => setTimeout(r, 4000)); if(tok !== d.token){ pr.stop(); return; } } }
     }
-    stop();
-    if(tok !== d.token) return;
+    pr.stop();
+    if(tok !== d.token || !alive()) return;
+    if(!d.loaded){ d.busy = false; renderSheet(); return; }
     recompute();
   }
   async function recompute(){
-    if(!d.start) return;
-    if(!d.g){ renderSheet(); return; }
-    const tok = ++d.token;
-    const reachNow = Planner.selectForFlyers(d.g, startArr(), d.flyers).reach_m; d.g.reach = reachNow;   // loaded square must stay clearly larger than what we walk
-    if(((d.g.usable != null ? d.g.usable : d.g.mailboxes) < d.flyers * 1.05 || reachNow > 0.65 * d.g.radius) && d.g.radius < Planner.MAX_R){
-      const stop = withSecs(t('loadingMore'), false, tok);
-      try{ const more = await Planner.loadForFlyers(startArr(), d.flyers, { cache:osmCache, radius:Planner.nextRadius(d.g, d.flyers) }); if(tok === d.token) d.g = more; }catch{}
-      stop();
-      if(tok !== d.token) return;
-    }
-    busy(t('calculating')); await new Promise(r => setTimeout(r, 30));
-    if(tok !== d.token) return;
-    {   // the number of workers is never changed automatically; we only suggest what would fit the time best
-      const sel = Planner.selectForFlyers(d.g, startArr(), d.flyers);
-      d.sug = Math.min(20, Planner.suggestWorkers(Planner.routeMinutes(sel.ids.reduce((s, i) => s + d.g.edges[i].len, 0) * 1.35, sel.mailboxes), d.hours, d.days));
-    }
-    d.plan = Planner.planFlyers(d.g, startArr(), d.flyers, d.n, { days:d.days, hoursPerDay:d.hours });
+    if(!d.start || !alive()) return;
+    if(!d.loaded){ renderSheet(); return; }
+    const tok = ++d.token, pr = progress(tok, false);
+    let res = null;
+    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours }, pr.stage); }
+    catch(e){ pr.stop(); if(tok !== d.token || !alive()) return; d.err = errText2(e); d.busy = false; toast(t('streetsFail', { e:d.err })); renderSheet(); return; }
+    pr.stop();
+    if(tok !== d.token || !alive() || !res || res.skipped) return;
+    d.plan = res.plan; d.sug = res.sug; d.streetM = res.street_m; d.err = null; d.busy = false;
     if(tkE && !d.prefilled){ d.prefilled = true; edit.plans.forEach(p => { if(p.worker_id && p.idx < d.plan.routes.length) d.assign[p.idx] = p.worker_id; }); }
     draw(); renderSheet();
   }
@@ -391,6 +467,7 @@ function viewCreate(edit){
   function restore(k){ if($('#cTitle') && k.title) $('#cTitle').value = k.title; if($('#cDate')) $('#cDate').value = k.date; if($('#cNotes')) $('#cNotes').value = k.notes; if($('#cQuota')) $('#cQuota').value = k.quota; }
   let saved = tkE ? { title:tkE.title, date:tkE.work_date ? String(tkE.work_date).slice(0, 10) : '', notes:tkE.notes || '', quota:tkE.quota_m30 || 1500 } : { title:'', date:'', notes:'', quota:1500 };
   function renderSheet(){
+    if(!alive()) return;
     const sc = ($('#cSheet') || {}).scrollTop || 0;
     const p = d.plan, title = saved.title || (d.place ? d.place.name : '');
     const cap = p ? Planner.capacity(p.routes, d.flyers, { hoursPerDay:d.hours, days:d.days }) : null;
@@ -413,7 +490,7 @@ function viewCreate(edit){
       <div class="steppers"><div><label class="f">${esc(t('startDate'))}</label><input class="in" type="date" id="cDate"></div><div><label class="f">${esc(t('hoursDay'))}</label><input class="in" type="number" id="cHours" min="1" max="12" step="0.5" value="${d.hours}"></div></div>
       <label class="f">${esc(t('quota'))}</label><input class="in" type="number" id="cQuota" min="200" step="100" value="${esc(saved.quota)}">
       <label class="f">${esc(t('note'))}</label><textarea class="in" id="cNotes" placeholder="${esc(t('notesPh'))}"></textarea>
-      <button class="btn primary" id="cSave" style="margin-top:12px" ${p ? '' : 'disabled'}>${esc(t('saveTask'))}</button><div class="err" id="cErr"></div>`);
+      <button class="btn primary" id="cSave" style="margin-top:12px" ${p && !d.busy ? '' : 'disabled'}>${esc(t('saveTask'))}</button><div class="err" id="cErr"></div>`);
     if($('#cRetry')) $('#cRetry').onclick = () => setStart(d.start.lat, d.start.lng);
     restore(saved); $('#cSheet').classList.remove('calc'); $('#cSheet').scrollTop = sc;
     $('#grip').onclick = () => $('#cSheet').classList.toggle('tall');
@@ -431,12 +508,13 @@ function viewCreate(edit){
     $('#cSave').onclick = save;
   }
   async function save(){
+    if(d.busy || !d.plan) return;   // a recalculation is running: the plan on screen is not the final one yet
     const title = $('#cTitle').value.trim(); if(!title){ $('#cErr').textContent = t('needTitle'); return; }
     $('#cSave').disabled = true;
     try{
       const pl = d.plan, quota = Math.max(200, Math.round(num('#cQuota', 1500))), date = $('#cDate').value || null;
       const row = { title, city_name:(d.place && d.place.city) || (tkE && tkE.city_name) || null, district:(d.place && d.place.district) || (tkE && tkE.district) || null, start_lat:d.start.lat, start_lng:d.start.lng,
-        walk_minutes:15, zone_polygon:pl.zone, work_date:date, notes:$('#cNotes').value.trim() || null, street_m:d.g ? d.g.street_m : null,
+        walk_minutes:15, zone_polygon:pl.zone, work_date:date, notes:$('#cNotes').value.trim() || null, street_m:d.streetM || null,
         flyers:d.flyers, quota_m30:quota, work_days:d.days, work_hours:d.hours, est_mailboxes:pl.mailboxes, route_m:pl.routes.reduce((s, r) => s + r.length_m, 0) };
       let tk;
       if(tkE){
@@ -507,6 +585,7 @@ async function viewTask(id){
         ${tk.notes ? `<div><span>${esc(t('note'))}</span><b>${esc(tk.notes)}</b></div>` : ''}
       </div>
       <div class="mapbox" id="tMap"></div>
+      <div class="rinfo-row"><span></span><button class="btn ghost small" id="tBig">⤢ ${esc(t('rvBig'))}</button></div>
       <h2 class="sec">${esc(t('routesOf'))}</h2>
       ${(plans || []).length ? plans.map(p => { const w = wById(p.worker_id); return `<div class="route-row"><span class="swatch" style="background:${esc(p.color || '#2563EB')}"></span>
         <div class="grow"><b>${esc(t('planRoute', { n:p.idx + 1 }))} <span class="muted" id="pp${p.idx}"></span></b>
@@ -538,6 +617,7 @@ async function viewTask(id){
     }
     await loadTasks(); toast(t('saved')); viewTask(id);
   });
+  $('#tBig').onclick = () => viewTaskMap(id, () => viewTask(id));
   $('#tEdit').onclick = () => editTaskSheet(tk, plans || [], routes || []);
   $('#tDone').onclick = async () => { await sb.from('tasks').update({ status:tk.status === 'open' ? 'done' : 'open' }).eq('id', id); await loadTasks(); viewTask(id); };
   $('#tDel').onclick = async () => { if(!await confirmBox(t('del'), t('delTaskQ'), t('del'), true)) return; await sb.from('tasks').delete().eq('id', id); await loadTasks(); viewTasks(); };

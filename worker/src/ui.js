@@ -16,6 +16,13 @@ export const ICONS = {
   locate:'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>',
 };
 
+// a map that was removed (the screen changed) may still get a late call from a timer or an awaited request:
+// ignore those instead of throwing "_leaflet_pos" errors
+for(const fn of ['invalidateSize', 'setView', 'fitBounds', 'panTo', 'panBy', 'flyTo', 'setZoom']){
+  const orig = L.Map.prototype[fn];
+  L.Map.prototype[fn] = function(...args){ return this._mapPane ? orig.apply(this, args) : this; };
+}
+
 /* ---------- screen + tabs ---------- */
 export const UI = { maps:[], timers:[], role:null, tab:null, onTab:null };
 export function cleanup(){
@@ -50,7 +57,7 @@ export function makeMap(el, center, zoom = 15, opts = {}){
 }
 export const dot = (cls, size = 22) => L.divIcon({ className:'', html:`<div class="${cls}"></div>`, iconSize:[size, size], iconAnchor:[size/2, size/2] });
 export const labelIcon = (cls, text) => L.divIcon({ className:'', html:`<div class="pin-wrap"><div class="${cls}"></div><span class="pin-label">${esc(text)}</span></div>`, iconSize:[24, 24], iconAnchor:[12, 12] });
-export function fit(m, b, pad = 30){ try{ if(b && b.isValid()) m.fitBounds(b, { padding:[pad, pad], maxZoom:17 }); }catch{} }
+export function fit(m, b, pad = 30){ try{ if(b && b.isValid()) m.fitBounds(b, { padding:[pad, pad], maxZoom:17, animate:false }); }catch{} }   // no zoom animation: leaving the screen mid-animation broke Leaflet
 
 /* ---------- dialogs ---------- */
 export function modal(html){
