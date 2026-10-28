@@ -34,7 +34,7 @@ export function openMapView(opts){
       ${opts.note ? `<div class="rv-note">${esc(opts.note)}</div>` : ''}`;
   };
   const fitAll = () => {
-    if(!bounds.isValid()) return;
+    if(!bounds.isValid() || !$('#rvCard')) return;   // the view may already be closed
     const top = Math.min(innerHeight * .45, ($('#rvCard').offsetHeight || 120) + 24);
     m.fitBounds(bounds, { paddingTopLeft:[24, top + 12], paddingBottomRight:[24, 70], maxZoom:17, animate:false });
   };

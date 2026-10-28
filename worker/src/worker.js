@@ -127,7 +127,7 @@ function hereOnce(ms){
     if(NATIVE){
       BackgroundGeolocation.addWatcher({ requestPermissions:true, stale:false }, (loc, err) => { if(err){ if(err.code === 'NOT_AUTHORIZED') showLocDenied(); fin(null); return; } if(loc && loc.accuracy <= 100) fin({ lat:loc.latitude, lng:loc.longitude, acc:loc.accuracy }); }).then(x => { id = x; if(done) BackgroundGeolocation.removeWatcher({ id:x }).catch(() => {}); }, () => fin(null));
     }else if(navigator.geolocation){
-      id = 'web:' + navigator.geolocation.watchPosition(p => { if(p.coords.accuracy <= 100) fin({ lat:p.coords.latitude, lng:p.coords.longitude, acc:p.coords.accuracy }); }, () => fin(null), { enableHighAccuracy:true, maximumAge:15000 });
+      id = 'web:' + navigator.geolocation.watchPosition(p => { if(p.coords.accuracy <= 100) fin({ lat:p.coords.latitude, lng:p.coords.longitude, acc:p.coords.accuracy }); }, () => fin(null), { enableHighAccuracy:true, maximumAge:0 });   // fresh fix: "check again" right after walking to the start must not get the old position
     }else fin(null);
   });
 }

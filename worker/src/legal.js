@@ -20,7 +20,7 @@ export const OPERATOR = {
 // closed beta: no public offer, so no Impressum yet. It appears (in the app and as impressum.html) once the address is filled in.
 const isSet = v => !!v && !/^\[/.test(String(v).trim());
 export const IMPRINT_READY = isSet(OPERATOR.street) && isSet(OPERATOR.city);
-export const PRIVACY_VERSION = '2026-10-28';    // bump when the text changes in substance: workers then see the location note again
+export const PRIVACY_VERSION = '2026-10-28b';    // bump when the text changes in substance: workers then see the location note again
 export const PRIVACY_DATE = { de:'28. Oktober 2026', ru:'28 октября 2026', en:'28 October 2026' };
 export const RETENTION = { trackMonths:6, positionHours:12, inboxMonths:6 };
 
@@ -65,7 +65,7 @@ const PRIVACY = {
 <li><b>Adresssuche und Ortsbestimmung:</b> Photon (komoot GmbH, Deutschland). Für die Übersicht der Arbeitstage wird für Tage ohne Auftrag der erste Punkt der Route einmal an Photon gesendet, um den Ortsnamen zu bestimmen; dabei werden keine Namen oder Telefonnummern übermittelt.</li>
 <li><b>Navigation:</b> Nur wenn du „Navigation" oder „Weg zum Startpunkt" tippst, öffnet sich Google Maps oder Apple Karten mit dem Ziel; dort gelten deren Datenschutzbestimmungen.</li>
 </ul>
-<p>Innerhalb von FlyerMap sehen nur die Administratoren deine Daten. Andere Verteiler sehen weder deine Route noch deine Position.</p>
+<p>Innerhalb von FlyerMap sehen nur die Administratoren deine Daten. Andere Verteiler sehen weder deine Position noch deine Arbeitstage. Verteiler, die demselben Auftrag zugeteilt sind, sehen auf der Karte, welche Straßen dieses Auftrags schon verteilt sind – ohne Namen und ohne Uhrzeiten, damit niemand doppelt läuft.</p>
 <h2>6. Speicherdauer</h2>
 <ul>
 <li>GPS-Punkte einer Route: ${RETENTION.trackMonths} Monate nach dem Arbeitstag, danach automatisch gelöscht. Die Übersicht des Tages (Datum, Zeiten, Ort, Strecke) bleibt.</li>
@@ -112,7 +112,7 @@ const PRIVACY = {
 <li><b>Поиск адресов и определение места:</b> Photon (komoot GmbH, Германия). Для дней без заказа первая точка маршрута один раз отправляется в Photon, чтобы узнать название места; имя и телефон не передаются.</li>
 <li><b>Навигация:</b> только если вы нажмёте «Навигация» или «Маршрут до точки старта», откроется Google Maps или Apple Карты; там действуют их правила.</li>
 </ul>
-<p>Внутри FlyerMap ваши данные видят только администраторы. Другие раздатчики не видят ни ваш маршрут, ни вашу позицию.</p>
+<p>Внутри FlyerMap ваши данные видят только администраторы. Другие раздатчики не видят ни вашу позицию, ни ваши рабочие дни. Раздатчики, назначенные на тот же заказ, видят на карте, какие улицы этого заказа уже пройдены — без имён и времени, чтобы никто не ходил дважды.</p>
 <h2>6. Сроки хранения</h2>
 <ul>
 <li>GPS-точки маршрута: ${RETENTION.trackMonths} месяцев после рабочего дня, затем удаляются автоматически. Сводка дня (дата, время, место, путь) остаётся.</li>
@@ -159,7 +159,7 @@ const PRIVACY = {
 <li><b>Address search and place names:</b> Photon (komoot GmbH, Germany). For working days without a job, the first point of the route is sent to Photon once to find the place name; no names or phone numbers are sent.</li>
 <li><b>Navigation:</b> only when you tap “Navigation” or “Way to the start point”, Google Maps or Apple Maps opens; their privacy terms apply there.</li>
 </ul>
-<p>Within FlyerMap only administrators see your data. Other distributors see neither your route nor your position.</p>
+<p>Within FlyerMap only administrators see your data. Other distributors see neither your position nor your working days. Distributors assigned to the same job see on the map which streets of that job are already done — without names or times, so nobody walks a street twice.</p>
 <h2>6. Retention</h2>
 <ul>
 <li>GPS points of a route: ${RETENTION.trackMonths} months after the working day, then deleted automatically. The day summary (date, times, place, distance) remains.</li>
@@ -200,14 +200,14 @@ export function legalHtml(kind, lang){
 export const LOCATION_NOTE = {
   de:{ title:'Hinweis zur Standortaufzeichnung', items:[
     'Während eines Arbeitstags – von „Start" bis „Feierabend", ohne Pausen – speichert die App deinen Standort, auch im Hintergrund.',
-    'Die Administratoren sehen dann deine aktuelle Position, dein Tempo und die gelaufene Strecke. Andere Verteiler sehen das nicht.',
+    'Die Administratoren sehen dann deine aktuelle Position, dein Tempo und die gelaufene Strecke. Andere Verteiler sehen deine Position nicht; wer im selben Auftrag ist, sieht nur, welche Straßen schon verteilt sind (ohne Namen).',
     'Außerhalb des Arbeitstags wird kein Standort erfasst.',
     `Die GPS-Spur wird nach ${RETENTION.trackMonths} Monaten gelöscht; die Übersicht des Tages (Datum, Zeiten, Ort, Strecke) bleibt für die Abrechnung.`,
     'Du kannst Auskunft und Löschung verlangen und widersprechen – Details in der Datenschutzerklärung.',
   ], ok:'Verstanden' },
   ru:{ title:'Памятка о записи геопозиции', items:[
     'Во время рабочего дня — от «Старт» до «Закончить», без пауз — приложение сохраняет вашу геопозицию, в том числе в фоне.',
-    'Администраторы видят вашу текущую позицию, темп и пройденный путь. Другие раздатчики этого не видят.',
+    'Администраторы видят вашу текущую позицию, темп и пройденный путь. Другие раздатчики не видят вашу позицию; участники того же заказа видят только, какие улицы уже пройдены (без имён).',
     'Вне рабочего дня геопозиция не записывается.',
     `GPS-трек удаляется через ${RETENTION.trackMonths} месяцев; сводка дня (дата, время, место, путь) остаётся для расчётов.`,
     'Вы можете запросить информацию о данных, их удаление и возразить — подробно в политике конфиденциальности.',
