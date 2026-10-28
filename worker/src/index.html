@@ -78,7 +78,7 @@ input,textarea,select,button{font:inherit;color:inherit}
 input,textarea{-webkit-user-select:text;user-select:text}
 button{cursor:pointer}
 a{color:var(--color-primary)}
-.hidden{display:none!important}
+.hidden,[hidden]{display:none!important}   /* components set display, the hidden attribute must still win */
 #root{position:fixed;inset:0}
 :focus{outline:none}
 :focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}

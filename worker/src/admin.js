@@ -63,10 +63,43 @@ function viewLive(){
   const sf = searchField('mapQ', t('mapSearchPh'), c => { MAPQ.place = c; refit(); tickFn && tickFn(); }, { citiesOnly:true });
   shell('map', `<div id="fullMap" class="fullmap"></div>
     <div class="map-search">${sf.html}<div class="rad-row hidden" id="radRow"></div></div>
-    <div class="float-card"><div class="fc-row"><b id="liveCount">${esc(t('loadingShort'))}</b><span class="muted small" id="liveUpd" role="status"></span></div><div class="live-list" id="liveList"></div></div>`, { map:true });
+    <div class="float-card"><div class="fc-row"><b id="liveCount">${esc(t('loadingShort'))}</b><span class="muted small" id="liveUpd" role="status"></span></div><div class="live-list" id="liveList"></div>
+      <div class="fc-row" style="margin-top:8px;justify-content:flex-start"><button class="chip ${MAPQ.tasks !== false ? 'on' : ''}" id="mTasks" aria-pressed="${MAPQ.tasks !== false}">${ICONS.route}<span id="mTasksTx">${esc(t('mapOrders'))}</span></button></div></div>`, { map:true });
   sf.bind();
   m = makeMap($('#fullMap'), MAPQ.place ? [MAPQ.place.lat, MAPQ.place.lng] : null, 12);
+  // open orders: planned routes in their colours, walked parts green; tap → order
+  const taskLayer = L.layerGroup(); if(MAPQ.tasks !== false) taskLayer.addTo(m);
   layer = L.layerGroup().addTo(m);
+  let taskBounds = null, tasksLoaded = false, lastWB = null, userMoved = false;
+  m.on('dragstart', () => { userMoved = true; });
+  // first view: every worker and every open order; stops as soon as the admin moves the map
+  const autoFit = () => {
+    if(userMoved) return;
+    const all = L.latLngBounds([]); if(lastWB && lastWB.isValid()) all.extend(lastWB); if(taskBounds && MAPQ.tasks !== false) all.extend(taskBounds);
+    if(all.isValid()){ fit(m, all, 70); if(tasksLoaded && lastWB) fitted = true; }   // final only when workers and orders are both known
+  };
+  (async () => {
+    const open = A.tasks.filter(x => x.status === 'open'); if(!open.length){ $('#mTasksTx').textContent = t('mapOrdersN', { n:0 }); return; }
+    const { data:plans } = await sb.from('task_plans').select('id,task_id,idx,color,path').in('task_id', open.map(x => x.id));
+    if(!document.getElementById('mTasks')) return;
+    const b = L.latLngBounds([]);
+    for(const tk of open){
+      const go = () => viewTask(tk.id), tip = `${tk.title}${tk.district || tk.city_name ? ' · ' + [tk.district, tk.city_name].filter(Boolean).join(', ') : ''}`;
+      (plans || []).filter(p => p.task_id === tk.id && p.path && p.path.length > 1).forEach(p => {
+        const ln = L.polyline(p.path, { color:p.color || '#2563EB', weight:4, opacity:.55, lineJoin:'round' }).bindTooltip(tip, { sticky:true }).on('click', go).addTo(taskLayer); b.extend(ln.getBounds());
+      });
+      L.marker([tk.start_lat, tk.start_lng], { icon:labelIcon('pin-start', tk.title), zIndexOffset:200 }).on('click', go).addTo(taskLayer); b.extend([tk.start_lat, tk.start_lng]);
+    }
+    $('#mTasksTx').textContent = t('mapOrdersN', { n:open.length });
+    taskBounds = b.isValid() ? b : null; tasksLoaded = true;
+    if(!userMoved && !MAPQ.place) autoFit();
+  })().catch(() => {});
+  $('#mTasks').onclick = () => {
+    MAPQ.tasks = MAPQ.tasks === false; const on = MAPQ.tasks !== false;
+    if(on) taskLayer.addTo(m); else m.removeLayer(taskLayer);
+    $('#mTasks').classList.toggle('on', on); $('#mTasks').setAttribute('aria-pressed', on);
+    if(on && taskBounds && !MAPQ.place) fit(m, taskBounds, 60);
+  };
   const refit = () => { if(MAPQ.place){ fitted = true; m.fitBounds(L.latLng(MAPQ.place.lat, MAPQ.place.lng).toBounds(MAPQ.km * 2000), { padding:[20, 20], animate:false }); } };
   const radRow = () => {
     const r = $('#radRow'); if(!r) return; r.classList.toggle('hidden', !MAPQ.place);
@@ -123,7 +156,8 @@ function viewLive(){
       $('#liveList').innerHTML = known.map(w => { const c = posOf.get(w.id).city; return `<button class="live-chip" data-id="${w.id}"><span class="dotc ${isLive(w) ? pace(w).cls : 'pause'}"></span>${esc(w.name)}${isLive(w) ? (pace(w).label ? ' · ' + esc(pace(w).label) : '') : ' · ' + esc(c ? t('livesIn', { c }) : ago(w.last_seen))}</button>`; }).join('');
       document.querySelectorAll('.live-chip').forEach(c => c.onclick = () => viewWorker(c.dataset.id, viewLive));
     }
-    if(!fitted){ if(pl) refit(); else if(known.length){ fit(m, b, 80); fitted = true; } }
+    lastWB = b;
+    if(!fitted){ if(pl) refit(); else autoFit(); }
   };
   tickFn = tick; radRow();
   tick(); every(A.demo ? 3000 : 6000, tick);
@@ -282,6 +316,7 @@ async function viewWorker(id, back, focusId){
   };
   const list0 = renderDays(), first = (focusId && all.find(r => r.id === focusId)) || list0[0];
   if(first) showRoute(first);
+  else { $('#wMap').hidden = true; const c = (w.cities || []).find(x => x.lat != null); if(c) wm.setView([c.lat, c.lng], 12); }
   fillPlaces(all, () => { if(document.getElementById('wDays')) renderDays(); });
   $('#wsave').onclick = async () => { const { error } = await sb.from('workers').update({ zone_minutes:+$('#wzm').value, notes:$('#wnotes').value.trim() || null }).eq('id', id); if(!error){ await loadWorkers(); toast(t('saved')); } };
   $('#wdel').onclick = async () => { if(!await confirmBox(t('del'), t('delWorkerQ', { name:w.name }), t('del'), true)) return; await sb.from('workers').delete().eq('id', id); await loadWorkers(); back(); };
