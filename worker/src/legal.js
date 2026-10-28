@@ -17,6 +17,9 @@ export const OPERATOR = {
   register:'',                                  // e.g. 'Amtsgericht Düsseldorf, HRB 12345'
   representative:'',                            // managing director for a company
 };
+// closed beta: no public offer, so no Impressum yet. It appears (in the app and as impressum.html) once the address is filled in.
+const isSet = v => !!v && !/^\[/.test(String(v).trim());
+export const IMPRINT_READY = isSet(OPERATOR.street) && isSet(OPERATOR.city);
 export const PRIVACY_VERSION = '2026-10-28';    // bump when the text changes in substance: workers then see the location note again
 export const PRIVACY_DATE = { de:'28. Oktober 2026', ru:'28 октября 2026', en:'28 October 2026' };
 export const RETENTION = { trackMonths:6, positionHours:12, inboxMonths:6 };
@@ -25,7 +28,7 @@ const e = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;'
 const op = () => OPERATOR;
 const opBlock = () => {
   const o = op();
-  return [o.company || o.name, o.company ? (o.representative ? 'vertreten durch ' + o.representative : '') : '', o.street, o.city, o.country].filter(Boolean).map(e).join('<br>')
+  return [o.company || o.name, o.company ? (o.representative ? 'vertreten durch ' + o.representative : '') : '', isSet(o.street) ? o.street : '', isSet(o.city) ? o.city : 'Düsseldorf', o.country].filter(Boolean).map(e).join('<br>')
     + '<br>E-Mail: <a href="mailto:' + e(o.email) + '">' + e(o.email) + '</a>' + (o.phone ? '<br>Telefon: ' + e(o.phone) : '');
 };
 
@@ -230,7 +233,7 @@ footer{margin-top:40px;border-top:1px solid var(--line);padding-top:12px}
 <h1>FlyerMap</h1>
 <nav>${langs.map(l => `<a href="#${l}" data-l="${l}">${{ de:'Deutsch', ru:'Русский', en:'English' }[l]}</a>`).join('')}</nav>
 ${langs.map(l => `<section id="s-${l}"><h1 style="font-size:22px;margin-top:18px">${e(T[l])}</h1><div class="muted">${e(sub(l))}</div>${legalHtml(kind, l)}</section>`).join('\n')}
-<footer class="muted"><a href="privacy.html">${e(LEGAL_TITLES.privacy.de)}</a> · <a href="impressum.html">${e(LEGAL_TITLES.imprint.de)}</a></footer>
+<footer class="muted"><a href="privacy.html">${e(LEGAL_TITLES.privacy.de)}</a>${IMPRINT_READY ? ` · <a href="impressum.html">${e(LEGAL_TITLES.imprint.de)}</a>` : ''}</footer>
 </main>
 <script>
 function sel(l){ ${JSON.stringify(langs)}.forEach(function(x){ document.getElementById('s-'+x).classList.toggle('on',x===l); document.querySelector('[data-l='+x+']').classList.toggle('on',x===l); }); document.documentElement.lang=l; }

@@ -2,9 +2,9 @@
 // Usage: node scripts/legal-pages.mjs <out-dir>
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { legalPage } from '../src/legal.js';
+import { legalPage, IMPRINT_READY } from '../src/legal.js';
 const out = process.argv[2] || '.';
 mkdirSync(out, { recursive:true });
 writeFileSync(join(out, 'privacy.html'), legalPage('privacy'));
-writeFileSync(join(out, 'impressum.html'), legalPage('imprint'));
+if(IMPRINT_READY) writeFileSync(join(out, 'impressum.html'), legalPage('imprint'));
 console.log('legal pages written to', out);

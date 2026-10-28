@@ -2,7 +2,7 @@
 import { I, t } from './i18n.js';
 import { $, esc } from './core.js';
 import { plain, modal } from './ui.js';
-import { legalHtml, LEGAL_TITLES, LOCATION_NOTE, PRIVACY_VERSION, PRIVACY_DATE } from './legal.js';
+import { legalHtml, LEGAL_TITLES, LOCATION_NOTE, PRIVACY_VERSION, PRIVACY_DATE, IMPRINT_READY } from './legal.js';
 
 const lang = () => (I.lang === 'ru' ? 'ru' : 'de');
 // full screen with a back button; `back` re-renders the screen we came from
@@ -13,7 +13,7 @@ export function viewLegal(kind, back){
     <h1>${esc(LEGAL_TITLES[kind][l])}</h1>
     ${kind === 'privacy' ? `<p class="muted small">${esc(t('legalAsOf'))} ${esc(PRIVACY_DATE[l])}</p>` : ''}
     ${legalHtml(kind, l)}
-    <p class="small"><button class="link" data-legal="${kind === 'privacy' ? 'imprint' : 'privacy'}">${esc(LEGAL_TITLES[kind === 'privacy' ? 'imprint' : 'privacy'][l])}</button></p>
+    ${kind === 'imprint' || IMPRINT_READY ? `<p class="small"><button class="link" data-legal="${kind === 'privacy' ? 'imprint' : 'privacy'}">${esc(LEGAL_TITLES[kind === 'privacy' ? 'imprint' : 'privacy'][l])}</button></p>` : ''}
   </div>`);
   $('#lgBack').onclick = back;
   bindLegal(back);
@@ -25,7 +25,7 @@ export function legalModal(kind){
   m.querySelector('[data-ok]').onclick = () => m.remove();
 }
 // small links "Datenschutz · Impressum" for any screen
-export const legalLinks = () => `<p class="small center legal-links"><button class="link muted" data-legal="privacy">${esc(t('privacy'))}</button> · <button class="link muted" data-legal="imprint">${esc(t('imprint'))}</button></p>`;
+export const legalLinks = () => `<p class="small center legal-links"><button class="link muted" data-legal="privacy">${esc(t('privacy'))}</button>${IMPRINT_READY ? ` · <button class="link muted" data-legal="imprint">${esc(t('imprint'))}</button>` : ''}</p>`;
 export function bindLegal(back){ document.querySelectorAll('[data-legal]').forEach(b => b.onclick = () => viewLegal(b.dataset.legal, back)); }
 
 // before the first working day (and after a substantial change of the policy): what is recorded, who sees it, how long
