@@ -378,6 +378,13 @@ button.rbtn{width:100%;background:none;border:0;border-bottom:1px solid var(--co
 .nav-ic{flex:none;width:44px;height:44px;display:grid;place-items:center}.nav-ic svg{width:40px;height:40px;fill:none;stroke:currentColor;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round}
 .nav-tx{min-width:0;flex:1}.nav-tx b{display:block;font-size:18px;line-height:22px;font-weight:650}.nav-tx span{display:block;font-size:13px;opacity:.85;margin-top:2px}
 .nav-ext{flex:none;width:40px;height:40px;display:grid;place-items:center;border-radius:11px;background:rgba(255,255,255,.22);color:inherit}.nav-ext svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2}
+/* wide screens (admin on a laptop): phone-like column in the middle instead of rows stretched over the whole screen */
+@media (min-width:900px){
+  .content:not(.map-content)>*{max-width:760px;margin-left:auto;margin-right:auto}
+  .tabbar{justify-content:center}.tab{flex:0 1 200px}
+  .fab{right:max(var(--page-pad), calc(50% - 380px + var(--page-pad)))}
+  .sheet{left:16px;right:auto;width:min(520px, calc(100% - 32px));bottom:16px;border-radius:var(--radius-xl)}
+}
 @media (max-width:359px){ .kpi{padding:10px}.kpi b{font-size:20px}.topbar h1{font-size:24px;line-height:30px}.stats b{font-size:19px}.btn{font-size:14.5px} }
 @media (prefers-reduced-motion:reduce){ *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important} }
 </style>
