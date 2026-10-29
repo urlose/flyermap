@@ -128,4 +128,6 @@ export function normPhone(raw){
   const digits = s.replace(/\D/g, '');
   return digits.length >= 9 && digits.length <= 15 ? '+' + digits : null;
 }
+// login / admin invite: SMS codes go only to German mobile numbers (+49 15x/16x/17x), so nobody can make us pay for SMS abroad
+export function deMobile(raw){ const p = normPhone(raw); return p && /^\+491[5-7]\d{8,9}$/.test(p) ? p : null; }
 

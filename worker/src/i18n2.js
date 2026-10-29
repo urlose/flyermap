@@ -27,7 +27,7 @@ Object.assign(T.de, {
   phoneLogin:'Telefonnummer', sendCode:'Code per SMS senden', smsHint:'Du bekommst einmalig eine SMS mit einem Code, um deine Nummer zu bestätigen. Danach bleibst du angemeldet.',
   codeTitle:'Code eingeben', codeSent:'Wir haben einen Code an {phone} gesendet.', verify:'Bestätigen', resend:'Code erneut senden', resendIn:'Erneut senden in {s} s',
   wrongCode:'Code falsch oder abgelaufen.', smsFail:'SMS konnte nicht gesendet werden.', smsNotConfigured:'SMS-Versand ist noch nicht eingerichtet (Admin: SMS-Anbieter in Supabase verbinden).',
-  badPhone:'Bitte gültige Telefonnummer eingeben, z. B. +49 170 1234567.', asWho:'Wie möchtest du arbeiten?', asAdmin:'Als Admin', asWorker:'Als Verteiler',
+  badPhone:'Bitte eine deutsche Handynummer eingeben, z. B. +49 170 1234567 (SMS-Codes gehen nur an deutsche Nummern).', asWho:'Wie möchtest du arbeiten?', asAdmin:'Als Admin', asWorker:'Als Verteiler',
   switchToWorker:'Als Verteiler arbeiten', switchToAdmin:'Zum Admin wechseln', emailAdmin:'Admin mit E-Mail anmelden', yourData:'Deine Daten', changeNumber:'Andere Nummer',
   invitePhone:'Telefonnummer des neuen Admins', invitePhoneSent:'Eingeladen. Beim Login mit dieser Nummer erscheint „Als Admin".', continue:'Weiter',
 });
@@ -36,7 +36,7 @@ Object.assign(T.ru, {
   phoneLogin:'Номер телефона', sendCode:'Отправить код по SMS', smsHint:'Один раз придёт SMS с кодом, чтобы подтвердить номер. Дальше вы остаётесь в аккаунте.',
   codeTitle:'Введите код', codeSent:'Мы отправили код на {phone}.', verify:'Подтвердить', resend:'Отправить код ещё раз', resendIn:'Повторно через {s} с',
   wrongCode:'Код неверный или просрочен.', smsFail:'Не удалось отправить SMS.', smsNotConfigured:'Отправка SMS ещё не настроена (админ: подключите SMS-провайдера в Supabase).',
-  badPhone:'Введите номер полностью, например +49 170 1234567.', asWho:'Как вы будете работать?', asAdmin:'Как админ', asWorker:'Как раздающий',
+  badPhone:'Введите немецкий мобильный номер, например +49 170 1234567 (SMS-коды отправляются только на немецкие номера).', asWho:'Как вы будете работать?', asAdmin:'Как админ', asWorker:'Как раздающий',
   switchToWorker:'Работать как раздающий', switchToAdmin:'Перейти в админ', emailAdmin:'Войти админом по e-mail', yourData:'Ваши данные', changeNumber:'Другой номер',
   invitePhone:'Телефон нового админа', invitePhoneSent:'Приглашён. При входе с этим номером появится «Как админ».', continue:'Дальше',
 });

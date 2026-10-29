@@ -1,6 +1,6 @@
 // Login by phone (SMS code only once), then choose admin or worker
 import { t, I } from './i18n.js';
-import { sb, store, errText, $, esc, PRIVACY_URL, normPhone } from './core.js';
+import { sb, store, errText, $, esc, PRIVACY_URL, deMobile } from './core.js';
 import { legalLinks, bindLegal, legalModal } from './legalview.js';
 import { UI, plain, cityPicker, langSwitch, toast } from './ui.js';
 import { acceptToken } from './worker.js';
@@ -24,7 +24,7 @@ export function viewLogin(){
   $('#lEmail').onclick = () => viewAdminLogin(viewLogin);
   $('#lPhone').addEventListener('keydown', e => { if(e.key === 'Enter') $('#lSend').click(); });
   $('#lSend').onclick = async () => {
-    const phone = normPhone($('#lPhone').value);
+    const phone = deMobile($('#lPhone').value);
     if(!phone){ $('#lErr').textContent = t('badPhone'); return; }
     await sendCode(phone, $('#lSend'), $('#lErr'));
   };
