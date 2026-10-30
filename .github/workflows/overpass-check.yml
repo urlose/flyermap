@@ -21,11 +21,12 @@ jobs:
           const qs = { streets:'[out:json][timeout:80];way' + HW + '(' + bb + ');out body;>;out skel qt;',
             buildings:'[out:json][timeout:80];way[\"building\"~\"^(' + hb[1] + ')$\"](' + bb + ')->.h;way[\"building\"][\"building\"!~\"^(' + hb[1] + '|' + nb[1] + ')$\"](' + bb + ')->.o;.h out center tags;.o out geom tags;' };
           const M = ['https://overpass-api.de/api/interpreter','https://overpass.private.coffee/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://overpass.openstreetmap.fr/api/interpreter','https://maps.mail.ru/osm/tools/overpass/api/interpreter','https://lz4.overpass-api.de/api/interpreter','https://z.overpass-api.de/api/interpreter'];
-          (async () => { for (const u of M) for (const [k, q] of Object.entries(qs)) {
+          (async () => { for (const u of M) { const line = []; for (const [k, q] of Object.entries(qs)) {
             const t0 = Date.now(); let s = '';
             try { const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), 90000);
               const res = await fetch(u, { method:'POST', body:'data=' + encodeURIComponent(q), headers:{ 'Content-Type':'application/x-www-form-urlencoded' }, signal:ac.signal });
               const txt = await res.text(); clearTimeout(tm); let n = '?'; try { const j = JSON.parse(txt); n = j.elements.length + (j.remark ? ' REMARK ' + j.remark.slice(0,80) : ''); } catch { n = 'not json: ' + txt.slice(0,80).replace(/\s+/g,' '); }
               s = res.status + ' ' + n + ' ' + (txt.length/1e6).toFixed(1) + 'MB'; } catch (e) { s = 'ERR ' + e.message; }
-            console.log(u.split('/')[2].padEnd(30), k.padEnd(10), ((Date.now()-t0)/1000).toFixed(1).padStart(6) + 's', s); } })();
+            line.push(k + ' ' + ((Date.now()-t0)/1000).toFixed(1) + 's ' + s); }
+            console.log('::notice title=' + u.split('/')[2] + '::' + line.join(' || ')); } })();
           "
