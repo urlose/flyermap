@@ -23,4 +23,19 @@ check(plan.mailboxes >= flyers * 0.97 && plan.mailboxes <= flyers * 1.2, `mailbo
 const noMust = P.planFlyers(g, S.start, flyers, 2, { days:2, hoursPerDay:7 });
 check(noMust.mailboxes >= flyers * 0.97, 'without an area the plan is unchanged in size');
 check(P.mustRadius(S.start, [poly]) > P.dist(S.start, c), 'loaded square covers the area');
+// a priority area with a flyer count: about that many there, nearest part first, the rest as usual
+const D2 = 0.008, big = [[c[0] - D2, c[1] - D2], [c[0] - D2, c[1] + D2], [c[0] + D2, c[1] + D2], [c[0] + D2, c[1] - D2]];
+const all = P.mustPick(g, S.start, [big]).info[0], want = Math.round(all.avail * 0.3);
+const part = P.planFlyers(g, S.start, flyers, 2, { days:2, hoursPerDay:7, must:[{ p:big, n:want }] });
+check(all.avail > want && part.must_info[0].used >= want && part.must_info[0].used < want * 1.4, `area with ${all.avail} mailboxes, ${want} wanted → ${part.must_info[0].used} in the plan`);
+check(part.mailboxes >= flyers * 0.97 && part.mailboxes <= flyers * 1.2, `total ${part.mailboxes} for ${flyers} flyers`);
+check(P.mustPick(g, S.start, [{ p:big, n:0 }]).info[0].used === all.avail && P.mustPick(g, S.start, [big]).info[0].used === all.avail, 'n = 0 and old areas (plain polygon) mean the whole area');
+// own distribution area: flyers only inside it
+const z0 = S.start, Z = 0.012, zone = [[z0[0] - Z, z0[1] - Z * 1.5], [z0[0] - Z, z0[1] + Z * 1.5], [z0[0] + Z, z0[1] + Z * 1.5], [z0[0] + Z, z0[1] - Z * 1.5]];
+const zp = P.planFlyers(g, S.start, 1500, 2, { days:2, hoursPerDay:7, zone });
+const boxes = zp.routes.flatMap(r => r.boxes);
+check(boxes.length > 0 && boxes.every(b => P.inPoly([b[0], b[1]], zone)), `own area: all ${boxes.length} houses of the plan lie inside it`);
+check(zp.mailboxes >= 1500 * 0.97 && zp.mailboxes <= Math.min(zp.zone_mb, 1500 * 1.25), `own area: ${zp.mailboxes} mailboxes for 1500 flyers (area has ${zp.zone_mb})`);
+const zs = P.planFlyers(g, S.start, 1e6 > zp.zone_mb * 3 ? zp.zone_mb * 3 : 1e6, 2, { days:2, hoursPerDay:7, zone });
+check(zs.mailboxes <= zp.zone_mb, `own area too small for the flyers: plan stays inside (${zs.mailboxes} ≤ ${zp.zone_mb})`);
 process.exit(fail ? 1 : 0);

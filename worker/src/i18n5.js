@@ -56,3 +56,28 @@ Object.assign(T.ru, {
   msMasters:'Мастер-админы', msYou:'вы', msRemove:'Удалить', msRemoveQ:'Этот человек потеряет доступ ко всем фирмам.', msInvited:'приглашён', msAdd:'Добавить мастер-админа',
   msAddHint:'Телефон или e-mail уже существующего аккаунта FlyerMap.', msNoAccount:'С этим номером или e-mail аккаунта ещё нет. Человек должен сначала один раз войти.', msBadIdent:'Введите телефон или e-mail.', msAdded:'Добавлено', msInvitedToast:'Приглашение сохранено — сработает при первом входе',
 });
+// own distribution area + priority areas with a flyer count (30.10.2026)
+Object.assign(T.de, {
+  mustTitle:'Pflichtgebiete', mustHint:'Hier soll auf jeden Fall ein Teil der Flyer verteilt werden – du legst fest, wie viele. Sie zählen zur Gesamtzahl, der Rest geht wie gewohnt rund um den Startpunkt.',
+  mustNTitle:'Wie viele Flyer in diesem Gebiet?', mustNHint:'Verteilt wird in dem Teil des Gebiets, der dem Startpunkt am nächsten liegt.',
+  mustAll:'Alle Briefkästen im Gebiet', mustAllShort:'alle Briefkästen', mustNFly:'{n} Flyer', mustAvail:'≈ {mb} Briefkästen im Gebiet', mustFewer:'weniger als gewünscht',
+  change:'Ändern',
+  zoneTitle:'Verteilgebiet', zoneAuto:'automatisch', zoneOwn:'selbst eingezeichnet',
+  zoneHint:'Automatisch: ein kompaktes Gebiet rund um den Startpunkt. Gefällt es dir nicht, zeichne das Gebiet selbst ein – dann wird nur darin verteilt.',
+  zoneHintOwn:'Es wird nur innerhalb des eingezeichneten Gebiets verteilt (und in den Pflichtgebieten).',
+  zoneDraw:'Gebiet selbst einzeichnen', zoneRedraw:'Neu einzeichnen', zoneBackAuto:'Wieder automatisch',
+  zoneDrawHint:'Tippe die Ecken deines Verteilgebiets auf die Karte',
+  zoneSmall:'Im eingezeichneten Gebiet sind nur ≈ {mb} Briefkästen, aber {f} Flyer. Größer zeichnen oder weniger Flyer:',
+});
+Object.assign(T.ru, {
+  mustTitle:'Обязательные участки', mustHint:'Здесь нужно раздать часть флаеров — вы сами задаёте сколько. Они входят в общее число, остальное — как обычно вокруг точки старта.',
+  mustNTitle:'Сколько флаеров в этом участке?', mustNHint:'Раздаётся в той части участка, что ближе всего к точке старта.',
+  mustAll:'Все ящики в участке', mustAllShort:'все ящики', mustNFly:'{n} флаеров', mustAvail:'≈ {mb} ящиков в участке', mustFewer:'меньше, чем нужно',
+  change:'Изменить',
+  zoneTitle:'Район раздачи', zoneAuto:'автоматически', zoneOwn:'нарисован вручную',
+  zoneHint:'Автоматически: компактный район вокруг точки старта. Если не нравится — нарисуйте район сами, тогда раздача будет только в нём.',
+  zoneHintOwn:'Раздача только внутри нарисованного района (и в обязательных участках).',
+  zoneDraw:'Нарисовать район самому', zoneRedraw:'Нарисовать заново', zoneBackAuto:'Снова автоматически',
+  zoneDrawHint:'Нажимайте на карту по углам своего района',
+  zoneSmall:'В нарисованном районе только ≈ {mb} ящиков, а флаеров {f}. Нарисуйте больше или уменьшите флаеры:',
+});

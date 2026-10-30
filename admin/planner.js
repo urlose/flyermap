@@ -865,7 +865,9 @@
   // main entry: streets + buildings around the start; grows the radius until enough mailboxes exist.
   // opt: { cache, radius, must, tiles (Map kept between calls), progress(done, total), stale(), fetchImpl }
   async function loadForFlyers(start, flyers, opt){
-    opt = opt || {}; const mr = Math.min(MUST_MAX_R, mustRadius(start, opt.must)); let r = Math.max(Math.min(MAX_R, opt.radius || 1500), mr), last = null;
+    opt = opt || {};
+    const zr = opt.zone && opt.zone.length > 2 ? mustRadius(start, [opt.zone]) : 0;
+    const mr = Math.min(MUST_MAX_R, Math.max(mustRadius(start, opt.must), zr)); let r = Math.max(Math.min(MAX_R, opt.radius || 1500), mr), last = null;
     const store = opt.tiles || new Map();
     for(let round = 0; round < 6; round++){
       const keys = tilesFor(start, r);
@@ -877,8 +879,8 @@
       attachBuildings(g, m.buildings.filter(b => Math.abs(b.lat - start[0]) <= dLat && Math.abs(b.lng - start[1]) <= dLng));
       g.radius = r; g.street_m = Math.round(g.edges.reduce((s, e) => s + e.len, 0)); last = g;
       g.usable = selectForFlyers(g, start, 1e9).mailboxes;   // what is really worth walking (poor spurs excluded)
-      g.reach = selectWithMust(g, start, flyers, opt.must).reach_m;
-      if((g.usable >= flyers * 1.15 && g.reach <= 0.65 * r) || r >= MAX_R) break;
+      g.reach = selectWithMust(g, start, flyers, opt.must, opt.zone).reach_m;
+      if(zr || (g.usable >= flyers * 1.15 && g.reach <= 0.65 * r) || r >= MAX_R) break;   // own zone: exactly the zone is needed
       r = nextRadius(g, flyers);
     }
     return last;
@@ -919,22 +921,58 @@
     }
     return out;
   }
-  /* ---------- mandatory areas: drawn by the admin, every street with mailboxes inside must be walked ---------- */
+  /* ---------- areas drawn by the admin ----------
+     must areas ("Pflichtbereiche"): [[lat,lng]…] (old: every street with mailboxes inside) or { p:[[lat,lng]…], n } =
+     about n flyers there, on the streets of the area nearest to the start (n = 0: all of it). They count towards the flyers.
+     zone ("eigenes Gebiet"): only streets inside it (and inside the must areas) get flyers. */
+  const mp = a => Array.isArray(a) ? { p:a, n:0 } : { p:(a && a.p) || [], n:Math.max(0, +(a && a.n) || 0) };
+  const inArea = (e, P) => P.length > 2 && inPoly(e.coords[Math.floor(e.coords.length / 2)], P);
+  // every street piece with mailboxes inside the areas (all of them, whatever n says)
   function mustEdges(g, polys){
     const out = [];
     if(!polys || !polys.length) return out;
-    g.edges.forEach((e, i) => { if(!e.mb) return; const m = e.coords[Math.floor(e.coords.length / 2)]; if(polys.some(P => P.length > 2 && inPoly(m, P))) out.push(i); });
+    const ps = polys.map(a => mp(a).p);
+    g.edges.forEach((e, i) => { if(e.mb && ps.some(P => inArea(e, P))) out.push(i); });
     return out;
   }
-  // radius (m) the loaded square needs so that all mandatory areas lie inside it
+  // the street pieces chosen in each area: all, or the ones nearest to the start until about n mailboxes are reached
+  function mustPick(g, start, polys){
+    const out = [], info = [];
+    if(!polys || !polys.length) return { ids:out, info };
+    let d = null;
+    for(const raw of polys){
+      const A = mp(raw), ids = [];
+      g.edges.forEach((e, i) => { if(e.mb && inArea(e, A.p)) ids.push(i); });
+      const avail = ids.reduce((x, i) => x + g.edges[i].mb, 0);
+      let use = ids;
+      if(A.n > 0 && A.n < avail){
+        if(!d){ const root = nearestNode(g, start, g.pts.map((p, i) => i).filter(i => g.adj[i].length)); d = sssp(g, root).d; }
+        const k = i => Math.min(d[g.edges[i].a], d[g.edges[i].b]);
+        use = []; let sum = 0;
+        for(const i of ids.slice().sort((x, y) => k(x) - k(y))){ if(sum >= A.n) break; use.push(i); sum += g.edges[i].mb; }
+      }
+      for(const i of use) out.push(i);
+      info.push({ avail, used:use.reduce((x, i) => x + g.edges[i].mb, 0), n:A.n });
+    }
+    return { ids:[...new Set(out)], info };
+  }
+  // radius (m) the loaded square needs so that all drawn areas lie inside it
   function mustRadius(start, polys){
-    let r = 0; for(const P of polys || []) for(const q of P) r = Math.max(r, dist(start, q));
+    let r = 0; for(const a of polys || []) for(const q of mp(a).p) r = Math.max(r, dist(start, q));
     return r ? r + 400 : 0;
   }
-  // the usual selection for the remaining flyers plus all mandatory streets (they count towards the flyers)
-  function selectWithMust(g, start, flyers, polys){
-    const must = mustEdges(g, polys);
-    if(!must.length) return { ...selectForFlyers(g, start, flyers), must_mb:0, must_ids:[] };
+  // own work area: a copy of the graph in which streets outside the zone (and outside the must areas) have no mailboxes
+  function zoneView(g, zone, must){
+    if(!zone || zone.length < 3) return g;
+    const ps = [zone, ...(must || []).map(a => mp(a).p)];
+    return { ...g, zoned:true, edges:g.edges.map(e => !e.mb || ps.some(P => inArea(e, P)) ? e : { ...e, mb:0, boxes:[] }) };
+  }
+  // the usual selection for the remaining flyers plus the mandatory streets (they count towards the flyers)
+  function selectWithMust(g, start, flyers, polys, zone){
+    g = zoneView(g, zone, polys);
+    const zone_mb = g.zoned ? g.edges.reduce((a, e) => a + e.mb, 0) : null;
+    const pk = mustPick(g, start, polys), must = pk.ids;
+    if(!must.length) return { ...selectForFlyers(g, start, flyers), must_mb:0, must_ids:[], must_info:pk.info, zone_mb };
     const mustSet = new Set(must), mustMb = must.reduce((a, i) => a + g.edges[i].mb, 0);
     let rest = Math.max(0, flyers - mustMb), sel = rest > 0 ? selectForFlyers(g, start, rest) : { ids:[], mailboxes:0, reach_m:0 };
     // streets chosen anyway that lie in a mandatory area would be counted twice: ask once more for that much
@@ -943,11 +981,12 @@
     const ids = [...new Set([...sel.ids, ...must])], mailboxes = ids.reduce((a, i) => a + g.edges[i].mb, 0);
     const root = nearestNode(g, start, g.pts.map((p, i) => i).filter(i => g.adj[i].length)), d = sssp(g, root).d;
     const reach = Math.max(sel.reach_m || 0, ...must.map(i => Math.max(d[g.edges[i].a], d[g.edges[i].b])).filter(isFinite));
-    return { ...sel, ids, mailboxes, reach_m:Math.round(reach), must_mb:mustMb, must_ids:must };
+    return { ...sel, ids, mailboxes, reach_m:Math.round(reach), must_mb:mustMb, must_ids:must, must_info:pk.info, zone_mb };
   }
 
   function planFlyers(g, start, flyers, n, opt){
     opt = opt || {};
+    g = zoneView(g, opt.zone, opt.must);
     const sel = selectWithMust(g, start, flyers, opt.must);
     const total = sel.ids.reduce((s, i) => s + g.edges[i].len, 0), mbTotal = sel.mailboxes || 1;
     const w = e => 0.5 * e.len / (total || 1) + 0.5 * e.mb / mbTotal;
@@ -1019,12 +1058,12 @@
     if(maxDays > 1) routes = bestParts.map((part, k) => withDays(part, k, routes[k]));
     else routes = routes.map(r => ({ ...r, days:[{ i0:0, i1:Math.max(0, r.path.length - 1), length_m:r.length_m, street_m:r.street_m, minutes:r.minutes, mailboxes:r.mailboxes }] }));
     const pts = []; for(const i of sel.ids) for(const c of g.edges[i].coords) pts.push(c);
-    return { routes, mailboxes:sel.mailboxes, must_mb:sel.must_mb || 0, reach_m:sel.reach_m, zone:hull(pts), capacity:capacity(routes, flyers) };
+    return { routes, mailboxes:sel.mailboxes, must_mb:sel.must_mb || 0, must_info:sel.must_info || [], zone_mb:g.zoned ? g.edges.reduce((a, e) => a + e.mb, 0) : null, reach_m:sel.reach_m, zone:hull(pts), capacity:capacity(routes, flyers) };
   }
   function planRoutes(g, start, n){
     return partition(g, start, n).map((part, k) => ({ idx:k, ...planPart(g, part, start) }));
   }
 
-  const api = { tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustRadius, selectWithMust, COLORS, densifyPath, makeTracker, makeBoxCounter, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
+  const api = { tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, makeBoxCounter, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
   if(typeof module !== 'undefined' && module.exports) module.exports = api; else root.Planner = api;
 })(typeof window !== 'undefined' ? window : globalThis);
