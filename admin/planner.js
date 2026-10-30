@@ -10,7 +10,8 @@
   'use strict';
   const R = 6371000, RAD = Math.PI / 180;
   const NO_WAY = 'motorway|motorway_link|trunk|trunk_link|footway|cycleway|path|steps|bridleway|construction|proposed|raceway|corridor|elevator|platform|bus_stop|track|bus_guideway|escape|rest_area|services';
-  const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.openstreetmap.fr/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
+  // ordered by measured speed (30.10.2026: .fr and overpass-api.de answer, mail.ru often 504, private.coffee / kumi time out)
+  const OVERPASS = ['https://overpass.openstreetmap.fr/api/interpreter', 'https://overpass-api.de/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
   const WORK_HOURS = 7;            // 8 h shift minus 1 h unpaid break
   const WALK_KMH = 2.5;            // effective walking speed while distributing (with a bag of flyers)
   // way to a village counts 3x its length: out and back, plus the extra loops when the work is split between workers and days
@@ -36,8 +37,18 @@
 
   /* ---------- 1. Overpass ---------- */
   // Public Overpass servers are often busy: start the first mirror at once, the next one after 10 s
-  // (or immediately if one fails) and take whichever answers first.
-  function overpass(q, fetchImpl, timeoutMs){
+  // (or immediately if one fails) and take whichever answers first. If every mirror refuses quickly
+  // (overloaded: 429 / 504), wait a moment and try the whole round once more.
+  async function overpass(q, fetchImpl, timeoutMs){
+    const t0 = Date.now();
+    try{ return await overpassRound(q, fetchImpl, timeoutMs); }
+    catch(e){
+      if(Date.now() - t0 > 70000) throw e;
+      await new Promise(r => setTimeout(r, 5000));
+      return overpassRound(q, fetchImpl, timeoutMs);
+    }
+  }
+  function overpassRound(q, fetchImpl, timeoutMs){
     const f = fetchImpl || fetch, total = timeoutMs || 60000;
     return new Promise((resolve, reject) => {
       let done = false, failed = 0, next = 0, lastErr; const ctrls = [], timers = [];
@@ -45,7 +56,7 @@
       const launch = () => {
         if(done || next >= OVERPASS.length) return;
         const url = OVERPASS[next++];
-        if(next < OVERPASS.length) timers.push(setTimeout(launch, 6000));
+        if(next < OVERPASS.length) timers.push(setTimeout(launch, 10000));
         const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null; if(ctrl) ctrls.push(ctrl);
         const tm = ctrl ? setTimeout(() => ctrl.abort(), total) : null; if(tm) timers.push(tm);
         (async () => {
@@ -66,17 +77,17 @@
   const HW_FILTER = `["highway"]["highway"!~"^(${NO_WAY})$"]["service"!~"^(parking_aisle|driveway|drive-through|emergency_access)$"]["access"!~"^(private|no)$"]`;
   async function fetchStreets(poly, fetchImpl){
     const ps = poly.map(p => p[0].toFixed(6) + ' ' + p[1].toFixed(6)).join(' ');
-    return overpass(`[out:json][timeout:90];way${HW_FILTER}(poly:"${ps}");out body;>;out skel qt;`, fetchImpl);
+    return overpass(`[out:json][timeout:110];way${HW_FILTER}(poly:"${ps}");out body;>;out skel qt;`, fetchImpl, 110000);
   }
   // the centre is rounded to ~100 m so that repeated plans for the same place hit the server-side cache
   const rc = c => [Math.round(c[0] * 1000) / 1000, Math.round(c[1] * 1000) / 1000];
   // bounding-box filters use the index and are far faster on busy Overpass servers than "around" (which checks every node)
   const bbox = (c, r) => { const k = rc(c), dLat = r / 111320, dLng = r / (111320 * Math.cos(k[0] * RAD)); return [k[0] - dLat, k[1] - dLng, k[0] + dLat, k[1] + dLng].map(v => v.toFixed(5)).join(','); };
-  const qStreets = (c, r) => `[out:json][timeout:80];way${HW_FILTER}(${bbox(c, r)});out body;>;out skel qt;`;
+  const qStreets = (c, r) => `[out:json][timeout:110];way${HW_FILTER}(${bbox(c, r)});out body;>;out skel qt;`;
   // houses only need a centre point, everything else a footprint; garages, sheds etc. are not loaded at all
-  const qBuildings = (c, r) => { const bb = bbox(c, r); return `[out:json][timeout:80];way["building"~"^(${HOUSE_B})$"](${bb})->.h;way["building"]["building"!~"^(${HOUSE_B}|${NO_B})$"](${bb})->.o;.h out center tags;.o out geom tags;`; };
-  async function fetchStreetsAround(c, r, fetchImpl){ return overpass(qStreets(c, r), fetchImpl, 75000); }
-  async function fetchBuildings(c, r, fetchImpl){ return overpass(qBuildings(c, r), fetchImpl, 75000); }
+  const qBuildings = (c, r) => { const bb = bbox(c, r); return `[out:json][timeout:110];way["building"~"^(${HOUSE_B})$"](${bb})->.h;way["building"]["building"!~"^(${HOUSE_B}|${NO_B})$"](${bb})->.o;.h out center tags;.o out geom tags;`; };
+  async function fetchStreetsAround(c, r, fetchImpl){ return overpass(qStreets(c, r), fetchImpl, 110000); }
+  async function fetchBuildings(c, r, fetchImpl){ return overpass(qBuildings(c, r), fetchImpl, 110000); }
 
   function buildGraph(osm, poly){
     const nodes = new Map();
@@ -750,7 +761,7 @@
       if(opt.cache){ try{ const hit = await opt.cache.get(qs); if(hit) hit.forEach((x, i) => { res[i] = x; }); }catch(e){ /* cache is optional */ } }
       const miss = [0, 1].filter(i => !res[i]);
       if(miss.length){
-        const got = await Promise.all(miss.map(i => overpass(qs[i], opt.fetchImpl, 75000)));
+        const got = await Promise.all(miss.map(i => overpass(qs[i], opt.fetchImpl, 110000)));
         miss.forEach((i, k) => { res[i] = got[k]; });
         if(opt.cache) opt.cache.put(miss.map(i => ({ q:qs[i], payload:res[i] }))).catch(() => {});
       }
