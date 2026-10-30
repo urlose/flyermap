@@ -33,7 +33,14 @@ async function sendCode(phone, btn, errEl){
   btn.disabled = true; errEl.textContent = '';
   const { error } = await sb.auth.signInWithOtp({ phone });
   btn.disabled = false;
-  if(error){ errEl.textContent = /provider|configured|sms/i.test(error.message) && !/rate|limit|seconds/i.test(error.message) ? t('smsNotConfigured') : (t('smsFail') + ' ' + error.message); return; }
+  if(error){
+    const m = error.message || '';
+    // only a missing / switched-off SMS provider is "not set up"; anything else (e.g. the SMS provider has not approved the account yet) is shown as it is
+    errEl.textContent = /unsupported phone provider|phone.*(disabled|not enabled)|sms provider.*(not|missing)/i.test(m) ? t('smsNotConfigured')
+      : /compliance|kyc|customer profile/i.test(m) ? t('smsPending')
+      : (t('smsFail') + ' ' + m);
+    return;
+  }
   viewCode(phone);
 }
 function viewCode(phone){
