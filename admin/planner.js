@@ -833,8 +833,10 @@
       const keys = tilesFor(start, r);
       await fetchTiles(keys, store, opt);
       const m = mergeTiles(keys.map(k => store.get(k)));
-      const g = largestComponent(buildGraph(m.osm, null));
-      attachBuildings(g, m.buildings);
+      // squares reach beyond the radius: only the square around the start is used (keeps planning fast and the radius logic exact)
+      const dLat = r / 111320, dLng = r / (111320 * Math.cos(start[0] * RAD)), box = [[start[0] - dLat, start[1] - dLng], [start[0] - dLat, start[1] + dLng], [start[0] + dLat, start[1] + dLng], [start[0] + dLat, start[1] - dLng]];
+      const g = largestComponent(buildGraph(m.osm, box));
+      attachBuildings(g, m.buildings.filter(b => Math.abs(b.lat - start[0]) <= dLat && Math.abs(b.lng - start[1]) <= dLng));
       g.radius = r; g.street_m = Math.round(g.edges.reduce((s, e) => s + e.len, 0)); last = g;
       g.usable = selectForFlyers(g, start, 1e9).mailboxes;   // what is really worth walking (poor spurs excluded)
       g.reach = selectWithMust(g, start, flyers, opt.must).reach_m;
