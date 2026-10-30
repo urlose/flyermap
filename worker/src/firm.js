@@ -60,7 +60,7 @@ export function firmCardHtml(c){
   const ok = firmComplete(c), avv = avvOk(c);
   return `<h2 class="sec">${esc(t('firm'))}</h2>
     <div class="card" style="display:block" id="firmCard">
-      ${!ok || !avv ? `<div class="warnbox" style="margin-top:0">${esc(!ok ? t('firmMissing') : t('firmAvvMissing'))}</div>` : ''}
+      ${(!ok || !avv) && !c.master ? `<div class="warnbox" style="margin-top:0">${esc(!ok ? t('firmMissing') : t('firmAvvMissing'))}</div>` : ''}
       ${ok ? `<b>${esc(c.name)}</b><div class="muted small">${esc([c.representative, c.street, [c.zip, c.city].filter(Boolean).join(' '), c.email].filter(Boolean).join(' · '))}</div>` : ''}
       <label class="f">${esc(t('firmCode'))}</label>
       <div class="code-row"><b class="code" id="fcCode">${esc(c.join_code)}</b>
