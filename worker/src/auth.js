@@ -2,7 +2,7 @@
 import { t, I } from './i18n.js';
 import { sb, store, errText, $, esc, PRIVACY_URL, deMobile } from './core.js';
 import { legalLinks, bindLegal, legalModal } from './legalview.js';
-import { UI, plain, cityPicker, langSwitch, toast } from './ui.js';
+import { UI, plain, cityPicker, langSwitch, toast, modal } from './ui.js';
 import { acceptToken } from './worker.js';
 import { bootAdmin, viewAdminLogin } from './admin.js';
 import { firmFields, readFirm, avvCheck, bindAvvRead, normCode } from './firm.js';
@@ -128,7 +128,6 @@ async function viewProfileForm(signOut){
     <div class="small muted" id="rCodeMsg">${esc(t('joinCodeHint'))}</div>`}
     <label class="f">${esc(t('name'))}</label><input class="in" id="rName" autocomplete="name">
     <label class="f">${esc(t('cities'))}</label>${cp.html}
-    <label class="check"><input type="checkbox" id="rOffers"><span>${esc(t('offersOptIn'))}<br><small class="muted">${esc(t('offersOptInSub'))}</small></span></label>
     <button class="btn primary big" id="rGo" style="margin-top:18px">${esc(t('continue'))}</button><div class="err" id="rErr"></div>
     <p class="small muted">${esc(t('regAgree'))} <button class="link" id="rPriv">${esc(t('privacy'))}</button>.</p>`);
   cp.bind();
@@ -149,11 +148,23 @@ async function viewProfileForm(signOut){
     if($('#rCode') && code.length < 8){ $('#rErr').textContent = t('e_code_invalid'); return; }
     if(name.length < 2){ $('#rErr').textContent = t('e_name_required'); return; }
     if(!cities.length){ $('#rErr').textContent = t('e_city_required'); return; }
+    const offers = await askOffers(); if(offers === null) return;   // own decision, nothing pre-selected (valid consent)
     $('#rGo').disabled = true;
-    const { data:tok, error } = await sb.rpc('register_worker_v4', { p_name:name, p_cities:cities, p_code:code, p_offers:!!$('#rOffers')?.checked });
+    const { data:tok, error } = await sb.rpc('register_worker_v4', { p_name:name, p_cities:cities, p_code:code, p_offers:offers });
     if(error){ $('#rErr').textContent = errText(error); $('#rGo').disabled = false; return; }
     await store.del('joinCode'); finishWorker(tok, signOut);
   };
+}
+// last registration step: job offers from other companies – yes (prominent) or no; tapping outside = back to the form
+function askOffers(){
+  return new Promise(res => {
+    const m = modal(`<h2>${esc(t('offersQ'))}</h2><p class="muted">${esc(t('offersQSub'))}</p>
+      <button class="btn primary big" data-y>${esc(t('offersYes'))}</button><button class="link offers-no" data-n>${esc(t('offersNo'))}</button>`);
+    let done = false; const fin = v => { if(done) return; done = true; m.remove(); res(v); };
+    m.querySelector('[data-y]').onclick = () => fin(true);
+    m.querySelector('[data-n]').onclick = () => fin(false);
+    new MutationObserver((_, o) => { if(!m.isConnected){ o.disconnect(); fin(null); } }).observe(document.body, { childList:true });
+  });
 }
 async function finishWorker(token, signOut){
   if(signOut) await sb.auth.signOut();
