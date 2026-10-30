@@ -1,0 +1,29 @@
+name: Keep Supabase awake
+
+# The free Supabase plan pauses a project after a week without activity.
+# One tiny database call per day keeps it running.
+on:
+  schedule:
+    - cron: '23 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: worker/src/core.js
+          sparse-checkout-cone-mode: false
+      - name: Call the database once
+        run: |
+          URL=$(grep -o "https://[a-z0-9]*\.supabase\.co" worker/src/core.js | head -1)
+          KEY=$(grep -o "eyJ[A-Za-z0-9._-]*" worker/src/core.js | head -1)   # the public (anon) key the app uses anyway
+          for i in 1 2 3; do
+            if curl -fsS -X POST "$URL/rest/v1/rpc/keepalive" -H "apikey: $KEY" -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -d '{}'; then echo; echo "ok"; exit 0; fi
+            sleep 20
+          done
+          exit 1
