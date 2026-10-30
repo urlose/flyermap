@@ -532,10 +532,11 @@ function viewCreate(edit){
     const t0 = Date.now(); let txt = t('calculating');
     const show = () => { if(tok !== d.token || !alive()){ clearInterval(id); return; } const s = Math.round((Date.now() - t0) / 1000); busy(s >= 1 ? txt + ' · ' + s + ' s' : txt, full); };
     const id = setInterval(show, 1000); show();
-    return { stage:k => { txt = t(k); full = full && k !== 'calculating'; show(); }, stop:() => clearInterval(id) };
+    // stage 'loadingArea|3|9' = map square 3 of 9 loaded
+    return { stage:k => { const [key, a, b] = String(k).split('|'); txt = t(key) + (b ? ' ' + a + '/' + b : ''); full = full && key !== 'calculating'; show(); }, stop:() => clearInterval(id) };
   };
   const startArr = () => [d.start.lat, d.start.lng];
-  const errText2 = e => /abort/i.test((e && e.message) || '') ? t('mapSlow') : ((e && e.message) || 'net');
+  const errText2 = e => /abort|overpass|fetch/i.test((e && e.message) || '') ? t('mapSlow') : ((e && e.message) || 'net');
   async function setStart(lat, lng, fromClick){
     const tok = ++d.token; d.start = { lat, lng }; d.keepView = !!fromClick;   // a tap on the map keeps the zoom the admin chose
     d.pick = false; updPick();

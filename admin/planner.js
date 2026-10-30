@@ -11,7 +11,8 @@
   const R = 6371000, RAD = Math.PI / 180;
   const NO_WAY = 'motorway|motorway_link|trunk|trunk_link|footway|cycleway|path|steps|bridleway|construction|proposed|raceway|corridor|elevator|platform|bus_stop|track|bus_guideway|escape|rest_area|services';
   // ordered by measured speed (30.10.2026: .fr and overpass-api.de answer, mail.ru often 504, private.coffee / kumi time out)
-  const OVERPASS = ['https://overpass.openstreetmap.fr/api/interpreter', 'https://overpass-api.de/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+  // (private.coffee / kumi were dropped: they only ever timed out, which kept a failing round open for minutes)
+  const OVERPASS = ['https://overpass.openstreetmap.fr/api/interpreter', 'https://overpass-api.de/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
   const WORK_HOURS = 7;            // 8 h shift minus 1 h unpaid break
   const WALK_KMH = 2.5;            // effective walking speed while distributing (with a bag of flyers)
   // way to a village counts 3x its length: out and back, plus the extra loops when the work is split between workers and days
@@ -37,15 +38,17 @@
 
   /* ---------- 1. Overpass ---------- */
   // Public Overpass servers are often busy: start the first mirror at once, the next one after 10 s
-  // (or immediately if one fails) and take whichever answers first. If every mirror refuses quickly
-  // (overloaded: 429 / 504), wait a moment and try the whole round once more.
-  async function overpass(q, fetchImpl, timeoutMs){
-    const t0 = Date.now();
-    try{ return await overpassRound(q, fetchImpl, timeoutMs); }
-    catch(e){
-      if(Date.now() - t0 > 70000) throw e;
-      await new Promise(r => setTimeout(r, 5000));
-      return overpassRound(q, fetchImpl, timeoutMs);
+  // (or immediately if one fails) and take whichever answers first. When every mirror refuses (overloaded: 429 / 502 / 504),
+  // wait and try again with growing pauses (4 s, 8 s, 16 s …) for up to about four minutes.
+  async function overpass(q, fetchImpl, timeoutMs, stale){
+    const t0 = Date.now(); let wait = 4000;
+    for(;;){
+      try{ return await overpassRound(q, fetchImpl, timeoutMs); }
+      catch(e){
+        if(Date.now() - t0 > 240000 || (stale && stale())) throw e;
+        await new Promise(r => setTimeout(r, wait)); wait = Math.min(30000, wait * 2);
+        if(stale && stale()) throw new Error('stale');
+      }
     }
   }
   function overpassRound(q, fetchImpl, timeoutMs){
@@ -88,6 +91,74 @@
   const qBuildings = (c, r) => { const bb = bbox(c, r); return `[out:json][timeout:110];way["building"~"^(${HOUSE_B})$"](${bb})->.h;way["building"]["building"!~"^(${HOUSE_B}|${NO_B})$"](${bb})->.o;.h out center tags;.o out geom tags;`; };
   async function fetchStreetsAround(c, r, fetchImpl){ return overpass(qStreets(c, r), fetchImpl, 110000); }
   async function fetchBuildings(c, r, fetchImpl){ return overpass(qBuildings(c, r), fetchImpl, 110000); }
+
+  /* ---------- map tiles: the area is loaded as fixed squares (about 3.3 × 3 km) ----------
+     Every square is one small Overpass request (about 2 s), is stored in the shared cache in a compact form and is reused for
+     every start point nearby. Growing the area only loads the new squares around it. */
+  const TILE_LAT = 0.03, TILE_LNG = 0.045, TILE_V = 'fm3';
+  const tileKey = (i, j) => i + ':' + j;
+  function tilesFor(c, r){
+    const dLat = r / 111320, dLng = r / (111320 * Math.cos(c[0] * RAD)), out = [];
+    const i0 = Math.floor((c[0] - dLat) / TILE_LAT), i1 = Math.floor((c[0] + dLat) / TILE_LAT);
+    const j0 = Math.floor((c[1] - dLng) / TILE_LNG), j1 = Math.floor((c[1] + dLng) / TILE_LNG);
+    for(let i = i0; i <= i1; i++) for(let j = j0; j <= j1; j++) out.push(tileKey(i, j));
+    // nearest squares first, so the progress counts outwards from the start
+    const mid = k => { const [i, j] = k.split(':').map(Number); return Math.hypot((i + 0.5) * TILE_LAT - c[0], ((j + 0.5) * TILE_LNG - c[1]) * Math.cos(c[0] * RAD)); };
+    return out.sort((a, b) => mid(a) - mid(b));
+  }
+  function qTile(k){
+    const [i, j] = k.split(':').map(Number), bb = [i * TILE_LAT, j * TILE_LNG, (i + 1) * TILE_LAT, (j + 1) * TILE_LNG].map(v => v.toFixed(4)).join(',');
+    return `[out:json][timeout:90];way${HW_FILTER}(${bb});out body qt;>;out skel qt;way["building"~"^(${HOUSE_B})$"](${bb});out center tags qt;way["building"]["building"!~"^(${HOUSE_B}|${NO_B})$"](${bb});out geom tags qt;/*${TILE_V}*/`;
+  }
+  const r6 = v => Math.round(v * 1e6) / 1e6;
+  // only what the planner needs: street nodes, street ways (id, name, node ids), houses with their estimated mailboxes
+  function compactTile(osm){
+    const n = [], w = [], b = [];
+    for(const e of (osm && osm.elements) || []){
+      if(e.type === 'node') n.push(e.id, r6(e.lat), r6(e.lon));
+      else if(e.type === 'way' && e.nodes && e.tags && e.tags.highway) w.push([e.id, e.tags.name || e.tags.ref || '', e.nodes]);
+      else if(e.type === 'way'){ const x = parseBuildings({ elements:[e] })[0]; if(x) b.push([e.id, r6(x.lat), r6(x.lng), x.n]); }
+    }
+    return { v:TILE_V, elements:[], n, w, b };
+  }
+  // several tiles → one Overpass-like street answer + one building list (ways and houses on a border appear only once)
+  function mergeTiles(list){
+    const nodes = new Map(), ways = new Map(), bs = new Map();
+    for(const t of list){
+      if(!t) continue;
+      for(let i = 0; i < t.n.length; i += 3) nodes.set(t.n[i], [t.n[i + 1], t.n[i + 2]]);
+      for(const x of t.w) ways.set(x[0], x);
+      for(const x of t.b) bs.set(x[0], x);
+    }
+    const elements = [];
+    for(const [id, p] of nodes) elements.push({ type:'node', id, lat:p[0], lon:p[1] });
+    for(const [id, x] of ways) elements.push({ type:'way', id, nodes:x[2], tags:x[1] ? { name:x[1] } : {} });
+    return { osm:{ elements }, buildings:[...bs.values()].map(x => ({ lat:x[1], lng:x[2], n:x[3] })) };
+  }
+  // fills `store` (tile key → compact tile) for all keys: shared cache first, then Overpass, two squares at a time
+  async function fetchTiles(keys, store, opt){
+    const miss = keys.filter(k => !store.has(k)), total = keys.length;
+    const report = () => opt.progress && opt.progress(keys.filter(k => store.has(k)).length, total);
+    if(!miss.length) return;
+    if(opt.cache){
+      const chunks = []; for(let i = 0; i < miss.length; i += 3) chunks.push(miss.slice(i, i + 3));   // the cache function takes up to 3 per call
+      await Promise.all(chunks.map(async ch => {
+        try{ const hit = await opt.cache.get(ch.map(qTile)); (hit || []).forEach((x, i) => { if(x && x.v === TILE_V && Array.isArray(x.n)) store.set(ch[i], x); }); }catch(e){ /* cache is optional */ }
+      }));
+    }
+    const todo = miss.filter(k => !store.has(k)); report();
+    let next = 0;
+    const lane = async () => {
+      while(next < todo.length){
+        if(opt.stale && opt.stale()) throw new Error('stale');
+        const k = todo[next++], q = qTile(k);
+        const t = compactTile(await overpass(q, opt.fetchImpl, 90000, opt.stale));
+        store.set(k, t); report();
+        if(opt.cache) Promise.resolve(opt.cache.put([{ q, payload:t }])).catch(() => {});
+      }
+    };
+    await Promise.all([lane(), lane()]);
+  }
 
   function buildGraph(osm, poly){
     const nodes = new Map();
@@ -753,21 +824,17 @@
     g.street_m = Math.round(g.edges.reduce((s, e) => s + e.len, 0));
     return g;
   }
-  // main entry: streets + buildings around the start; grows the radius until enough mailboxes exist
+  // main entry: streets + buildings around the start; grows the radius until enough mailboxes exist.
+  // opt: { cache, radius, must, tiles (Map kept between calls), progress(done, total), stale(), fetchImpl }
   async function loadForFlyers(start, flyers, opt){
     opt = opt || {}; const mr = Math.min(MUST_MAX_R, mustRadius(start, opt.must)); let r = Math.max(Math.min(MAX_R, opt.radius || 1500), mr), last = null;
+    const store = opt.tiles || new Map();
     for(let round = 0; round < 6; round++){
-      const qs = [qStreets(start, r), qBuildings(start, r)], res = [null, null];
-      if(opt.cache){ try{ const hit = await opt.cache.get(qs); if(hit) hit.forEach((x, i) => { res[i] = x; }); }catch(e){ /* cache is optional */ } }
-      const miss = [0, 1].filter(i => !res[i]);
-      if(miss.length){
-        const got = await Promise.all(miss.map(i => overpass(qs[i], opt.fetchImpl, 110000)));
-        miss.forEach((i, k) => { res[i] = got[k]; });
-        if(opt.cache) opt.cache.put(miss.map(i => ({ q:qs[i], payload:res[i] }))).catch(() => {});
-      }
-      const osm = res[0], bld = res[1];
-      const g = largestComponent(buildGraph(osm, null));
-      attachBuildings(g, parseBuildings(bld));
+      const keys = tilesFor(start, r);
+      await fetchTiles(keys, store, opt);
+      const m = mergeTiles(keys.map(k => store.get(k)));
+      const g = largestComponent(buildGraph(m.osm, null));
+      attachBuildings(g, m.buildings);
       g.radius = r; g.street_m = Math.round(g.edges.reduce((s, e) => s + e.len, 0)); last = g;
       g.usable = selectForFlyers(g, start, 1e9).mailboxes;   // what is really worth walking (poor spurs excluded)
       g.reach = selectWithMust(g, start, flyers, opt.must).reach_m;
@@ -918,6 +985,6 @@
     return partition(g, start, n).map((part, k) => ({ idx:k, ...planPart(g, part, start) }));
   }
 
-  const api = { MUST_MAX_R, mustEdges, mustRadius, selectWithMust, COLORS, densifyPath, makeTracker, makeBoxCounter, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
+  const api = { tilesFor, qTile, compactTile, mergeTiles, TILE_V, MUST_MAX_R, mustEdges, mustRadius, selectWithMust, COLORS, densifyPath, makeTracker, makeBoxCounter, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
   if(typeof module !== 'undefined' && module.exports) module.exports = api; else root.Planner = api;
 })(typeof window !== 'undefined' ? window : globalThis);
