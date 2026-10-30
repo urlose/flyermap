@@ -1,0 +1,43 @@
+# Own map squares for the route planner: Geofabrik extract → tools/tiles/build.py → storage bucket "tiles" (monthly).
+# Map data © OpenStreetMap contributors, ODbL.
+name: Map squares (Germany)
+on:
+  workflow_dispatch:
+    inputs:
+      region:
+        description: 'Geofabrik region (e.g. europe/germany or europe/germany/bremen for a quick test)'
+        default: 'europe/germany'
+  schedule:
+    - cron: '23 2 4 * *'
+permissions:
+  contents: read
+  id-token: write
+concurrency: { group: tiles, cancel-in-progress: false }
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    env:
+      REGION: ${{ inputs.region || 'europe/germany' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Tools
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q osmium-tool
+          pip install -q osmium shapely
+      - name: Download extract
+        run: |
+          sudo mkdir -p /mnt/osm && sudo chown "$USER" /mnt/osm && cd /mnt/osm
+          curl -sSfL --retry 3 -o region.osm.pbf "https://download.geofabrik.de/$REGION-latest.osm.pbf"
+          curl -sSfL --retry 3 -o region.poly "https://download.geofabrik.de/$REGION.poly"
+          echo "::notice::extract $(du -h region.osm.pbf | cut -f1), free disk $(df -h /mnt | tail -1 | awk '{print $4}')"
+      - name: Streets and buildings only
+        run: osmium tags-filter /mnt/osm/region.osm.pbf w/highway w/building --overwrite -o /mnt/osm/f.osm.pbf && rm /mnt/osm/region.osm.pbf && ls -la /mnt/osm
+      - name: Cut into squares
+        run: |
+          python3 tools/tiles/build.py --pbf /mnt/osm/f.osm.pbf --poly /mnt/osm/region.poly --out /mnt/osm/tiles --work /mnt/osm | tee /mnt/osm/build.log
+          echo "::notice::$(tail -1 /mnt/osm/build.log) · $(du -sh /mnt/osm/tiles | cut -f1) on disk"
+      - name: Upload
+        run: python3 tools/tiles/upload.py /mnt/osm/tiles

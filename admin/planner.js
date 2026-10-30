@@ -121,27 +121,65 @@
     }
     return { v:TILE_V, elements:[], n, w, b };
   }
-  // several tiles → one Overpass-like street answer + one building list (ways and houses on a border appear only once)
+  // own squares (tools/tiles/build.py, format fm4) are delta-encoded: back to the fm3 shape used here
+  function decodeTile(t){
+    if(!t || t.v !== 'fm4') return t;
+    const n = [], w = [], b = []; let id = 0, la = 0, lo = 0;
+    for(let i = 0; i < t.n.length; i += 3){ id += t.n[i]; la += t.n[i + 1]; lo += t.n[i + 2]; n.push(id, la / 1e6, lo / 1e6); }
+    let wid = 0;
+    for(const x of t.w){ wid += x[0]; let nid = 0; w.push([wid, x[1], x[2].map(d => (nid += d))]); }
+    la = 0; lo = 0;
+    for(let i = 0; i < t.b.length; i += 3){ la += t.b[i]; lo += t.b[i + 1]; b.push([0, la / 1e6, lo / 1e6, t.b[i + 2]]); }
+    return { v:'fm4', elements:[], n, w, b };
+  }
+  // several tiles → one Overpass-like street answer + one building list (ways and houses on a border appear only once;
+  // houses are matched by position, so own squares and Overpass squares can be mixed)
   function mergeTiles(list){
     const nodes = new Map(), ways = new Map(), bs = new Map();
     for(const t of list){
       if(!t) continue;
       for(let i = 0; i < t.n.length; i += 3) nodes.set(t.n[i], [t.n[i + 1], t.n[i + 2]]);
       for(const x of t.w) ways.set(x[0], x);
-      for(const x of t.b) bs.set(x[0], x);
+      for(const x of t.b) bs.set(x[1] + ',' + x[2], x);
     }
     const elements = [];
     for(const [id, p] of nodes) elements.push({ type:'node', id, lat:p[0], lon:p[1] });
     for(const [id, x] of ways) elements.push({ type:'way', id, nodes:x[2], tags:x[1] ? { name:x[1] } : {} });
     return { osm:{ elements }, buildings:[...bs.values()].map(x => ({ lat:x[1], lng:x[2], n:x[3] })) };
   }
+  const TILES_URL = 'https://xobrvfkwqessbkdwiavu.supabase.co/storage/v1/object/public/tiles/v4/';
+  async function fetchOwnTile(base, k, f){
+    const r = await f(base + k.replace(':', '_') + '.json.gz');
+    if(!r.ok) return null;
+    const buf = new Uint8Array(await r.arrayBuffer());
+    let text;
+    if(buf[0] === 0x1f && buf[1] === 0x8b){   // gzip file (some servers already unpack it on the way)
+      if(typeof DecompressionStream === 'undefined') return null;
+      text = await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
+    }else text = new TextDecoder().decode(buf);
+    const t = decodeTile(JSON.parse(text));
+    return t && t.v === 'fm4' && Array.isArray(t.n) ? t : null;
+  }
   // fills `store` (tile key → compact tile) for all keys: shared cache first, then Overpass, two squares at a time
   async function fetchTiles(keys, store, opt){
     const miss = keys.filter(k => !store.has(k)), total = keys.length;
     const report = () => opt.progress && opt.progress(keys.filter(k => store.has(k)).length, total);
     if(!miss.length) return;
+    // 1. own squares for Germany (static files, rebuilt monthly); missing file = square not covered → cache / Overpass
+    const base = opt.tilesUrl === undefined ? (opt.fetchImpl ? null : TILES_URL) : opt.tilesUrl, tf = opt.tileFetch || (typeof fetch !== 'undefined' ? fetch : null);
+    if(base && tf){
+      let next = 0;
+      const lane = async () => {
+        while(next < miss.length){
+          const k = miss[next++];
+          try{ const t = await fetchOwnTile(base, k, tf); if(t){ store.set(k, t); report(); } }catch(e){ /* not covered or offline */ }
+        }
+      };
+      await Promise.all([lane(), lane(), lane(), lane()]);
+      if(miss.every(k => store.has(k))) return;
+    }
     if(opt.cache){
-      const chunks = []; for(let i = 0; i < miss.length; i += 3) chunks.push(miss.slice(i, i + 3));   // the cache function takes up to 3 per call
+      const left = miss.filter(k => !store.has(k)), chunks = []; for(let i = 0; i < left.length; i += 3) chunks.push(left.slice(i, i + 3));   // the cache function takes up to 3 per call
       await Promise.all(chunks.map(async ch => {
         try{ const hit = await opt.cache.get(ch.map(qTile)); (hit || []).forEach((x, i) => { if(x && x.v === TILE_V && Array.isArray(x.n)) store.set(ch[i], x); }); }catch(e){ /* cache is optional */ }
       }));
@@ -987,6 +1025,6 @@
     return partition(g, start, n).map((part, k) => ({ idx:k, ...planPart(g, part, start) }));
   }
 
-  const api = { tilesFor, qTile, compactTile, mergeTiles, TILE_V, MUST_MAX_R, mustEdges, mustRadius, selectWithMust, COLORS, densifyPath, makeTracker, makeBoxCounter, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
+  const api = { tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustRadius, selectWithMust, COLORS, densifyPath, makeTracker, makeBoxCounter, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
   if(typeof module !== 'undefined' && module.exports) module.exports = api; else root.Planner = api;
 })(typeof window !== 'undefined' ? window : globalThis);
