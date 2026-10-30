@@ -6,7 +6,7 @@ import { makeNav, dayProgress } from './nav.js';
 import { locationNote, legalLinks, bindLegal } from './legalview.js';
 import { setLegalFirm } from './legal.js';
 import { t, I } from './i18n.js';
-import { NATIVE, PRIVACY_URL, store, rpc, errText, $, esc, css, hav, fmtDist, fmtHm, fmtN, fmtTime, fmtDay, loopPath } from './core.js';
+import { NATIVE, PRIVACY_URL, store, rpc, errText, deMobile, $, esc, css, hav, fmtDist, fmtHm, fmtN, fmtTime, fmtDay, loopPath } from './core.js';
 import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, fit, modal, confirmBox, toast, cityPicker, langSwitch, themeSwitch, statusPill, emptyState, avatar, every } from './ui.js';
 
 const BackgroundGeolocation = registerPlugin('BackgroundGeolocation');
@@ -459,14 +459,18 @@ function viewTracking(){
   if(!NATIVE && $('#demo')) $('#demo').onclick = startDemoWalk;
 }
 
+const isHandover = me => /^\+490000/.test((me && me.phone) || '');   // account created by an admin and handed over with a login link
 function viewProfile(){
   const me = W.me || {};
+  const hand = isHandover(me), nameVal = hand && /^Neuer Verteiler/.test(me.name || '') ? '' : me.name;
   const cp = cityPicker(me.cities || []);
   shell('people', `${topbar(t('tabProfile'))}
     <div class="pad">
       <div class="person-row big">${avatar(me.name)}<div><b>${esc(me.name || '')}</b><span>${esc(me.phone || '')}</span>${me.company && me.company.name && !/^\[/.test(me.company.name) ? `<span>${esc(t('myFirm'))}: ${esc(me.company.name)}</span>` : ''}</div></div>
+      ${hand ? `<div class="hint">${esc(t('handoverHint'))}</div>` : ''}
       <div class="card" style="display:block;margin-top:16px">
-        <label class="f" for="pName" style="margin-top:0">${esc(t('name'))}</label><input class="in" id="pName" value="${esc(me.name)}" autocomplete="name">
+        <label class="f" for="pName" style="margin-top:0">${esc(t('name'))}</label><input class="in" id="pName" value="${esc(nameVal)}" autocomplete="name">
+        ${hand ? `<label class="f" for="pPhone">${esc(t('handoverPhone'))}</label><input class="in" id="pPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+49 170 1234567">` : ''}
         <label class="f">${esc(t('cities'))}</label>${cp.html}
         <button class="btn primary" id="pSave" style="margin-top:16px">${esc(t('save'))}</button><div class="err" id="pErr" role="alert"></div>
       </div>
@@ -483,9 +487,11 @@ function viewProfile(){
   $('#pOffers').onchange = async e => { const on = e.target.checked; try{ await rpc('set_offers', { p_token:W.token, p_on:on }); if(W.me) W.me.offers_ok = on; await store.set('me', W.me); toast(t('saved')); }catch(err){ e.target.checked = !on; toast(errText(err)); } };
   store.get('theme').then(v => { W.theme = v; document.querySelectorAll('[data-theme-set]').forEach(b => { const on = b.dataset.themeSet === (v || 'system'); b.classList.toggle('on', on); b.setAttribute('aria-checked', on); }); });
   $('#pSave').onclick = async () => {
+    if($('#pName').value.trim().length < 2){ $('#pErr').textContent = t('e_name_required'); return; }
+    let ph = null; if($('#pPhone')){ ph = deMobile($('#pPhone').value); if(!ph){ $('#pErr').textContent = t('badPhone'); return; } }
     if(!cp.get().length){ $('#pErr').textContent = t('e_city_required'); return; }
     $('#pSave').disabled = true; $('#pSave').classList.add('loading'); $('#pErr').textContent = '';
-    try{ await rpc('update_worker_profile', { p_token:W.token, p_name:$('#pName').value, p_cities:cp.get() }); await loadMe(); toast(t('saved')); }
+    try{ if(ph) await rpc('set_worker_phone', { p_token:W.token, p_phone:ph }); await rpc('update_worker_profile', { p_token:W.token, p_name:$('#pName').value, p_cities:cp.get() }); await loadMe(); toast(t('saved')); }
     catch(e){ $('#pErr').textContent = errText(e); }
     $('#pSave').disabled = false; $('#pSave').classList.remove('loading');
   };
@@ -507,7 +513,9 @@ export async function bootWorker(){
     const pid = W.route.planId; if(pid && !W.prev){ try{ W.prev = await rpc('plan_progress', { p_token:W.token, p_plan_id:pid }); }catch{} }
     workerTab('map'); if(!W.route.paused) startWatching(); flush(); loadMe(); return true;
   }
-  workerTab('tasks'); flush(); await loadMe(); if(UI.tab === 'tasks' && !document.querySelector('.topbar #tbBack')) workerTab('tasks');
+  workerTab('tasks'); flush(); await loadMe();
+  if(isHandover(W.me)) workerTab('people');   // first fill in name, number and cities
+  else if(UI.tab === 'tasks' && !document.querySelector('.topbar #tbBack')) workerTab('tasks');
   return true;
 }
 // poll for new assignments while the app is open (real push notifications need the Apple/Google push setup)

@@ -10,6 +10,7 @@ import { loadFirm, firmCardHtml, bindFirmCard, firmComplete, avvOk } from './fir
 import { viewMaster, poolHtml } from './master.js';
 
 const GREEN = '#16A34A';
+const APP_LINK = 'https://urlose.github.io/flyermap/app/';
 // finished map-data answers are shared through our own server (edge function 'osm'): same area = instant for every admin
 const osmCache = {
   async get(queries){ const { data, error } = await sb.functions.invoke('osm', { body:{ mode:'get', queries } }); if(error || !data || !data.results) throw new Error('cache'); return data.results; },
@@ -298,6 +299,7 @@ async function viewWorker(id, back, focusId){
       <select class="in" id="wzm">${[30, 45, 60, 75, 90, 120].map(m => `<option value="${m}" ${m === w.zone_minutes ? 'selected' : ''}>${m < 60 ? m + ' ' + t('min') : (m/60).toString().replace('.', ',') + ' ' + t('h')} (~${Math.round(m * KM_PER_MIN_TRANSIT)} km)</option>`).join('')}</select>
       <label class="f">${esc(t('notes'))}</label><textarea class="in" id="wnotes">${esc(w.notes || '')}</textarea>
       <button class="btn primary" id="wsave" style="margin-top:12px">${esc(t('save'))}</button>
+      ${/^\+490000/.test(w.phone || '') && !/^\+4900000000/.test(w.phone || '') ? `<div id="wLink" class="card" style="display:block;margin-top:16px"><label class="f" style="margin-top:0">${esc(t('loginLink'))}</label><p class="small muted">${esc(t('loadingShort'))}</p></div>` : ''}
       <button class="btn ghost danger-text" id="wdel" style="margin-top:20px">${esc(t('del'))}</button>
     </div>`);
   bindBack(back);
@@ -332,6 +334,11 @@ async function viewWorker(id, back, focusId){
   if(first) showRoute(first);
   else { $('#wMap').hidden = true; const c = (w.cities || []).find(x => x.lat != null); if(c) wm.setView([c.lat, c.lng], 12); }
   fillPlaces(all, () => { if(document.getElementById('wDays')) renderDays(); });
+  if($('#wLink')) sb.from('workers').select('token').eq('id', id).single().then(({ data }) => {
+    const box = $('#wLink'); if(!box || !data || !data.token) return; const link = APP_LINK + '?konto=' + data.token;
+    box.innerHTML = `<label class="f" style="margin-top:0">${esc(t('loginLink'))}</label><p class="small muted">${esc(t('loginLinkHint'))}</p><div class="code-row"><input class="in small" readonly value="${esc(link)}" style="flex:1;min-width:0"><button class="btn ghost small" id="wlCopy">${esc(t('copy'))}</button><a class="btn ghost small" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(link)}">${ICONS.chat}WhatsApp</a></div>`;
+    $('#wlCopy').onclick = async () => { try{ await navigator.clipboard.writeText(link); toast(t('copied')); }catch{ toast(link); } };
+  });
   $('#wsave').onclick = async () => { const { error } = await sb.from('workers').update({ zone_minutes:+$('#wzm').value, notes:$('#wnotes').value.trim() || null }).eq('id', id); if(!error){ await loadWorkers(); toast(t('saved')); } };
   $('#wdel').onclick = async () => { if(!await confirmBox(t('del'), t('delWorkerQ', { name:w.name }), t('del'), true)) return; await sb.from('workers').delete().eq('id', id); await loadWorkers(); back(); };
 }

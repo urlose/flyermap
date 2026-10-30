@@ -1,7 +1,7 @@
 // Companies: registration, company code, company settings, AVV
 import { T } from './i18n.js';
 Object.assign(T.de, {
-  copy:'Kopieren', copied:'Kopiert',
+  copy:'Kopieren', copied:'Kopiert', handoverHint:'Willkommen! Bitte trage deinen Namen, deine Handynummer und die Städte ein, in denen du arbeiten kannst, und tippe auf „Speichern“.', handoverPhone:'Deine Handynummer', e_phone_taken:'Diese Nummer ist schon bei FlyerMap registriert.', e_phone_invalid:'Bitte eine deutsche Handynummer eingeben.', loginLink:'Login-Link zum Weitergeben', loginLinkHint:'Wer diesen Link öffnet, ist in diesem Konto angemeldet. Nur an die Person schicken, für die das Konto ist.',
   newUserQ:'Wie möchtest du FlyerMap nutzen?', newUserWorker:'Ich verteile Flyer', newUserWorkerSub:'Du hast einen Firmencode oder Link von deiner Firma.',
   newUserFirm:'Ich registriere meine Firma', newUserFirmSub:'Du planst Aufträge und teilst Verteiler ein.',
   firmRegTitle:'Firma registrieren', firmRegHint:'Diese Angaben sehen deine Verteiler in der Datenschutzerklärung: deine Firma ist für ihre Daten verantwortlich.', firmRegBtn:'Firma registrieren',
@@ -29,7 +29,7 @@ Object.assign(T.de, {
   msAddHint:'Telefonnummer oder E-Mail eines bestehenden FlyerMap-Kontos.', msNoAccount:'Zu dieser Nummer bzw. E-Mail gibt es noch kein Konto. Die Person muss sich zuerst einmal anmelden.', msBadIdent:'Bitte Telefonnummer oder E-Mail eingeben.', msAdded:'Hinzugefügt', msInvitedToast:'Eingeladen – gilt beim ersten Login',
 });
 Object.assign(T.ru, {
-  copy:'Копировать', copied:'Скопировано',
+  copy:'Копировать', copied:'Скопировано', handoverHint:'Добро пожаловать! Впишите своё имя, номер мобильного и города, где можете работать, и нажмите «Сохранить».', handoverPhone:'Ваш мобильный номер', e_phone_taken:'Этот номер уже зарегистрирован в FlyerMap.', e_phone_invalid:'Введите немецкий мобильный номер.', loginLink:'Ссылка для входа (передать)', loginLinkHint:'Кто откроет эту ссылку, войдёт в этот аккаунт. Отправляйте только тому, для кого аккаунт.',
   newUserQ:'Как вы будете пользоваться FlyerMap?', newUserWorker:'Я раздаю флаеры', newUserWorkerSub:'У вас есть код или ссылка от вашей фирмы.',
   newUserFirm:'Я регистрирую свою фирму', newUserFirmSub:'Вы планируете заказы и распределяете раздающих.',
   firmRegTitle:'Регистрация фирмы', firmRegHint:'Эти данные раздающие увидят в политике конфиденциальности: ваша фирма отвечает за их данные.', firmRegBtn:'Зарегистрировать фирму',
