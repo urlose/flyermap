@@ -401,6 +401,7 @@ async function viewTaskMap(id, back){
     legend:res.map(({ p, pct, fl }) => ({ color:p.color || '#2563EB', label:(p.worker_id ? nameOf(p.worker_id) : t('planRoute', { n:p.idx + 1 })), anonLabel:t('planRoute', { n:p.idx + 1 }), sub:pct + ' %' + (fl != null ? ' · ≈ ' + fmtN(fl) + ' ' + t('flyers') : '') })),
     layers:[
       { key:'zone', on:false, add:g => { if(tk.zone_polygon) L.polygon(tk.zone_polygon, { color:css('--brand'), weight:2, fillOpacity:.05, interactive:false }).addTo(g); } },
+      ...((tk.must_areas || []).length ? [{ key:'must', label:t('mustTitle'), add:g => tk.must_areas.forEach(a => L.polygon(a, { color:'#EA580C', weight:3, dashArray:'8 6', fillOpacity:.1, interactive:false }).addTo(g)) }] : []),
       { key:'plan', label:t('rvPlan'), add:g => { (plans || []).forEach(p => { if(p.path && p.path.length > 1) L.polyline(p.path, { color:p.color || '#2563EB', weight:4, opacity:.5, lineJoin:'round' }).addTo(g); }); L.marker([tk.start_lat, tk.start_lng], { icon:dot('pin-start', 24) }).addTo(g); } },
       { key:'done', label:t('rvDone'), add:g => res.forEach(x => x.runs.forEach(run => L.polyline(run, { color:GREEN, weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g))) },
       { key:'gps', label:tracks.some(x => x.length > 1) ? t('rvGps') : '', on:false, add:g => tracks.forEach((ll, i) => { if(ll.length > 1) L.polyline(ll, { color:trackCol[i] || '#1D4ED8', weight:2.5, opacity:.95 }).addTo(g); }) },
@@ -463,17 +464,42 @@ function viewTasks(){
 /* Routenerstellung: full map + search on top, sheet with flyers / workers / routes */
 function viewCreate(edit){
   const tkE = edit && edit.tk;   // editing an existing task: same screen, prefilled, saves over the old routes
-  const d = { start:null, place:null, flyers:10000, n:2, nAuto:false, hours:7, quota:1500, days:2, g:null, plan:null, assign:{}, err:null, token:0 };
+  const d = { start:null, place:null, flyers:10000, n:2, nAuto:false, hours:7, quota:1500, days:2, g:null, plan:null, assign:{}, err:null, token:0, must:[], drawing:null };
+  if(tkE && Array.isArray(tkE.must_areas)) d.must = tkE.must_areas.filter(a => Array.isArray(a) && a.length > 2);
   if(tkE) Object.assign(d, { flyers:tkE.flyers || 5000, hours:+tkE.work_hours || 7, quota:tkE.quota_m30 || 1500, days:tkE.work_days || 2, n:Math.max(1, edit.plans.length), nAuto:false });
   const sf = searchField('cSearch', t('searchAddr'), (c, q) => { d.place = c; if(q) q.value = c.name + (c.sub ? ', ' + c.sub : ''); setStart(c.lat, c.lng); }, { near:() => d.start ? [d.start.lat, d.start.lng] : null });
   shell('tasks', `<div id="fullMap" class="fullmap"></div>
     <div class="map-top"><button class="icon-btn" id="cBack" aria-label="${esc(t('back'))}">${ICONS.back}</button><div class="grow">${sf.html}</div></div>
     <button class="chip pick-btn" id="cPick" hidden></button>
+    <div class="draw-bar" id="cDraw" hidden><b>${esc(t('mustDrawHint'))}</b><span class="small" id="cDrawN"></span>
+      <div class="tool-row"><button class="btn ghost small" id="cDrawUndo">${esc(t('mustUndo'))}</button><button class="btn ghost small" id="cDrawCancel">${esc(t('cancel'))}</button><button class="btn primary small" id="cDrawOk">${esc(t('mustDone'))}</button></div></div>
     <div class="sheet" id="cSheet"></div>`, { map:true });
   sf.bind();
   $('#cBack').onclick = () => { d.token++; viewTasks(); };
   const m = makeMap($('#fullMap'), null, 13);
-  const zoneLayer = L.layerGroup().addTo(m), planLayer = L.layerGroup().addTo(m);
+  const zoneLayer = L.layerGroup().addTo(m), planLayer = L.layerGroup().addTo(m), mustLayer = L.layerGroup().addTo(m);
+  // mandatory areas: dashed orange outlines; while drawing, the corners tapped so far
+  const MUST_COLOR = '#EA580C';
+  const drawMust = () => {
+    mustLayer.clearLayers();
+    d.must.forEach((a, k) => { const pg = L.polygon(a, { color:MUST_COLOR, weight:3, dashArray:'8 6', fillOpacity:.12, interactive:false }).addTo(mustLayer);
+      L.marker(pg.getBounds().getCenter(), { icon:L.divIcon({ className:'', html:`<span class="must-tip">${esc(t('mustN', { n:k + 1 }))}</span>`, iconSize:null }), interactive:false, keyboard:false }).addTo(mustLayer); });
+    if(d.drawing){
+      if(d.drawing.length > 1) L.polygon(d.drawing, { color:MUST_COLOR, weight:2, dashArray:'4 4', fillOpacity:.08, interactive:false }).addTo(mustLayer);
+      d.drawing.forEach(q => L.circleMarker(q, { radius:6, color:'#fff', weight:2, fillColor:MUST_COLOR, fillOpacity:1, interactive:false }).addTo(mustLayer));
+    }
+  };
+  const drawMode = on => {
+    d.drawing = on ? [] : null;
+    $('#cDraw').hidden = !on; $('#cSheet').hidden = on; const mt = document.querySelector('.map-top'); if(mt) mt.hidden = on; const pk = $('#cPick'); if(pk && on) pk.hidden = true; else updPick();
+    m.getContainer().style.cursor = on ? 'crosshair' : '';
+    updDraw(); drawMust();
+  };
+  const updDraw = () => { const n = d.drawing ? d.drawing.length : 0; const el = $('#cDrawN'); if(el) el.textContent = t('mustCorners', { n }); const ok = $('#cDrawOk'); if(ok) ok.disabled = n < 3; };
+  $('#cDrawUndo').onclick = () => { if(d.drawing && d.drawing.length){ d.drawing.pop(); updDraw(); drawMust(); } };
+  $('#cDrawCancel').onclick = () => drawMode(false);
+  $('#cDrawOk').onclick = () => { if(!d.drawing || d.drawing.length < 3) return; d.must.push(d.drawing.map(q => [+q[0].toFixed(6), +q[1].toFixed(6)])); drawMode(false); recompute(); };
+  drawMust();
   // once a start point exists, a tap on the map does nothing (no accidental moves while looking at the routes);
   // the start is moved only through the "change start" button (then the next tap) or a new address search
   const updPick = () => {
@@ -484,6 +510,7 @@ function viewCreate(edit){
   };
   $('#cPick').onclick = () => { d.pick = !d.pick; updPick(); };
   m.on('click', e => {
+    if(d.drawing){ d.drawing.push([e.latlng.lat, e.latlng.lng]); updDraw(); drawMust(); return; }
     if(d.start && !d.pick) return;
     d.pick = false; d.place = null; const qi = $('#cSearch'); if(qi) qi.value = '';
     setStart(e.latlng.lat, e.latlng.lng, true);
@@ -517,7 +544,7 @@ function viewCreate(edit){
     L.marker([lat, lng], { icon:dot('pin-start', 26) }).addTo(zoneLayer); if(!fromClick) m.setView([lat, lng], 15, { animate:false });
     let pr = progress(tok, true); pr.stage('loadingArea');
     for(let attempt = 0; attempt < 2 && !d.loaded; attempt++){   // public map servers are sometimes busy: one automatic retry
-      try{ const r = await planEngine().run('load', { start:[lat, lng], flyers:d.flyers }, pr.stage); if(tok !== d.token) return pr.stop(); if(!r || !r.skipped) d.loaded = true; }
+      try{ const r = await planEngine().run('load', { start:[lat, lng], flyers:d.flyers, must:d.must }, pr.stage); if(tok !== d.token) return pr.stop(); if(!r || !r.skipped) d.loaded = true; }
       catch(e){ pr.stop(); if(tok !== d.token) return; d.err = errText2(e); if(attempt === 0){ pr = progress(tok, true); pr.stage('retrying'); await new Promise(r => setTimeout(r, 4000)); if(tok !== d.token){ pr.stop(); return; } } }
     }
     pr.stop();
@@ -530,7 +557,7 @@ function viewCreate(edit){
     if(!d.loaded){ renderSheet(); return; }
     const tok = ++d.token, pr = progress(tok, false);
     let res = null;
-    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours }, pr.stage); }
+    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, must:d.must }, pr.stage); }
     catch(e){ pr.stop(); if(tok !== d.token || !alive()) return; d.err = errText2(e); d.busy = false; toast(t('streetsFail', { e:d.err })); renderSheet(); return; }
     pr.stop();
     if(tok !== d.token || !alive() || !res || res.skipped) return;
@@ -541,7 +568,7 @@ function viewCreate(edit){
   function draw(){
     zoneLayer.clearLayers(); planLayer.clearLayers();
     if(d.plan.zone.length > 2) var z = L.polygon(d.plan.zone, { color:css('--brand'), weight:2, fillOpacity:.06, interactive:false }).addTo(zoneLayer);
-    L.marker(startArr(), { icon:dot('pin-start', 26) }).addTo(zoneLayer);
+    L.marker(startArr(), { icon:dot('pin-start', 26) }).addTo(zoneLayer); drawMust();
     d.plan.routes.forEach((r, i) => { if(r.path.length > 1) L.polyline(r.path, { color:Planner.COLORS[i % 10], weight:4, opacity:.85 }).addTo(planLayer); });
     if(z && !d.keepView) m.fitBounds(z.getBounds(), { paddingTopLeft:[24, 80], paddingBottomRight:[24, Math.round(innerHeight * .5)], maxZoom:17, animate:false });
   }
@@ -590,6 +617,11 @@ function viewCreate(edit){
       </div>
       ${p && d.sug && d.sug !== d.n ? `<div class="hint">${esc(t('sugWorkers', { n:d.sug, d:d.days }))} <button class="link" id="cSug">${esc(t('applySug'))}</button></div>` : ''}
       ${planBlock()}
+      <div class="must-box"><div class="sec-row" style="margin:0"><b>${esc(t('mustTitle'))}</b>${p && p.must_mb ? `<span class="small muted">${esc(t('mustMb', { mb:fmtN(p.must_mb) }))}</span>` : ''}</div>
+        <p class="small muted" style="margin:2px 0 8px">${esc(t('mustHint'))}</p>
+        ${p && p.must_mb > d.flyers ? `<div class="warnbox" style="margin:0 0 8px">${esc(t('mustTooMany', { mb:fmtN(p.must_mb), f:fmtN(d.flyers) }))}</div>` : ''}
+        ${d.must.map((a, k) => `<div class="sec-row" style="margin:4px 0"><span><i class="must-dot"></i>${esc(t('mustN', { n:k + 1 }))}</span><button class="link danger-text" data-mrm="${k}">${esc(t('del'))}</button></div>`).join('')}
+        <button class="btn ghost small" id="cMustAdd" ${d.start ? '' : 'disabled'}>${ICONS.plus}${esc(t('mustAdd'))}</button></div>
       ${p ? p.routes.map((r, i) => routeRow(r, i, false)).join('') : ''}`;
     else if(d.step === 3) body = `
       <div class="steppers"><div><label class="f" for="cDate">${esc(t('startDate'))}</label><input class="in" type="date" id="cDate"></div><div><label class="f" for="cHours">${esc(t('hoursDay'))}</label><input class="in" type="number" id="cHours" min="1" max="12" step="0.5" value="${d.hours}"></div></div>
@@ -607,6 +639,7 @@ function viewCreate(edit){
         <div><span>${esc(t('dist2'))}</span><b>${esc(km)} · ${esc(fmtHm(p ? p.routes.reduce((s, r) => s + r.minutes, 0) : 0))} ${esc(t('h'))}</b></div>
         <div><span>${esc(t('startDate'))}</span><b>${esc(saved.date ? fmtDay(saved.date) : t('noDate'))} · ${esc(String(d.hours).replace('.', ','))} ${esc(t('h'))}/${esc(t('dayShort'))}</b></div>
         <div><span>${esc(t('quota'))}</span><b>${esc(fmtN(+saved.quota || 1500))} m / 30 ${esc(t('min'))}</b></div>
+        ${d.must.length ? `<div><span>${esc(t('mustTitle'))}</span><b>${esc(t('mustSum', { n:d.must.length, mb:fmtN((p && p.must_mb) || 0) }))}</b></div>` : ''}
         ${saved.notes ? `<div><span>${esc(t('note'))}</span><b>${esc(saved.notes)}</b></div>` : ''}
       </div>
       ${p && !cap.ok ? `<div class="warnbox">${esc(t('tooBig', { h:cap.slowest.toFixed(1).replace('.', ','), lim:cap.limit, d:d.days }))}</div>` : ''}<div class="err" id="cErr"></div>`;
@@ -638,6 +671,8 @@ function viewCreate(edit){
     const red = $('#cReduce'); if(red) red.onclick = () => { saved = keep(); d.flyers = Math.max(100, cap.suggestedFlyers); d.nAuto = false; recompute(); };
     document.querySelectorAll('[data-r]').forEach(s => s.onchange = () => { d.assign[+s.dataset.r] = s.value || null; });
     if($('#cSave')) $('#cSave').onclick = save;
+    if($('#cMustAdd')) $('#cMustAdd').onclick = () => drawMode(true);
+    document.querySelectorAll('[data-mrm]').forEach(b => b.onclick = () => { d.must.splice(+b.dataset.mrm, 1); drawMust(); recompute(); });
   }
   async function save(){
     if(d.busy || !d.plan) return;   // a recalculation is running: the plan on screen is not the final one yet
@@ -647,7 +682,7 @@ function viewCreate(edit){
     try{
       const pl = d.plan, quota = Math.max(200, Math.round(+saved.quota || 1500)), date = saved.date || null;
       const row = { title, city_name:(d.place && d.place.city) || (tkE && tkE.city_name) || null, district:(d.place && d.place.district) || (tkE && tkE.district) || null, start_lat:d.start.lat, start_lng:d.start.lng,
-        walk_minutes:15, zone_polygon:pl.zone, work_date:date, notes:(saved.notes || '').trim() || null, street_m:d.streetM || null,
+        walk_minutes:15, zone_polygon:pl.zone, must_areas:d.must.length ? d.must : null, work_date:date, notes:(saved.notes || '').trim() || null, street_m:d.streetM || null,
         flyers:d.flyers, quota_m30:quota, work_days:d.days, work_hours:d.hours, est_mailboxes:pl.mailboxes, route_m:pl.routes.reduce((s, r) => s + r.length_m, 0) };
       let tk;
       if(tkE){
@@ -736,6 +771,7 @@ async function viewTask(id){
   const m = makeMap($('#tMap'), [tk.start_lat, tk.start_lng], 14);
   let b = L.latLngBounds([[tk.start_lat, tk.start_lng]]);
   if(tk.zone_polygon){ const z = L.polygon(tk.zone_polygon, { color:css('--brand'), weight:2, fillOpacity:.06, interactive:false }).addTo(m); b = z.getBounds(); }
+  (tk.must_areas || []).forEach(a => L.polygon(a, { color:'#EA580C', weight:2, dashArray:'8 6', fillOpacity:.1, interactive:false }).addTo(m));
   (plans || []).forEach(p => { if(p.path?.length > 1) L.polyline(p.path, { color:p.color || '#2563EB', weight:4, opacity:.6 }).addTo(m); });
   const doneLayer = L.layerGroup().addTo(m);
   L.marker([tk.start_lat, tk.start_lng], { icon:dot('pin-start', 24) }).addTo(m);
