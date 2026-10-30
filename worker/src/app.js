@@ -2,6 +2,7 @@ import { t, I } from './i18n.js';
 import './i18n2.js';
 import './i18n3.js';
 import './i18n4.js';
+import './i18n5.js';
 import { store } from './core.js';
 import { UI, applyTheme, initOffline } from './ui.js';
 import { W, bootWorker, workerTab, acceptToken } from './worker.js';
@@ -38,6 +39,8 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener && matchMedia('(pref
   initOffline();
   I.lang = await store.get('lang') || 'de';          // German by default
   document.documentElement.lang = I.lang;
+  // invitation link of a company: …/app/?firma=CODE → remembered for the registration
+  try{ const c = new URL(location.href).searchParams.get('firma'); if(c){ await store.set('joinCode', c); history.replaceState(null, '', location.pathname); } }catch{}
   const role = await store.get('role');
   if(role === 'admin' && await bootAdmin()) return;
   if(role !== 'admin' && await bootWorker()) return;

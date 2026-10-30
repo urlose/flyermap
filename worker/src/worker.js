@@ -4,6 +4,7 @@ import { App } from '@capacitor/app';
 import Planner from '../../admin/planner.js';
 import { makeNav, dayProgress } from './nav.js';
 import { locationNote, legalLinks, bindLegal } from './legalview.js';
+import { setLegalFirm } from './legal.js';
 import { t, I } from './i18n.js';
 import { NATIVE, PRIVACY_URL, store, rpc, errText, $, esc, css, hav, fmtDist, fmtHm, fmtN, fmtTime, fmtDay, loopPath } from './core.js';
 import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, fit, modal, confirmBox, toast, cityPicker, langSwitch, themeSwitch, statusPill, emptyState, avatar, every } from './ui.js';
@@ -48,7 +49,7 @@ export async function flush(){
 setInterval(flush, 8000);
 
 export async function loadMe(){
-  try{ W.me = await rpc('worker_me', { p_token:W.token }); await store.set('me', W.me); }
+  try{ W.me = await rpc('worker_me', { p_token:W.token }); await store.set('me', W.me); setLegalFirm(W.me && W.me.company); }
   catch(e){ if(e.message === 'invalid_token') return forceLogout(t('e_invalid_token')); W.me = W.me || await store.get('me'); }
 }
 export async function forceLogout(msg){
@@ -463,14 +464,15 @@ function viewProfile(){
   const cp = cityPicker(me.cities || []);
   shell('people', `${topbar(t('tabProfile'))}
     <div class="pad">
-      <div class="person-row big">${avatar(me.name)}<div><b>${esc(me.name || '')}</b><span>${esc(me.phone || '')}</span></div></div>
+      <div class="person-row big">${avatar(me.name)}<div><b>${esc(me.name || '')}</b><span>${esc(me.phone || '')}</span>${me.company && me.company.name && !/^\[/.test(me.company.name) ? `<span>${esc(t('myFirm'))}: ${esc(me.company.name)}</span>` : ''}</div></div>
       <div class="card" style="display:block;margin-top:16px">
         <label class="f" for="pName" style="margin-top:0">${esc(t('name'))}</label><input class="in" id="pName" value="${esc(me.name)}" autocomplete="name">
         <label class="f">${esc(t('cities'))}</label>${cp.html}
         <button class="btn primary" id="pSave" style="margin-top:16px">${esc(t('save'))}</button><div class="err" id="pErr" role="alert"></div>
       </div>
       <h2 class="sec">${esc(t('settings'))}</h2>
-      <div class="card" style="display:block">${themeSwitch(W.theme)}${langSwitch(I.lang, true)}</div>
+      <div class="card" style="display:block">${themeSwitch(W.theme)}${langSwitch(I.lang, true)}
+        <label class="check"><input type="checkbox" id="pOffers" ${me.offers_ok ? 'checked' : ''}><span>${esc(t('offersOptIn'))}<br><small class="muted">${esc(t('offersOptInSub'))}</small></span></label></div>
       ${W.canAdmin ? `<button class="btn ghost" id="pAdmin">${ICONS.users}${esc(t('switchToAdmin'))}</button>` : ''}
       <h2 class="sec">${esc(t('account'))}</h2>
       <button class="btn ghost" id="pOut">${esc(t('logout'))}</button>
@@ -478,6 +480,7 @@ function viewProfile(){
       ${legalLinks()}
     </div>`);
   cp.bind(); bindLegal(viewProfile);
+  $('#pOffers').onchange = async e => { const on = e.target.checked; try{ await rpc('set_offers', { p_token:W.token, p_on:on }); if(W.me) W.me.offers_ok = on; await store.set('me', W.me); toast(t('saved')); }catch(err){ e.target.checked = !on; toast(errText(err)); } };
   store.get('theme').then(v => { W.theme = v; document.querySelectorAll('[data-theme-set]').forEach(b => { const on = b.dataset.themeSet === (v || 'system'); b.classList.toggle('on', on); b.setAttribute('aria-checked', on); }); });
   $('#pSave').onclick = async () => {
     if(!cp.get().length){ $('#pErr').textContent = t('e_city_required'); return; }
@@ -496,7 +499,7 @@ export async function acceptToken(token){ W.token = token; await store.set('toke
 
 /* ================= boot ================= */
 export async function bootWorker(){
-  W.token = await store.get('token'); W.me = await store.get('me'); W.canAdmin = !!(await store.get('canAdmin'));
+  W.token = await store.get('token'); W.me = await store.get('me'); setLegalFirm(W.me && W.me.company); W.canAdmin = !!(await store.get('canAdmin'));
   W.route = await store.get('route'); W.queue = await store.get('queue') || []; W.track = await store.get('track') || [];
   if(!W.token) return false;
   UI.role = 'worker'; UI.onTab = workerTab;

@@ -6,6 +6,8 @@ import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, labelIcon, fit
 import { legalLinks, bindLegal } from './legalview.js';
 import { makePlanEngine } from './planengine.js';
 import { openMapView } from './routeview.js';
+import { loadFirm, firmCardHtml, bindFirmCard, firmComplete, avvOk } from './firm.js';
+import { viewMaster, poolHtml } from './master.js';
 
 const GREEN = '#16A34A';
 // finished map-data answers are shared through our own server (edge function 'osm'): same area = instant for every admin
@@ -24,7 +26,7 @@ export const A = { user:null, workers:[], tasks:[], live:[], demo:null, hooks:{}
 async function loadWorkers(){ const { data, error } = await sb.from('workers').select('id,name,phone,cities,zone_minutes,notes,last_lat,last_lng,last_seen,active_route_id,created_at').order('name'); if(error) throw error; A.workers = data; }
 async function loadTasks(){ const { data, error } = await sb.from('tasks').select('*,task_workers(worker_id)').order('created_at', { ascending:false }); if(error) throw error; A.tasks = data; }
 async function loadLive(){ const { data } = await sb.from('routes').select('id,worker_id,task_id,plan_id,paused_at,last30_m,started_at,break_s').is('ended_at', null); A.live = data || []; }
-async function loadAll(){ await Promise.all([loadWorkers(), loadTasks()]); }
+async function loadAll(){ await Promise.all([loadWorkers(), loadTasks(), loadFirm().then(c => { A.company = c; }).catch(() => {})]); }
 async function fetchPoints(routeId){
   let all = [], from = 0;
   for(;;){ const { data, error } = await sb.from('route_points').select('t,lat,lng').eq('route_id', routeId).order('t').range(from, from + 999); if(error) throw error; all = all.concat(data); if(data.length < 1000) break; from += 1000; }
@@ -216,6 +218,9 @@ async function viewPeople(){
       <div id="dFilter"></div>
       <div class="sec-row"><h2>${esc(t('workersN', { n:A.workers.length }))}</h2></div>
       <div id="wList"></div>
+      ${A.company && A.company.id ? `<details class="filters" id="poolBox"><summary>${ICONS.users}${esc(t('poolTitle'))}</summary><div class="f-body" id="poolList"><p class="muted small">${esc(t('loadingShort'))}</p></div></details>` : ''}
+      ${A.company && A.company.master ? `<button class="btn primary" id="tMaster" style="margin-top:16px">${ICONS.users}${esc(t('master'))}</button>` : ''}
+      ${A.company && A.company.id ? firmCardHtml(A.company) : ''}
       <h2 class="sec">${esc(t('accountSettings'))}</h2>
       <div class="card" style="display:block">
         <div class="person-row" style="padding-top:0">${avatar()}<div><b>${esc(A.user?.phone ? '+' + A.user.phone.replace(/^\+/, '') : (A.user?.email || ''))}</b><span>${esc(t('admin'))}</span></div></div>
@@ -228,6 +233,10 @@ async function viewPeople(){
     </div>`);
   store.get('theme').then(v => { A.theme = v; document.querySelectorAll('[data-theme-set]').forEach(b => { const on = b.dataset.themeSet === (v || 'system'); b.classList.toggle('on', on); b.setAttribute('aria-checked', on); }); });
   sf.bind(); bindLegal(viewPeople);
+  if(A.company && A.company.id) bindFirmCard(A.company, c => { A.company = { ...c, master:A.company.master }; viewPeople(); });
+  if($('#tMaster')) $('#tMaster').onclick = () => viewMaster(viewPeople);
+  if($('#poolBox')) $('#poolBox').addEventListener('toggle', async () => { if($('#poolBox').open && !$('#poolBox').dataset.done){ $('#poolBox').dataset.done = 1; $('#poolList').innerHTML = await poolHtml(); } });
+  if(A.focusFirm){ A.focusFirm = false; const fc = $('#firmCard'); if(fc) fc.scrollIntoView({ block:'center' }); }
   let days = [];   // all working days (newest first), loaded below
   const render = () => {
     const places = [...new Set(days.map(r => r.place).filter(Boolean))].sort(); if(f.place && !places.includes(f.place)) f.place = '';
@@ -413,8 +422,10 @@ function viewTasks(){
   const f = A.filter, list = A.tasks.filter(taskMatches);
   const nOpen = A.tasks.filter(x => x.status === 'open').length, nLive = A.tasks.filter(taskLive).length, nDone = A.tasks.length - nOpen;
   const nf = ['city', 'district', 'from', 'to'].filter(k => f[k]).length;
+  const firmTodo = A.company && A.company.id && (!firmComplete(A.company) || !avvOk(A.company));
   shell('tasks', `${topbar(t('tasks'))}
     <div class="pad">
+      ${firmTodo ? `<button class="warnbox firm-todo" id="firmTodo">${esc(!firmComplete(A.company) ? t('firmMissing') : t('firmAvvMissing'))} ›</button>` : ''}
       <div class="kpis"><div class="kpi k-info"><b>${nOpen}</b><span>${esc(t('fOpen'))}</span></div><div class="kpi k-ok"><b>${nLive}</b><span>${esc(t('stLive'))}</span></div><div class="kpi k-neutral"><b>${nDone}</b><span>${esc(t('fDone'))}</span></div></div>
       <div class="chips" style="margin:0 0 10px">${[['open', t('fOpen')], ['live', t('stLive')], ['done', t('fDone')], ['all', t('fAll')]].map(([k, l]) => `<button class="chip ${f.status === k ? 'on' : ''}" data-st="${k}" aria-pressed="${f.status === k}">${esc(l)}</button>`).join('')}</div>
       <details class="filters" ${nf ? 'open' : ''}><summary>${ICONS.search}${esc(t('filter'))}${nf ? `<span class="cnt">${nf}</span>` : ''}</summary><div class="f-body">
@@ -425,6 +436,7 @@ function viewTasks(){
     </div>`, { fab:t('createTask') });
   $('#fab').onclick = () => viewCreate();
   if($('#create')) $('#create').onclick = () => viewCreate();
+  if($('#firmTodo')) $('#firmTodo').onclick = () => { A.focusFirm = true; adminTab('people'); };
   const again = () => viewTasks();
   document.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { f.status = b.dataset.st; again(); });
   $('#fCity').onchange = e => { f.city = e.target.value; again(); }; $('#fDist').onchange = e => { f.district = e.target.value; again(); };
@@ -760,7 +772,7 @@ async function openAsWorker(){
   mo.querySelectorAll('[data-w]').forEach(b => b.onclick = () => enter(tw[+b.dataset.w].token));
   mo.querySelector('#oNew').onclick = async () => {
     const n = (tw || []).length + 1;
-    const { data, error } = await sb.from('workers').insert({ name:t('testWorkerName') + (n > 1 ? ' ' + n : ''), phone:DEMO_PHONE + 'T' + n + Date.now().toString().slice(-4), cities:[{ name:'Düsseldorf', lat:51.2277, lng:6.7735 }], zone_minutes:60, pin_hash:'demo', notes:'Demo' }).select('id,token').single();
+    const { data, error } = await sb.from('workers').insert({ name:t('testWorkerName') + (n > 1 ? ' ' + n : ''), phone:DEMO_PHONE + 'T' + n + Date.now().toString().slice(-4) + demoSuffix(), cities:[{ name:'Düsseldorf', lat:51.2277, lng:6.7735 }], zone_minutes:60, pin_hash:'demo', notes:'Demo' }).select('id,token').single();
     if(error){ mo.querySelector('#oErr').textContent = error.message; return; }
     await loadWorkers(); enter(data.token);
   };
@@ -768,6 +780,7 @@ async function openAsWorker(){
 
 /* ---------- DEMO (pitch) ---------- */
 const DEMO_PHONE = '+4900000000';
+const demoSuffix = () => (A.company && A.company.id ? '.' + A.company.id.slice(0, 6) : '');
 const DEMO_WORKERS = [['Lena Becker (Demo)', 'Düsseldorf', 51.2277, 6.7735, 60], ['Murat Yılmaz (Demo)', 'Düsseldorf', 51.2277, 6.7735, 45], ['Anna Kowalski (Demo)', 'Neuss', 51.2042, 6.6879, 60], ['Jonas Weber (Demo)', 'Köln', 50.9375, 6.9603, 60], ['Sara Haddad (Demo)', 'Essen', 51.4556, 7.0116, 90], ['Tim Schulz (Demo)', 'Duisburg', 51.4344, 6.7623, 30]];
 const DEMO_TASK = { title:'Düsseldorf Bilk (Demo)', city:'Düsseldorf', district:'Bilk', lat:51.20655, lng:6.77655, flyers:1500, notes:{ de:'1.500 Flyer der Pizzeria „Da Mario". Abholen am Eingang der Bilk Arcaden.', ru:'1500 флаеров пиццерии «Da Mario». Забрать у входа в Bilk Arcaden.' } };
 async function demoRows(){ const { data, error } = await sb.from('workers').select('id,name,token').like('phone', DEMO_PHONE + '%').order('phone'); if(error) throw error; return data; }
@@ -792,7 +805,7 @@ function demoSheet(){
 async function demoCreate(msg){
   if((await demoRows()).length){ msg(t('demoExists')); return; }
   msg(t('demoWorking'));
-  const { error:e1 } = await sb.from('workers').insert(DEMO_WORKERS.map((w, i) => ({ name:w[0], phone:DEMO_PHONE + (i + 1), cities:[{ name:w[1], lat:w[2], lng:w[3] }], zone_minutes:w[4], pin_hash:'demo', notes:'Demo' })));
+  const { error:e1 } = await sb.from('workers').insert(DEMO_WORKERS.map((w, i) => ({ name:w[0], phone:DEMO_PHONE + (i + 1) + demoSuffix(), cities:[{ name:w[1], lat:w[2], lng:w[3] }], zone_minutes:w[4], pin_hash:'demo', notes:'Demo' })));
   if(e1) throw e1;
   const rows = await demoRows();
   const start = [DEMO_TASK.lat, DEMO_TASK.lng];
@@ -869,6 +882,7 @@ export async function bootAdmin(){
   A.user = session.user; UI.role = 'admin'; UI.onTab = adminTab;
   await store.set('role', 'admin');
   try{ await loadAll(); }catch{}
-  adminTab('tasks');
+  if(A.company && A.company.master && !A.company.id){ adminTab('people'); viewMaster(() => adminTab('people')); }
+  else adminTab('tasks');
   return true;
 }

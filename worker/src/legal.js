@@ -2,43 +2,60 @@
 // One source for the in-app screens and for the hosted pages (privacy.html / impressum.html, built by scripts/legal-pages.mjs;
 // the stores need a public privacy URL). Pure data + HTML strings, no DOM.
 //
-// >>> Fill in OPERATOR before going live. If the app is operated by a company (it pays the distributors), the company is the
-// >>> controller: put its name, address and contact here, and the developer becomes its processor (AVV between them).
+// Roles: every company that uses FlyerMap is the controller for its distributors' data (it assigns the work and sees the
+// GPS data). Its details are entered at company registration and shown here (LEGAL_CTX.firm). The provider of the software
+// is the company's processor (AVV, Art. 28 GDPR): PROVIDER below.
+// >>> Fill in PROVIDER before going live (placeholders in [brackets] are shown as such / hide the Impressum).
 
-export const OPERATOR = {
-  name:'Asadulloh Orifi',
-  company:'',                                   // e.g. 'Muster Werbeverteilung GmbH' (then also register court / number, managing director)
+export const PROVIDER = {
+  name:'[Name des Anbieters]',
   street:'[Straße und Hausnummer]',
-  city:'[PLZ] Düsseldorf',
+  city:'[PLZ Ort]',
   country:'Deutschland',
-  email:'asadorifi@gmail.com',
-  phone:'',                                     // a second quick way of contact (phone) is expected in the Impressum
-  vatId:'',                                     // USt-IdNr., if there is one
-  register:'',                                  // e.g. 'Amtsgericht Düsseldorf, HRB 12345'
-  representative:'',                            // managing director for a company
+  email:'[E-Mail]',
+  phone:'',
+  vatId:'',
 };
-// closed beta: no public offer, so no Impressum yet. It appears (in the app and as impressum.html) once the address is filled in.
+export const OPERATOR = PROVIDER;   // old name, kept for imports
+// the company of the person looking at the text (set by the app once known)
+export const LEGAL_CTX = { firm:null };
+export const setLegalFirm = f => { LEGAL_CTX.firm = f && isSet(f.name) ? f : null; };
+// closed beta: no public offer, so no Impressum yet. It appears (in the app and as impressum.html) once the provider address is filled in.
 const isSet = v => !!v && !/^\[/.test(String(v).trim());
-export const IMPRINT_READY = isSet(OPERATOR.street) && isSet(OPERATOR.city);
-export const PRIVACY_VERSION = '2026-10-28b';    // bump when the text changes in substance: workers then see the location note again
-export const PRIVACY_DATE = { de:'28. Oktober 2026', ru:'28 октября 2026', en:'28 October 2026' };
+export const IMPRINT_READY = isSet(PROVIDER.street) && isSet(PROVIDER.city);
+export const PRIVACY_VERSION = '2026-10-30b';      // bump when the text changes in substance: workers then see the location note again
+export const PRIVACY_DATE = { de:'30. Oktober 2026', ru:'30 октября 2026', en:'30 October 2026' };
 export const RETENTION = { trackMonths:6, positionHours:12, inboxMonths:6 };
+export const AVV_VERSION = 'AVV-2026-10-30';      // must match avv_current() in the database
 
 const e = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
-const op = () => OPERATOR;
+const op = () => PROVIDER;
+const provLine = () => { const o = PROVIDER; return [o.name, o.street, o.city].map(e).join(', ') + (isSet(o.email) ? ', ' + e(o.email) : ''); };
 const opBlock = () => {
   const o = op();
-  return [o.company || o.name, o.company ? (o.representative ? 'vertreten durch ' + o.representative : '') : '', isSet(o.street) ? o.street : '', isSet(o.city) ? o.city : 'Düsseldorf', o.country].filter(Boolean).map(e).join('<br>')
-    + '<br>E-Mail: <a href="mailto:' + e(o.email) + '">' + e(o.email) + '</a>' + (o.phone ? '<br>Telefon: ' + e(o.phone) : '');
+  return [o.name, o.street, o.city, o.country].map(e).join('<br>') + '<br>E-Mail: ' + (isSet(o.email) ? '<a href="mailto:' + e(o.email) + '">' + e(o.email) + '</a>' : e(o.email)) + (o.phone ? '<br>Telefon: ' + e(o.phone) : '');
+};
+const firmLines = (f, rep) => [f.name, f.representative ? rep + ' ' + f.representative : '', f.street, [f.zip, f.city].filter(Boolean).join(' ')].filter(Boolean).map(e).join('<br>')
+  + (f.email ? '<br>E-Mail: <a href="mailto:' + e(f.email) + '">' + e(f.email) + '</a>' : '') + (f.phone ? '<br>Telefon: ' + e(f.phone) : '');
+const CTRL = {
+  de:() => { const f = LEGAL_CTX.firm; return (f ? `<p>${firmLines(f, 'vertreten durch')}</p>${f.dpo ? `<p>Datenschutzbeauftragte/r: ${e(f.dpo)}</p>` : ''}`
+      : '<p>Verantwortlich ist das Unternehmen, für das du Flyer verteilst und bei dem du in FlyerMap registriert bist. Seinen Namen und seine Anschrift siehst du in der App unter Profil → Datenschutz.</p>')
+    + `<p>Die Software FlyerMap stellt ${provLine()} bereit. Der Anbieter verarbeitet die Daten nur im Auftrag und nach Weisung des Unternehmens (Auftragsverarbeitung nach Art. 28 DSGVO).</p>`; },
+  ru:() => { const f = LEGAL_CTX.firm; return (f ? `<p>${firmLines(f, 'в лице')}</p>${f.dpo ? `<p>Уполномоченный по защите данных: ${e(f.dpo)}</p>` : ''}`
+      : '<p>Ответственный — фирма, для которой вы раздаёте флаеры и в которой вы зарегистрированы в FlyerMap. Её название и адрес видны в приложении: Профиль → Политика конфиденциальности.</p>')
+    + `<p>Программу FlyerMap предоставляет ${provLine()}. Поставщик обрабатывает данные только по поручению и указаниям фирмы (ст. 28 GDPR).</p>`; },
+  en:() => { const f = LEGAL_CTX.firm; return (f ? `<p>${firmLines(f, 'represented by')}</p>${f.dpo ? `<p>Data protection officer: ${e(f.dpo)}</p>` : ''}`
+      : '<p>The controller is the company you distribute flyers for and with which you are registered in FlyerMap. Its name and address are shown in the app under Profile → Privacy.</p>')
+    + `<p>The FlyerMap software is provided by ${provLine()}, who processes the data only on behalf of and as instructed by the company (processor, Art. 28 GDPR).</p>`; },
 };
 
 /* ---------------- Datenschutzerklärung ---------------- */
 const PRIVACY = {
   de:() => `
 <h2>1. Verantwortlicher</h2>
-<p>${opBlock()}</p>
+${CTRL.de()}
 <h2>2. Wofür ist die App?</h2>
-<p>FlyerMap ist eine interne App für Personen, die für uns Flyer verteilen, und für unsere Disponenten (Administratoren). Die App plant Verteilgebiete und Laufrouten, teilt Aufträge zu und zeichnet während eines Arbeitstags die gelaufene Strecke auf, damit die Verteilung organisiert, abgerechnet und gegenüber unseren Auftraggebern nachgewiesen werden kann.</p>
+<p>FlyerMap ist eine App, mit der das Unternehmen die Verteilung von Flyern organisiert: für die Personen, die für das Unternehmen Flyer verteilen, und für seine Disponenten (Administratoren). Die App plant Verteilgebiete und Laufrouten, teilt Aufträge zu und zeichnet während eines Arbeitstags die gelaufene Strecke auf, damit die Verteilung organisiert, abgerechnet und gegenüber den Kunden des Unternehmens nachgewiesen werden kann.</p>
 <h2>3. Welche Daten wir verarbeiten</h2>
 <ul>
 <li><b>Konto:</b> Telefonnummer (Anmeldung per SMS-Code), Name, Städte, in denen du arbeiten kannst. Bei Administratoren: Telefonnummer oder E-Mail-Adresse.</li>
@@ -52,12 +69,13 @@ const PRIVACY = {
 <h2>4. Zwecke und Rechtsgrundlagen</h2>
 <ul>
 <li>Einteilung, Durchführung und Vergütung der Verteilarbeit (Konto, Aufträge, Arbeitszeiten): Art. 6 Abs. 1 lit. b DSGVO (Durchführung der Zusammenarbeit bzw. des Arbeits- oder Auftragsverhältnisses).</li>
-<li>Aufzeichnung der Route während des Arbeitstags, Live-Position für die Disposition und Nachweis der Verteilung gegenüber Auftraggebern: Art. 6 Abs. 1 lit. b und lit. f DSGVO. Unser berechtigtes Interesse ist der Nachweis der vereinbarten Leistung gegenüber Auftraggebern und eine sichere Disposition. Wir zeichnen nur während der Arbeitszeit auf und löschen die Spur nach ${RETENTION.trackMonths} Monaten.</li>
+<li>Aufzeichnung der Route während des Arbeitstags, Live-Position für die Disposition und Nachweis der Verteilung gegenüber Auftraggebern: Art. 6 Abs. 1 lit. b und lit. f DSGVO. Das berechtigte Interesse des Unternehmens ist der Nachweis der vereinbarten Leistung gegenüber seinen Kunden und eine sichere Disposition. Aufgezeichnet wird nur während der Arbeitszeit; die Spur wird nach ${RETENTION.trackMonths} Monaten gelöscht.</li>
 <li>Aufbewahrung der Übersicht der Arbeitstage, soweit sie für die Abrechnung nötig ist: Art. 6 Abs. 1 lit. c DSGVO (steuer- und handelsrechtliche Aufbewahrungspflichten).</li>
 </ul>
 <p>Ohne Zugriff auf den Standort kann ein Arbeitstag nicht erfasst werden. Den Zugriff kannst du jederzeit in den Einstellungen deines Telefons entziehen.</p>
 <h2>5. Empfänger und Dienstleister</h2>
 <ul>
+<li><b>Anbieter der Software</b> (siehe Abschnitt 1): Betrieb von FlyerMap als Auftragsverarbeiter des Unternehmens.</li>
 <li><b>Supabase</b> (Supabase Inc., USA; Server in Frankfurt am Main, EU): Datenbank, Anmeldung, Speicherung aller oben genannten Daten. Auftragsverarbeitung nach Art. 28 DSGVO; für einen möglichen Zugriff aus den USA gelten EU-Standardvertragsklauseln.</li>
 <li><b>SMS-Versand der Anmeldecodes</b> (z. B. Twilio Inc., USA): erhält deine Telefonnummer und den Code. Auftragsverarbeitung; Übermittlung in die USA auf Grundlage des EU-US Data Privacy Framework bzw. von Standardvertragsklauseln.</li>
 <li><b>GitHub Pages</b> (GitHub Inc., USA): liefert die Web-Version der App und diese Seite aus (IP-Adresse in Server-Protokollen).</li>
@@ -65,7 +83,7 @@ const PRIVACY = {
 <li><b>Adresssuche und Ortsbestimmung:</b> Photon (komoot GmbH, Deutschland). Für die Übersicht der Arbeitstage wird für Tage ohne Auftrag der erste Punkt der Route einmal an Photon gesendet, um den Ortsnamen zu bestimmen; dabei werden keine Namen oder Telefonnummern übermittelt.</li>
 <li><b>Navigation:</b> Nur wenn du „Navigation" oder „Weg zum Startpunkt" tippst, öffnet sich Google Maps oder Apple Karten mit dem Ziel; dort gelten deren Datenschutzbestimmungen.</li>
 </ul>
-<p>Innerhalb von FlyerMap sehen nur die Administratoren deine Daten. Andere Verteiler sehen weder deine Position noch deine Arbeitstage. Verteiler, die demselben Auftrag zugeteilt sind, sehen auf der Karte, welche Straßen dieses Auftrags schon verteilt sind – ohne Namen und ohne Uhrzeiten, damit niemand doppelt läuft.</p>
+<p>Innerhalb von FlyerMap sehen nur die Administratoren deines Unternehmens deine Daten; andere Unternehmen, die FlyerMap nutzen, sehen sie nicht. <b>Ausnahme mit deiner Einwilligung:</b> Schaltest du „Jobangebote von anderen Firmen“ ein (bei der Registrierung oder im Profil; Art. 6 Abs. 1 lit. a DSGVO), sehen Administratoren anderer Firmen in FlyerMap deinen Namen, deine Städte und deine Telefonnummer, um dir Arbeit anzubieten – keine Standorte und keine Arbeitstage. Verantwortlich dafür ist der Anbieter von FlyerMap; du kannst die Einwilligung jederzeit im Profil widerrufen. Die Betreuer des Anbieters (Master-Admins) sehen zur Betreuung und Fehlerbehebung die Stammdaten aller Firmen (Firmenangaben; Name, Telefonnummer und Städte der Verteiler), aber keine Standorte. Andere Verteiler sehen weder deine Position noch deine Arbeitstage. Verteiler, die demselben Auftrag zugeteilt sind, sehen auf der Karte, welche Straßen dieses Auftrags schon verteilt sind – ohne Namen und ohne Uhrzeiten, damit niemand doppelt läuft.</p>
 <h2>6. Speicherdauer</h2>
 <ul>
 <li>GPS-Punkte einer Route: ${RETENTION.trackMonths} Monate nach dem Arbeitstag, danach automatisch gelöscht. Die Übersicht des Tages (Datum, Zeiten, Ort, Strecke) bleibt.</li>
@@ -75,7 +93,7 @@ const PRIVACY = {
 </ul>
 <p>„Konto löschen" in der App entfernt sofort dein Konto mit allen Routen, GPS-Punkten und Arbeitstagen.</p>
 <h2>7. Deine Rechte</h2>
-<p>Du hast das Recht auf Auskunft (Art. 15 DSGVO), Berichtigung (Art. 16), Löschung (Art. 17), Einschränkung der Verarbeitung (Art. 18) und Datenübertragbarkeit (Art. 20). Soweit wir uns auf berechtigte Interessen stützen, kannst du aus Gründen, die sich aus deiner besonderen Situation ergeben, <b>widersprechen</b> (Art. 21). Schreib dazu an die oben genannte E-Mail-Adresse.</p>
+<p>Du hast das Recht auf Auskunft (Art. 15 DSGVO), Berichtigung (Art. 16), Löschung (Art. 17), Einschränkung der Verarbeitung (Art. 18) und Datenübertragbarkeit (Art. 20). Soweit wir uns auf berechtigte Interessen stützen, kannst du aus Gründen, die sich aus deiner besonderen Situation ergeben, <b>widersprechen</b> (Art. 21). Schreib dazu an das Unternehmen (Abschnitt 1).</p>
 <p>Du kannst dich außerdem bei einer Datenschutz-Aufsichtsbehörde beschweren, z. B. bei der Landesbeauftragten für Datenschutz und Informationsfreiheit Nordrhein-Westfalen (LDI NRW), Kavalleriestraße 2–4, 40213 Düsseldorf.</p>
 <h2>8. Änderungen</h2>
 <p>Wenn sich diese Erklärung wesentlich ändert, zeigt dir die App den Hinweis zur Standortaufzeichnung vor dem nächsten Arbeitstag erneut an.</p>`,
@@ -83,9 +101,9 @@ const PRIVACY = {
   ru:() => `
 <p class="muted">Перевод для удобства. Юридически действует немецкая версия.</p>
 <h2>1. Ответственный</h2>
-<p>${opBlock()}</p>
+${CTRL.ru()}
 <h2>2. Для чего приложение</h2>
-<p>FlyerMap — внутреннее приложение для людей, которые раздают для нас флаеры, и для наших диспетчеров (администраторов). Оно планирует зоны и маршруты, распределяет заказы и во время рабочего дня записывает пройденный путь, чтобы организовать и оплатить раздачу и подтвердить её перед заказчиками.</p>
+<p>FlyerMap — приложение, с помощью которого фирма организует раздачу флаеров: для людей, которые раздают флаеры для фирмы, и для её диспетчеров (администраторов). Оно планирует зоны и маршруты, распределяет заказы и во время рабочего дня записывает пройденный путь, чтобы организовать и оплатить раздачу и подтвердить её перед клиентами фирмы.</p>
 <h2>3. Какие данные мы обрабатываем</h2>
 <ul>
 <li><b>Аккаунт:</b> номер телефона (вход по SMS-коду), имя, города, где вы можете работать. У администраторов — телефон или email.</li>
@@ -99,12 +117,13 @@ const PRIVACY = {
 <h2>4. Цели и правовые основания</h2>
 <ul>
 <li>Распределение, выполнение и оплата работы (аккаунт, заказы, время работы): ст. 6 п. 1 b GDPR (выполнение договора о сотрудничестве / трудового договора).</li>
-<li>Запись маршрута во время рабочего дня, текущая позиция для диспетчера и подтверждение раздачи перед заказчиками: ст. 6 п. 1 b и f GDPR. Наш законный интерес — подтверждение выполненной работы перед заказчиками и надёжная диспетчеризация. Запись идёт только в рабочее время, трек удаляется через ${RETENTION.trackMonths} месяцев.</li>
+<li>Запись маршрута во время рабочего дня, текущая позиция для диспетчера и подтверждение раздачи перед заказчиками: ст. 6 п. 1 b и f GDPR. Законный интерес фирмы — подтверждение выполненной работы перед её клиентами и надёжная диспетчеризация. Запись идёт только в рабочее время, трек удаляется через ${RETENTION.trackMonths} месяцев.</li>
 <li>Хранение сводки рабочих дней, нужной для расчётов: ст. 6 п. 1 c GDPR (налоговые и торговые сроки хранения).</li>
 </ul>
 <p>Без доступа к геопозиции рабочий день записать нельзя. Доступ можно в любой момент отключить в настройках телефона.</p>
 <h2>5. Получатели и сервисы</h2>
 <ul>
+<li><b>Поставщик программы</b> (см. раздел 1): работа FlyerMap по поручению фирмы.</li>
 <li><b>Supabase</b> (Supabase Inc., США; серверы во Франкфурте, ЕС): база данных, вход, хранение всех данных выше. Обработка по поручению (ст. 28 GDPR); на случай доступа из США действуют стандартные договорные условия ЕС.</li>
 <li><b>Отправка SMS-кодов</b> (например, Twilio Inc., США): получает номер телефона и код. Обработка по поручению; передача в США на основе EU-US Data Privacy Framework или стандартных договорных условий.</li>
 <li><b>GitHub Pages</b> (GitHub Inc., США): отдаёт веб-версию приложения и эту страницу (IP-адрес в журналах).</li>
@@ -112,7 +131,7 @@ const PRIVACY = {
 <li><b>Поиск адресов и определение места:</b> Photon (komoot GmbH, Германия). Для дней без заказа первая точка маршрута один раз отправляется в Photon, чтобы узнать название места; имя и телефон не передаются.</li>
 <li><b>Навигация:</b> только если вы нажмёте «Навигация» или «Маршрут до точки старта», откроется Google Maps или Apple Карты; там действуют их правила.</li>
 </ul>
-<p>Внутри FlyerMap ваши данные видят только администраторы. Другие раздатчики не видят ни вашу позицию, ни ваши рабочие дни. Раздатчики, назначенные на тот же заказ, видят на карте, какие улицы этого заказа уже пройдены — без имён и времени, чтобы никто не ходил дважды.</p>
+<p>Внутри FlyerMap ваши данные видят только администраторы вашей фирмы; другие фирмы, работающие с FlyerMap, их не видят. <b>Исключение с вашего согласия:</b> если вы включите «Предложения работы от других фирм» (при регистрации или в профиле; ст. 6 п. 1 a GDPR), администраторы других фирм в FlyerMap увидят ваше имя, города и телефон, чтобы предложить работу, — без геопозиции и рабочих дней. За это отвечает поставщик FlyerMap; согласие можно отозвать в профиле в любой момент. Сотрудники поставщика (мастер-админы) для поддержки и исправления ошибок видят основные данные всех фирм (данные фирмы; имя, телефон и города раздающих), но не геопозиции. Другие раздатчики не видят ни вашу позицию, ни ваши рабочие дни. Раздатчики, назначенные на тот же заказ, видят на карте, какие улицы этого заказа уже пройдены — без имён и времени, чтобы никто не ходил дважды.</p>
 <h2>6. Сроки хранения</h2>
 <ul>
 <li>GPS-точки маршрута: ${RETENTION.trackMonths} месяцев после рабочего дня, затем удаляются автоматически. Сводка дня (дата, время, место, путь) остаётся.</li>
@@ -122,7 +141,7 @@ const PRIVACY = {
 </ul>
 <p>«Удалить аккаунт» в приложении сразу удаляет аккаунт со всеми маршрутами, GPS-точками и рабочими днями.</p>
 <h2>7. Ваши права</h2>
-<p>Вы вправе получить информацию о своих данных (ст. 15 GDPR), исправить их (ст. 16), удалить (ст. 17), ограничить обработку (ст. 18) и получить их в переносимом виде (ст. 20). Там, где мы опираемся на законный интерес, вы можете <b>возразить</b> по причинам, связанным с вашей особой ситуацией (ст. 21). Пишите на email выше.</p>
+<p>Вы вправе получить информацию о своих данных (ст. 15 GDPR), исправить их (ст. 16), удалить (ст. 17), ограничить обработку (ст. 18) и получить их в переносимом виде (ст. 20). Там, где мы опираемся на законный интерес, вы можете <b>возразить</b> по причинам, связанным с вашей особой ситуацией (ст. 21). Пишите в фирму (раздел 1).</p>
 <p>Вы также можете пожаловаться в надзорный орган по защите данных, например LDI NRW, Kavalleriestraße 2–4, 40213 Düsseldorf.</p>
 <h2>8. Изменения</h2>
 <p>Если этот текст существенно изменится, приложение снова покажет памятку о записи геопозиции перед следующим рабочим днём.</p>`,
@@ -130,9 +149,9 @@ const PRIVACY = {
   en:() => `
 <p class="muted">Translation for convenience. The German version is legally binding.</p>
 <h2>1. Controller</h2>
-<p>${opBlock()}</p>
+${CTRL.en()}
 <h2>2. What the app is for</h2>
-<p>FlyerMap is an internal app for people who distribute flyers for us and for our dispatchers (administrators). It plans areas and walking routes, assigns jobs and, during a working day, records the walked route so the work can be organised, paid and proven to our clients.</p>
+<p>FlyerMap is an app a company uses to organise flyer distribution: for the people who distribute flyers for the company and for its dispatchers (administrators). It plans areas and walking routes, assigns jobs and, during a working day, records the walked route so the work can be organised, paid and proven to the company's clients.</p>
 <h2>3. Data we process</h2>
 <ul>
 <li><b>Account:</b> phone number (sign-in with an SMS code), name, cities you can work in. For administrators: phone number or email.</li>
@@ -146,12 +165,14 @@ const PRIVACY = {
 <h2>4. Purposes and legal bases</h2>
 <ul>
 <li>Planning, carrying out and paying the work (account, jobs, working hours): Art. 6(1)(b) GDPR.</li>
-<li>Recording the route during the working day, live position for dispatching and proof of delivery to clients: Art. 6(1)(b) and (f) GDPR. Our legitimate interest is proving the agreed service to clients and safe dispatching. Recording happens only during working time; the track is deleted after ${RETENTION.trackMonths} months.</li>
+<li>Recording the route during the working day, live position for dispatching and proof of delivery to clients: Art. 6(1)(b) and (f) GDPR. The company's legitimate interest is proving the agreed service to its clients and safe dispatching. Recording happens only during working time; the track is deleted after ${RETENTION.trackMonths} months.</li>
 <li>Keeping the summary of working days needed for accounting: Art. 6(1)(c) GDPR (statutory retention duties).</li>
 </ul>
 <p>Without location access a working day cannot be recorded. You can withdraw access at any time in your phone settings.</p>
 <h2>5. Recipients and service providers</h2>
 <ul>
+<li><b>Anbieter der Software</b> (siehe Abschnitt 1): Betrieb von FlyerMap als Auftragsverarbeiter des Unternehmens.</li>
+<li><b>Provider of the software</b> (see section 1): runs FlyerMap as the company's processor.</li>
 <li><b>Supabase</b> (Supabase Inc., USA; servers in Frankfurt am Main, EU): database, sign-in, storage of all data above. Processor under Art. 28 GDPR; EU standard contractual clauses cover any access from the USA.</li>
 <li><b>SMS delivery of sign-in codes</b> (e.g. Twilio Inc., USA): receives your phone number and the code. Processor; transfer to the USA based on the EU-US Data Privacy Framework or standard contractual clauses.</li>
 <li><b>GitHub Pages</b> (GitHub Inc., USA): serves the web version of the app and this page (IP address in server logs).</li>
@@ -159,7 +180,7 @@ const PRIVACY = {
 <li><b>Address search and place names:</b> Photon (komoot GmbH, Germany). For working days without a job, the first point of the route is sent to Photon once to find the place name; no names or phone numbers are sent.</li>
 <li><b>Navigation:</b> only when you tap “Navigation” or “Way to the start point”, Google Maps or Apple Maps opens; their privacy terms apply there.</li>
 </ul>
-<p>Within FlyerMap only administrators see your data. Other distributors see neither your position nor your working days. Distributors assigned to the same job see on the map which streets of that job are already done — without names or times, so nobody walks a street twice.</p>
+<p>Within FlyerMap only your company's administrators see your data; other companies using FlyerMap do not. <b>Exception with your consent:</b> if you switch on “Job offers from other companies” (at registration or in your profile; Art. 6(1)(a) GDPR), administrators of other companies in FlyerMap see your name, cities and phone number to offer you work — no locations and no working days. The provider of FlyerMap is responsible for this; you can withdraw consent in your profile at any time. The provider's support staff (master admins) see the master data of all companies (company details; distributors' names, phone numbers and cities) for support and troubleshooting, but no locations. Other distributors see neither your position nor your working days. Distributors assigned to the same job see on the map which streets of that job are already done — without names or times, so nobody walks a street twice.</p>
 <h2>6. Retention</h2>
 <ul>
 <li>GPS points of a route: ${RETENTION.trackMonths} months after the working day, then deleted automatically. The day summary (date, times, place, distance) remains.</li>
@@ -169,7 +190,7 @@ const PRIVACY = {
 </ul>
 <p>“Delete account” in the app immediately removes your account with all routes, GPS points and working days.</p>
 <h2>7. Your rights</h2>
-<p>You have the right of access (Art. 15 GDPR), rectification (Art. 16), erasure (Art. 17), restriction (Art. 18) and data portability (Art. 20). Where we rely on legitimate interests you may <b>object</b> on grounds relating to your particular situation (Art. 21). Write to the email above. You may also lodge a complaint with a supervisory authority, e.g. LDI NRW, Kavalleriestraße 2–4, 40213 Düsseldorf.</p>
+<p>You have the right of access (Art. 15 GDPR), rectification (Art. 16), erasure (Art. 17), restriction (Art. 18) and data portability (Art. 20). Where we rely on legitimate interests you may <b>object</b> on grounds relating to your particular situation (Art. 21). Write to the company (section 1). You may also lodge a complaint with a supervisory authority, e.g. LDI NRW, Kavalleriestraße 2–4, 40213 Düsseldorf.</p>
 <h2>8. Changes</h2>
 <p>If this policy changes substantially, the app shows the location note again before your next working day.</p>`,
 };
@@ -240,4 +261,23 @@ function sel(l){ ${JSON.stringify(langs)}.forEach(function(x){ document.getEleme
 function pick(){ var h=location.hash.slice(1); return ${JSON.stringify(langs)}.indexOf(h)>=0?h:((navigator.language||'').indexOf('ru')===0?'ru':'de'); }
 window.addEventListener('hashchange',function(){ sel(pick()); }); sel(pick());
 </script></body></html>`;
+}
+
+/* ---------------- AVV (Art. 28 DSGVO) between a company and the provider; accepted electronically at company registration ---------------- */
+export function avvHtml(firm){
+  const f = firm && firm.name ? firm : null;
+  const party = f ? [f.name, f.representative ? 'vertreten durch ' + f.representative : '', f.street, [f.zip, f.city].filter(Boolean).join(' ')].filter(Boolean).map(e).join(', ') : 'dem Unternehmen, das sich in FlyerMap registriert';
+  return `<p>Vertrag zur Auftragsverarbeitung zwischen ${party} („Verantwortlicher“) und ${provLine()} („Auftragsverarbeiter“). Version ${e(AVV_VERSION)}.</p>
+<h3>§ 1 Gegenstand und Dauer</h3><p>Der Auftragsverarbeiter stellt dem Verantwortlichen die Software FlyerMap (App und Web-Verwaltung) samt Server bereit. Der Vertrag gilt, solange der Verantwortliche FlyerMap nutzt.</p>
+<h3>§ 2 Art und Zweck</h3><p>Planung von Verteilrouten, Einteilung der Verteiler, Erfassung von Arbeitszeit und gelaufener Strecke per GPS während des Arbeitstags, Nachweis der Verteilung, Benachrichtigungen.</p>
+<h3>§ 3 Daten und Betroffene</h3><p>Betroffene: Verteiler und Administratoren des Verantwortlichen. Daten: Name, Telefonnummer, Städte; GPS-Punkte mit Zeit und Genauigkeit nur zwischen Start und Feierabend; Arbeitstage (Datum, Zeiten, Pausen, Strecke, Ort, Auftrag); Aufträge, Benachrichtigungen; technische Protokolle (IP-Adresse).</p>
+<h3>§ 4 Weisungen</h3><p>Der Auftragsverarbeiter verarbeitet die Daten nur auf dokumentierte Weisung des Verantwortlichen, auch bei Übermittlungen in Drittländer. Hält er eine Weisung für rechtswidrig, informiert er den Verantwortlichen unverzüglich.</p>
+<h3>§ 5 Vertraulichkeit und Zugriff des Anbieters</h3><p>Alle Personen mit Zugriff auf die Daten sind zur Vertraulichkeit verpflichtet. Betreuer des Auftragsverarbeiters (Master-Admins) sehen zur Betreuung und Fehlerbehebung nur Stammdaten (Firmenangaben; Name, Telefonnummer, Städte der Verteiler), keine Standortdaten. Verteiler, die ausdrücklich in Jobangebote anderer Firmen einwilligen, werden in diesem Umfang auch anderen Firmen angezeigt; dafür ist der Anbieter selbst verantwortlich.</p>
+<h3>§ 6 Sicherheit (Art. 32 DSGVO)</h3><p>Anmeldung per SMS-Code; Rollen (Verteiler sehen nur eigene Daten, Administratoren nur die ihres Unternehmens); Zugriffsregeln in der Datenbank (Row Level Security); Verschlüsselung der Übertragung (TLS); Server in Frankfurt (EU); Standorterfassung nur zwischen Start und Feierabend; automatische Löschung; SMS-Versand nur an deutsche Mobilnummern mit Betrugsschutz. Die Maßnahmen werden dem Stand der Technik angepasst.</p>
+<h3>§ 7 Unterauftragsverarbeiter</h3><p>Genehmigt sind: Supabase Inc. (Datenbank, Anmeldung; Server in Frankfurt), Twilio Inc. (SMS-Codes), GitHub Inc. (Auslieferung der Web-App) – jeweils mit Auftragsverarbeitungsvertrag und EU-US Data Privacy Framework bzw. Standardvertragsklauseln. Über neue Dienste informiert der Auftragsverarbeiter mindestens 14 Tage vorher; der Verantwortliche kann widersprechen.</p>
+<h3>§ 8 Unterstützung</h3><p>Der Auftragsverarbeiter hilft bei Anfragen Betroffener (Auskunft, Berichtigung, Löschung, Datenübertragbarkeit), bei der Datenschutz-Folgenabschätzung und bei Meldungen nach Art. 33 und 34 DSGVO.</p>
+<h3>§ 9 Datenpannen</h3><p>Verletzungen des Schutzes personenbezogener Daten meldet der Auftragsverarbeiter unverzüglich, spätestens binnen 24 Stunden nach Kenntnis.</p>
+<h3>§ 10 Löschung und Rückgabe</h3><p>GPS-Punkte werden nach ${RETENTION.trackMonths} Monaten gelöscht, die letzte Position ${RETENTION.positionHours} Stunden nach Arbeitsende, Benachrichtigungen nach ${RETENTION.inboxMonths} Monaten. Nach Vertragsende gibt der Auftragsverarbeiter die Daten auf Wunsch als Export heraus und löscht sie binnen 30 Tagen, soweit keine Aufbewahrungspflicht besteht.</p>
+<h3>§ 11 Nachweise und Kontrollen</h3><p>Der Auftragsverarbeiter stellt die nötigen Informationen bereit und ermöglicht Überprüfungen nach Absprache.</p>
+<h3>§ 12 Schluss</h3><p>Es gilt deutsches Recht. Der Vertrag wird elektronisch geschlossen (Art. 28 Abs. 9 DSGVO), indem ein Administrator des Verantwortlichen ihn in der App annimmt; Datum und Version werden gespeichert.</p>`;
 }

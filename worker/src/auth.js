@@ -5,6 +5,8 @@ import { legalLinks, bindLegal, legalModal } from './legalview.js';
 import { UI, plain, cityPicker, langSwitch, toast } from './ui.js';
 import { acceptToken } from './worker.js';
 import { bootAdmin, viewAdminLogin } from './admin.js';
+import { firmFields, readFirm, avvCheck, bindAvvRead, normCode } from './firm.js';
+import { AVV_VERSION, setLegalFirm } from './legal.js';
 
 export function viewLogin(){
   UI.role = null; UI.onTab = null;
@@ -73,7 +75,35 @@ export async function afterVerified(){
     return viewRoleChoice();
   }
   await store.set('canAdmin', false);
-  return enterAsWorker(true);
+  if(st.worker) return enterAsWorker(true);
+  return viewNewUser();
+}
+// a new number: distributor (joins a company with its code) or a new company
+function viewNewUser(){
+  plain(`<h1 class="hero">${esc(t('newUserQ'))}</h1>
+    <button class="btn primary big choice" id="nuW"><span>${esc(t('newUserWorker'))}</span><small>${esc(t('newUserWorkerSub'))}</small></button>
+    <button class="btn ghost big choice" id="nuF"><span>${esc(t('newUserFirm'))}</span><small>${esc(t('newUserFirmSub'))}</small></button>
+    ${langSwitch(I.lang)}`);
+  $('#nuW').onclick = () => enterAsWorker(true);
+  $('#nuF').onclick = viewFirmRegister;
+}
+function viewFirmRegister(){
+  plain(`<button class="link back-link" id="bk">← ${esc(t('back'))}</button>
+    <h1 class="hero">${esc(t('firmRegTitle'))}</h1><p class="muted small">${esc(t('firmRegHint'))}</p>
+    ${firmFields({})}${avvCheck()}
+    <button class="btn primary big" id="fmGo" style="margin-top:18px">${esc(t('firmRegBtn'))}</button><div class="err" id="fmErr" role="alert"></div>
+    ${legalLinks()}`);
+  bindLegal(viewFirmRegister); bindAvvRead(() => readFirm().p || {});
+  $('#bk').onclick = viewNewUser;
+  $('#fmGo').onclick = async () => {
+    const r = readFirm(); if(r.err){ $('#fmErr').textContent = r.err; return; }
+    if(!$('#fmAvv').checked){ $('#fmErr').textContent = t('e_avv_required'); return; }
+    $('#fmGo').disabled = true;
+    const { error } = await sb.rpc('register_company', { p:{ ...r.p, avv_version:AVV_VERSION } });
+    if(error){ $('#fmErr').textContent = errText(error); $('#fmGo').disabled = false; return; }
+    await store.set('canAdmin', true); await store.set('role', 'admin');
+    if(!await bootAdmin()) viewLogin();
+  };
 }
 function viewRoleChoice(){
   plain(`<h1 class="hero">${esc(t('asWho'))}</h1>
@@ -89,23 +119,40 @@ export async function enterAsWorker(signOut){
   if(tok) return finishWorker(tok, signOut);
   viewProfileForm(signOut);
 }
-function viewProfileForm(signOut){
+async function viewProfileForm(signOut){
   const cp = cityPicker([]);
+  const own = !signOut && !!(await store.get('canAdmin'));   // an admin's own distributor profile joins his company
+  const code0 = normCode(await store.get('joinCode'));
   plain(`<h1 class="hero">${esc(t('yourData'))}</h1>
+    ${own ? '' : `<label class="f" for="rCode">${esc(t('joinCode'))}</label><input class="in code-in" id="rCode" value="${esc(code0)}" autocomplete="off" autocapitalize="characters" maxlength="12" placeholder="ABCD2345">
+    <div class="small muted" id="rCodeMsg">${esc(t('joinCodeHint'))}</div>`}
     <label class="f">${esc(t('name'))}</label><input class="in" id="rName" autocomplete="name">
     <label class="f">${esc(t('cities'))}</label>${cp.html}
+    <label class="check"><input type="checkbox" id="rOffers"><span>${esc(t('offersOptIn'))}<br><small class="muted">${esc(t('offersOptInSub'))}</small></span></label>
     <button class="btn primary big" id="rGo" style="margin-top:18px">${esc(t('continue'))}</button><div class="err" id="rErr"></div>
     <p class="small muted">${esc(t('regAgree'))} <button class="link" id="rPriv">${esc(t('privacy'))}</button>.</p>`);
   cp.bind();
   $('#rPriv').onclick = () => legalModal('privacy');
+  let firmName = null;
+  const checkCode = async () => {
+    const el = $('#rCode'); if(!el) return; const c = normCode(el.value), msg = $('#rCodeMsg'); firmName = null;
+    if(c.length < 8){ msg.textContent = t('joinCodeHint'); msg.className = 'small muted'; return; }
+    const { data } = await sb.rpc('company_by_code', { p_code:c });
+    if(normCode($('#rCode')?.value) !== c) return;
+    if(data && data.name){ firmName = data.name; msg.textContent = t('joinCodeOk', { name:data.name }); msg.className = 'small ok-text'; setLegalFirm(null); }
+    else { msg.textContent = t('joinCodeBad'); msg.className = 'small err'; }
+  };
+  if($('#rCode')){ $('#rCode').oninput = checkCode; checkCode(); }
   $('#rGo').onclick = async () => {
     const name = $('#rName').value.trim(), cities = cp.get();
+    const code = $('#rCode') ? normCode($('#rCode').value) : null;
+    if($('#rCode') && code.length < 8){ $('#rErr').textContent = t('e_code_invalid'); return; }
     if(name.length < 2){ $('#rErr').textContent = t('e_name_required'); return; }
     if(!cities.length){ $('#rErr').textContent = t('e_city_required'); return; }
     $('#rGo').disabled = true;
-    const { data:tok, error } = await sb.rpc('register_worker_v2', { p_name:name, p_cities:cities });
+    const { data:tok, error } = await sb.rpc('register_worker_v4', { p_name:name, p_cities:cities, p_code:code, p_offers:!!$('#rOffers')?.checked });
     if(error){ $('#rErr').textContent = errText(error); $('#rGo').disabled = false; return; }
-    finishWorker(tok, signOut);
+    await store.del('joinCode'); finishWorker(tok, signOut);
   };
 }
 async function finishWorker(token, signOut){
