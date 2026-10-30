@@ -29,7 +29,6 @@ export async function viewMaster(back){
       <h2 class="sec">${esc(t('msMasters'))}</h2>
       <div class="card" style="display:block">
         ${(data.masters || []).map(m => `<div class="sec-row" style="margin:4px 0"><span>${esc(m.ident)}${m.me ? ' (' + esc(t('msYou')) + ')' : ''}</span>${m.me ? '' : `<button class="link danger-text" data-rm="${esc(m.user_id)}">${esc(t('msRemove'))}</button>`}</div>`).join('')}
-        ${(data.invites || []).map(i => `<div class="sec-row" style="margin:4px 0"><span class="muted">${esc(i)} · ${esc(t('msInvited'))}</span><button class="link danger-text" data-rmi="${esc(i)}">${esc(t('msRemove'))}</button></div>`).join('')}
         <button class="btn ghost small" id="msAdd" style="margin-top:10px">${ICONS.users}${esc(t('msAdd'))}</button>
       </div>`;
     const qi = $('#msQ'); qi.oninput = () => { q = qi.value; const pos = qi.selectionStart; render(); const n = $('#msQ'); n.focus(); n.setSelectionRange(pos, pos); };
@@ -43,8 +42,8 @@ export async function viewMaster(back){
         <button class="btn primary" id="msGo" style="margin-top:12px">${esc(t('msAdd'))}</button><div class="err" id="msErr"></div>`);
       m.querySelector('#msGo').onclick = async () => {
         const { data:r, error } = await sb.rpc('add_master', { p_ident:m.querySelector('#msId').value });
-        if(error){ m.querySelector('#msErr').textContent = error.message === 'bad_ident' ? t('msBadIdent') : error.message; return; }
-        m.remove(); toast(r && r.added ? t('msAdded') : t('msInvitedToast')); viewMaster(back);
+        if(error){ m.querySelector('#msErr').textContent = error.message === 'bad_ident' ? t('msBadIdent') : error.message === 'no_account' ? t('msNoAccount') : error.message; return; }
+        m.remove(); toast(t('msAdded')); viewMaster(back);
       };
     };
   };

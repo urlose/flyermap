@@ -25,7 +25,7 @@ Object.assign(T.de, {
   master:'Plattform – alle Firmen', msCompanies:'Firmen', msWorkers:'Verteiler', msOpen:'Offen für Angebote', msNoName:'(ohne Namen)', msNoAvv:'AVV fehlt', msNoData:'Keine Firmendaten', msNone:'Keine Firmen',
   msCounts:'{a} Admin · {w} Verteiler · {o} Aufträge', msLast:'zuletzt aktiv {a}', msSearch:'Name, Telefon oder Firma', msOffersOk:'offen für Angebote',
   msMasters:'Master-Admins', msYou:'du', msRemove:'Entfernen', msRemoveQ:'Diese Person verliert den Zugriff auf alle Firmen.', msInvited:'eingeladen', msAdd:'Master-Admin hinzufügen',
-  msAddHint:'Telefonnummer oder E-Mail. Hat die Person noch kein Konto, wird sie beim ersten Login Master-Admin.', msBadIdent:'Bitte Telefonnummer oder E-Mail eingeben.', msAdded:'Hinzugefügt', msInvitedToast:'Eingeladen – gilt beim ersten Login',
+  msAddHint:'Telefonnummer oder E-Mail eines bestehenden FlyerMap-Kontos.', msNoAccount:'Zu dieser Nummer bzw. E-Mail gibt es noch kein Konto. Die Person muss sich zuerst einmal anmelden.', msBadIdent:'Bitte Telefonnummer oder E-Mail eingeben.', msAdded:'Hinzugefügt', msInvitedToast:'Eingeladen – gilt beim ersten Login',
 });
 Object.assign(T.ru, {
   copy:'Копировать', copied:'Скопировано',
@@ -52,5 +52,5 @@ Object.assign(T.ru, {
   master:'Платформа — все фирмы', msCompanies:'Фирмы', msWorkers:'Раздающие', msOpen:'Открыты для предложений', msNoName:'(без названия)', msNoAvv:'Нет AVV', msNoData:'Нет данных фирмы', msNone:'Фирм нет',
   msCounts:'{a} админ · {w} раздающих · {o} заказов', msLast:'последняя активность {a}', msSearch:'Имя, телефон или фирма', msOffersOk:'открыт для предложений',
   msMasters:'Мастер-админы', msYou:'вы', msRemove:'Удалить', msRemoveQ:'Этот человек потеряет доступ ко всем фирмам.', msInvited:'приглашён', msAdd:'Добавить мастер-админа',
-  msAddHint:'Телефон или e-mail. Если у человека ещё нет аккаунта, он станет мастер-админом при первом входе.', msBadIdent:'Введите телефон или e-mail.', msAdded:'Добавлено', msInvitedToast:'Приглашение сохранено — сработает при первом входе',
+  msAddHint:'Телефон или e-mail уже существующего аккаунта FlyerMap.', msNoAccount:'С этим номером или e-mail аккаунта ещё нет. Человек должен сначала один раз войти.', msBadIdent:'Введите телефон или e-mail.', msAdded:'Добавлено', msInvitedToast:'Приглашение сохранено — сработает при первом входе',
 });
