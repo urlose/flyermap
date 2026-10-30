@@ -22,12 +22,18 @@ Deno.serve(async (req) => {
   const files = body.files;
   if (!Array.isArray(files) || !files.length || files.length > 200 || !files.every((f) => typeof f.path === "string" && PATH.test(f.path) && typeof f.b64 === "string")) return json({ error: "bad files" }, 400);
   const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-  const failed: string[] = [];
-  await Promise.all(files.map(async (f) => {
-    const bytes = Uint8Array.from(atob(f.b64), (c) => c.charCodeAt(0));
-    const gz = f.path.endsWith(".gz");
-    const { error } = await db.storage.from("tiles").upload("v4/" + f.path, bytes, { upsert: true, contentType: gz ? "application/gzip" : "application/json", cacheControl: gz ? "604800" : "3600" });
-    if (error) failed.push(f.path + ": " + error.message);
-  }));
-  return json({ ok: failed.length === 0, stored: files.length - failed.length, failed: failed.slice(0, 5) }, failed.length ? 207 : 200);
+  const failed: string[] = [], errs: string[] = [];
+  let next = 0;
+  const lane = async () => {   // a few uploads at a time: hundreds at once make the storage refuse some of them
+    while (next < files.length) {
+      const f = files[next++];
+      const bytes = Uint8Array.from(atob(f.b64), (c) => c.charCodeAt(0));
+      const gz = f.path.endsWith(".gz");
+      const { error } = await db.storage.from("tiles").upload("v4/" + f.path, bytes, { upsert: true, contentType: gz ? "application/gzip" : "application/json", cacheControl: gz ? "604800" : "3600" });
+      if (error) { failed.push(f.path); errs.push(f.path + ": " + error.message); }
+    }
+  };
+  await Promise.all(Array.from({ length: 6 }, lane));
+  if (errs.length) console.error("tiles-upload", errs.length, errs.slice(0, 3).join(" | "));
+  return json({ ok: failed.length === 0, stored: files.length - failed.length, failed, errors: errs.slice(0, 3) }, failed.length ? 207 : 200);
 });

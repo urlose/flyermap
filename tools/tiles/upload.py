@@ -15,19 +15,23 @@ def token():
     return _tok[0]
 
 def send(batch, d):
-    body = json.dumps({'files': [{'path': f, 'b64': base64.b64encode(open(os.path.join(d, f), 'rb').read()).decode()} for f in batch]}).encode()
-    for attempt in range(6):
+    """uploads the files; on a partial failure only the failed ones are sent again"""
+    todo = list(batch)
+    for attempt in range(8):
+        body = json.dumps({'files': [{'path': f, 'b64': base64.b64encode(open(os.path.join(d, f), 'rb').read()).decode()} for f in todo]}).encode()
         try:
             req = urllib.request.Request(URL, data=body, method='POST', headers={'Authorization': 'Bearer ' + token(), 'Content-Type': 'application/json'})
-            r = json.load(urllib.request.urlopen(req, timeout=120))
+            r = json.load(urllib.request.urlopen(req, timeout=180))
             if r.get('ok'): return len(batch)
-            print('retry', r, flush=True)
+            todo = [f for f in todo if f in set(r.get('failed') or todo)]
+            print('partial', len(todo), r.get('errors'), flush=True)
         except Exception as e:
             msg = e.read().decode()[:300] if hasattr(e, 'read') else str(e)
             print('retry', attempt, msg, flush=True)
-            if 'forbidden' in msg or 'token:' in msg and attempt >= 2: raise
-        time.sleep(3 * (attempt + 1))
-    raise RuntimeError('upload failed: ' + batch[0])
+            if 'forbidden' in msg: raise
+        time.sleep(4 * (attempt + 1))
+    print('::error::upload failed for %d files, e.g. %s' % (len(todo), todo[0]))
+    raise RuntimeError('upload failed: ' + todo[0])
 
 def main():
     d = sys.argv[1]
@@ -35,11 +39,11 @@ def main():
     batches, cur, size = [], [], 0
     for f in files:
         s = os.path.getsize(os.path.join(d, f))
-        if cur and (size + s > 1_500_000 or len(cur) >= 150): batches.append(cur); cur, size = [], 0
+        if cur and (size + s > 1_000_000 or len(cur) >= 60): batches.append(cur); cur, size = [], 0
         cur.append(f); size += s
     if cur: batches.append(cur)
     done, t0 = 0, time.time()
-    with ThreadPoolExecutor(4) as ex:
+    with ThreadPoolExecutor(3) as ex:
         for n in ex.map(lambda b: send(b, d), batches):
             done += n
             if done % 2000 < n: print('uploaded %d/%d · %d s' % (done, len(files), time.time() - t0), flush=True)
