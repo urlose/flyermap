@@ -14,6 +14,7 @@ const GREEN = '#16A34A';
 
 export const W = { gps:{ state:'wait', acc:null, at:0 }, canAdmin:false, token:null, me:null, route:null, queue:[], track:[], busy:false, watcherId:null, focus:null, tracker:null, counter:null, prev:null, sim:null, flushFailed:false, hooks:{} };
 const tasks = () => (W.me && W.me.tasks) || [];
+const openRoutes = () => (W.me && W.me.open) || [];   // routes of the company nobody has yet: can be taken
 
 /* ================= sync ================= */
 async function saveRoute(){ await store.set('route', W.route); await store.set('queue', W.queue); await store.set('track', W.track.slice(-6000)); }
@@ -248,12 +249,12 @@ export function workerTab(tab){
 function planInfo(task){ return task.plan ? t('routeInfo', { km:fmtDist(task.plan.length_m), h:fmtHm(task.plan.minutes || 0) }) : '—'; }
 
 const dayList = pl => (pl && pl.work_dates || []).map(d => String(d).slice(0, 10)).sort();
-const stClass = p => !p ? '' : p.status === 'accepted' ? '' : p.status === 'declined' ? 'bad' : p.status === 'done' ? 'ok' : 'warn';
+const stClass = p => !p ? '' : p.status === 'open' ? 'info' : p.status === 'accepted' ? '' : p.status === 'declined' ? 'bad' : p.status === 'done' ? 'ok' : 'warn';
 const accClass = p => ({ '':'acc-info', bad:'acc-bad', ok:'acc-ok', warn:'acc-warn' }[stClass(p)] || 'acc-neutral');
-const stLabel = p => !p ? '' : p.status === 'accepted' ? t('stAccepted') : p.status === 'declined' ? t('stDeclined') : p.status === 'done' ? t('stDone') : t('stNew');
+const stLabel = p => !p ? '' : p.status === 'open' ? t('stOpen') : p.status === 'accepted' ? t('stAccepted') : p.status === 'declined' ? t('stDeclined') : p.status === 'done' ? t('stDone') : t('stNew');
 function taskDates(tk){ const d = dayList(tk.plan); return d.length ? d.map(fmtDay).join(', ') : fmtDay(tk.work_date); }
 function viewTasks(){
-  const list = tasks(), unread = ((W.me && W.me.inbox) || []).filter(n => !n.read).length;
+  const list = tasks(), open = openRoutes(), unread = ((W.me && W.me.inbox) || []).filter(n => !n.read).length;
   const nNew = list.filter(x => x.plan && x.plan.status === 'offered').length, nAcc = list.filter(x => x.plan && x.plan.status === 'accepted').length;
   shell('tasks', `${topbar(t('myTasks'), null, `<button class="icon-btn" id="rf" aria-label="${esc(t('refresh'))}">${ICONS.refresh}</button><button class="icon-btn" id="bell" aria-label="${esc(t('inbox'))}" style="position:relative">${ICONS.bell}${unread ? `<span class="badge">${unread}</span>` : ''}</button>`)}
     <div class="pad">
@@ -263,10 +264,16 @@ function viewTasks(){
         <div class="tc-meta"><i>${ICONS.calendar}${esc(taskDates(tk))}</i>${tk.district || tk.city_name ? `<i>${ICONS.pin}${esc([tk.district, tk.city_name].filter(Boolean).join(', '))}</i>` : ''}${tk.plan ? `<i>${ICONS.route}${esc(fmtDist(tk.plan.length_m))} · ${esc(fmtHm(tk.plan.minutes || 0))} ${esc(t('h'))}</i><i>${ICONS.mail}${esc(fmtN(tk.plan.mailboxes || 0))}</i>` : ''}</div>
         ${tk.plan ? statusPill(stClass(tk.plan) || 'info', stLabel(tk.plan)) : ''}</div>${ICONS.chevron}</button>`).join('')
         : emptyState(t('noTasks'), 'flag')}
+      ${open.length ? `<h2 class="sec">${esc(t('openRoutes'))} <span class="muted small">(${open.length})</span></h2><p class="small muted" style="margin-top:-6px">${esc(t('openHint'))}</p>
+        ${open.map((tk, i) => `<button class="card acc acc-info task-card open-card" data-o="${i}">
+          <div class="tc-main"><b>${esc(tk.title)} <span class="muted">· ${esc(t('planRoute', { n:tk.plan.idx + 1 }))}</span></b>
+          <div class="tc-meta"><i>${ICONS.calendar}${esc(fmtDay(tk.work_date))}</i>${tk.district || tk.city_name ? `<i>${ICONS.pin}${esc([tk.district, tk.city_name].filter(Boolean).join(', '))}</i>` : ''}<i>${ICONS.route}${esc(fmtDist(tk.plan.length_m))} · ${esc(fmtHm(tk.plan.minutes || 0))} ${esc(t('h'))}</i><i>${ICONS.mail}${esc(fmtN(tk.plan.mailboxes || 0))}</i></div>
+          ${statusPill('info', t('stOpen'))}</div>${ICONS.chevron}</button>`).join('')}` : ''}
       <button class="btn ghost" id="free" style="margin-top:16px">${ICONS.route}${esc(t('freeRoute'))}</button>
       ${NATIVE ? '' : `<p class="note">${esc(t('webNote'))}</p>`}
     </div>`);
-  document.querySelectorAll('.task-card').forEach(b => b.onclick = () => viewTaskDetail(list[+b.dataset.i]));
+  document.querySelectorAll('.task-card[data-i]').forEach(b => b.onclick = () => viewTaskDetail(list[+b.dataset.i]));
+  document.querySelectorAll('.task-card[data-o]').forEach(b => b.onclick = () => viewTaskDetail(open[+b.dataset.o]));
   $('#bell').onclick = viewInbox;
   $('#free').onclick = () => beginRoute(null);
   $('#rf').onclick = async () => { const b = $('#rf'); b.disabled = true; b.style.opacity = .5; try{ await loadMe(); }catch{ toast(t('netErr')); } viewTasks(); };
@@ -307,7 +314,7 @@ function viewTaskDetail(task){
   const today = new Date().toISOString().slice(0, 10), addDays = (d, n) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
   const first = (task.work_date && String(task.work_date).slice(0, 10) >= today) ? String(task.work_date).slice(0, 10) : addDays(today, 1);
   const st = plan ? plan.status : null;
-  shell('tasks', `${topbar(t('yourTask'), true)}
+  shell('tasks', `${topbar(st === 'open' ? t('openRoute') : t('yourTask'), true)}
     <div class="pad">
       <div class="sec-row" style="margin-top:4px"><h2>${esc(task.title)}</h2>${plan ? statusPill(stClass(plan) || 'info', stLabel(plan)) : ''}</div>
       <div class="info">
@@ -322,18 +329,20 @@ function viewTaskDetail(task){
       ${plan && plan.days && plan.days.length > 1 ? `<h2 class="sec">${esc(t('route'))}:</h2><div class="info">${plan.days.map((d, k) => `<div><span>${esc(t('dayN', { n:k + 1 }))}${dayList(plan)[k] ? ' · ' + esc(fmtDay(dayList(plan)[k])) : ''}</span><b>${esc(t('routeLine', { km:fmtDist(d.length_m), h:fmtHm(d.minutes || 0), mb:fmtN(d.mailboxes || 0) }))} <i id="dp${k}"></i></b></div>`).join('')}</div>` : ''}
       <div class="mapbox" id="tdMap"></div>
       ${plan ? '' : `<p class="note">${esc(t('noPlan'))}</p>`}
-      ${plan && st === 'offered' ? `<h2 class="sec">${esc(t('pickDays'))}</h2><p class="small muted" style="margin-top:-6px">${esc(t('dayHint', { h:(plan.minutes / 60).toFixed(1).replace('.', ','), n:need }))}</p>
+      ${plan && st === 'open' ? `<p class="hint">${esc(t('openDetailHint'))}</p>` : ''}
+      ${plan && (st === 'offered' || st === 'open') ? `<h2 class="sec">${esc(t('pickDays'))}</h2><p class="small muted" style="margin-top:-6px">${esc(t('dayHint', { h:(plan.minutes / 60).toFixed(1).replace('.', ','), n:need }))}</p>
         <div class="dates">${Array.from({ length:need }, (_, i) => `<label><span>${esc(t('dayN', { n:i + 1 }))}</span><input class="in" type="date" data-day="${i}" min="${today}" value="${addDays(first, i)}"></label>`).join('')}</div>
-        <button class="btn primary" id="acc">${esc(t('accept'))}</button><button class="btn ghost" id="dec">${esc(t('decline'))}</button><div class="err" id="accErr"></div>` : ''}
+        ${st === 'open' ? `<button class="btn primary" id="claim">${esc(t('claim'))}</button>` : `<button class="btn primary" id="acc">${esc(t('accept'))}</button><button class="btn ghost" id="dec">${esc(t('decline'))}</button>`}<div class="err" id="accErr"></div>` : ''}
       ${plan && st === 'accepted' ? `<p class="hint">${esc(t('yourDates'))}: <b>${esc(dayList(plan).map(fmtDay).join(', '))}</b></p>` : ''}
       ${plan && st === 'declined' ? `<p class="note">${esc(t('stDeclined'))}</p>` : ''}
       ${(!plan || st === 'accepted') ? `<button class="btn primary big" id="go">${ICONS.play}<span>${esc(t('startRoute'))}</span></button>` : ''}
       <a class="btn ghost" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${task.start_lat},${task.start_lng}&travelmode=transit">${ICONS.pin}${esc(t('directions'))}</a>
     </div>`);
   bindBack(() => workerTab('tasks'));
+  if(st === 'open'){ const p0 = document.querySelector('.sec-row'); if(p0) p0.insertAdjacentHTML('afterend', `<p class="small muted" style="margin:-4px 0 10px">${esc(t('planRoute', { n:plan.idx + 1 }))}</p>`); }
   const m = makeMap($('#tdMap'), [task.start_lat, task.start_lng], 14, { dragging:true });
   const { b, planLine } = drawTaskBase(m, task); fit(m, b, 16);
-  drawCoverage(m, task, planLine ? [planLine] : []);
+  if(st !== 'open') drawCoverage(m, task, planLine ? [planLine] : []);
   if($('#go')) $('#go').onclick = () => beginRoute(task);
   if(plan && plan.days && plan.days.length > 1 && st === 'accepted'){   // how much of each day is already walked → which day comes next
     rpc('plan_progress', { p_token:W.token, p_plan_id:plan.id }).then(prev => {
@@ -348,6 +357,18 @@ function viewTaskDetail(task){
     $('#acc').disabled = true;
     try{ await rpc('respond_plan', { p_token:W.token, p_plan_id:plan.id, p_accept:true, p_dates:dates.sort() }); await loadMe(); toast(t('stAccepted')); viewTaskDetail(tasks().find(x => x.id === task.id) || task); }
     catch(e){ $('#accErr').textContent = errText(e); $('#acc').disabled = false; }
+  };
+  if($('#claim')) $('#claim').onclick = async () => {
+    const dates = [...document.querySelectorAll('[data-day]')].map(i => i.value).filter(Boolean);
+    if(dates.length < need || new Set(dates).size !== dates.length){ $('#accErr').textContent = t('e_date_required'); return; }
+    $('#claim').disabled = true;
+    try{
+      await rpc('claim_plan', { p_token:W.token, p_plan_id:plan.id, p_dates:dates.sort() }); await loadMe(); toast(t('claimed'));
+      const mine = tasks().find(x => x.id === task.id); if(mine) viewTaskDetail(mine); else workerTab('tasks');
+    }catch(e){
+      $('#accErr').textContent = errText(e); $('#claim').disabled = false;
+      if(/plan_taken|plan_not_found/.test(e.message || '')){ $('#claim').disabled = true; loadMe().catch(() => {}); }   // gone: the list is refreshed for the way back
+    }
   };
   if($('#dec')) $('#dec').onclick = async () => {
     if(!await confirmBox(t('declineQ'), t('declineText'), t('decline'), true)) return;

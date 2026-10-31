@@ -81,3 +81,18 @@ Object.assign(T.ru, {
   zoneDrawHint:'Нажимайте на карту по углам своего района',
   zoneSmall:'В нарисованном районе только ≈ {mb} ящиков, а флаеров {f}. Нарисуйте больше или уменьшите флаеры:',
 });
+// open routes: distributors take free routes of their company themselves (31.10.2026)
+Object.assign(T.de, {
+  openRoutes:'Freie Routen', openHint:'Hier ist noch niemand eingeteilt – du kannst eine Route selbst übernehmen.', stOpen:'Frei',
+  openDetailHint:'Diese Route hat noch niemand. Wähle deine Tage und übernimm sie – der Disponent sieht es sofort.',
+  openRoute:'Freie Route', claim:'Route übernehmen', claimed:'Route übernommen',
+  e_plan_taken:'Diese Route hat gerade jemand anderes übernommen.', e_already_in_task:'Du hast in diesem Auftrag schon eine Route.',
+});
+Object.assign(T.ru, {
+  openRoutes:'Свободные маршруты', openHint:'Сюда ещё никто не назначен — можно взять маршрут самому.', stOpen:'Свободен',
+  openDetailHint:'Этот маршрут ещё никто не взял. Выберите свои дни и возьмите его — диспетчер сразу это увидит.',
+  openRoute:'Свободный маршрут', claim:'Взять маршрут', claimed:'Маршрут ваш',
+  e_plan_taken:'Этот маршрут только что взял кто-то другой.', e_already_in_task:'В этом заказе у вас уже есть маршрут.',
+});
+Object.assign(T.de, { assignHint:'Wähle für jede Route einen Mitarbeiter. Routen ohne Mitarbeiter sehen alle Verteiler deiner Firma als „Freie Route“ und können sie selbst übernehmen.' });
+Object.assign(T.ru, { assignHint:'Выберите работника для каждого маршрута. Маршруты без работника все раздающие вашей фирмы видят как «Свободный маршрут» и могут взять их сами.' });
