@@ -408,7 +408,7 @@ function viewTracking(){
   const trackLine = L.polyline(W.track.map(p => [p[0], p[1]]), { color:css('--route'), weight:3, opacity:.8 }).addTo(m);
   let meMarker = null; view.follow = true;
   m.on('dragstart', () => { view.follow = false; });
-  $('#recenter').onclick = () => { view.follow = true; const l = W.track[W.track.length - 1]; if(l) m.setView([l[0], l[1]], 17); };
+  $('#recenter').onclick = () => { view.follow = true; const l = W.track[W.track.length - 1]; if(l) followTo([l[0], l[1]], 17, true); };
   const drawDone = () => {
     if(!W.tracker) return; doneLayer.clearLayers();
     W.tracker.runs().forEach(r => L.polyline(r, { color:GREEN, weight:7, opacity:.95, lineJoin:'round' }).addTo(doneLayer));
@@ -441,16 +441,24 @@ function viewTracking(){
     $('#navIc').innerHTML = icon; $('#navMain').textContent = main; $('#navSub').textContent = sub;
     const at = n.at || nav.path[nav.path.length - 1]; $('#navExt').href = 'https://www.google.com/maps/dir/?api=1&destination=' + at[0] + ',' + at[1] + '&travelmode=walking';
   };
+  // the walker's dot stays in the free part of the map (between the turn banner and the card), not hidden behind the card
+  const followTo = (ll, zoom, animate) => {
+    const box = m.getContainer().getBoundingClientRect(), nv = $('#nav'), fc = document.querySelector('.float-card');
+    const top = nv ? nv.getBoundingClientRect().bottom - box.top : 0, bottom = fc ? fc.getBoundingClientRect().top - box.top : box.height;
+    const z = zoom || m.getZoom(), shift = bottom > top + 80 ? box.height / 2 - (top + bottom) / 2 : 0;
+    const c = m.unproject(m.project(ll, z).add([0, shift]), z);
+    if(zoom) m.setView(c, z, { animate:!!animate }); else m.panTo(c, { animate:animate !== false });
+  };
   view.me = (lat, lng) => { if(!meMarker) meMarker = L.marker([lat, lng], { icon:dot('me-dot', 20), zIndexOffset:1000 }).addTo(m); else meMarker.setLatLng([lat, lng]); };
   view.update = (lat, lng) => {
     trackLine.addLatLng([lat, lng]); view.me(lat, lng);
     if(nav){ lastOff = nav.locate(lat, lng).off; updateNav(); drawAhead(); }
-    if(view.follow) m.panTo([lat, lng], { animate:true });
+    if(view.follow) followTo([lat, lng], m.getZoom() < 16 ? 17 : null);   // first fix after the start: close up
     if(Date.now() - lastDraw > 800){ lastDraw = Date.now(); drawDone(); stats(); }
     updateSync();
   };
   view.refreshDemo = () => { const b = $('#demo'); if(b) b.textContent = W.sim ? t('demoStop') : t('demoWalk'); };
-  if(last) view.me(last[0], last[1]);
+  if(last){ view.me(last[0], last[1]); followTo([last[0], last[1]], 17); }
   if(nav && last) lastOff = nav.locate(last[0], last[1]).off;
   updateNav(); drawAhead(); drawDone(); stats(); renderGps(); every(1000, () => { stats(); renderGps(); updateSync(); }); updateSync();
   $('#stop').onclick = finishRoute;
