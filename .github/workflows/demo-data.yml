@@ -1,0 +1,16 @@
+# One-off: map data of Löhne for the presentation video, pushed to the branch demo-assets.
+name: Demo map data
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sh tools/demo/fetch.sh
+      - name: Push to demo-assets
+        run: |
+          cd demo && git init -q && git checkout -q -b demo-assets && git add . && git -c user.name=github-actions -c user.email=actions@github.com commit -qm "demo map data (© OpenStreetMap contributors, ODbL)"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" demo-assets
+          echo "::notice::$(du -sh . | cut -f1) pushed"
