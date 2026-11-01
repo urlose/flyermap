@@ -427,7 +427,15 @@ async function viewTaskMap(id, back){
       { key:'zone', on:false, add:g => { if(tk.zone_polygon) L.polygon(tk.zone_polygon, { color:css('--brand'), weight:2, fillOpacity:.05, interactive:false }).addTo(g); } },
       ...((tk.must_areas || []).length ? [{ key:'must', label:t('mustTitle'), add:g => tk.must_areas.forEach(a => L.polygon(mArea(a).p, { color:'#EA580C', weight:3, dashArray:'8 6', fillOpacity:.1, interactive:false }).addTo(g)) }] : []),
       ...(tk.work_area ? [{ key:'own', label:t('zoneTitle'), add:g => L.polygon(tk.work_area, { color:'#7C3AED', weight:3, dashArray:'10 6', fillOpacity:.04, interactive:false }).addTo(g) }] : []),
-      { key:'plan', label:t('rvPlan'), add:g => { (plans || []).forEach(p => { if(p.path && p.path.length > 1) L.polyline(p.path, { color:p.color || '#2563EB', weight:4, opacity:.5, lineJoin:'round' }).addTo(g); }); L.marker([tk.start_lat, tk.start_lng], { icon:dot('pin-start', 24) }).addTo(g); } },
+      // the planned routes; with several working days every day is its own layer (day 1 solid, day 2 dashed, …)
+      ...(() => {
+        const nd = Math.max(1, ...(plans || []).map(p => (p.days || []).length));
+        const drawDay = (g, k) => (plans || []).forEach(p => { if(!p.path || p.path.length < 2) return; const d = nd > 1 ? (p.days || [])[k] : null; if(nd > 1 && !d) return;
+          L.polyline(d ? p.path.slice(d.i0, d.i1 + 1) : p.path, { color:p.color || '#2563EB', weight:k ? 4 : 5, opacity:.75, dashArray:k ? (k % 2 ? '10 8' : '2 8') : null, lineJoin:'round', lineCap:'round' }).addTo(g); });
+        const start = g => L.marker([tk.start_lat, tk.start_lng], { icon:dot('pin-start', 24) }).addTo(g);
+        return nd > 1 ? [...Array.from({ length:nd }, (_, k) => ({ key:'day' + k, label:t('dayN', { n:k + 1 }) + (k ? ' ┄' : ' ━'), add:g => drawDay(g, k) })), { key:'start', add:start }]
+          : [{ key:'plan', label:t('rvPlan'), add:g => { drawDay(g, 0); start(g); } }];
+      })(),
       { key:'done', label:t('rvDone'), add:g => res.forEach(x => x.runs.forEach(run => L.polyline(run, { color:GREEN, weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g))) },
       { key:'gps', label:tracks.some(x => x.length > 1) ? t('rvGps') : '', on:false, add:g => tracks.forEach((ll, i) => { if(ll.length > 1) L.polyline(ll, { color:trackCol[i] || '#1D4ED8', weight:2.5, opacity:.95 }).addTo(g); }) },
       { key:'live', label:t('rvLive'), add:g => { redrawLive = liveWorkers(g, tk, plans, () => names); } },
