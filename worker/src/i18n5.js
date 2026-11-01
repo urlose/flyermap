@@ -99,3 +99,6 @@ Object.assign(T.ru, { assignHint:'Выберите работника для к�
 // big map for distributors (01.11.2026)
 Object.assign(T.de, { area:'Gebiet', routeLen:'Strecke', mapBig:'Große Karte', mapSmall:'Details' });
 Object.assign(T.ru, { area:'Район', routeLen:'Длина', mapBig:'Большая карта', mapSmall:'Подробно' });
+// guidance to the route when the walker is away from it (01.11.2026)
+Object.assign(T.de, { navToStart:'Zum Routenbeginn · {d}', navBack:'Zurück zur Route · {d}', navToSub:'Der lila Linie folgen · Kartentaste rechts = Fußweg' });
+Object.assign(T.ru, { navToStart:'К началу маршрута · {d}', navBack:'Назад к маршруту · {d}', navToSub:'Идите по фиолетовой линии · кнопка карты справа = пешеходный путь' });

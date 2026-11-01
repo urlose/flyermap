@@ -472,13 +472,28 @@ function viewTracking(){
       $('#quotaTxt').textContent = t('quotaLine', { a:fmtN(got), b:fmtN(quota) });
     }
   };
-  let lastDraw = 0, lastOff = 0;
+  let lastDraw = 0, lastOff = 0, approachTo = null;
+  const approachLayer = L.layerGroup().addTo(m);
+  const drawApproach = () => {
+    approachLayer.clearLayers(); const me = W.track[W.track.length - 1];
+    if(!approachTo || !me) return;
+    L.polyline([[me[0], me[1]], approachTo], { color:'#7C3AED', weight:4, opacity:.9, dashArray:'2 9', lineCap:'round', interactive:false }).addTo(approachLayer);
+    L.circleMarker(approachTo, { radius:9, color:'#fff', weight:3, fillColor:'#7C3AED', fillOpacity:1, interactive:false }).addTo(approachLayer);
+  };
   const ARROW = { start:0, S:0, SL:-45, SR:45, L:-90, R:90, U:180 };
   const updateNav = () => {
     if(!nav || !$('#nav')) return;
     const n = nav.next(dayIdx), s = n.step[1], multi = nav.days.length > 1;
-    let main, sub = '', icon;
-    if(lastOff > 60){ main = t('navOff', { d:fmtDist(lastOff) }); icon = `<svg viewBox="0 0 24 24" style="transform:rotate(180deg)"><path d="M12 3v16M6 9l6-6 6 6"/></svg>`; }
+    let main, sub = '', icon; approachTo = null;
+    if(lastOff > 60){
+      // away from the route (e.g. the route begins a few streets from the start point): lead the walker to the place where
+      // the route goes on, with a dashed line on the map and the walking directions behind the map button
+      const j = Math.min(nav.path.length - 1, Math.max(0, Math.round(nav.pos))), tgt = nav.path[j], me = W.track[W.track.length - 1];
+      const day = nav.days[dayIdx || 0], atStart = !day || nav.pos - day.i0 < 1.5;
+      approachTo = tgt;
+      main = t(atStart ? 'navToStart' : 'navBack', { d:fmtDist(me ? hav(me[0], me[1], tgt[0], tgt[1]) : lastOff) }); sub = t('navToSub');
+      icon = ICONS.pin;
+    }
     else if(n.lastOfDay){ main = t('navIn', { d:fmtDist(n.dist) }) + ' · ' + (multi && dayIdx < nav.days.length - 1 ? t('dayDone', { n:dayIdx + 1 }) : t('navEnd')); icon = ICONS.flag; if(n.dist < 25) main = multi && dayIdx < nav.days.length - 1 ? t('dayDone', { n:dayIdx + 1 }) : t('navEnd'); }
     else {
       const nm = n.step[2]; main = t('navIn', { d:fmtDist(n.dist) }) + ' · ' + t('nav' + s); sub = nm ? t('navOnto', { name:nm }) : '';
@@ -486,7 +501,7 @@ function viewTracking(){
       if(n.then) sub += (sub ? ' · ' : '') + t('navThen', { s:t('nav' + n.then.step[1]) + ' (' + fmtDist(Math.max(0, n.then.dist - n.dist)) + ')' });
     }
     $('#navIc').innerHTML = icon; $('#navMain').textContent = main; $('#navSub').textContent = sub;
-    const at = n.at || nav.path[nav.path.length - 1]; $('#navExt').href = 'https://www.google.com/maps/dir/?api=1&destination=' + at[0] + ',' + at[1] + '&travelmode=walking';
+    const at = approachTo || n.at || nav.path[nav.path.length - 1]; $('#navExt').href = 'https://www.google.com/maps/dir/?api=1&destination=' + at[0] + ',' + at[1] + '&travelmode=walking';
   };
   // the walker's dot stays in the free part of the map (between the turn banner and the card), not hidden behind the card
   const followTo = (ll, zoom, animate) => {
@@ -499,7 +514,7 @@ function viewTracking(){
   view.me = (lat, lng) => { if(!meMarker) meMarker = L.marker([lat, lng], { icon:dot('me-dot', 20), zIndexOffset:1000 }).addTo(m); else meMarker.setLatLng([lat, lng]); };
   view.update = (lat, lng) => {
     trackLine.addLatLng([lat, lng]); view.me(lat, lng);
-    if(nav){ lastOff = nav.locate(lat, lng).off; updateNav(); drawAhead(); }
+    if(nav){ lastOff = nav.locate(lat, lng).off; updateNav(); drawAhead(); drawApproach(); }
     if(view.follow) followTo([lat, lng], m.getZoom() < 16 ? 17 : null);   // first fix after the start: close up
     if(Date.now() - lastDraw > 800){ lastDraw = Date.now(); drawDone(); stats(); }
     updateSync();
@@ -507,7 +522,7 @@ function viewTracking(){
   view.refreshDemo = () => { const b = $('#demo'); if(b) b.textContent = W.sim ? t('demoStop') : t('demoWalk'); };
   if(last){ view.me(last[0], last[1]); followTo([last[0], last[1]], 17); }
   if(nav && last) lastOff = nav.locate(last[0], last[1]).off;
-  updateNav(); drawAhead(); drawDone(); stats(); renderGps(); every(1000, () => { stats(); renderGps(); updateSync(); }); updateSync();
+  updateNav(); drawAhead(); drawApproach(); drawDone(); stats(); renderGps(); every(1000, () => { stats(); renderGps(); updateSync(); }); updateSync();
   // big map: the card shrinks to one line (time, distance, flyers); a tap brings everything back
   $('#fcSize').onclick = () => {
     W.mapFull = !W.mapFull; const fc = document.querySelector('.float-card'), b = $('#fcSize');

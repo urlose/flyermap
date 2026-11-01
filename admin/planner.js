@@ -399,6 +399,11 @@
   }
 
   /* ---------- 4. route per part ---------- */
+  function startNode(g, p){
+    const k = p[0] + ',' + p[1];
+    if(!g._sn || g._sn.k !== k) g._sn = { k, v:nearestNode(g, p, g.pts.map((_, i) => i).filter(i => g.adj[i].length)) };
+    return g._sn.v;
+  }
   function nearestNode(g, p, among){
     let best = -1, bd = Infinity;
     for(const v of among){ const d = dist(g.pts[v], p); if(d < bd){ bd = d; best = v; } }
@@ -411,8 +416,10 @@
     if(!req.length) return { path:[], length_m:0, street_m:0, edges:0, steps:[] };
     const inst = req.map(e => ({ e, dead:false }));
     const touched = new Set(); for(const e of req){ touched.add(g.edges[e].a); touched.add(g.edges[e].b); }
-    if(rootNode != null) touched.add(rootNode);
-    const root = rootNode != null ? rootNode : nearestNode(g, start, touched);
+    // every loop begins and ends at the start point (that is where the flyers are picked up): a part away from the start
+    // gets the walk there and back as part of its route (otherwise the walker stands at the start without guidance)
+    const root = rootNode != null ? rootNode : startNode(g, start);
+    touched.add(root);
     // union-find to connect separated pieces of the part
     const par = new Map(); const find = x => { while(par.get(x) !== x){ par.set(x, par.get(par.get(x))); x = par.get(x); } return x; };
     const uni = (a, b) => { if(!par.has(a)) par.set(a, a); if(!par.has(b)) par.set(b, b); par.set(find(a), find(b)); };
