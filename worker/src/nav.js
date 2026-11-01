@@ -29,7 +29,7 @@ export function makeNav(plan){
   // position of every tracker sample (8 m steps, same densify as the progress tracker) along the path, as a fractional index
   const posOf = [0];
   for(let i = 1; i < path.length; i++){ const n = Math.max(1, Math.ceil(hv(path[i - 1], path[i]) / 8)); for(let k = 1; k <= n; k++) posOf.push(i - 1 + k / n); }
-  let pos = 0, isDone = null;
+  let pos = 0, isDone = null, dayR = null;
   const mAt = q => { const j = Math.max(0, Math.min(path.length - 1, Math.floor(q))); return j < path.length - 1 ? cum[j] + (q - j) * (cum[j + 1] - cum[j]) : cum[j]; };   // metres along the line
   const seg = (p, j) => {   // distance from p to segment j (path[j]→path[j+1]) and the fraction along it, in metres (flat approximation)
     const a = path[j], b = path[j + 1], kx = Math.cos(p[0] * RAD) * R * RAD, ky = R * RAD;
@@ -45,6 +45,8 @@ export function makeNav(plan){
     sampleAt(p){ let lo = 0, hi = posOf.length - 1; while(lo < hi){ const mid = (lo + hi + 1) >> 1; if(posOf[mid] <= p) lo = mid; else hi = mid - 1; } return lo; },
     // isDone(sampleIndex): walked already (from the progress tracker) – such streets are passed over when an unwalked one is near
     setDoneCheck(fn){ isDone = fn; },
+    // the working day the walker is on: pieces of other days (a street that belongs to day 1 and day 2) count only if nothing of this day is near
+    setDay(k){ dayR = k == null ? null : days[Math.max(0, Math.min(days.length - 1, k))]; },
     // where on the line the walker is. All pieces within 50 m are candidates; the choice prefers (1) streets not walked yet,
     // (2) not going back along the route, (3) the nearest one. So a gap left behind does not pull the guidance back, and a street
     // walked earlier that runs close by does not catch the walker.
@@ -56,8 +58,9 @@ export function makeNav(plan){
         const s = seg(p, j); if(s.d < near) near = s.d;
         if(s.d > 50) continue;
         const q = j + s.t, done = isDone ? isDone(api.sampleAt(q)) : false;
-        const score = init ? s.d - (done ? 30 : 0) - q * 0.001
-          : s.d + (done && Math.abs(q - pos) > 4 ? 35 : 0) + (q < pos - 3 ? 25 : 0) + Math.min(40, Math.max(0, mAt(q) - mAt(pos) - 150) * 0.05);   // far ahead along the route (e.g. the end of the day runs back along the street walked first)   // the piece right here was just marked as walked: no penalty
+        const other = dayR && (q < dayR.i0 - 0.5 || q > dayR.i1 + 0.5) ? 45 : 0;
+        const score = other + (init ? s.d - (done ? 30 : 0) - q * 0.001
+          : s.d + (done && Math.abs(q - pos) > 4 ? 35 : 0) + (q < pos - 3 ? 25 : 0) + Math.min(40, Math.max(0, mAt(q) - mAt(pos) - 150) * 0.05));   // far ahead along the route (e.g. the end of the day runs back along the street walked first)   // the piece right here was just marked as walked: no penalty
         if(!best || score < best.score) best = { score, d:s.d, pos:q };
       }
       if(best) pos = best.pos;

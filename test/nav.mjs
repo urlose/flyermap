@@ -40,4 +40,14 @@ const before = nav.pos, r = nav.locate(...at(200, 150)); check(r.off > 50 && nav
   check(n2.pos < 1, `walking the first street: still at the beginning of the day (pos ${n2.pos.toFixed(2)}), not at its end`);
   check(!n2.next(0).lastOfDay, 'no "day done" there');
 }
+// a street that belongs to the end of day 1 and to the start of day 2 (Sara, Herten): walking it on day 1 stays day 1
+{
+  const pth = [at(0, 0), at(300, 0), at(300, 200), at(0, 200), at(0, 400), at(300, 400), at(300, 200), at(0, 200), at(0, 0)];
+  const pl = { path:pth, steps:[], days:[{ i0:0, i1:4 }, { i0:4, i1:8 }] };
+  const t3 = P.makeTracker(pth), n3 = makeNav(pl); n3.setDoneCheck(i => t3.isDone(i)); let lp = null;
+  const go = (x0, y0, x1, y1) => { const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 6); for(let k = 1; k <= n; k++){ const p = at(x0 + (x1 - x0) * k / n, y0 + (y1 - y0) * k / n); if(lp) t3.markLine(lp, p); else t3.mark(p); lp = p; n3.locate(p[0], p[1]); } };
+  n3.setDay(0); go(0, 0, 300, 0); go(300, 0, 300, 200); go(300, 200, 150, 200);
+  check(n3.pos >= 2 && n3.pos <= 4, `on the street shared by day 1 and day 2, day 1 is kept (pos ${n3.pos.toFixed(2)}, day 1 = 0…4)`);
+  check(!n3.next(0).lastOfDay || n3.next(0).dist > 100, 'no "day 1 done" in the middle of it');
+}
 process.exit(fail ? 1 : 0);
