@@ -439,7 +439,7 @@ function viewTracking(){
   const m = makeMap($('#fullMap'), last ? [last[0], last[1]] : task ? [task.start_lat, task.start_lng] : null, 16);
   // navigation along the planned line: which working day we are on, and the next turn
   const plan = task && task.plan, nav = hasPlan && plan && plan.path && plan.path.length > 1 ? makeNav(plan) : null;
-  if(nav){ nav.setPosFromSample(W.tracker.nextIndex()); if(W.route.dayIdx == null){ W.route.dayIdx = nav.dayAt(); saveRoute(); } }
+  if(nav){ nav.setDoneCheck(i => W.tracker.isDone(i)); nav.setPosFromSample(W.tracker.nextIndex()); if(last) nav.locate(last[0], last[1], true); if(W.route.dayIdx == null){ W.route.dayIdx = nav.dayAt(); saveRoute(); } }
   const dayIdx = nav ? W.route.dayIdx : null;
   if(task){ const base = drawTaskBase(m, task, dayIdx, !!nav); if(!last) fit(m, base.b, 40); drawCoverage(m, task, []); }
   const doneLayer = L.layerGroup().addTo(m);

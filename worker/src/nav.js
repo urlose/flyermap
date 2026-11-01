@@ -29,7 +29,7 @@ export function makeNav(plan){
   // position of every tracker sample (8 m steps, same densify as the progress tracker) along the path, as a fractional index
   const posOf = [0];
   for(let i = 1; i < path.length; i++){ const n = Math.max(1, Math.ceil(hv(path[i - 1], path[i]) / 8)); for(let k = 1; k <= n; k++) posOf.push(i - 1 + k / n); }
-  let pos = 0;
+  let pos = 0, isDone = null;
   const seg = (p, j) => {   // distance from p to segment j (path[j]→path[j+1]) and the fraction along it, in metres (flat approximation)
     const a = path[j], b = path[j + 1], kx = Math.cos(p[0] * RAD) * R * RAD, ky = R * RAD;
     const ax = (a[1] - p[1]) * kx, ay = (a[0] - p[0]) * ky, bx = (b[1] - p[1]) * kx, by = (b[0] - p[0]) * ky;
@@ -40,15 +40,27 @@ export function makeNav(plan){
     path, steps, days, cum, posOf, get pos(){ return pos; },
     setPosFromSample(i){ if(i >= 0 && i < posOf.length) pos = posOf[i]; else pos = Math.max(0, path.length - 1); },
     dayAt(p){ const j = Math.floor(p == null ? pos : p); const k = days.findIndex(d => j < d.i1 || (j === d.i1 && d === days[days.length - 1])); return k < 0 ? days.length - 1 : k; },
-    // follows the walker: searches a window ahead of the last position (a street that is walked twice must not make us jump back)
-    locate(lat, lng){
+    // which tracker sample a position on the line belongs to (posOf is ascending)
+    sampleAt(p){ let lo = 0, hi = posOf.length - 1; while(lo < hi){ const mid = (lo + hi + 1) >> 1; if(posOf[mid] <= p) lo = mid; else hi = mid - 1; } return lo; },
+    // isDone(sampleIndex): walked already (from the progress tracker) – such streets are passed over when an unwalked one is near
+    setDoneCheck(fn){ isDone = fn; },
+    // where on the line the walker is. All pieces within 50 m are candidates; the choice prefers (1) streets not walked yet,
+    // (2) not going back along the route, (3) the nearest one. So a gap left behind does not pull the guidance back, and a street
+    // walked earlier that runs close by does not catch the walker.
+    // init: first fix after opening the screen – the walker stands where they walked last, so walked pieces are preferred there
+    locate(lat, lng, init){
       if(path.length < 2) return { off:0 };
-      const p = [lat, lng]; let best = null;
-      const scan = (from, to) => { for(let j = Math.max(0, from); j <= Math.min(path.length - 2, to); j++){ const s = seg(p, j); if(!best || s.d < best.d) best = { d:s.d, pos:j + s.t }; } };
-      const j0 = Math.floor(pos); scan(j0 - 2, j0 + 40);
-      if(!best || best.d > 60){ const keep = best; best = null; scan(0, path.length - 2); if(keep && (!best || keep.d <= best.d + 15)) best = keep; }
-      if(best && best.d <= 60) pos = Math.max(pos - 3, best.pos);   // never jump backwards
-      return { off:Math.round(best ? best.d : 0), pos };
+      const p = [lat, lng]; let best = null, near = Infinity;
+      for(let j = 0; j <= path.length - 2; j++){
+        const s = seg(p, j); if(s.d < near) near = s.d;
+        if(s.d > 50) continue;
+        const q = j + s.t, done = isDone ? isDone(api.sampleAt(q)) : false;
+        const score = init ? s.d - (done ? 30 : 0) - q * 0.001
+          : s.d + (done && Math.abs(q - pos) > 4 ? 35 : 0) + (q < pos - 3 ? 25 : 0) + Math.min(20, Math.max(0, q - pos) * 0.02);   // the piece right here was just marked as walked: no penalty
+        if(!best || score < best.score) best = { score, d:s.d, pos:q };
+      }
+      if(best) pos = best.pos;
+      return { off:Math.round(best ? best.d : near), pos };
     },
     // the stretch right in front of the walker (from the current position, about `meters` along the line, not past the
     // end of the day): drawn bright on the map so the next steps stand out from the rest of the route
