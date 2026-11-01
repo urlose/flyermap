@@ -159,8 +159,8 @@ export function cityPicker(initial){
 }
 
 export function langSwitch(cur, asSetting){
-  if(asSetting) return `<label class="f">${esc(t('language'))}</label><div class="seg" role="radiogroup">${[['de', 'Deutsch'], ['ru', 'Русский']].map(([k, n]) => `<button role="radio" aria-checked="${k === cur}" class="${k === cur ? 'on' : ''}" data-lang="${k}">${n}</button>`).join('')}</div>`;
-  return `<div class="lang">${esc(t('language'))}: ${[['de', 'Deutsch'], ['ru', 'Русский']].map(([k, n]) => `<button class="link ${k === cur ? 'on' : ''}" data-lang="${k}">${n}</button>`).join(' · ')}</div>`;
+  if(asSetting) return `<label class="f">${esc(t('language'))}</label><div class="seg" role="radiogroup">${[['de', 'Deutsch'], ['en', 'English'], ['ru', 'Русский']].map(([k, n]) => `<button role="radio" aria-checked="${k === cur}" class="${k === cur ? 'on' : ''}" data-lang="${k}">${n}</button>`).join('')}</div>`;
+  return `<div class="lang">${esc(t('language'))}: ${[['de', 'Deutsch'], ['en', 'English'], ['ru', 'Русский']].map(([k, n]) => `<button class="link ${k === cur ? 'on' : ''}" data-lang="${k}">${n}</button>`).join(' · ')}</div>`;
 }
 export const avatar = (name, cls = '') => `<div class="avatar ${cls}">${ICONS.person}</div>`;
 export const colorOf = i => css('--c' + (i % 10)) || '#2563EB';

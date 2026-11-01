@@ -3,6 +3,7 @@ import './i18n2.js';
 import './i18n3.js';
 import './i18n4.js';
 import './i18n5.js';
+import './i18n_en.js';
 import { store } from './core.js';
 import { UI, applyTheme, initOffline } from './ui.js';
 import { W, bootWorker, workerTab, acceptToken } from './worker.js';

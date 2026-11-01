@@ -38,9 +38,9 @@ const dec = () => I.lang === 'ru' ? ',' : ',';
 export const fmtDist = m => m >= 1000 ? (m/1000).toFixed(1).replace('.', dec()) + ' ' + t('km') : Math.round(m) + ' ' + t('m');
 export const fmtH = m => (m / 1000 / 3).toFixed(1).replace('.', dec());
 export const fmtHm = min => (min / 60).toFixed(1).replace('.', ',');
-export const fmtN = n => Math.round(n).toLocaleString(I.lang === 'ru' ? 'ru-RU' : 'de-DE');
+export const fmtN = n => Math.round(n).toLocaleString(I.lang === 'ru' ? 'ru-RU' : I.lang === 'en' ? 'en-GB' : 'de-DE');
 export const fmtTime = ms => { const s = Math.max(0, Math.floor(ms/1000)); const h = Math.floor(s/3600), m = Math.floor(s%3600/60), x = s%60; return (h ? h + ':' : '') + String(m).padStart(h ? 2 : 1, '0') + ':' + String(x).padStart(2, '0'); };
-export const loc = () => I.lang === 'ru' ? 'ru-RU' : 'de-DE';
+export const loc = () => I.lang === 'ru' ? 'ru-RU' : I.lang === 'en' ? 'en-GB' : 'de-DE';
 export function fmtDay(d){
   if(!d) return t('noDate');
   const day = new Date(d + 'T00:00:00'), now = new Date(); now.setHours(0,0,0,0);

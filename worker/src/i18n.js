@@ -110,4 +110,4 @@ export const T = {
   }
 };
 export const I = { lang:'de' };
-export const t = (k, v = {}) => String(T[I.lang][k] ?? T.ru[k] ?? k).replace(/\{(\w+)\}/g, (_, x) => v[x] ?? '');
+export const t = (k, v = {}) => String((T[I.lang] || T.de)[k] ?? T.de[k] ?? T.ru[k] ?? k).replace(/\{(\w+)\}/g, (_, x) => v[x] ?? '');

@@ -4,7 +4,7 @@ import { $, esc } from './core.js';
 import { plain, modal } from './ui.js';
 import { legalHtml, LEGAL_TITLES, LOCATION_NOTE, PRIVACY_VERSION, PRIVACY_DATE, IMPRINT_READY } from './legal.js';
 
-const lang = () => (I.lang === 'ru' ? 'ru' : 'de');
+const lang = () => (['ru', 'en'].includes(I.lang) ? I.lang : 'de');
 // full screen with a back button; `back` re-renders the screen we came from
 export function viewLegal(kind, back){
   const l = lang();
