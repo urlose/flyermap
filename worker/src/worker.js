@@ -3,6 +3,7 @@ import { registerPlugin } from '@capacitor/core';
 import { App } from '@capacitor/app';
 import Planner from '../../admin/planner.js';
 import { makeNav, dayProgress } from './nav.js';
+import { openMapView } from './routeview.js';
 import { locationNote, legalLinks, bindLegal } from './legalview.js';
 import { setLegalFirm } from './legal.js';
 import { t, I } from './i18n.js';
@@ -326,8 +327,9 @@ function viewTaskDetail(task){
         ${task.quota_m30 ? `<div><span>${esc(t('quotaInfo'))}</span><b>${fmtN(task.quota_m30)} m / 30 ${esc(t('min'))}</b></div>` : ''}
         ${task.notes ? `<div><span>${esc(t('note'))}</span><b>${esc(task.notes)}</b></div>` : ''}
       </div>
-      ${plan && plan.days && plan.days.length > 1 ? `<h2 class="sec">${esc(t('route'))}:</h2><div class="info">${plan.days.map((d, k) => `<div><span>${esc(t('dayN', { n:k + 1 }))}${dayList(plan)[k] ? ' · ' + esc(fmtDay(dayList(plan)[k])) : ''}</span><b>${esc(t('routeLine', { km:fmtDist(d.length_m), h:fmtHm(d.minutes || 0), mb:fmtN(d.mailboxes || 0) }))} <i id="dp${k}"></i></b></div>`).join('')}</div>` : ''}
+      ${plan && plan.days && plan.days.length > 1 ? `<h2 class="sec">${esc(t('route'))}:</h2><div class="info">${plan.days.map((d, k) => `<div class="day-row" data-dbig="${k}" role="button" tabindex="0"><span>${esc(t('dayN', { n:k + 1 }))}${dayList(plan)[k] ? ' · ' + esc(fmtDay(dayList(plan)[k])) : ''}</span><b>${esc(t('routeLine', { km:fmtDist(d.length_m), h:fmtHm(d.minutes || 0), mb:fmtN(d.mailboxes || 0) }))} <i id="dp${k}"></i></b></div>`).join('')}</div>` : ''}
       <div class="mapbox" id="tdMap"></div>
+      ${plan && plan.path && plan.path.length > 1 ? `<button class="btn ghost small" id="tdBig" style="margin-top:8px">${ICONS.expand}${esc(t('rvBig'))}</button>` : ''}
       ${plan ? '' : `<p class="note">${esc(t('noPlan'))}</p>`}
       ${plan && st === 'open' ? `<p class="hint">${esc(t('openDetailHint'))}</p>` : ''}
       ${plan && (st === 'offered' || st === 'open') ? `<h2 class="sec">${esc(t('pickDays'))}</h2><p class="small muted" style="margin-top:-6px">${esc(t('dayHint', { h:(plan.minutes / 60).toFixed(1).replace('.', ','), n:need }))}</p>
@@ -344,6 +346,8 @@ function viewTaskDetail(task){
   const { b, planLine } = drawTaskBase(m, task); fit(m, b, 16);
   if(st !== 'open') drawCoverage(m, task, planLine ? [planLine] : []);
   if($('#go')) $('#go').onclick = () => beginRoute(task);
+  if($('#tdBig')) $('#tdBig').onclick = () => bigRouteMap(task, null);
+  document.querySelectorAll('[data-dbig]').forEach(r => { r.onclick = () => bigRouteMap(task, +r.dataset.dbig); r.onkeydown = e => { if(e.key === 'Enter') bigRouteMap(task, +r.dataset.dbig); }; });
   if(plan && plan.days && plan.days.length > 1 && st === 'accepted'){   // how much of each day is already walked → which day comes next
     rpc('plan_progress', { p_token:W.token, p_plan_id:plan.id }).then(prev => {
       const tr = Planner.makeTracker(plan.path); tr.addTrack(prev || []);
@@ -376,6 +380,27 @@ function viewTaskDetail(task){
   };
 }
 
+// the planned route on the whole screen; with several working days every day is a layer (dayIdx: only that day shown)
+const DAY_COLORS = ['#2563EB', '#EA580C', '#16A34A', '#9333EA', '#DC2626', '#0891B2'];
+function bigRouteMap(task, dayIdx){
+  const pl = task.plan, days = pl.days && pl.days.length > 1 ? pl.days : null, dates = dayList(pl);
+  const layers = days ? days.map((d, k) => ({ key:'d' + k, label:t('dayN', { n:k + 1 }), on:dayIdx == null || dayIdx === k,
+      add:g => { L.polyline(pl.path.slice(d.i0, d.i1 + 1), { color:'#fff', weight:9, opacity:.9, lineJoin:'round' }).addTo(g); L.polyline(pl.path.slice(d.i0, d.i1 + 1), { color:DAY_COLORS[k % DAY_COLORS.length], weight:5, opacity:.95, lineJoin:'round' }).addTo(g); } }))
+    : [{ key:'route', label:t('route'), add:g => L.polyline(pl.path, { color:pl.color || '#2563EB', weight:5, opacity:.9, lineJoin:'round' }).addTo(g) }];
+  if(task.zone_polygon) layers.unshift({ key:'zone', label:t('area'), on:false, add:g => L.polygon(task.zone_polygon, { color:css('--brand'), weight:2, fillOpacity:.05, interactive:false }).addTo(g) });
+  layers.push({ key:'start', add:g => L.marker([task.start_lat, task.start_lng], { icon:dot('pin-start', 26) }).addTo(g) });
+  const sel = days && dayIdx != null ? days[dayIdx] : null;
+  openMapView({
+    title:task.title + (sel ? ' · ' + t('dayN', { n:dayIdx + 1 }) : ''),
+    lines:[[task.district, task.city_name].filter(Boolean).join(', '), sel && dates[dayIdx] ? fmtDay(dates[dayIdx]) : taskDates(task)],
+    stats:sel ? [[t('routeLen'), fmtDist(sel.length_m)], [t('duration'), fmtHm(sel.minutes || 0) + ' ' + t('h')], [t('mailboxes'), fmtN(sel.mailboxes || 0)]]
+      : [[t('routeLen'), fmtDist(pl.length_m)], [t('duration'), fmtHm(pl.minutes || 0) + ' ' + t('h')], [t('mailboxes'), fmtN(pl.mailboxes || 0)]],
+    legend:days ? days.map((d, k) => ({ color:DAY_COLORS[k % DAY_COLORS.length], label:t('dayN', { n:k + 1 }) + (dates[k] ? ' · ' + fmtDay(dates[k]) : ''), sub:fmtDist(d.length_m) + ' · ' + fmtN(d.mailboxes || 0) })) : [],
+    layers,
+    back:() => viewTaskDetail(task),
+  });
+}
+
 function viewMap(){
   if(W.route && !W.route.endedAt) return viewTracking();
   const task = W.focus || tasks().find(x => x.plan && x.plan.status === 'accepted') || tasks().find(x => !x.plan) || null;
@@ -396,8 +421,9 @@ function viewTracking(){
   shell('map', `<div id="fullMap" class="fullmap"></div>
     <button class="icon-btn map-btn" id="recenter" aria-label="center">${ICONS.locate}</button>
     ${hasPlan ? `<div class="nav" id="nav"><div class="nav-ic" id="navIc"></div><div class="nav-tx"><b id="navMain"></b><span id="navSub"></span></div><a class="nav-ext" id="navExt" target="_blank" rel="noopener" aria-label="${esc(t('navExt'))}">${ICONS.map}</a></div>` : ''}
-    <div class="float-card">
-      <div class="fc-row">${paused ? `<span class="rec paused">${esc(t('pauseRunning'))}</span><b id="sPause">0:00</b>` : `<span class="rec">${esc(t('recording'))}</span><span class="gps" id="gps" role="status"></span>`}</div>
+    <div class="float-card ${W.mapFull ? 'mini' : ''}">
+      <div class="fc-row">${paused ? `<span class="rec paused">${esc(t('pauseRunning'))}</span><b id="sPause">0:00</b>` : `<span class="rec">${esc(t('recording'))}</span><span class="gps" id="gps" role="status"></span>`}
+        <button class="fc-size" id="fcSize" aria-label="${esc(t(W.mapFull ? 'mapSmall' : 'mapBig'))}">${W.mapFull ? ICONS.expand : ICONS.shrink}<span>${esc(t(W.mapFull ? 'mapSmall' : 'mapBig'))}</span></button></div>
       ${task ? `<div class="fc-title">${esc(task.title)}</div>` : ''}
       <div class="stats"><div><span>${esc(t('netTime'))}</span><b id="sT">0:00</b></div><div><span>${esc(t('dist'))}</span><b id="sD">0 m</b></div>${W.counter ? `<div><span>${esc(t('flyersEst'))}</span><b id="sF">0</b></div>` : hasPlan ? `<div><span>${esc(t('progress'))}</span><b id="sP">0%</b></div>` : ''}</div>
       ${hasPlan ? `<div class="bar"><i id="sBar"></i></div>${W.counter ? `<p class="small muted" style="margin:6px 0 0" id="sFl"></p>` : ''}` : ''}
@@ -482,6 +508,13 @@ function viewTracking(){
   if(last){ view.me(last[0], last[1]); followTo([last[0], last[1]], 17); }
   if(nav && last) lastOff = nav.locate(last[0], last[1]).off;
   updateNav(); drawAhead(); drawDone(); stats(); renderGps(); every(1000, () => { stats(); renderGps(); updateSync(); }); updateSync();
+  // big map: the card shrinks to one line (time, distance, flyers); a tap brings everything back
+  $('#fcSize').onclick = () => {
+    W.mapFull = !W.mapFull; const fc = document.querySelector('.float-card'), b = $('#fcSize');
+    fc.classList.toggle('mini', W.mapFull);
+    b.innerHTML = (W.mapFull ? ICONS.expand : ICONS.shrink) + `<span>${esc(t(W.mapFull ? 'mapSmall' : 'mapBig'))}</span>`; b.setAttribute('aria-label', t(W.mapFull ? 'mapSmall' : 'mapBig'));
+    const l = W.track[W.track.length - 1]; view.follow = true; if(l) followTo([l[0], l[1]], null, true);
+  };
   $('#stop').onclick = finishRoute;
   if($('#pause')) $('#pause').onclick = pauseRoute;
   if($('#resume')) $('#resume').onclick = resumeRoute;

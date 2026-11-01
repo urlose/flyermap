@@ -96,3 +96,6 @@ Object.assign(T.ru, {
 });
 Object.assign(T.de, { assignHint:'Wähle für jede Route einen Mitarbeiter. Routen ohne Mitarbeiter sehen alle Verteiler deiner Firma als „Freie Route“ und können sie selbst übernehmen.' });
 Object.assign(T.ru, { assignHint:'Выберите работника для каждого маршрута. Маршруты без работника все раздающие вашей фирмы видят как «Свободный маршрут» и могут взять их сами.' });
+// big map for distributors (01.11.2026)
+Object.assign(T.de, { area:'Gebiet', routeLen:'Strecke', mapBig:'Große Karte', mapSmall:'Details' });
+Object.assign(T.ru, { area:'Район', routeLen:'Длина', mapBig:'Большая карта', mapSmall:'Подробно' });

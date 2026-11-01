@@ -317,6 +317,13 @@ button.kpi{cursor:pointer}button.kpi.on{border-color:var(--color-primary);backgr
 .content:has(.sheet.tall) .pick-btn{display:none}
 .float-card{position:absolute;z-index:600;left:12px;right:12px;bottom:12px;background:var(--color-surface-elevated);border-radius:var(--radius-xl);padding:16px;box-shadow:var(--shadow-lg);max-height:62%;overflow:auto}
 .fc-row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.fc-size{margin-left:auto;display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:6px 10px;border:1px solid var(--color-border);border-radius:var(--radius-md);background:var(--color-surface);color:var(--color-text);font:inherit;font-size:13px;font-weight:600;cursor:pointer}
+.fc-size svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.float-card .fc-row .gps{margin-left:auto}.float-card .fc-row .gps + .fc-size{margin-left:0}
+.float-card.mini{padding:10px 12px}
+.float-card.mini > :not(.fc-row):not(.stats){display:none}
+.float-card.mini .stats{margin:8px 0 0}.float-card.mini .stats div{padding:6px 10px}.float-card.mini .stats b{font-size:18px;line-height:22px}
+.day-row{cursor:pointer}.day-row:active{background:var(--color-surface-subtle)}
 .fc-head b{display:block;font-size:18px;line-height:24px;font-weight:600}.fc-head span{font-size:14px;color:var(--color-text-secondary)}
 .fc-head{margin-bottom:12px}
 .fc-title{font-weight:600;margin-top:6px}
