@@ -32,4 +32,12 @@ walk(250, 45, 0, 45); walk(0, 45, 0, 200);
 check(nav.pos > 9.4, `continues onto D, not back to the gap on A (pos ${nav.pos.toFixed(2)})`);
 // off the route: distance reported, position kept
 const before = nav.pos, r = nav.locate(...at(200, 150)); check(r.off > 50 && nav.pos === before, `off the route: ${r.off} m, position kept`);
+// the end of the day runs back along the street walked first: walking that street must not jump to the end ("day done")
+{
+  const pth = [at(0, 0), at(0, 300), at(300, 300), at(300, 350), at(0, 350), at(0, 0)], pl = { path:pth, steps:[], days:[{ i0:0, i1:pth.length - 1 }] };
+  const t2 = P.makeTracker(pth), n2 = makeNav(pl); n2.setDoneCheck(i => t2.isDone(i)); let lp = null;
+  for(let y = 6; y <= 200; y += 6){ const p = at(0, y); if(lp) t2.markLine(lp, p); else t2.mark(p); lp = p; n2.locate(p[0], p[1]); }
+  check(n2.pos < 1, `walking the first street: still at the beginning of the day (pos ${n2.pos.toFixed(2)}), not at its end`);
+  check(!n2.next(0).lastOfDay, 'no "day done" there');
+}
 process.exit(fail ? 1 : 0);

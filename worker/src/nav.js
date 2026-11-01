@@ -30,6 +30,7 @@ export function makeNav(plan){
   const posOf = [0];
   for(let i = 1; i < path.length; i++){ const n = Math.max(1, Math.ceil(hv(path[i - 1], path[i]) / 8)); for(let k = 1; k <= n; k++) posOf.push(i - 1 + k / n); }
   let pos = 0, isDone = null;
+  const mAt = q => { const j = Math.max(0, Math.min(path.length - 1, Math.floor(q))); return j < path.length - 1 ? cum[j] + (q - j) * (cum[j + 1] - cum[j]) : cum[j]; };   // metres along the line
   const seg = (p, j) => {   // distance from p to segment j (path[j]→path[j+1]) and the fraction along it, in metres (flat approximation)
     const a = path[j], b = path[j + 1], kx = Math.cos(p[0] * RAD) * R * RAD, ky = R * RAD;
     const ax = (a[1] - p[1]) * kx, ay = (a[0] - p[0]) * ky, bx = (b[1] - p[1]) * kx, by = (b[0] - p[0]) * ky;
@@ -56,7 +57,7 @@ export function makeNav(plan){
         if(s.d > 50) continue;
         const q = j + s.t, done = isDone ? isDone(api.sampleAt(q)) : false;
         const score = init ? s.d - (done ? 30 : 0) - q * 0.001
-          : s.d + (done && Math.abs(q - pos) > 4 ? 35 : 0) + (q < pos - 3 ? 25 : 0) + Math.min(20, Math.max(0, q - pos) * 0.02);   // the piece right here was just marked as walked: no penalty
+          : s.d + (done && Math.abs(q - pos) > 4 ? 35 : 0) + (q < pos - 3 ? 25 : 0) + Math.min(40, Math.max(0, mAt(q) - mAt(pos) - 150) * 0.05);   // far ahead along the route (e.g. the end of the day runs back along the street walked first)   // the piece right here was just marked as walked: no penalty
         if(!best || score < best.score) best = { score, d:s.d, pos:q };
       }
       if(best) pos = best.pos;

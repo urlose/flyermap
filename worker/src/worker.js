@@ -158,14 +158,23 @@ async function atStartOrAsk(task){
 }
 export async function beginRoute(task){
   if(!await locationNote(W.me, async v => { await rpc('ack_privacy', { p_token:W.token, p_version:v }); if(W.me){ W.me.privacy_version = v; await store.set('me', W.me); } })) return;
-  if(!await atStartOrAsk(task)) return;
   const plan = task && task.plan;
+  // a day that was already begun (part of it walked) is continued where the walker is: no start-point check then
+  let prev = null; if(plan && plan.id){ try{ prev = await rpc('plan_progress', { p_token:W.token, p_plan_id:plan.id }); }catch{} }
+  if(!dayBegun(plan, prev) && !await atStartOrAsk(task)) return;
   W.route = { id:null, taskId:task ? task.id : null, planId:plan ? plan.id : null, task:task || null, startedAt:Date.now(), endedAt:null, distance:0, paused:false, pausedAt:null, breakMs:0, ops:[] };
   W.queue = []; W.track = []; W.tracker = null; W.counter = null; W.prev = null;
   await saveRoute();
-  if(plan && plan.id){ try{ W.prev = await rpc('plan_progress', { p_token:W.token, p_plan_id:plan.id }); }catch{} }
+  W.prev = prev;
   workerTab('map');
   await startWatching(); flush();
+}
+// the next unfinished day already has walked streets (≥ 3 %): it is continued, not started again
+function dayBegun(plan, prev){
+  if(!plan || !plan.path || plan.path.length < 2 || !prev || !prev.length) return false;
+  const tr = Planner.makeTracker(plan.path); tr.addTrack(prev);
+  const pc = dayProgress(plan, tr), next = pc.findIndex(p => p < 95);
+  return next >= 0 && pc[next] >= 3;
 }
 const workMs = () => { const r = W.route; return Math.max(0, (r.paused ? r.pausedAt : Date.now()) - r.startedAt - (r.breakMs || 0)); };
 function pace30(){ const now = Date.now(); let s = 0; for(let i = W.track.length - 1; i > 0; i--){ const a = W.track[i-1], b = W.track[i]; if(now - b[2] > 30 * 60e3) break; if(b[2] - a[2] > 90e3) continue; s += hav(a[0], a[1], b[0], b[1]); } return s; }
@@ -352,7 +361,7 @@ function viewTaskDetail(task){
     rpc('plan_progress', { p_token:W.token, p_plan_id:plan.id }).then(prev => {
       const tr = Planner.makeTracker(plan.path); tr.addTrack(prev || []);
       const pc = dayProgress(plan, tr); pc.forEach((p, k) => { const el = $('#dp' + k); if(el) el.innerHTML = p >= 95 ? statusPill('ok', t('stDone')) : p ? '· ' + p + '%' : ''; });
-      const next = pc.findIndex(p => p < 95), go = $('#go'); if(go && next >= 0) go.querySelector('span').textContent = t('startDayN', { n:next + 1 });
+      const next = pc.findIndex(p => p < 95), go = $('#go'); if(go && next >= 0) go.querySelector('span').textContent = t(pc[next] >= 3 ? 'contDayN' : 'startDayN', { n:next + 1 });
     }).catch(() => {});
   }
   if($('#acc')) $('#acc').onclick = async () => {
@@ -481,10 +490,22 @@ function viewTracking(){
     L.circleMarker(approachTo, { radius:9, color:'#fff', weight:3, fillColor:'#7C3AED', fillOpacity:1, interactive:false }).addTo(approachLayer);
   };
   const ARROW = { start:0, S:0, SL:-45, SR:45, L:-90, R:90, U:180 };
+  // day not finished yet? (< 90 % walked): the nearest open piece of this day and what share is open
+  const leftOfDay = () => {
+    if(!W.tracker || !nav) return null;
+    const me = W.track[W.track.length - 1]; if(!me) return null;
+    let open = 0, all = 0, best = null;
+    for(let i = 0; i < W.tracker.samples.length; i++){
+      if(nav.dayAt(nav.posOf[i]) !== (dayIdx || 0)) continue; all++;
+      if(W.tracker.isDone(i)) continue; open++;
+      const q = W.tracker.samples[i], d = hav(me[0], me[1], q[0], q[1]); if(!best || d < best.d) best = { d, at:q };
+    }
+    return all && open / all > 0.1 && best ? { ...best, pct:Math.round(100 * open / all) } : null;
+  };
   const updateNav = () => {
     if(!nav || !$('#nav')) return;
     const n = nav.next(dayIdx), s = n.step[1], multi = nav.days.length > 1;
-    let main, sub = '', icon; approachTo = null;
+    let main, sub = '', icon, left = null; approachTo = null;
     if(lastOff > 60){
       // away from the route (e.g. the route begins a few streets from the start point): lead the walker to the place where
       // the route goes on, with a dashed line on the map and the walking directions behind the map button
@@ -493,6 +514,10 @@ function viewTracking(){
       approachTo = tgt;
       main = t(atStart ? 'navToStart' : 'navBack', { d:fmtDist(me ? hav(me[0], me[1], tgt[0], tgt[1]) : lastOff) }); sub = t('navToSub');
       icon = ICONS.pin;
+    }
+    else if(n.lastOfDay && n.dist < 60 && (left = leftOfDay())){
+      // the end of the day's line is reached, but streets of this day are still open: lead to the nearest one
+      approachTo = left.at; main = t('navLeft', { n:left.pct, d:fmtDist(left.d) }); sub = t('navToSub'); icon = ICONS.pin;
     }
     else if(n.lastOfDay){ main = t('navIn', { d:fmtDist(n.dist) }) + ' · ' + (multi && dayIdx < nav.days.length - 1 ? t('dayDone', { n:dayIdx + 1 }) : t('navEnd')); icon = ICONS.flag; if(n.dist < 25) main = multi && dayIdx < nav.days.length - 1 ? t('dayDone', { n:dayIdx + 1 }) : t('navEnd'); }
     else {

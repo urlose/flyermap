@@ -104,3 +104,5 @@ Object.assign(T.de, { navToStart:'Zum Routenbeginn · {d}', navBack:'Zurück zur
 Object.assign(T.ru, { navToStart:'К началу маршрута · {d}', navBack:'Назад к маршруту · {d}', navToSub:'Идите по фиолетовой линии · кнопка карты справа = пешеходный путь' });
 Object.assign(T.de, { rvLive:'Wo gerade' });
 Object.assign(T.ru, { rvLive:'Где сейчас' });
+Object.assign(T.de, { contDayN:'Tag {n} fortsetzen', navLeft:'Noch {n} % offen · nächste Straße {d}' });
+Object.assign(T.ru, { contDayN:'Продолжить день {n}', navLeft:'Ещё не пройдено {n} % · ближайшая улица {d}' });

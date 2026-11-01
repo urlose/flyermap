@@ -145,5 +145,5 @@ T.en = {
   openDetailHint:'Nobody has this route yet. Choose your days and take it – the dispatcher sees it right away.', openRoute:'Free route', claim:'Take route', claimed:'Route taken',
   e_plan_taken:'Somebody else just took this route.', e_already_in_task:'You already have a route in this order.',
   area:'Area', routeLen:'Length', mapBig:'Big map', mapSmall:'Details',
-  rvLive:'Where now', navToStart:'To the start of the route · {d}', navBack:'Back to the route · {d}', navToSub:'Follow the purple line · map button on the right = walking directions',
+  rvLive:'Where now', contDayN:'Continue day {n}', navLeft:'{n} % still open · nearest street {d}', navToStart:'To the start of the route · {d}', navBack:'Back to the route · {d}', navToSub:'Follow the purple line · map button on the right = walking directions',
 };
