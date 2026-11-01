@@ -108,3 +108,5 @@ Object.assign(T.de, { contDayN:'Tag {n} fortsetzen', navLeft:'Noch {n} % offen �
 Object.assign(T.ru, { contDayN:'Продолжить день {n}', navLeft:'Ещё не пройдено {n} % · ближайшая улица {d}' });
 Object.assign(T.de, { rerouted:'Route an deinen Weg angepasst' });
 Object.assign(T.ru, { rerouted:'Маршрут подстроен под ваш путь' });
+Object.assign(T.de, { checkpoints:'Checkpoints', cpTitle:'Tag {d} · Abschnitt {n} · {p} % erledigt' });
+Object.assign(T.ru, { checkpoints:'Чекпоинты', cpTitle:'День {d} · участок {n} · пройдено {p} %' });

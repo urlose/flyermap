@@ -108,8 +108,11 @@ export function rerouteDay(plan, dayIdx, isDone, here, head){
   if(path.length < 2) return null;
   const ids = new Map(), pts = [], key = p => p[0].toFixed(6) + ',' + p[1].toFixed(6);
   const vid = path.map(p => { const k = key(p); let i = ids.get(k); if(i === undefined){ i = pts.length; ids.set(k, i); pts.push(p); } return i; });
-  const open = new Uint8Array(path.length);   // open[j]: some of segment j (path[j] → path[j+1]) is not walked yet
-  for(let i = 0; i < base.posOf.length; i++) if(!isDone(i)) open[Math.min(path.length - 2, Math.max(0, Math.ceil(base.posOf[i] - 1e-9) - 1))] = 1;
+  // open[j]: segment j (path[j] → path[j+1]) still needs walking. A few unmarked metres at a corner (GPS) do not count:
+  // at least 3 samples (~24 m) and half of the segment must be open – otherwise the walker would be sent back for nothing
+  const nS = new Uint16Array(path.length), nO = new Uint16Array(path.length), open = new Uint8Array(path.length);
+  for(let i = 0; i < base.posOf.length; i++){ const j = Math.min(path.length - 2, Math.max(0, Math.ceil(base.posOf[i] - 1e-9) - 1)); nS[j]++; if(!isDone(i)) nO[j]++; }
+  for(let j = 0; j < path.length - 1; j++) open[j] = nO[j] >= Math.max(3, nS[j] * 0.5) ? 1 : 0;
   const E = [], byKey = new Map(), adj = pts.map(() => []);
   for(let j = 0; j < path.length - 1; j++){
     const a = vid[j], b = vid[j + 1]; if(a === b) continue;
@@ -171,4 +174,25 @@ export function rerouteDay(plan, dayIdx, isDone, here, head){
   const cands = [build(null)]; if(jNear != null) cands.push(build(jNear));
   const best = cands.reduce((x, y) => y.len < x.len ? y : x);
   return best.out.length > 1 ? best.out : null;
+}
+
+// Checkpoints: every working day is cut into sections of about `every` metres; a section is done when 80 % of it is walked.
+// Shown to the admin and the walker as numbered points along the route (✓ when done).
+export function checkpoints(plan, isDone, every){
+  every = every || 800;
+  const nav = makeNav(plan), path = nav.path; if(path.length < 2) return [];
+  const mAt = q => { const j = Math.max(0, Math.min(path.length - 1, Math.floor(q))); return j < path.length - 1 ? nav.cum[j] + (q - j) * (nav.cum[j + 1] - nav.cum[j]) : nav.cum[j]; };
+  const out = [];
+  nav.days.forEach((d, k) => {
+    const m0 = nav.cum[d.i0], m1 = nav.cum[d.i1], n = Math.max(1, Math.round((m1 - m0) / every)), size = (m1 - m0) / n;
+    const cnt = Array.from({ length:n }, () => [0, 0]);
+    for(let i = 0; i < nav.posOf.length; i++){ const q = nav.posOf[i]; if(q < d.i0 || q > d.i1) continue; const s = Math.min(n - 1, Math.floor((mAt(q) - m0) / size)); cnt[s][1]++; if(isDone(i)) cnt[s][0]++; }
+    for(let s = 0; s < n; s++){
+      const target = m0 + (s + 0.5) * size; let j = d.i0; while(j < d.i1 && nav.cum[j + 1] < target) j++;
+      const f = nav.cum[j + 1] > nav.cum[j] ? (target - nav.cum[j]) / (nav.cum[j + 1] - nav.cum[j]) : 0, a = path[j], b = path[Math.min(path.length - 1, j + 1)];
+      const pct = cnt[s][1] ? Math.round(100 * cnt[s][0] / cnt[s][1]) : 0;
+      out.push({ day:k, n:s + 1, at:[a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f], pct, done:pct >= 80 });
+    }
+  });
+  return out;
 }

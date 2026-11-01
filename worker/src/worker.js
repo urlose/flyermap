@@ -2,7 +2,8 @@ import L from 'leaflet';
 import { registerPlugin } from '@capacitor/core';
 import { App } from '@capacitor/app';
 import Planner from '../../admin/planner.js';
-import { makeNav, dayProgress, rerouteDay, stepsFromPath } from './nav.js';
+import { makeNav, dayProgress, rerouteDay, stepsFromPath, checkpoints } from './nav.js';
+import { cpMarker } from './admin.js';
 import { openMapView } from './routeview.js';
 import { locationNote, legalLinks, bindLegal } from './legalview.js';
 import { setLegalFirm } from './legal.js';
@@ -485,8 +486,11 @@ function viewTracking(){
   let meMarker = null; view.follow = true;
   m.on('dragstart', () => { view.follow = false; });
   $('#recenter').onclick = () => { view.follow = true; const l = W.track[W.track.length - 1]; if(l) followTo([l[0], l[1]], 17, true); };
+  const cpLayer = L.layerGroup().addTo(m);
   const drawDone = () => {
     if(!W.tracker) return; doneLayer.clearLayers();
+    // checkpoints of today's day: what is finished, what is still open
+    cpLayer.clearLayers(); if(plan && plan.path) checkpoints(plan, i => W.tracker.isDone(i)).filter(c => c.day === (dayIdx || 0)).forEach(c => cpMarker(c, plan.color, false).addTo(cpLayer));
     W.tracker.runs().forEach(r => L.polyline(r, { color:GREEN, weight:7, opacity:.95, lineJoin:'round' }).addTo(doneLayer));
     const p = W.tracker.pct(), sp = $('#sP'); if(sp) sp.textContent = p + '%'; const bar = $('#sBar'); if(bar) bar.style.width = p + '%';
   };

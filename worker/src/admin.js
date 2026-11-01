@@ -6,6 +6,7 @@ import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, labelIcon, fit
 import { legalLinks, bindLegal } from './legalview.js';
 import { makePlanEngine } from './planengine.js';
 import { openMapView } from './routeview.js';
+import { checkpoints } from './nav.js';
 import { loadFirm, firmCardHtml, bindFirmCard, firmComplete, avvOk } from './firm.js';
 import { viewMaster, poolHtml } from './master.js';
 
@@ -399,6 +400,9 @@ function liveWorkers(g, tk, plans, showNames){
   });
   return draw;
 }
+// checkpoint: numbered point on the route (day.section with several days), green tick when 80 % of the section is walked
+export const cpMarker = (c, color, multi) => L.marker(c.at, { keyboard:false, zIndexOffset:500, title:t('cpTitle', { d:c.day + 1, n:c.n, p:c.pct }),
+  icon:L.divIcon({ className:'', iconSize:[24, 24], iconAnchor:[12, 12], html:`<div class="cp ${c.done ? 'ok' : ''}" style="--c:${esc(color || '#2563EB')}">${c.done ? '✓' : (multi ? (c.day + 1) + '.' : '') + c.n}</div>` }) });
 // a whole order: every route in its colour, what has been covered in green, the GPS tracks of all days
 async function viewTaskMap(id, back){
   const tk = A.tasks.find(x => x.id === id); if(!tk) return back();
@@ -414,7 +418,7 @@ async function viewTaskMap(id, back){
     const tr = p.path && p.path.length > 1 ? Planner.makeTracker(p.path) : null, ct = p.boxes && p.boxes.length ? Planner.makeBoxCounter(p.boxes) : null;
     for(const pts of byPlan[p.id] || []){ if(tr) tr.addTrack(pts); if(ct) ct.visitAll(pts); }
     const pct = tr ? tr.pct() : 0; doneM += pct * (p.length_m || 0) / 100; allM += p.length_m || 0; if(ct){ flAll += ct.count(); hasFl = true; }
-    return { p, runs:tr ? tr.runs() : [], pct, fl:ct ? ct.count() : null };
+    return { p, runs:tr ? tr.runs() : [], pct, fl:ct ? ct.count() : null, cps:tr ? checkpoints(p, i => tr.isDone(i)) : [] };
   });
   const walked = (routes || []).reduce((a, r) => a + (r.distance_m || 0), 0), days = new Set((routes || []).map(dayKey)).size;
   let names = true, redrawLive = null;
@@ -438,6 +442,7 @@ async function viewTaskMap(id, back){
       })(),
       { key:'done', label:t('rvDone'), add:g => res.forEach(x => x.runs.forEach(run => L.polyline(run, { color:GREEN, weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g))) },
       { key:'gps', label:tracks.some(x => x.length > 1) ? t('rvGps') : '', on:false, add:g => tracks.forEach((ll, i) => { if(ll.length > 1) L.polyline(ll, { color:trackCol[i] || '#1D4ED8', weight:2.5, opacity:.95 }).addTo(g); }) },
+      { key:'cp', label:t('checkpoints'), add:g => res.forEach(({ p, cps }) => cps.forEach(c => cpMarker(c, p.color, (p.days || []).length > 1).addTo(g))) },
       { key:'live', label:t('rvLive'), add:g => { redrawLive = liveWorkers(g, tk, plans, () => names); } },
     ],
     back,
