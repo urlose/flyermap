@@ -43,11 +43,11 @@ export function openMapView(opts){
       + (opts.hasNames ? `<button class="chip ${VS.names ? 'on' : ''}" id="rvNames">${esc(t('rvNames'))}</button>` : '')
       + `<button class="chip" id="rvFit">${esc(t('rvFit'))}</button><button class="chip" id="rvClean">${esc(t('rvOnlyMap'))}</button>`;
     document.querySelectorAll('[data-ly]').forEach(b => b.onclick = () => { const g = groups[b.dataset.ly]; if(m.hasLayer(g)) m.removeLayer(g); else g.addTo(m); tools(); });
-    const nb = $('#rvNames'); if(nb) nb.onclick = () => { VS.names = !VS.names; card(); tools(); };
+    const nb = $('#rvNames'); if(nb) nb.onclick = () => { VS.names = !VS.names; card(); tools(); opts.onNames && opts.onNames(VS.names); };
     $('#rvFit').onclick = fitAll;
     $('#rvClean').onclick = () => { const r = $('#rv'); r.classList.toggle('clean'); $('#rvClean').textContent = r.classList.contains('clean') ? t('rvShowInfo') : t('rvOnlyMap'); setTimeout(() => m.invalidateSize(), 50); };
   };
-  card(); tools();
+  card(); tools(); opts.onNames && opts.onNames(VS.names);
   $('#rvBack').onclick = opts.back;
   setTimeout(fitAll, 80);
   return m;

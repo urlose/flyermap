@@ -378,6 +378,27 @@ async function viewDayMap(routeId, back){
     back,
   });
 }
+// where the people of an order are right now: a dot in their route colour with name and time of the last GPS fix.
+// Pulsing = recording right now and the fix is fresh; grey = older position (they finished, paused or lost the signal).
+// Refreshed every 15 s while the map is open. showNames(): false when the admin has hidden names (for screenshots).
+function liveWorkers(g, tk, plans, showNames){
+  const draw = () => {
+    g.clearLayers();
+    (plans || []).forEach(p => {
+      const w = p.worker_id && wById(p.worker_id); if(!w || w.last_lat == null || !w.last_seen) return;
+      const age = Date.now() - new Date(w.last_seen).getTime(); if(age > 12 * 36e5) return;
+      const run = (A.live || []).find(r => r.worker_id === w.id && (r.task_id === tk.id || r.plan_id === p.id)), fresh = run && !run.paused_at && age < 3 * 60e3;
+      const label = (showNames() ? w.name : t('planRoute', { n:p.idx + 1 })) + ' · ' + (run && run.paused_at ? t('onPause') : ago(w.last_seen));
+      L.marker([w.last_lat, w.last_lng], { zIndexOffset:2000, keyboard:false, icon:L.divIcon({ className:'', iconSize:[22, 22], iconAnchor:[11, 11],
+        html:`<div class="live-pin ${fresh ? 'on' : 'old'}" style="--c:${esc(p.color || '#2563EB')}"><i></i><span>${esc(label)}</span></div>` }) }).addTo(g);
+    });
+  };
+  draw();
+  every(15000, async () => {
+    try{ await Promise.all([loadWorkers(), loadLive()]); draw(); }catch{}
+  });
+  return draw;
+}
 // a whole order: every route in its colour, what has been covered in green, the GPS tracks of all days
 async function viewTaskMap(id, back){
   const tk = A.tasks.find(x => x.id === id); if(!tk) return back();
@@ -396,8 +417,9 @@ async function viewTaskMap(id, back){
     return { p, runs:tr ? tr.runs() : [], pct, fl:ct ? ct.count() : null };
   });
   const walked = (routes || []).reduce((a, r) => a + (r.distance_m || 0), 0), days = new Set((routes || []).map(dayKey)).size;
+  let names = true, redrawLive = null;
   openMapView({
-    title:tk.title, hasNames:true,
+    title:tk.title, hasNames:true, onNames:v => { names = v; if(redrawLive) redrawLive(); },
     lines:[[tk.district, tk.city_name].filter(Boolean).join(', '), tk.work_date ? fmtDay(tk.work_date) : ''],
     stats:[tk.flyers ? [t('flyers'), fmtN(tk.flyers)] : null, hasFl ? [t('rvFlyers'), '≈ ' + fmtN(flAll)] : null, [t('rvDist'), fmtDist(walked)], allM ? [t('rvDayShare2'), Math.round(100 * doneM / allM) + ' %'] : null, days ? [t('rvDays'), String(days)] : null],
     legend:res.map(({ p, pct, fl }) => ({ color:p.color || '#2563EB', label:(p.worker_id ? nameOf(p.worker_id) : t('planRoute', { n:p.idx + 1 })), anonLabel:t('planRoute', { n:p.idx + 1 }), sub:pct + ' %' + (fl != null ? ' · ≈ ' + fmtN(fl) + ' ' + t('flyers') : '') })),
@@ -408,6 +430,7 @@ async function viewTaskMap(id, back){
       { key:'plan', label:t('rvPlan'), add:g => { (plans || []).forEach(p => { if(p.path && p.path.length > 1) L.polyline(p.path, { color:p.color || '#2563EB', weight:4, opacity:.5, lineJoin:'round' }).addTo(g); }); L.marker([tk.start_lat, tk.start_lng], { icon:dot('pin-start', 24) }).addTo(g); } },
       { key:'done', label:t('rvDone'), add:g => res.forEach(x => x.runs.forEach(run => L.polyline(run, { color:GREEN, weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g))) },
       { key:'gps', label:tracks.some(x => x.length > 1) ? t('rvGps') : '', on:false, add:g => tracks.forEach((ll, i) => { if(ll.length > 1) L.polyline(ll, { color:trackCol[i] || '#1D4ED8', weight:2.5, opacity:.95 }).addTo(g); }) },
+      { key:'live', label:t('rvLive'), add:g => { redrawLive = liveWorkers(g, tk, plans, () => names); } },
     ],
     back,
   });
@@ -822,6 +845,7 @@ async function viewTask(id){
   (plans || []).forEach(p => { if(p.path?.length > 1) L.polyline(p.path, { color:p.color || '#2563EB', weight:4, opacity:.6 }).addTo(m); });
   const doneLayer = L.layerGroup().addTo(m);
   L.marker([tk.start_lat, tk.start_lng], { icon:dot('pin-start', 24) }).addTo(m);
+  liveWorkers(L.layerGroup().addTo(m), tk, plans, () => true);
   fit(m, b, 16);
   document.querySelectorAll('[data-plan]').forEach(sel => sel.onchange = async () => {
     const wid = sel.value || null, p = plans.find(x => x.id === sel.dataset.plan);
