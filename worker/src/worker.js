@@ -431,7 +431,7 @@ function viewTracking(){
       ${hasPlan && !paused ? `<p class="small muted" style="margin:6px 0 10px">${esc(t('followLine'))}</p>` : '<div style="height:8px"></div>'}
       ${paused ? `<button class="btn primary" id="resume">${esc(t('resumeBtn'))}</button>` : `<button class="btn ghost" id="pause">${esc(t('pause'))}</button>`}
       <button class="btn danger" id="stop">${esc(t('stop'))}</button>
-      ${NATIVE || paused ? '' : `<button class="btn ghost" id="demo">${esc(W.sim ? t('demoStop') : t('demoWalk'))}</button>`}
+      ${W.sim ? `<button class="btn ghost" id="demo">${esc(t('demoStop'))}</button>` : ''}
       <div class="sync" id="sync"></div>
     </div>`, { map:true });
   if(!paused) keepAwake(true);
