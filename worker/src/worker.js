@@ -2,7 +2,7 @@ import L from 'leaflet';
 import { registerPlugin } from '@capacitor/core';
 import { App } from '@capacitor/app';
 import Planner from '../../admin/planner.js';
-import { makeNav, dayProgress } from './nav.js';
+import { makeNav, dayProgress, rerouteDay, stepsFromPath } from './nav.js';
 import { openMapView } from './routeview.js';
 import { locationNote, legalLinks, bindLegal } from './legalview.js';
 import { setLegalFirm } from './legal.js';
@@ -450,13 +450,33 @@ function viewTracking(){
   const plan = task && task.plan, nav = hasPlan && plan && plan.path && plan.path.length > 1 ? makeNav(plan) : null;
   if(nav){ nav.setDoneCheck(i => W.tracker.isDone(i)); nav.setPosFromSample(W.tracker.nextIndex()); if(W.route.dayIdx == null){ W.route.dayIdx = nav.dayAt(); saveRoute(); } nav.setDay(W.route.dayIdx); if(last) nav.locate(last[0], last[1], true); }
   const dayIdx = nav ? W.route.dayIdx : null;
+  // guidance: the plan of the day, or – after the walker took their own way – the rest of the day in a new order
+  let guide = nav, gDay = dayIdx, rerouted = false, lastRR = 0, rerouteToast = false, back = 0;
+  const reroute = (lat, lng) => {
+    if(!nav || Date.now() - lastRR < 6000) return false;
+    lastRR = Date.now();
+    let np = null; try{ np = rerouteDay(plan, dayIdx, i => W.tracker.isDone(i), [lat, lng], heading()); }catch{}
+    if(!np || np.length < 2) return false;
+    guide = makeNav({ path:np, steps:stepsFromPath(np), days:[{ i0:0, i1:np.length - 1 }] }); gDay = 0; rerouted = true;
+    guide.locate(lat, lng); if(!rerouteToast){ rerouteToast = true; toast(t('rerouted')); }
+    return true;
+  };
+  // is the walker on an open street of this day (they do it in their own order)?
+  const onOpenStreet = (lat, lng) => {
+    if(!W.tracker) return false;
+    for(let i = 0; i < W.tracker.samples.length; i++){
+      if(W.tracker.isDone(i) || nav.dayAt(nav.posOf[i]) !== (dayIdx || 0)) continue;
+      const q = W.tracker.samples[i]; if(Math.abs(q[0] - lat) < 0.0005 && hav(lat, lng, q[0], q[1]) <= 35) return true;
+    }
+    return false;
+  };
   if(task){ const base = drawTaskBase(m, task, dayIdx, !!nav); if(!last) fit(m, base.b, 40); drawCoverage(m, task, []); }
   const doneLayer = L.layerGroup().addTo(m);
   // the next ~400 m of the route bright and thick, the rest of the day faded: the walker sees where to go now
   const aheadLayer = L.layerGroup().addTo(m), aheadCol = (plan && plan.color) || '#2563EB';
   const drawAhead = () => {
-    if(!nav) return; aheadLayer.clearLayers();
-    const pts = nav.ahead(dayIdx, AHEAD_M); if(pts.length < 2) return;
+    if(!guide) return; aheadLayer.clearLayers();
+    const pts = guide.ahead(gDay, AHEAD_M); if(pts.length < 2) return;
     L.polyline(pts, { color:'#fff', weight:11, opacity:.9, lineJoin:'round', lineCap:'round', interactive:false }).addTo(aheadLayer);
     L.polyline(pts, { color:aheadCol, weight:7, opacity:1, lineJoin:'round', lineCap:'round', interactive:false }).addTo(aheadLayer);
     L.marker(pts[pts.length - 1], { icon:dot('ahead-dot', 12), interactive:false }).addTo(aheadLayer);
@@ -503,19 +523,19 @@ function viewTracking(){
     return all && open / all > 0.1 && best ? { ...best, pct:Math.round(100 * open / all) } : null;
   };
   const updateNav = () => {
-    if(!nav || !$('#nav')) return;
-    const n = nav.next(dayIdx), s = n.step[1], multi = nav.days.length > 1;
+    if(!guide || !$('#nav')) return;
+    const n = guide.next(gDay), s = n.step[1], multi = nav.days.length > 1;
     let main, sub = '', icon, left = null; approachTo = null;
     if(lastOff > 60){
       // away from the route (e.g. the route begins a few streets from the start point): lead the walker to the place where
       // the route goes on, with a dashed line on the map and the walking directions behind the map button
-      const j = Math.min(nav.path.length - 1, Math.max(0, Math.round(nav.pos))), tgt = nav.path[j], me = W.track[W.track.length - 1];
-      const day = nav.days[dayIdx || 0], atStart = !day || nav.pos - day.i0 < 1.5;
+      const j = Math.min(guide.path.length - 1, Math.max(0, Math.round(guide.pos))), tgt = guide.path[j], me = W.track[W.track.length - 1];
+      const day = guide.days[gDay || 0], atStart = !rerouted && (!day || guide.pos - day.i0 < 1.5);
       approachTo = tgt;
       main = t(atStart ? 'navToStart' : 'navBack', { d:fmtDist(me ? hav(me[0], me[1], tgt[0], tgt[1]) : lastOff) }); sub = t('navToSub');
       icon = ICONS.pin;
     }
-    else if(n.lastOfDay && n.dist < 60 && (left = leftOfDay())){
+    else if(n.lastOfDay && (left = leftOfDay())){
       // the end of the day's line is reached, but streets of this day are still open: lead to the nearest one
       approachTo = left.at; main = t('navLeft', { n:left.pct, d:fmtDist(left.d) }); sub = t('navToSub'); icon = ICONS.pin;
     }
@@ -526,7 +546,7 @@ function viewTracking(){
       if(n.then) sub += (sub ? ' · ' : '') + t('navThen', { s:t('nav' + n.then.step[1]) + ' (' + fmtDist(Math.max(0, n.then.dist - n.dist)) + ')' });
     }
     $('#navIc').innerHTML = icon; $('#navMain').textContent = main; $('#navSub').textContent = sub;
-    const at = approachTo || n.at || nav.path[nav.path.length - 1]; $('#navExt').href = 'https://www.google.com/maps/dir/?api=1&destination=' + at[0] + ',' + at[1] + '&travelmode=walking';
+    const at = approachTo || n.at || guide.path[guide.path.length - 1]; $('#navExt').href = 'https://www.google.com/maps/dir/?api=1&destination=' + at[0] + ',' + at[1] + '&travelmode=walking';
   };
   // the walker's dot stays in the free part of the map (between the turn banner and the card), not hidden behind the card
   const followTo = (ll, zoom, animate) => {
@@ -536,17 +556,39 @@ function viewTracking(){
     const c = m.unproject(m.project(ll, z).add([0, shift]), z);
     if(zoom) m.setView(c, z, { animate:!!animate }); else m.panTo(c, { animate:animate !== false });
   };
-  view.me = (lat, lng) => { if(!meMarker) meMarker = L.marker([lat, lng], { icon:dot('me-dot', 20), zIndexOffset:1000 }).addTo(m); else meMarker.setLatLng([lat, lng]); };
+  // the walker: an arrow pointing where they are going (from the last ~10 m of the track), a dot while standing
+  let lastHead = null;
+  const heading = () => {
+    const n = W.track.length; if(n < 2) return null; const b = W.track[n - 1];
+    for(let i = n - 2; i >= 0 && i >= n - 30; i--){ const a = W.track[i]; if(b[2] - a[2] > 60000) break; const d = hav(a[0], a[1], b[0], b[1]); if(d >= 10) return Math.atan2((b[1] - a[1]) * Math.cos(a[0] * Math.PI / 180), b[0] - a[0]) * 180 / Math.PI; }
+    return null;
+  };
+  const meIcon = h => h == null ? dot('me-dot', 20) : L.divIcon({ className:'', iconSize:[34, 34], iconAnchor:[17, 17],
+    html:`<div class="me-arrow" style="transform:rotate(${Math.round(h)}deg)"><svg viewBox="0 0 24 24" width="34" height="34"><path d="M12 2.5 19.5 20 12 16 4.5 20z"/></svg></div>` });
+  view.me = (lat, lng) => {
+    const h = heading(), key = h == null ? 'dot' : Math.round(h / 5);
+    if(!meMarker) meMarker = L.marker([lat, lng], { icon:meIcon(h), zIndexOffset:1000 }).addTo(m); else meMarker.setLatLng([lat, lng]);
+    if(key !== lastHead){ lastHead = key; meMarker.setIcon(meIcon(h)); }
+  };
   view.update = (lat, lng) => {
     trackLine.addLatLng([lat, lng]); view.me(lat, lng);
-    if(nav){ lastOff = nav.locate(lat, lng).off; updateNav(); drawAhead(); drawApproach(); }
+    if(nav){
+      const mAt = q => guide.cum[Math.max(0, Math.min(guide.cum.length - 1, Math.floor(q)))], before = mAt(guide.pos);
+      lastOff = guide.locate(lat, lng).off;
+      // own way: off the guided line but on an open street of the day, a jump far ahead along the line (the walker does a later
+      // part first), or the end of the line reached while streets of the day are still open
+      const n = guide.next(gDay), moved = mAt(guide.pos) - before, jumped = moved > 250;
+      back = lastOff <= 30 ? Math.max(0, back - moved) : back;   // walking the line against its direction adds up
+      if((lastOff > 30 && onOpenStreet(lat, lng)) || jumped || back > 60 || (n.lastOfDay && leftOfDay())){ if(reroute(lat, lng)){ back = 0; lastOff = guide.locate(lat, lng).off; } }
+      updateNav(); drawAhead(); drawApproach();
+    }
     if(view.follow) followTo([lat, lng], m.getZoom() < 16 ? 17 : null);   // first fix after the start: close up
     if(Date.now() - lastDraw > 800){ lastDraw = Date.now(); drawDone(); stats(); }
     updateSync();
   };
   view.refreshDemo = () => { const b = $('#demo'); if(b) b.textContent = W.sim ? t('demoStop') : t('demoWalk'); };
   if(last){ view.me(last[0], last[1]); followTo([last[0], last[1]], 17); }
-  if(nav && last) lastOff = nav.locate(last[0], last[1]).off;
+  if(nav && last) lastOff = guide.locate(last[0], last[1]).off;
   updateNav(); drawAhead(); drawApproach(); drawDone(); stats(); renderGps(); every(1000, () => { stats(); renderGps(); updateSync(); }); updateSync();
   // big map: the card shrinks to one line (time, distance, flyers); a tap brings everything back
   $('#fcSize').onclick = () => {

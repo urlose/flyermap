@@ -98,3 +98,77 @@ export function dayProgress(plan, tracker){
   for(let i = 0; i < tracker.samples.length; i++){ const k = nav.dayAt(nav.posOf[i]); cnt[k][1]++; if(tracker.isDone(i)) cnt[k][0]++; }
   return cnt.map(([d, n]) => n ? Math.round(100 * d / n) : 0);
 }
+
+// Re-route the rest of a working day from where the walker is: the walker took their own way, so the open streets of the
+// day are put into a new order. The streets of the whole plan form the network (walking along streets of another day is
+// allowed); greedy: always the nearest open street next, open streets passed on the way count as done, at the end back to
+// the day's end point (the start point). isDone(sample) comes from the progress tracker (8 m samples, same as posOf).
+export function rerouteDay(plan, dayIdx, isDone, here, head){
+  const path = plan.path || [], base = makeNav(plan), day = base.days[Math.max(0, Math.min(base.days.length - 1, dayIdx || 0))];
+  if(path.length < 2) return null;
+  const ids = new Map(), pts = [], key = p => p[0].toFixed(6) + ',' + p[1].toFixed(6);
+  const vid = path.map(p => { const k = key(p); let i = ids.get(k); if(i === undefined){ i = pts.length; ids.set(k, i); pts.push(p); } return i; });
+  const open = new Uint8Array(path.length);   // open[j]: some of segment j (path[j] → path[j+1]) is not walked yet
+  for(let i = 0; i < base.posOf.length; i++) if(!isDone(i)) open[Math.min(path.length - 2, Math.max(0, Math.ceil(base.posOf[i] - 1e-9) - 1))] = 1;
+  const E = [], byKey = new Map(), adj = pts.map(() => []);
+  for(let j = 0; j < path.length - 1; j++){
+    const a = vid[j], b = vid[j + 1]; if(a === b) continue;
+    const k = a < b ? a + '_' + b : b + '_' + a; let e = byKey.get(k);
+    if(!e){ e = { a, b, len:hv(pts[a], pts[b]), req:false }; byKey.set(k, e); adj[a].push(E.length); adj[b].push(E.length); E.push(e); }
+    if(j >= day.i0 && j < day.i1 && open[j]) e.req = true;
+  }
+  const dijkstra = src => {
+    const d = new Float64Array(pts.length).fill(Infinity), pe = new Int32Array(pts.length).fill(-1), done = new Uint8Array(pts.length); d[src] = 0;
+    const heap = [[0, src]];
+    while(heap.length){
+      let bi = 0; for(let i = 1; i < heap.length; i++) if(heap[i][0] < heap[bi][0]) bi = i;   // small graphs: a plain list is fast enough
+      const [dv, v] = heap[bi]; heap[bi] = heap[heap.length - 1]; heap.pop();
+      if(done[v]) continue; done[v] = 1;
+      for(const ei of adj[v]){ const e = E[ei], w = e.a === v ? e.b : e.a, nd = dv + e.len; if(nd < d[w]){ d[w] = nd; pe[w] = ei; heap.push([nd, w]); } }
+    }
+    return { d, pe };
+  };
+  // start: the walker is on a street piece – they walk it to its end in the direction they go (that piece counts as done),
+  // and the new order begins there; without a direction (standing) the nearest junction
+  let start = 0, bd = Infinity; pts.forEach((p, i) => { if(adj[i].length){ const d = hv(p, here); if(d < bd){ bd = d; start = i; } } });
+  if(head != null){
+    const kx = Math.cos(here[0] * RAD) * R * RAD, ky = R * RAD; let on = null;
+    E.forEach((e, ei) => {
+      const A = pts[e.a], B = pts[e.b], ax = (A[1] - here[1]) * kx, ay = (A[0] - here[0]) * ky, bx = (B[1] - here[1]) * kx, by = (B[0] - here[0]) * ky;
+      const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy; let t = L2 ? -(ax * dx + ay * dy) / L2 : 0; t = Math.max(0, Math.min(1, t));
+      const d = Math.hypot(ax + t * dx, ay + t * dy); if(d <= 30 && (!on || d < on.d)) on = { ei, d };
+    });
+    if(on){
+      const e = E[on.ei], toB = Math.abs(((bearing(pts[e.a], pts[e.b]) - head) % 360 + 540) % 360 - 180) < 90;
+      start = toB ? e.b : e.a; e.req = false;
+    }
+  }
+  if(!E.some(e => e.req)) return null;
+  const endV = vid[day.i1];
+  // one candidate route: optionally first the planned order from open segment j (the plan's good order is kept), then the
+  // nearest open street again and again, then back to the day's end point
+  const build = jFrom => {
+    const req = E.map(e => e.req); let left = req.filter(Boolean).length, cur = start, len = 0;
+    const out = [pts[start]], eIdx = (a, b) => adj[a].find(ei => (E[ei].a === a && E[ei].b === b) || (E[ei].b === a && E[ei].a === b));
+    const step = (to, ei) => { if(req[ei]){ req[ei] = false; left--; } len += E[ei].len; out.push(pts[to]); cur = to; };
+    const goTo = (t, sp) => { const chain = []; for(let v = t; v !== cur && sp.pe[v] >= 0; ){ const ei = sp.pe[v], e = E[ei]; chain.push([v, ei]); v = e.a === v ? e.b : e.a; } for(let k = chain.length - 1; k >= 0; k--) step(chain[k][0], chain[k][1]); };
+    if(jFrom != null){
+      goTo(vid[jFrom], dijkstra(cur));
+      for(let j = jFrom; j < day.i1 && left > 0; j++){ const a = vid[j], b = vid[j + 1]; if(a === b) continue; const ei = eIdx(a, b); if(ei != null) step(b, ei); }
+    }
+    for(let guard = 0; left > 0 && guard < 5000; guard++){
+      const sp = dijkstra(cur); let best = null;
+      E.forEach((e, ei) => { if(!req[ei]) return; const da = sp.d[e.a], db = sp.d[e.b], dmin = Math.min(da, db); if(isFinite(dmin) && (!best || dmin < best.d)) best = { ei, d:dmin, near:da <= db ? e.a : e.b }; });
+      if(!best) break;
+      goTo(best.near, sp); const e = E[best.ei]; step(e.a === best.near ? e.b : e.a, best.ei);
+    }
+    if(endV !== cur){ const sp = dijkstra(cur); if(isFinite(sp.d[endV])) goTo(endV, sp); }
+    return { out, len };
+  };
+  // where the planned order can be picked up: the open segment of the day nearest to the walker
+  const sp0 = dijkstra(start); let jNear = null;
+  for(let j = day.i0; j < day.i1; j++) if(open[j] && isFinite(sp0.d[vid[j]]) && (jNear == null || sp0.d[vid[j]] < sp0.d[vid[jNear]])) jNear = j;
+  const cands = [build(null)]; if(jNear != null) cands.push(build(jNear));
+  const best = cands.reduce((x, y) => y.len < x.len ? y : x);
+  return best.out.length > 1 ? best.out : null;
+}

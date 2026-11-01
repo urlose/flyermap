@@ -106,3 +106,5 @@ Object.assign(T.de, { rvLive:'Wo gerade' });
 Object.assign(T.ru, { rvLive:'Где сейчас' });
 Object.assign(T.de, { contDayN:'Tag {n} fortsetzen', navLeft:'Noch {n} % offen · nächste Straße {d}' });
 Object.assign(T.ru, { contDayN:'Продолжить день {n}', navLeft:'Ещё не пройдено {n} % · ближайшая улица {d}' });
+Object.assign(T.de, { rerouted:'Route an deinen Weg angepasst' });
+Object.assign(T.ru, { rerouted:'Маршрут подстроен под ваш путь' });

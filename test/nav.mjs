@@ -3,7 +3,7 @@
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const P = require('../admin/planner.js');
-const { makeNav } = await import('../worker/src/nav.js');
+const { makeNav, rerouteDay } = await import('../worker/src/nav.js');
 let fail = 0; const check = (ok, msg) => { console.log((ok ? 'ok   ' : 'FAIL ') + msg); if(!ok) fail++; };
 const M = 1 / 111320, K = 1 / (111320 * Math.cos(52 * Math.PI / 180)), at = (x, y) => [52 + y * M, 8 + x * K];   // metres → lat/lng
 // A: east 400 m along y=0, B: north 45 m, C: west 400 m along y=45 (parallel to A), D: north 300 m along x=0
@@ -49,5 +49,17 @@ const before = nav.pos, r = nav.locate(...at(200, 150)); check(r.off > 50 && nav
   n3.setDay(0); go(0, 0, 300, 0); go(300, 0, 300, 200); go(300, 200, 150, 200);
   check(n3.pos >= 2 && n3.pos <= 4, `on the street shared by day 1 and day 2, day 1 is kept (pos ${n3.pos.toFixed(2)}, day 1 = 0…4)`);
   check(!n3.next(0).lastOfDay || n3.next(0).dist > 100, 'no "day 1 done" in the middle of it');
+}
+// re-route: a grid of 3 streets planned 1-2-3, the walker did street 3 first → the new route covers 1 and 2 and ends at the start
+{
+  const pth = [at(0, 0), at(200, 0), at(200, 60), at(0, 60), at(0, 120), at(200, 120), at(200, 180), at(0, 180), at(0, 0)];
+  const pl = { path:pth, steps:[], days:[{ i0:0, i1:pth.length - 1 }] }, t4 = P.makeTracker(pth); let lp = null;
+  const go = (x0, y0, x1, y1) => { const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 6); for(let k = 1; k <= n; k++){ const p = at(x0 + (x1 - x0) * k / n, y0 + (y1 - y0) * k / n); if(lp) t4.markLine(lp, p); else t4.mark(p); lp = p; } };
+  go(0, 0, 0, 180); go(0, 180, 200, 180);   // up the side street to the last street and along it
+  const r = rerouteDay(pl, 0, i => t4.isDone(i), lp);
+  const covers = (y, x0, x1) => r.some((p, i) => i && Math.abs(p[0] - at(0, y)[0]) < 1e-6 && Math.abs(r[i - 1][0] - at(0, y)[0]) < 1e-6 && Math.abs(p[1] - r[i - 1][1]) > 0);
+  check(r && covers(0) && covers(60) && covers(120), `new order covers the open streets (${r ? r.length : 0} points)`);
+  const e = r[r.length - 1]; check(Math.abs(e[0] - pth[8][0]) < 1e-6 && Math.abs(e[1] - pth[8][1]) < 1e-6, 'and ends at the start point');
+  check(Math.abs(r[0][0] - at(200, 180)[0]) < 1e-6, 'and begins where the walker is');
 }
 process.exit(fail ? 1 : 0);
