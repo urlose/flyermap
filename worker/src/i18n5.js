@@ -110,3 +110,5 @@ Object.assign(T.de, { rerouted:'Route an deinen Weg angepasst' });
 Object.assign(T.ru, { rerouted:'Маршрут подстроен под ваш путь' });
 Object.assign(T.de, { checkpoints:'Checkpoints', cpTitle:'Tag {d} · Abschnitt {n} · {p} % erledigt' });
 Object.assign(T.ru, { checkpoints:'Чекпоинты', cpTitle:'День {d} · участок {n} · пройдено {p} %' });
+Object.assign(T.de, { walkedLine:'Gelaufen: {km} · {h} Std. Arbeitszeit', walkedLive:'läuft gerade' });
+Object.assign(T.ru, { walkedLine:'Пройдено: {km} · {h} ч работы', walkedLive:'сейчас в пути' });

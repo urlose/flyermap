@@ -146,4 +146,5 @@ T.en = {
   e_plan_taken:'Somebody else just took this route.', e_already_in_task:'You already have a route in this order.',
   area:'Area', routeLen:'Length', mapBig:'Big map', mapSmall:'Details',
   rvLive:'Where now', checkpoints:'Checkpoints', cpTitle:'Day {d} · section {n} · {p} % done', rerouted:'Route adjusted to your way', contDayN:'Continue day {n}', navLeft:'{n} % still open · nearest street {d}', navToStart:'To the start of the route · {d}', navBack:'Back to the route · {d}', navToSub:'Follow the purple line · map button on the right = walking directions',
+  walkedLine:'Walked: {km} · {h} h working time', walkedLive:'on the way now',
 };

@@ -842,8 +842,19 @@ function editTaskSheet(tk, plans, routes){
 const dayLines = days => (days && days.length > 1) ? days.map((x, k) => `<span class="small day-line"><b>${esc(t('dayN', { n:k + 1 }))}:</b> ${esc(t('routeLine', { km:fmtDist(x.length_m), h:fmtHm(x.minutes), mb:fmtN(x.mailboxes) }))}</span>`).join('') : '';
 const stText = p => p.status === 'accepted' ? t('stAccepted') : p.status === 'declined' ? t('stDeclined') : p.status === 'done' ? t('stDone') : t('stOffered');
 const stCls = p => p.status === 'done' ? 'ok' : p.status === 'accepted' ? '' : p.status === 'declined' ? 'bad' : 'neutral';   // angeboten = neutral, angenommen = blau, erledigt = grün, abgelehnt = rot
+// walked so far on one route (all sessions, also the running one; a session lying inside another one counts once)
+function planWalked(p, routes){
+  const rs = (routes || []).filter(r => r.plan_id === p.id || (!r.plan_id && r.worker_id && r.worker_id === p.worker_id));
+  const end = r => r.ended_at ? +new Date(r.ended_at) : Date.now();
+  const own = rs.filter(r => !rs.some(o => o !== r && +new Date(o.started_at) <= +new Date(r.started_at) && end(o) >= end(r) && (o.distance_m || 0) > (r.distance_m || 0)));
+  if(!own.length) return '';
+  const m = own.reduce((s, r) => s + (r.distance_m || 0), 0), min = own.reduce((s, r) => s + workMin(r), 0);
+  const live = own.some(r => !r.ended_at);
+  return esc(t('walkedLine', { km:fmtDist(m), h:fmtHm(min) })) + (live ? ' · <b class="live-txt">' + esc(t('walkedLive')) + '</b>' : '');
+}
 async function viewTask(id){
   const tk = A.tasks.find(x => x.id === id); if(!tk) return viewTasks();
+  A.curTask = id;
   const [{ data:plans }, { data:routes }] = await Promise.all([sb.from('task_plans').select('*').eq('task_id', id).order('idx'), sb.from('routes').select('*').eq('task_id', id)]);
   const walked = (routes || []).reduce((s, r) => s + r.distance_m, 0);
   const invite = w => t('invite', { name:w.name, title:tk.title, date:tk.work_date ? ', ' + fmtDay(tk.work_date) : '' });
@@ -866,7 +877,7 @@ async function viewTask(id){
         <div class="grow"><b>${esc(t('planRoute', { n:p.idx + 1 }))} <span class="muted" id="pp${p.idx}"></span></b>
         <span>${esc(t('routeLine', { km:fmtDist(p.length_m), h:fmtHm(p.minutes || 0), mb:fmtN(p.mailboxes || 0) }))}</span>
         ${dayLines(p.days)}
-        <div class="bar"><i id="pb${p.idx}"></i></div><span id="pf${p.idx}" style="margin-top:4px"></span>
+        <div class="bar"><i id="pb${p.idx}"></i></div><span id="pf${p.idx}" style="margin-top:4px"></span><span class="small" id="pw${p.idx}">${planWalked(p, routes)}</span>
         ${p.worker_id ? `<span class="pill ${(A.live || []).some(r => r.plan_id === p.id && !r.paused_at) ? 'live' : stCls(p)}">${(A.live || []).some(r => r.plan_id === p.id && !r.paused_at) ? esc(t('stLive')) + ' · ' : ''}${esc(stText(p))}${p.status === 'accepted' && (p.work_dates || []).length ? ' · ' + esc(p.work_dates.map(fmtDay).join(', ')) : ''}</span>` : ''}
         <div class="rr-act"><select class="in small" data-plan="${p.id}">${workerOptions(tk.start_lat, tk.start_lng, p.worker_id)}</select>${w ? `<a class="btn ghost small" target="_blank" rel="noopener" href="${waLink(w.phone, invite(w))}">${ICONS.chat}${esc(t('write'))}</a>` : ''}</div>
         <span class="small">${esc(t('replaceHint'))}</span></div></div>`; }).join('') : `<p class="muted small">${esc(t('noPlans'))}</p>`}
@@ -899,6 +910,13 @@ async function viewTask(id){
   $('#tEdit').onclick = () => editTaskSheet(tk, plans || [], routes || []);
   $('#tDone').onclick = async () => { await sb.from('tasks').update({ status:tk.status === 'open' ? 'done' : 'open' }).eq('id', id); await loadTasks(); viewTask(id); };
   $('#tDel').onclick = async () => { if(!await confirmBox(t('del'), t('delTaskQ'), t('del'), true)) return; await sb.from('tasks').delete().eq('id', id); await loadTasks(); viewTasks(); };
+  if((routes || []).some(r => !r.ended_at)){
+    const iv = setInterval(async () => {
+      if(A.curTask !== id || !$('#tMap')){ clearInterval(iv); return; }
+      const { data } = await sb.from('routes').select('*').eq('task_id', id); if(!data) return;
+      (plans || []).forEach(p => { const el = $('#pw' + p.idx); if(el) el.innerHTML = planWalked(p, data); });
+    }, 60000);
+  }
   // progress per route: all tracks recorded on that plan (also by a previous worker)
   const byPlan = {};
   for(const r of routes || []){
