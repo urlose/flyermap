@@ -533,7 +533,31 @@
       for(let k = 0; k <= n; k++) ch = mark([a[0] + (b[0]-a[0]) * k/n, a[1] + (b[1]-a[1]) * k/n]) || ch;
       return ch;
     }
-    function addTrack(pts){ let ch = false; for(let i = 0; i < pts.length; i++) ch = (i && dist(pts[i-1], pts[i]) < 120 ? markLine(pts[i-1], pts[i]) : mark(pts[i])) || ch; return ch; }
+    // samples of the route within r metres of p
+    function near(p, r){
+      const cy = Math.floor(p[0] / cell), cx = Math.floor(p[1] / cell), out = [];
+      for(let dy = -1; dy <= 1; dy++) for(let dx = -1; dx <= 1; dx++){ const list = grid.get((cy+dy) + ':' + (cx+dx)); if(list) for(const i of list) if(dist(samples[i], p) <= r) out.push(i); }
+      return out;
+    }
+    // a gap between two GPS points (phone in the pocket / screen off: one point every 100–500 m): when both points lie on the
+    // route and the route between them is about as long as the straight line, the walker went along the route – mark it
+    function fillGap(a, b){
+      const d = dist(a, b); if(d > 600) return false;
+      const A = near(a, 30), B = near(b, 30); if(!A.length || !B.length) return false;
+      let best = null;
+      for(const i of A) for(const j of B){ const k = Math.abs(i - j); if(!best || k < best.k) best = { i, j, k }; }
+      if(best.k * 8 > 1.5 * d + 40) return false;   // around one corner at most (√2 ≈ 1.41 for an L, but the shorter way round counts)
+      let ch = false; for(let x = Math.min(best.i, best.j); x <= Math.max(best.i, best.j); x++) if(!done[x]){ done[x] = 1; count++; ch = true; }
+      return ch;
+    }
+    function addTrack(pts){
+      let ch = false;
+      for(let i = 0; i < pts.length; i++){
+        const d = i ? dist(pts[i-1], pts[i]) : 0;
+        ch = (i && d < 120 ? markLine(pts[i-1], pts[i]) : (i ? fillGap(pts[i-1], pts[i]) : false) | mark(pts[i])) || ch;
+      }
+      return ch;
+    }
     function runs(){ // covered stretches as polylines
       const out = []; let cur = null;
       for(let i = 0; i < samples.length; i++){
@@ -544,7 +568,7 @@
       return out;
     }
     function nextIndex(){ for(let i = 0; i < samples.length; i++) if(!done[i]) return i; return -1; }
-    return { samples, mark, markLine, addTrack, runs, nextIndex, isDone:i => !!done[i], pct: () => samples.length ? Math.round(100 * count / samples.length) : 0 };
+    return { samples, mark, markLine, fillGap, addTrack, runs, nextIndex, isDone:i => !!done[i], pct: () => samples.length ? Math.round(100 * count / samples.length) : 0 };
   }
 
   /* ---------- mailboxes (estimated from OSM buildings) ---------- */

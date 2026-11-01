@@ -62,4 +62,12 @@ const before = nav.pos, r = nav.locate(...at(200, 150)); check(r.off > 50 && nav
   const e = r[r.length - 1]; check(Math.abs(e[0] - pth[8][0]) < 1e-6 && Math.abs(e[1] - pth[8][1]) < 1e-6, 'and ends at the start point');
   check(Math.abs(r[0][0] - at(200, 180)[0]) < 1e-6, 'and begins where the walker is');
 }
+// sparse GPS (one point every 200 m along the street) still marks the street; a jump across a block does not
+{
+  const pth = [at(0, 0), at(600, 0), at(600, 300), at(0, 300)], t5 = P.makeTracker(pth);
+  t5.addTrack([at(0, 3), at(200, -4), at(400, 5), at(600, 2)]);
+  const a = t5.pct(); check(a >= 38, `points 200 m apart along the first street: ${a} % of the route marked (street = 40 %)`);
+  const t6 = P.makeTracker(pth); t6.addTrack([at(0, 0), at(500, 300)]);
+  check(t6.pct() < 10, `a straight jump across the block marks nothing in between (${t6.pct()} %)`);
+}
 process.exit(fail ? 1 : 0);

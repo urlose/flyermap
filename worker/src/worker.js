@@ -89,7 +89,7 @@ function onLocation(lat, lng, acc, time, sim){
     if(dt < 30 && d / dt > 12) return;
     W.route.distance += d;
   }
-  if(W.tracker){ if(last && sim !== 'first') W.tracker.markLine([last[0], last[1]], [lat, lng]); else W.tracker.mark([lat, lng]); }
+  if(W.tracker){ if(last && sim !== 'first'){ const g = hav(last[0], last[1], lat, lng); if(g < 120) W.tracker.markLine([last[0], last[1]], [lat, lng]); else { W.tracker.fillGap([last[0], last[1]], [lat, lng]); W.tracker.mark([lat, lng]); } } else W.tracker.mark([lat, lng]); }   // a long gap (screen was off) counts only along the route
   if(W.counter){ if(last && sim !== 'first') W.counter.visitLine([last[0], last[1]], [lat, lng]); else W.counter.visit(lat, lng); }
   W.track.push([lat, lng, time]);
   W.queue.push({ t:new Date(time).toISOString(), lat:+lat.toFixed(6), lng:+lng.toFixed(6), acc: acc == null ? null : Math.round(acc) });
@@ -167,6 +167,7 @@ export async function beginRoute(task){
   W.queue = []; W.track = []; W.tracker = null; W.counter = null; W.prev = null;
   await saveRoute();
   W.prev = prev;
+  setTimeout(() => loadMe().catch(() => {}), 4000);   // today's totals without this new session
   workerTab('map');
   await startWatching(); flush();
 }
@@ -435,7 +436,7 @@ function viewTracking(){
       <div class="fc-row">${paused ? `<span class="rec paused">${esc(t('pauseRunning'))}</span><b id="sPause">0:00</b>` : `<span class="rec">${esc(t('recording'))}</span><span class="gps" id="gps" role="status"></span>`}
         <button class="fc-size" id="fcSize" aria-label="${esc(t(W.mapFull ? 'mapSmall' : 'mapBig'))}">${W.mapFull ? ICONS.expand : ICONS.shrink}<span>${esc(t(W.mapFull ? 'mapSmall' : 'mapBig'))}</span></button></div>
       ${task ? `<div class="fc-title">${esc(task.title)}</div>` : ''}
-      <div class="stats"><div><span>${esc(t('netTime'))}</span><b id="sT">0:00</b></div><div><span>${esc(t('dist'))}</span><b id="sD">0 m</b></div>${W.counter ? `<div><span>${esc(t('flyersEst'))}</span><b id="sF">0</b></div>` : hasPlan ? `<div><span>${esc(t('progress'))}</span><b id="sP">0%</b></div>` : ''}</div>
+      <div class="stats"><div><span>${esc(t('netTime'))} · ${esc(t('today'))}</span><b id="sT">0:00</b></div><div><span>${esc(t('dist'))} · ${esc(t('today'))}</span><b id="sD">0 m</b></div>${W.counter ? `<div><span>${esc(t('flyersEst'))}</span><b id="sF">0</b></div>` : hasPlan ? `<div><span>${esc(t('progress'))}</span><b id="sP">0%</b></div>` : ''}</div>
       ${hasPlan ? `<div class="bar"><i id="sBar"></i></div>${W.counter ? `<p class="small muted" style="margin:6px 0 0" id="sFl"></p>` : ''}` : ''}
       ${quota && !paused ? `<div class="quota" id="quota"><i></i><span id="quotaTxt"></span></div>` : ''}
       ${hasPlan && !paused ? `<p class="small muted" style="margin:6px 0 10px">${esc(t('followLine'))}</p>` : '<div style="height:8px"></div>'}
@@ -496,7 +497,8 @@ function viewTracking(){
   };
   const stats = () => {
     if(!W.route) return;
-    const sT = $('#sT'); if(sT) sT.textContent = fmtTime(workMs()); const sD = $('#sD'); if(sD) sD.textContent = fmtDist(W.route.distance);
+    // the whole day: earlier sessions of today (server) + the running one
+    const td = (W.me && W.me.today) || {}, sT = $('#sT'); if(sT) sT.textContent = fmtTime(workMs() + (td.s || 0) * 1000); const sD = $('#sD'); if(sD) sD.textContent = fmtDist(W.route.distance + (td.m || 0));
     if(W.counter){ const f = $('#sF'); if(f) f.textContent = fmtN(W.counter.count()); const fl = $('#sFl'); if(fl) fl.textContent = t('flyersOf', { a:fmtN(W.counter.count()), b:fmtN(W.counter.total) }); }
     const sp = $('#sPause'); if(sp && W.route.paused) sp.textContent = fmtTime(Date.now() - W.route.pausedAt);
     const q = $('#quota'); if(q && quota){

@@ -147,7 +147,8 @@ function viewLive(){
       if(!on && !city) L.circle(p, { radius:350, color:'#94A3B8', weight:1, fillColor:'#94A3B8', fillOpacity:.15, interactive:false }).addTo(layer);
       L.marker(p, { icon:personIcon(w.name, on, on ? '' : city ? city : ago(w.last_seen)), zIndexOffset:on ? 800 : city ? 300 : 400 }).on('click', () => viewWorker(w.id, viewLive)).addTo(layer);
       b.extend(p);
-      if(on) fetchPoints(w.active_route_id).then(pts => { if(pts.length > 1) L.polyline(pts.map(q => [q.lat, q.lng]), { color:css('--route'), weight:4, opacity:.85 }).addTo(layer); }).catch(() => {});
+      // the whole day so far (all sessions of today), not only the running one
+      if(on) todayTrack(w.id).then(pts => { if(pts.length > 1) L.polyline(pts.map(q => [q.lat, q.lng]), { color:css('--route'), weight:4, opacity:.85 }).addTo(layer); }).catch(() => {});
     }
     if(!$('#liveCount')) return;
     radRow();
@@ -177,7 +178,29 @@ function viewLive(){
 /* ---------- MITARBEITER: admin profile + team ---------- */
 /* ---------- working days (routes): shared by the Mitarbeiter list and the worker page ---------- */
 const dayKey = r => new Date(r.started_at).toLocaleDateString('sv-SE');   // local YYYY-MM-DD
-const workMin = r => Math.max(0, ((r.ended_at ? new Date(r.ended_at) : Date.now()) - new Date(r.started_at)) / 60000 - (r.break_s || 0) / 60);
+const workMin = r => r._min != null ? r._min : Math.max(0, ((r.ended_at ? new Date(r.ended_at) : Date.now()) - new Date(r.started_at)) / 60000 - (r.break_s || 0) / 60);
+// several sessions of one person on one day (Feierabend + start again, app restarted …) are one working day:
+// one line, one map, distances and times added up. id = first session (newest first lists stay newest first).
+function mergeDays(routes){
+  const groups = new Map();
+  for(const r of routes || []){
+    const k = r.worker_id + '|' + dayKey(r); let g = groups.get(k);
+    if(!g){ g = { ...r, ids:[], _routes:[], distance_m:0, break_s:0, _min:0 }; groups.set(k, g); }
+    g.ids.push(r.id); g._routes.push(r); g.distance_m += r.distance_m || 0; g.break_s += r.break_s || 0; g._min += workMin(r);
+    if(new Date(r.started_at) < new Date(g.started_at)) g.started_at = r.started_at;
+    if(!r.ended_at) g.ended_at = null; else if(g.ended_at && new Date(r.ended_at) > new Date(g.ended_at)) g.ended_at = r.ended_at;
+    if(!g.place && r.place) g.place = r.place; if(!g.plan_id && r.plan_id) g.plan_id = r.plan_id;
+    if(r.track_deleted_at == null) g.track_deleted_at = null;
+  }
+  const out = [...groups.values()]; (A.dayGroups = A.dayGroups || new Map()); out.forEach(g => A.dayGroups.set(g.id, g));
+  return out;
+}
+const todayTrack = async wid => {
+  const d0 = new Date(); d0.setHours(0, 0, 0, 0);
+  const { data } = await sb.from('routes').select('id').eq('worker_id', wid).gte('started_at', d0.toISOString());
+  return dayPoints({ ids:(data || []).map(r => r.id) });
+};
+const dayPoints = async g => { const lists = await Promise.all((g.ids || [g.id]).map(id => fetchPoints(id).catch(() => []))); return lists.flat().sort((a, b) => new Date(a.t) - new Date(b.t)); };
 const placeTxt = r => [r.place, r.task_title].filter(Boolean).join(' · ');
 const hhmm = d => new Date(d).toLocaleTimeString(loc(), { hour:'2-digit', minute:'2-digit' });
 const dayFilter = () => A.dFilter || (A.dFilter = { from:'', to:'', place:'' });
@@ -271,7 +294,7 @@ async function viewPeople(){
   };
   $('#wQ').oninput = render; render();
   sb.from('routes').select('id,worker_id,task_id,plan_id,started_at,ended_at,distance_m,break_s,place,task_title').order('started_at', { ascending:false }).limit(2000)
-    .then(({ data }) => { if(!document.getElementById('dFilter')) return; days = data || []; render(); fillPlaces(days, () => { if(document.getElementById('dFilter')) render(); }); });
+    .then(({ data }) => { if(!document.getElementById('dFilter')) return; days = mergeDays(data || []); render(); fillPlaces(days, () => { if(document.getElementById('dFilter')) render(); }); });
   $('#tOut').onclick = async () => { if(await confirmBox(t('logout'), t('logoutQ'), t('logout'))){ await sb.auth.signOut(); for(const k of ['role', 'token', 'me', 'canAdmin']) await store.del(k); A.hooks.loggedOut && A.hooks.loggedOut(); } };
   $('#tWork').onclick = openAsWorker;
   $('#tInv').onclick = () => {
@@ -285,7 +308,7 @@ async function viewWorker(id, back, focusId){
   back = back || viewPeople;
   const w = wById(id); if(!w) return back();
   const { data:routes } = await sb.from('routes').select('*').eq('worker_id', id).order('started_at', { ascending:false }).limit(300);
-  const all = routes || [], f = dayFilter();
+  const all = mergeDays(routes || []), f = dayFilter();
   let useFilter = filterOn(f);
   shell('people', `${topbar(w.name, true)}
     <div class="pad">
@@ -314,7 +337,7 @@ async function viewWorker(id, back, focusId){
     wl.clearLayers(); const b = L.latLngBounds([]);
     try{
       if(r.plan_id){ const { data:pl } = await sb.from('task_plans').select('path,color').eq('id', r.plan_id).maybeSingle(); if(pl && pl.path && pl.path.length > 1){ L.polyline(pl.path, { color:'#64748B', weight:4, opacity:.55, dashArray:'2 8', lineCap:'round' }).addTo(wl); pl.path.forEach(p => b.extend(p)); } }
-      const pts = r.track_deleted_at ? [] : await fetchPoints(r.id);
+      const pts = r.track_deleted_at ? [] : await dayPoints(r);
       if(pts.length > 1){
         const ll = pts.map(p => [p.lat, p.lng]); L.polyline(ll, { color:css('--route'), weight:5, opacity:.95 }).addTo(wl); ll.forEach(p => b.extend(p));
         L.marker(ll[0], { icon:dot('start-dot', 16) }).addTo(wl);
@@ -350,10 +373,11 @@ async function viewWorker(id, back, focusId){
 const nameOf = id => (wById(id) || {}).name || '—';
 // one working day of one worker: walked GPS track, planned route, the planned streets covered that day
 async function viewDayMap(routeId, back){
-  const { data:r } = await sb.from('routes').select('*').eq('id', routeId).maybeSingle(); if(!r) return back();
+  let r = A.dayGroups && A.dayGroups.get(routeId);
+  if(!r){ const { data } = await sb.from('routes').select('*').eq('id', routeId).maybeSingle(); if(!data) return back(); r = data; }
   const [pl, pts] = await Promise.all([
     r.plan_id ? sb.from('task_plans').select('path,color,boxes,idx').eq('id', r.plan_id).maybeSingle().then(x => x.data) : null,
-    r.track_deleted_at ? [] : fetchPoints(r.id).catch(() => []),
+    r.track_deleted_at ? [] : dayPoints(r),
   ]);
   const ll = pts.map(p => [p.lat, p.lng]), col = (pl && pl.color) || '#2563EB';
   let pct = null, fl = null, runs = [];
