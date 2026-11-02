@@ -339,7 +339,7 @@ async function viewWorker(id, back, focusId){
       if(r.plan_id){ const { data:pl } = await sb.from('task_plans').select('path,color').eq('id', r.plan_id).maybeSingle(); if(pl && pl.path && pl.path.length > 1){ L.polyline(pl.path, { color:'#64748B', weight:4, opacity:.55, dashArray:'2 8', lineCap:'round' }).addTo(wl); pl.path.forEach(p => b.extend(p)); } }
       const pts = r.track_deleted_at ? [] : await dayPoints(r);
       if(pts.length > 1){
-        const ll = pts.map(p => [p.lat, p.lng]); L.polyline(ll, { color:css('--route'), weight:5, opacity:.95 }).addTo(wl); ll.forEach(p => b.extend(p));
+        const ll = pts.map(p => [p.lat, p.lng]); gpsLine(wl, ll, 4); ll.forEach(p => b.extend(p));
         L.marker(ll[0], { icon:dot('start-dot', 16) }).addTo(wl);
         if(r.ended_at) L.marker(ll[ll.length - 1], { icon:dot('end-dot', 16) }).addTo(wl); else L.marker(ll[ll.length - 1], { icon:personIcon(w.name, true, '') }).addTo(wl);
       }
@@ -370,6 +370,22 @@ async function viewWorker(id, back, focusId){
 }
 
 /* ---------- big map views (also for screenshots for clients) ---------- */
+// GPS track: its own colour (yellow with a dark edge) so it never looks like a planned route
+const GPS = '#FACC15';
+const gpsLine = (g, ll, w = 3) => { L.polyline(ll, { color:'#111827', weight:w + 3, opacity:.45, lineJoin:'round' }).addTo(g); return L.polyline(ll, { color:GPS, weight:w, opacity:1, lineJoin:'round' }).addTo(g); };
+// colour of a planned working day: day 1 = route colour, day 2 = a clearly different partner colour, day 3+ = hue turned further
+const DAY2 = { '#2563EB':'#06B6D4', '#C2185B':'#F97316', '#D97706':'#78350F', '#7C3AED':'#E11D48', '#059669':'#0EA5E9', '#0891B2':'#9333EA', '#DC2626':'#0D9488', '#4D7C0F':'#6D28D9', '#DB2777':'#0284C7', '#EA580C':'#4F46E5' };
+function hueShift(hex, deg){
+  const n = parseInt(hex.slice(1), 16), r = (n >> 16 & 255) / 255, g = (n >> 8 & 255) / 255, b = (n & 255) / 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
+  let h = 0, s = 0;
+  if(d){ s = d / (1 - Math.abs(2 * l - 1)); h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h *= 60; }
+  h = (h + deg + 360) % 360;
+  const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2;
+  const [a, bb, cc] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+  return '#' + [a, bb, cc].map(v => Math.round((v + m) * 255).toString(16).padStart(2, '0')).join('');
+}
+export const dayColor = (c, k) => { c = String(c || '#2563EB').toUpperCase(); return !k ? c : k === 1 ? (DAY2[c] || hueShift(c, 150)) : ['#7C3AED', '#78350F', '#0F766E', '#BE185D'][(k - 2) % 4]; };
 const nameOf = id => (wById(id) || {}).name || '—';
 // one working day of one worker: walked GPS track, planned route, the planned streets covered that day
 async function viewDayMap(routeId, back){
@@ -401,13 +417,15 @@ async function viewDayMap(routeId, back){
     stats:[[t('rvDist'), fmtDist(r.distance_m || 0)], [t('rvWork'), fmtHm(workMin(r)) + ' ' + t('h')], fl != null ? [t('rvFlyers'), '≈ ' + fmtN(fl)] : null, pct != null ? [t('rvDayShare'), pct + ' %'] : null, pctAll != null ? [t('rvDayShare2'), pctAll + ' %'] : null],
     note:r.track_deleted_at ? t('trackDeleted') : (ll.length < 2 ? t('rvNoTrack') : ''),
     layers:[
-      { key:'plan', label:pl ? t('rvPlan') : '', on:!!pl, add:g => { if(pl && pl.path && pl.path.length > 1) L.polyline(pl.path, { color:col, weight:4, opacity:.45, dashArray:'6 7', lineJoin:'round' }).addTo(g); } },
+      { key:'plan', label:pl ? t('rvPlan') : '', on:!!pl, add:g => { if(!pl || !pl.path || pl.path.length < 2) return;
+        const ds = (pl.days || []).length > 1 ? pl.days : [{ i0:0, i1:pl.path.length - 1 }];
+        ds.forEach((d, k) => L.polyline(pl.path.slice(d.i0, d.i1 + 1), { color:dayColor(col, k), weight:4, opacity:.6, dashArray:'6 7', lineJoin:'round' }).addTo(g)); } },
       { key:'prev', label:runsPrev.length ? t('rvDoneBefore') : '', add:g => runsPrev.forEach(x => L.polyline(x, { color:'#86EFAC', weight:7, opacity:.75, lineJoin:'round', lineCap:'round' }).addTo(g)) },
       { key:'done', label:runs.length ? t('rvDone') : '', add:g => runs.forEach(x => L.polyline(x, { color:GREEN, weight:8, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g)) },
-      { key:'cp', label:cps.length ? t('checkpoints') : '', add:g => cps.forEach(c => cpMarker(c, col, (pl.days || []).length > 1).addTo(g)) },
+      { key:'cp', label:cps.length ? t('checkpoints') : '', add:g => cps.forEach(c => cpMarker(c, dayColor(col, c.day), (pl.days || []).length > 1).addTo(g)) },
       { key:'gps', label:ll.length > 1 ? t('rvGps') : '', add:g => {
         if(ll.length < 2) return;
-        L.polyline(ll, { color:'#1D4ED8', weight:3, opacity:.95, lineJoin:'round' }).addTo(g);
+        gpsLine(g, ll);
         L.marker(ll[0], { icon:dot('start-dot', 16) }).addTo(g); L.marker(ll[ll.length - 1], { icon:dot(r.ended_at ? 'end-dot' : 'me-dot', r.ended_at ? 16 : 20) }).addTo(g);
       } },
     ],
@@ -470,14 +488,14 @@ async function viewTaskMap(id, back){
       ...(() => {
         const nd = Math.max(1, ...(plans || []).map(p => (p.days || []).length));
         const drawDay = (g, k) => (plans || []).forEach(p => { if(!p.path || p.path.length < 2) return; const d = nd > 1 ? (p.days || [])[k] : null; if(nd > 1 && !d) return;
-          L.polyline(d ? p.path.slice(d.i0, d.i1 + 1) : p.path, { color:p.color || '#2563EB', weight:k ? 4 : 5, opacity:.75, dashArray:k ? (k % 2 ? '10 8' : '2 8') : null, lineJoin:'round', lineCap:'round' }).addTo(g); });
+          L.polyline(d ? p.path.slice(d.i0, d.i1 + 1) : p.path, { color:dayColor(p.color, k), weight:k ? 4 : 5, opacity:.8, dashArray:k ? (k % 2 ? '10 8' : '2 8') : null, lineJoin:'round', lineCap:'round' }).addTo(g); });
         const start = g => L.marker([tk.start_lat, tk.start_lng], { icon:dot('pin-start', 24) }).addTo(g);
         return nd > 1 ? [...Array.from({ length:nd }, (_, k) => ({ key:'day' + k, label:t('dayN', { n:k + 1 }) + (k ? ' ┄' : ' ━'), add:g => drawDay(g, k) })), { key:'start', add:start }]
           : [{ key:'plan', label:t('rvPlan'), add:g => { drawDay(g, 0); start(g); } }];
       })(),
       { key:'done', label:t('rvDone'), add:g => res.forEach(x => x.runs.forEach(run => L.polyline(run, { color:GREEN, weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g))) },
-      { key:'gps', label:tracks.some(x => x.length > 1) ? t('rvGps') : '', on:false, add:g => tracks.forEach((ll, i) => { if(ll.length > 1) L.polyline(ll, { color:trackCol[i] || '#1D4ED8', weight:2.5, opacity:.95 }).addTo(g); }) },
-      { key:'cp', label:t('checkpoints'), add:g => res.forEach(({ p, cps }) => cps.forEach(c => cpMarker(c, p.color, (p.days || []).length > 1).addTo(g))) },
+      { key:'gps', label:tracks.some(x => x.length > 1) ? t('rvGps') : '', on:false, add:g => tracks.forEach(ll => { if(ll.length > 1) gpsLine(g, ll, 2.5); }) },
+      { key:'cp', label:t('checkpoints'), add:g => res.forEach(({ p, cps }) => cps.forEach(c => cpMarker(c, dayColor(p.color, c.day), (p.days || []).length > 1).addTo(g))) },
       { key:'live', label:t('rvLive'), add:g => { redrawLive = liveWorkers(g, tk, plans, () => names); } },
     ],
     back,
@@ -701,7 +719,7 @@ function viewCreate(edit){
     const km = p ? fmtDist(p.routes.reduce((s, r) => s + r.length_m, 0)) : '';
     const routeRow = (r, i, withSelect) => `<div class="route-row"><span class="swatch" style="background:${Planner.COLORS[i % 10]}"></span>
         <div class="grow"><b>${esc(t('planRoute', { n:i + 1 }))} <span class="muted">· ${esc(t('daysN', { n:Math.max(1, Math.ceil(r.minutes / 60 / d.hours)) }))}</span></b><span>${esc(t('routeLine', { km:fmtDist(r.length_m), h:fmtHm(r.minutes), mb:fmtN(r.mailboxes) }))}</span>
-        ${dayLines(r.days)}
+        ${dayLines(r.days, Planner.COLORS[i % 10])}
         ${withSelect ? `<select class="in small" data-r="${i}" aria-label="${esc(t('planRoute', { n:i + 1 }))}">${workerOptions(d.start.lat, d.start.lng, d.assign[i])}</select>` : ''}</div></div>`;
     const planBlock = () => p ? `<p class="small muted" style="margin:10px 0 0">${esc(t('planSum', { mb:fmtN(p.mailboxes), km, h:fmtHm(p.routes.reduce((s, r) => s + r.minutes, 0)) }))}</p>
         ${p.mailboxes < d.flyers * 0.95 ? `<p class="small err">${esc(t('areaSmall', { mb:fmtN(p.mailboxes) }))}</p>` : ''}
@@ -850,7 +868,7 @@ function editTaskSheet(tk, plans, routes){
   const rp = mo.querySelector('#eReplan'); if(rp) rp.onclick = () => { mo.remove(); viewCreate({ tk, plans }); };
 }
 /* task detail: info + map + routes with status, worker assignment and progress */
-const dayLines = days => (days && days.length > 1) ? days.map((x, k) => `<span class="small day-line"><b>${esc(t('dayN', { n:k + 1 }))}:</b> ${esc(t('routeLine', { km:fmtDist(x.length_m), h:fmtHm(x.minutes), mb:fmtN(x.mailboxes) }))}</span>`).join('') : '';
+const dayLines = (days, col) => (days && days.length > 1) ? days.map((x, k) => `<span class="small day-line"><b><i class="dsw" style="background:${esc(dayColor(col, k))}"></i>${esc(t('dayN', { n:k + 1 }))}:</b> ${esc(t('routeLine', { km:fmtDist(x.length_m), h:fmtHm(x.minutes), mb:fmtN(x.mailboxes) }))}</span>`).join('') : '';
 const stText = p => p.status === 'accepted' ? t('stAccepted') : p.status === 'declined' ? t('stDeclined') : p.status === 'done' ? t('stDone') : t('stOffered');
 const stCls = p => p.status === 'done' ? 'ok' : p.status === 'accepted' ? '' : p.status === 'declined' ? 'bad' : 'neutral';   // angeboten = neutral, angenommen = blau, erledigt = grün, abgelehnt = rot
 // walked so far on one route (all sessions, also the running one; a session lying inside another one counts once)
@@ -887,7 +905,7 @@ async function viewTask(id){
       ${(plans || []).length ? plans.map(p => { const w = wById(p.worker_id); return `<div class="route-row"><span class="swatch" style="background:${esc(p.color || '#2563EB')}"></span>
         <div class="grow"><b>${esc(t('planRoute', { n:p.idx + 1 }))} <span class="muted" id="pp${p.idx}"></span></b>
         <span>${esc(t('routeLine', { km:fmtDist(p.length_m), h:fmtHm(p.minutes || 0), mb:fmtN(p.mailboxes || 0) }))}</span>
-        ${dayLines(p.days)}
+        ${dayLines(p.days, p.color)}
         <div class="bar"><i id="pb${p.idx}"></i></div><span id="pf${p.idx}" style="margin-top:4px"></span><span class="small" id="pw${p.idx}">${planWalked(p, routes)}</span>
         ${p.worker_id ? `<span class="pill ${(A.live || []).some(r => r.plan_id === p.id && !r.paused_at) ? 'live' : stCls(p)}">${(A.live || []).some(r => r.plan_id === p.id && !r.paused_at) ? esc(t('stLive')) + ' · ' : ''}${esc(stText(p))}${p.status === 'accepted' && (p.work_dates || []).length ? ' · ' + esc(p.work_dates.map(fmtDay).join(', ')) : ''}</span>` : ''}
         <div class="rr-act"><select class="in small" data-plan="${p.id}">${workerOptions(tk.start_lat, tk.start_lng, p.worker_id)}</select>${w ? `<a class="btn ghost small" target="_blank" rel="noopener" href="${waLink(w.phone, invite(w))}">${ICONS.chat}${esc(t('write'))}</a>` : ''}</div>
@@ -901,7 +919,8 @@ async function viewTask(id){
   if(tk.zone_polygon){ const z = L.polygon(tk.zone_polygon, { color:css('--brand'), weight:2, fillOpacity:.06, interactive:false }).addTo(m); b = z.getBounds(); }
   (tk.must_areas || []).forEach(a => L.polygon(mArea(a).p, { color:'#EA580C', weight:2, dashArray:'8 6', fillOpacity:.1, interactive:false }).addTo(m));
   if(tk.work_area) L.polygon(tk.work_area, { color:'#7C3AED', weight:2, dashArray:'10 6', fillOpacity:.03, interactive:false }).addTo(m);
-  (plans || []).forEach(p => { if(p.path?.length > 1) L.polyline(p.path, { color:p.color || '#2563EB', weight:4, opacity:.6 }).addTo(m); });
+  (plans || []).forEach(p => { if(!(p.path?.length > 1)) return; const ds = (p.days || []).length > 1 ? p.days : [{ i0:0, i1:p.path.length - 1 }];
+    ds.forEach((d, k) => L.polyline(p.path.slice(d.i0, d.i1 + 1), { color:dayColor(p.color, k), weight:4, opacity:.7, dashArray:k ? '10 8' : null }).addTo(m)); });
   const doneLayer = L.layerGroup().addTo(m);
   L.marker([tk.start_lat, tk.start_lng], { icon:dot('pin-start', 24) }).addTo(m);
   liveWorkers(L.layerGroup().addTo(m), tk, plans, () => true);
