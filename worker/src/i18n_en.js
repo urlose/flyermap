@@ -146,5 +146,5 @@ T.en = {
   e_plan_taken:'Somebody else just took this route.', e_already_in_task:'You already have a route in this order.',
   area:'Area', routeLen:'Length', mapBig:'Big map', mapSmall:'Details',
   rvLive:'Where now', checkpoints:'Checkpoints', cpTitle:'Day {d} · section {n} · {p} % done', rerouted:'Route adjusted to your way', contDayN:'Continue day {n}', navLeft:'{n} % still open · nearest street {d}', navToStart:'To the start of the route · {d}', navBack:'Back to the route · {d}', navToSub:'Follow the purple line · map button on the right = walking directions',
-  rvDoneBefore:'Done earlier', walkedLine:'Walked: {km} · {h} h working time', walkedLive:'on the way now',
+  rvDoneBefore:'Done earlier', skipBtn:'Not needed', skipQ:'Skip this section?', skipText:'The section marked in red (≈ {d}) will be marked as "not needed", e.g. a road without houses or houses already served from another street. The admin sees this.', skipYes:'Skip', skipDone:'Skipped – route adjusted', skipNone:'No open section ahead of you', rvSkipped:'Skipped', walkedLine:'Walked: {km} · {h} h working time', walkedLive:'on the way now',
 };

@@ -196,3 +196,10 @@ export function checkpoints(plan, isDone, every){
   });
   return out;
 }
+
+// pieces of the route a distributor marked as not needed: they count as done everywhere (progress, guidance, checkpoints)
+export function addSkips(tr, plan){
+  if(!tr || !plan) return tr;
+  for(const s of plan.skipped || []) if(s && Array.isArray(s.pts) && s.pts.length > 1) tr.addTrack(s.pts);
+  return tr;
+}

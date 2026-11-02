@@ -2,7 +2,7 @@ import L from 'leaflet';
 import { registerPlugin } from '@capacitor/core';
 import { App } from '@capacitor/app';
 import Planner from '../../admin/planner.js';
-import { makeNav, dayProgress, rerouteDay, stepsFromPath, checkpoints } from './nav.js';
+import { makeNav, dayProgress, rerouteDay, stepsFromPath, checkpoints, addSkips } from './nav.js';
 import { cpMarker } from './admin.js';
 import { openMapView } from './routeview.js';
 import { locationNote, legalLinks, bindLegal } from './legalview.js';
@@ -53,7 +53,16 @@ setInterval(flush, 8000);
 
 export async function loadMe(){
   try{ W.me = await rpc('worker_me', { p_token:W.token }); await store.set('me', W.me); setLegalFirm(W.me && W.me.company); }
-  catch(e){ if(e.message === 'invalid_token') return forceLogout(t('e_invalid_token')); W.me = W.me || await store.get('me'); }
+  catch(e){ if(e.message === 'invalid_token') return forceLogout(t('e_invalid_token')); W.me = W.me || await store.get('me'); return; }
+  syncSkips();
+}
+// pieces marked "not needed" (by a colleague on the same route or by the admin) reach a running route too
+function syncSkips(){
+  const pl = W.route && !W.route.endedAt && W.route.task && W.route.task.plan; if(!pl) return;
+  const fresh = (((W.me && W.me.tasks) || []).find(x => x.plan && x.plan.id === pl.id) || {}).plan;
+  if(!fresh || !Array.isArray(fresh.skipped) || fresh.skipped.length === (pl.skipped || []).length) return;
+  pl.skipped = fresh.skipped; saveRoute(); W.tracker = null;
+  if(document.getElementById('navSkip') || document.getElementById('nav')) viewTracking(); else ensureTracker();
 }
 export async function forceLogout(msg){
   await stopWatching(); stopDemoWalk();
@@ -68,7 +77,7 @@ function routeTask(){ return W.route && W.route.task; }
 function ensureTracker(){
   const p = routeTask() && routeTask().plan;
   if(p && p.path && p.path.length > 1 && !W.tracker){
-    W.tracker = Planner.makeTracker(p.path); if(W.prev) W.tracker.addTrack(W.prev); W.tracker.addTrack(W.track.map(x => [x[0], x[1]]));
+    W.tracker = addSkips(Planner.makeTracker(p.path), p); if(W.prev) W.tracker.addTrack(W.prev); W.tracker.addTrack(W.track.map(x => [x[0], x[1]]));
   }
   if(p && p.boxes && p.boxes.length && !W.counter){
     W.counter = Planner.makeBoxCounter(p.boxes); if(W.prev) W.counter.visitAll(W.prev); W.counter.visitAll(W.track.map(x => [x[0], x[1]]));
@@ -174,7 +183,7 @@ export async function beginRoute(task){
 // the next unfinished day already has walked streets (≥ 3 %): it is continued, not started again
 function dayBegun(plan, prev){
   if(!plan || !plan.path || plan.path.length < 2 || !prev || !prev.length) return false;
-  const tr = Planner.makeTracker(plan.path); tr.addTrack(prev);
+  const tr = addSkips(Planner.makeTracker(plan.path), plan); tr.addTrack(prev);
   const pc = dayProgress(plan, tr), next = pc.findIndex(p => p < 95);
   return next >= 0 && pc[next] >= 3;
 }
@@ -361,7 +370,7 @@ function viewTaskDetail(task){
   document.querySelectorAll('[data-dbig]').forEach(r => { r.onclick = () => bigRouteMap(task, +r.dataset.dbig); r.onkeydown = e => { if(e.key === 'Enter') bigRouteMap(task, +r.dataset.dbig); }; });
   if(plan && plan.days && plan.days.length > 1 && st === 'accepted'){   // how much of each day is already walked → which day comes next
     rpc('plan_progress', { p_token:W.token, p_plan_id:plan.id }).then(prev => {
-      const tr = Planner.makeTracker(plan.path); tr.addTrack(prev || []);
+      const tr = addSkips(Planner.makeTracker(plan.path), plan); tr.addTrack(prev || []);
       const pc = dayProgress(plan, tr); pc.forEach((p, k) => { const el = $('#dp' + k); if(el) el.innerHTML = p >= 95 ? statusPill('ok', t('stDone')) : p ? '· ' + p + '%' : ''; });
       const next = pc.findIndex(p => p < 95), go = $('#go'); if(go && next >= 0) go.querySelector('span').textContent = t(pc[next] >= 3 ? 'contDayN' : 'startDayN', { n:next + 1 });
     }).catch(() => {});
@@ -431,7 +440,7 @@ function viewTracking(){
   const hasPlan = !!W.tracker, paused = !!W.route.paused, quota = task && task.quota_m30;
   shell('map', `<div id="fullMap" class="fullmap"></div>
     <button class="icon-btn map-btn" id="recenter" aria-label="center">${ICONS.locate}</button>
-    ${hasPlan ? `<div class="nav" id="nav"><div class="nav-ic" id="navIc"></div><div class="nav-tx"><b id="navMain"></b><span id="navSub"></span></div><a class="nav-ext" id="navExt" target="_blank" rel="noopener" aria-label="${esc(t('navExt'))}">${ICONS.map}</a></div>` : ''}
+    ${hasPlan ? `<div class="nav" id="nav"><div class="nav-ic" id="navIc"></div><div class="nav-tx"><b id="navMain"></b><span id="navSub"></span><button class="nav-skip" id="navSkip">${esc(t('skipBtn'))}</button></div><a class="nav-ext" id="navExt" target="_blank" rel="noopener" aria-label="${esc(t('navExt'))}">${ICONS.map}</a></div>` : ''}
     <div class="float-card ${W.mapFull ? 'mini' : ''}">
       <div class="fc-row">${paused ? `<span class="rec paused">${esc(t('pauseRunning'))}</span><b id="sPause">0:00</b>` : `<span class="rec">${esc(t('recording'))}</span><span class="gps" id="gps" role="status"></span>`}
         <button class="fc-size" id="fcSize" aria-label="${esc(t(W.mapFull ? 'mapSmall' : 'mapBig'))}">${W.mapFull ? ICONS.expand : ICONS.shrink}<span>${esc(t(W.mapFull ? 'mapSmall' : 'mapBig'))}</span></button></div>
@@ -484,6 +493,35 @@ function viewTracking(){
     L.marker(pts[pts.length - 1], { icon:dot('ahead-dot', 12), interactive:false }).addTo(aheadLayer);
   };
   const trackLine = L.polyline(W.track.map(p => [p[0], p[1]]), { color:css('--route'), weight:3, opacity:.8 }).addTo(m);
+  // "not needed": the open piece the guidance leads to next (a road without houses, houses already served from another
+  // street, no access) is marked as skipped – after a confirmation, visible for the admin – and the route goes on without it
+  const skipLayer = L.layerGroup().addTo(m);
+  const skipNext = async () => {
+    if(!guide || !W.tracker || !plan) return;
+    const S = W.tracker.samples, day = dayIdx || 0, ok = i => !W.tracker.isDone(i) && (!nav || nav.dayAt(nav.posOf[i]) === day);
+    let seed = -1;
+    for(const a of guide.ahead(gDay, 600)){
+      let bd = 14; for(let i = 0; i < S.length; i++){ const q = S[i]; if(Math.abs(q[0] - a[0]) > 0.0002 || !ok(i)) continue; const d = hav(a[0], a[1], q[0], q[1]); if(d < bd){ bd = d; seed = i; } }
+      if(seed >= 0) break;
+    }
+    if(seed < 0){ toast(t('skipNone')); return; }
+    const near = (i, j) => hav(S[i][0], S[i][1], S[j][0], S[j][1]) <= 20;
+    let i0 = seed, i1 = seed;
+    while(i1 + 1 < S.length && i1 - i0 < 90 && ok(i1 + 1) && near(i1, i1 + 1)) i1++;
+    while(i0 > 0 && i1 - i0 < 90 && ok(i0 - 1) && near(i0 - 1, i0)) i0--;
+    const pts = S.slice(i0, i1 + 1).map(q => [+q[0].toFixed(6), +q[1].toFixed(6)]); if(pts.length < 2){ toast(t('skipNone')); return; }
+    skipLayer.clearLayers(); L.polyline(pts, { color:'#DC2626', weight:9, opacity:.85, dashArray:'4 10', lineCap:'round', interactive:false }).addTo(skipLayer);
+    view.follow = false; try{ m.fitBounds(L.latLngBounds(pts), { padding:[60, 60], maxZoom:17 }); }catch{}
+    const yes = await confirmBox(t('skipQ'), t('skipText', { d:fmtDist(pts.length * 8) }), t('skipYes'));
+    skipLayer.clearLayers(); view.follow = true;
+    if(!yes) return;
+    try{ await rpc('skip_part', { p_token:W.token, p_plan_id:plan.id, p_pts:pts }); }catch(e){ toast(errText(e)); return; }
+    (plan.skipped = plan.skipped || []).push({ pts }); saveRoute();
+    W.tracker.addTrack(pts); lastRR = 0;
+    const me = W.track[W.track.length - 1]; if(me) reroute(me[0], me[1]);
+    drawDone(); drawAhead(); updateNav(); toast(t('skipDone'));
+  };
+  if($('#navSkip')) $('#navSkip').onclick = e => { e.preventDefault(); skipNext(); };
   let meMarker = null; view.follow = true;
   m.on('dragstart', () => { view.follow = false; });
   $('#recenter').onclick = () => { view.follow = true; const l = W.track[W.track.length - 1]; if(l) followTo([l[0], l[1]], 17, true); };

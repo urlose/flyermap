@@ -6,7 +6,7 @@ import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, labelIcon, fit
 import { legalLinks, bindLegal } from './legalview.js';
 import { makePlanEngine } from './planengine.js';
 import { openMapView } from './routeview.js';
-import { checkpoints } from './nav.js';
+import { checkpoints, addSkips } from './nav.js';
 import { loadFirm, firmCardHtml, bindFirmCard, firmComplete, avvOk } from './firm.js';
 import { viewMaster, poolHtml } from './master.js';
 
@@ -370,6 +370,8 @@ async function viewWorker(id, back, focusId){
 }
 
 /* ---------- big map views (also for screenshots for clients) ---------- */
+// pieces a distributor marked as not needed: grey, dashed
+const drawSkips = (g, plans) => (plans || []).forEach(p => (p && p.skipped || []).forEach(x => { if(x && x.pts && x.pts.length > 1) L.polyline(x.pts, { color:'#6B7280', weight:7, opacity:.85, dashArray:'3 9', lineCap:'round' }).bindTooltip(t('rvSkipped') + (x.by ? ' · ' + x.by : '') + (x.at ? ' · ' + fmtDT(x.at) : '')).addTo(g); }));
 // GPS track: its own colour (yellow with a dark edge) so it never looks like a planned route
 const GPS = '#FACC15';
 const gpsLine = (g, ll, w = 3) => { L.polyline(ll, { color:'#111827', weight:w + 3, opacity:.45, lineJoin:'round' }).addTo(g); return L.polyline(ll, { color:GPS, weight:w, opacity:1, lineJoin:'round' }).addTo(g); };
@@ -402,7 +404,7 @@ async function viewDayMap(routeId, back){
   const ll = pts.map(p => [p.lat, p.lng]), col = (pl && pl.color) || '#2563EB';
   let pct = null, fl = null, runs = [], runsPrev = [], cps = [], pctAll = null;
   if(pl && pl.path && pl.path.length > 1){
-    const tr = Planner.makeTracker(pl.path), trAll = Planner.makeTracker(pl.path), trPrev = Planner.makeTracker(pl.path);
+    const tr = Planner.makeTracker(pl.path), trAll = addSkips(Planner.makeTracker(pl.path), pl), trPrev = Planner.makeTracker(pl.path);
     if(ll.length > 1){ tr.addTrack(ll); trAll.addTrack(ll); runs = tr.runs(); pct = tr.pct(); }
     (prev || []).forEach(a => { if(a.length > 1){ trPrev.addTrack(a); trAll.addTrack(a); } });
     runsPrev = trPrev.runs();
@@ -422,6 +424,7 @@ async function viewDayMap(routeId, back){
         ds.forEach((d, k) => L.polyline(pl.path.slice(d.i0, d.i1 + 1), { color:dayColor(col, k), weight:4, opacity:.6, dashArray:'6 7', lineJoin:'round' }).addTo(g)); } },
       { key:'prev', label:runsPrev.length ? t('rvDoneBefore') : '', add:g => runsPrev.forEach(x => L.polyline(x, { color:'#86EFAC', weight:7, opacity:.75, lineJoin:'round', lineCap:'round' }).addTo(g)) },
       { key:'done', label:runs.length ? t('rvDone') : '', add:g => runs.forEach(x => L.polyline(x, { color:GREEN, weight:8, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g)) },
+      { key:'skip', label:pl && (pl.skipped || []).length ? t('rvSkipped') : '', add:g => drawSkips(g, [pl]) },
       { key:'cp', label:cps.length ? t('checkpoints') : '', add:g => cps.forEach(c => cpMarker(c, dayColor(col, c.day), (pl.days || []).length > 1).addTo(g)) },
       { key:'gps', label:ll.length > 1 ? t('rvGps') : '', add:g => {
         if(ll.length < 2) return;
@@ -468,7 +471,7 @@ async function viewTaskMap(id, back){
   });
   let doneM = 0, allM = 0, flAll = 0, hasFl = false;
   const res = (plans || []).map(p => {
-    const tr = p.path && p.path.length > 1 ? Planner.makeTracker(p.path) : null, ct = p.boxes && p.boxes.length ? Planner.makeBoxCounter(p.boxes) : null;
+    const tr = p.path && p.path.length > 1 ? addSkips(Planner.makeTracker(p.path), p) : null, ct = p.boxes && p.boxes.length ? Planner.makeBoxCounter(p.boxes) : null;
     for(const pts of byPlan[p.id] || []){ if(tr) tr.addTrack(pts); if(ct) ct.visitAll(pts); }
     const pct = tr ? tr.pct() : 0; doneM += pct * (p.length_m || 0) / 100; allM += p.length_m || 0; if(ct){ flAll += ct.count(); hasFl = true; }
     return { p, runs:tr ? tr.runs() : [], pct, fl:ct ? ct.count() : null, cps:tr ? checkpoints(p, i => tr.isDone(i)) : [] };
@@ -495,6 +498,7 @@ async function viewTaskMap(id, back){
       })(),
       { key:'done', label:t('rvDone'), add:g => res.forEach(x => x.runs.forEach(run => L.polyline(run, { color:GREEN, weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g))) },
       { key:'gps', label:tracks.some(x => x.length > 1) ? t('rvGps') : '', on:false, add:g => tracks.forEach(ll => { if(ll.length > 1) gpsLine(g, ll, 2.5); }) },
+      ...((plans || []).some(p => (p.skipped || []).length) ? [{ key:'skip', label:t('rvSkipped'), add:g => drawSkips(g, plans) }] : []),
       { key:'cp', label:t('checkpoints'), add:g => res.forEach(({ p, cps }) => cps.forEach(c => cpMarker(c, dayColor(p.color, c.day), (p.days || []).length > 1).addTo(g))) },
       { key:'live', label:t('rvLive'), add:g => { redrawLive = liveWorkers(g, tk, plans, () => names); } },
     ],
@@ -921,6 +925,7 @@ async function viewTask(id){
   if(tk.work_area) L.polygon(tk.work_area, { color:'#7C3AED', weight:2, dashArray:'10 6', fillOpacity:.03, interactive:false }).addTo(m);
   (plans || []).forEach(p => { if(!(p.path?.length > 1)) return; const ds = (p.days || []).length > 1 ? p.days : [{ i0:0, i1:p.path.length - 1 }];
     ds.forEach((d, k) => L.polyline(p.path.slice(d.i0, d.i1 + 1), { color:dayColor(p.color, k), weight:4, opacity:.7, dashArray:k ? '10 8' : null }).addTo(m)); });
+  drawSkips(m, plans);
   const doneLayer = L.layerGroup().addTo(m);
   L.marker([tk.start_lat, tk.start_lng], { icon:dot('pin-start', 24) }).addTo(m);
   liveWorkers(L.layerGroup().addTo(m), tk, plans, () => true);
@@ -954,8 +959,9 @@ async function viewTask(id){
     const pts = await fetchPoints(r.id); (byPlan[pid] = byPlan[pid] || []).push(pts.map(p => [p.lat, p.lng]));
   }
   for(const p of plans || []){
-    if(!byPlan[p.id] || !p.path?.length) continue;
-    const tr = Planner.makeTracker(p.path), ct = p.boxes && p.boxes.length ? Planner.makeBoxCounter(p.boxes) : null;
+    if((!byPlan[p.id] && !(p.skipped || []).length) || !p.path?.length) continue;
+    byPlan[p.id] = byPlan[p.id] || [];
+    const tr = addSkips(Planner.makeTracker(p.path), p), ct = p.boxes && p.boxes.length ? Planner.makeBoxCounter(p.boxes) : null;
     byPlan[p.id].forEach(pts => { tr.addTrack(pts); if(ct) ct.visitAll(pts); });
     tr.runs().forEach(run => L.polyline(run, { color:GREEN, weight:6, opacity:.95 }).addTo(doneLayer));
     const pct = tr.pct(); const el = $('#pp' + p.idx); if(el) el.textContent = '· ' + t('done', { p:pct }); const bar = $('#pb' + p.idx); if(bar) bar.style.width = pct + '%';
