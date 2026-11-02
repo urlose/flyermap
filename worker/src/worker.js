@@ -176,9 +176,16 @@ export async function beginRoute(task){
   W.queue = []; W.track = []; W.tracker = null; W.counter = null; W.prev = null;
   await saveRoute();
   W.prev = prev;
+  // the day this session works on = the first day that is not finished yet (a few open metres of an earlier day do not count)
+  const nd = nextDay(plan, prev); if(nd != null){ W.route.dayIdx = nd; await saveRoute(); }
   setTimeout(() => loadMe().catch(() => {}), 4000);   // today's totals without this new session
   workerTab('map');
   await startWatching(); flush();
+}
+function nextDay(plan, prev){
+  if(!plan || !plan.path || plan.path.length < 2 || !(plan.days && plan.days.length > 1)) return null;
+  const tr = addSkips(Planner.makeTracker(plan.path), plan); if(prev) tr.addTrack(prev);
+  const k = dayProgress(plan, tr).findIndex(p => p < 95); return k >= 0 ? k : null;
 }
 // the next unfinished day already has walked streets (≥ 3 %): it is continued, not started again
 function dayBegun(plan, prev){
@@ -459,7 +466,9 @@ function viewTracking(){
   const m = makeMap($('#fullMap'), last ? [last[0], last[1]] : task ? [task.start_lat, task.start_lng] : null, 16);
   // navigation along the planned line: which working day we are on, and the next turn
   const plan = task && task.plan, nav = hasPlan && plan && plan.path && plan.path.length > 1 ? makeNav(plan) : null;
-  if(nav){ nav.setDoneCheck(i => W.tracker.isDone(i)); nav.setPosFromSample(W.tracker.nextIndex()); if(W.route.dayIdx == null){ W.route.dayIdx = nav.dayAt(); saveRoute(); } nav.setDay(W.route.dayIdx); if(last) nav.locate(last[0], last[1], true); }
+  if(nav){ nav.setDoneCheck(i => W.tracker.isDone(i)); nav.setPosFromSample(W.tracker.nextIndex()); if(W.route.dayIdx == null){ W.route.dayIdx = nav.dayAt(); saveRoute(); }
+    // this session's day is finished (≥ 95 %, e.g. the admin closed the rest): go on with the next unfinished day
+    if(nav.days.length > 1){ const pc = dayProgress(plan, W.tracker); if(pc[W.route.dayIdx] >= 95){ const k = pc.findIndex(p => p < 95); if(k >= 0 && k !== W.route.dayIdx){ W.route.dayIdx = k; saveRoute(); } } } nav.setDay(W.route.dayIdx); if(last) nav.locate(last[0], last[1], true); }
   const dayIdx = nav ? W.route.dayIdx : null;
   // guidance: the plan of the day, or – after the walker took their own way – the rest of the day in a new order
   let guide = nav, gDay = dayIdx, rerouted = false, lastRR = 0, rerouteToast = false, back = 0, rrGen = 0;
