@@ -462,14 +462,14 @@ function viewTracking(){
   if(nav){ nav.setDoneCheck(i => W.tracker.isDone(i)); nav.setPosFromSample(W.tracker.nextIndex()); if(W.route.dayIdx == null){ W.route.dayIdx = nav.dayAt(); saveRoute(); } nav.setDay(W.route.dayIdx); if(last) nav.locate(last[0], last[1], true); }
   const dayIdx = nav ? W.route.dayIdx : null;
   // guidance: the plan of the day, or – after the walker took their own way – the rest of the day in a new order
-  let guide = nav, gDay = dayIdx, rerouted = false, lastRR = 0, rerouteToast = false, back = 0;
+  let guide = nav, gDay = dayIdx, rerouted = false, lastRR = 0, rerouteToast = false, back = 0, rrGen = 0;
   const reroute = (lat, lng) => {
     if(!nav || Date.now() - lastRR < 6000) return false;
     lastRR = Date.now();
     let np = null; try{ np = rerouteDay(plan, dayIdx, i => W.tracker.isDone(i), [lat, lng], heading()); }catch{}
     if(!np || np.length < 2) return false;
     guide = makeNav({ path:np, steps:stepsFromPath(np), days:[{ i0:0, i1:np.length - 1 }] }); gDay = 0; rerouted = true;
-    guide.locate(lat, lng); if(!rerouteToast){ rerouteToast = true; toast(t('rerouted')); }
+    guide.locate(lat, lng); rrGen++; if(!rerouteToast){ rerouteToast = true; toast(t('rerouted')); }
     return true;
   };
   // is the walker on an open street of this day (they do it in their own order)?
@@ -519,7 +519,7 @@ function viewTracking(){
     (plan.skipped = plan.skipped || []).push({ pts }); saveRoute();
     W.tracker.addTrack(pts); lastRR = 0;
     const me = W.track[W.track.length - 1]; if(me) reroute(me[0], me[1]);
-    drawDone(); drawAhead(); updateNav(); toast(t('skipDone'));
+    drawDone(); drawAhead(); updateNav(); tgt = null; sendTarget(); toast(t('skipDone'));
   };
   if($('#navSkip')) $('#navSkip').onclick = e => { e.preventDefault(); skipNext(); };
   let meMarker = null; view.follow = true;
@@ -624,16 +624,28 @@ function viewTracking(){
       const n = guide.next(gDay), moved = mAt(guide.pos) - before, jumped = moved > 250;
       back = lastOff <= 30 ? Math.max(0, back - moved) : back;   // walking the line against its direction adds up
       if((lastOff > 30 && onOpenStreet(lat, lng)) || jumped || back > 60 || (n.lastOfDay && leftOfDay())){ if(reroute(lat, lng)){ back = 0; lastOff = guide.locate(lat, lng).off; } }
-      updateNav(); drawAhead(); drawApproach();
+      updateNav(); drawAhead(); drawApproach(); sendTarget();
     }
     if(view.follow) followTo([lat, lng], m.getZoom() < 16 ? 17 : null);   // first fix after the start: close up
     if(Date.now() - lastDraw > 800){ lastDraw = Date.now(); drawDone(); stats(); }
     updateSync();
   };
+  // the admin sees where the guidance leads: the point ahead on the walker's map (or the way back to the route).
+  // It is sent when reached, when the guidance changed (new order, skipped piece) or went somewhere else – not with every fix.
+  let tgt = null, tgtGen = -1;
+  const sendTarget = () => {
+    if(!guide || !W.route || W.route.paused || !W.token) return;
+    const me = W.track[W.track.length - 1]; if(!me) return;
+    const pts = guide.ahead(gDay, AHEAD_M), cand = approachTo || (pts.length > 1 ? pts[pts.length - 1] : null); if(!cand) return;
+    if(tgt && tgtGen === rrGen && hav(me[0], me[1], tgt[0], tgt[1]) > 40 && hav(cand[0], cand[1], tgt[0], tgt[1]) < 700) return;
+    if(tgt && hav(cand[0], cand[1], tgt[0], tgt[1]) < 25) return;
+    tgt = [+cand[0].toFixed(6), +cand[1].toFixed(6)]; tgtGen = rrGen;
+    rpc('set_nav_target', { p_token:W.token, p_lat:tgt[0], p_lng:tgt[1] }).catch(() => { tgt = null; });
+  };
   view.refreshDemo = () => { const b = $('#demo'); if(b) b.textContent = W.sim ? t('demoStop') : t('demoWalk'); };
   if(last){ view.me(last[0], last[1]); followTo([last[0], last[1]], 17); }
   if(nav && last) lastOff = guide.locate(last[0], last[1]).off;
-  updateNav(); drawAhead(); drawApproach(); drawDone(); stats(); renderGps(); every(1000, () => { stats(); renderGps(); updateSync(); }); updateSync();
+  updateNav(); drawAhead(); drawApproach(); drawDone(); sendTarget(); stats(); renderGps(); every(1000, () => { stats(); renderGps(); updateSync(); }); updateSync();
   // big map: the card shrinks to one line (time, distance, flyers); a tap brings everything back
   $('#fcSize').onclick = () => {
     W.mapFull = !W.mapFull; const fc = document.querySelector('.float-card'), b = $('#fcSize');

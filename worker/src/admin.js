@@ -27,7 +27,7 @@ const planEngine = () => engine || (engine = makePlanEngine(osmCache));
 export const A = { user:null, workers:[], tasks:[], live:[], demo:null, hooks:{}, filter:{ status:'open', from:'', to:'', city:'', district:'' } };
 
 /* ---------- data ---------- */
-async function loadWorkers(){ const { data, error } = await sb.from('workers').select('id,name,phone,cities,zone_minutes,notes,last_lat,last_lng,last_seen,active_route_id,created_at,company_id').order('name'); if(error) throw error; A.workers = data; }
+async function loadWorkers(){ const { data, error } = await sb.from('workers').select('id,name,phone,cities,zone_minutes,notes,last_lat,last_lng,last_seen,nav_lat,nav_lng,nav_at,active_route_id,created_at,company_id').order('name'); if(error) throw error; A.workers = data; }
 async function loadTasks(){ const { data, error } = await sb.from('tasks').select('*,task_workers(worker_id)').order('created_at', { ascending:false }); if(error) throw error; A.tasks = data; }
 async function loadLive(){ const { data } = await sb.from('routes').select('id,worker_id,task_id,plan_id,paused_at,last30_m,started_at,break_s').is('ended_at', null); A.live = data || []; }
 async function loadAll(){
@@ -148,6 +148,7 @@ function viewLive(){
       L.marker(p, { icon:personIcon(w.name, on, on ? '' : city ? city : ago(w.last_seen)), zIndexOffset:on ? 800 : city ? 300 : 400 }).on('click', () => viewWorker(w.id, viewLive)).addTo(layer);
       b.extend(p);
       // the whole day so far (all sessions of today), not only the running one
+      if(on) navTarget(layer, w, '#7C3AED', w.name);
       if(on) todayTrack(w.id).then(pts => { if(pts.length > 1) L.polyline(pts.map(q => [q.lat, q.lng]), { color:css('--route'), weight:4, opacity:.85 }).addTo(layer); }).catch(() => {});
     }
     if(!$('#liveCount')) return;
@@ -435,6 +436,13 @@ async function viewDayMap(routeId, back){
     back,
   });
 }
+// where the guidance of a walker leads right now: dashed line from the walker to a target ring (fresh = the last 15 min)
+function navTarget(g, w, color, label){
+  if(!w || w.nav_lat == null || !w.nav_at || w.last_lat == null || Date.now() - new Date(w.nav_at).getTime() > 15 * 60e3) return;
+  L.polyline([[w.last_lat, w.last_lng], [w.nav_lat, w.nav_lng]], { color, weight:3, opacity:.9, dashArray:'2 8', lineCap:'round', interactive:false }).addTo(g);
+  L.marker([w.nav_lat, w.nav_lng], { zIndexOffset:1500, keyboard:false, title:t('navTarget') + (label ? ' · ' + label : ''),
+    icon:L.divIcon({ className:'', iconSize:[22, 22], iconAnchor:[11, 11], html:`<div class="nav-tgt" style="--c:${esc(color)}"></div>` }) }).bindTooltip(t('navTarget') + (label ? ' · ' + label : '') + ' · ' + ago(w.nav_at)).addTo(g);
+}
 // where the people of an order are right now: a dot in their route colour with name and time of the last GPS fix.
 // Pulsing = recording right now and the fix is fresh; grey = older position (they finished, paused or lost the signal).
 // Refreshed every 15 s while the map is open. showNames(): false when the admin has hidden names (for screenshots).
@@ -448,6 +456,7 @@ function liveWorkers(g, tk, plans, showNames){
       const label = (showNames() ? w.name : t('planRoute', { n:p.idx + 1 })) + ' · ' + (run && run.paused_at ? t('onPause') : ago(w.last_seen));
       L.marker([w.last_lat, w.last_lng], { zIndexOffset:2000, keyboard:false, icon:L.divIcon({ className:'', iconSize:[22, 22], iconAnchor:[11, 11],
         html:`<div class="live-pin ${fresh ? 'on' : 'old'}" style="--c:${esc(p.color || '#2563EB')}"><i></i><span>${esc(label)}</span></div>` }) }).addTo(g);
+      if(run && !run.paused_at) navTarget(g, w, p.color || '#2563EB', showNames() ? w.name : t('planRoute', { n:p.idx + 1 }));
     });
   };
   draw();

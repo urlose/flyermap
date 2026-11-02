@@ -116,3 +116,5 @@ Object.assign(T.de, { rvDoneBefore:'Vorher erledigt' });
 Object.assign(T.ru, { rvDoneBefore:'Пройдено раньше' });
 Object.assign(T.de, { skipBtn:'Nicht nötig', skipQ:'Diesen Abschnitt überspringen?', skipText:'Der rot markierte Abschnitt (≈ {d}) wird als „nicht nötig“ markiert, z. B. Straße ohne Häuser oder Häuser schon von einer anderen Straße aus beliefert. Der Admin sieht das.', skipYes:'Überspringen', skipDone:'Übersprungen – Route angepasst', skipNone:'Vor dir ist kein offener Abschnitt', rvSkipped:'Übersprungen' });
 Object.assign(T.ru, { skipBtn:'Не нужно', skipQ:'Пропустить этот участок?', skipText:'Участок, отмеченный красным (≈ {d}), будет помечен как «не нужно»: например, дорога без домов или дома уже обойдены с другой улицы. Админ это увидит.', skipYes:'Пропустить', skipDone:'Пропущено — маршрут обновлён', skipNone:'Впереди нет непройденного участка', rvSkipped:'Пропущено' });
+Object.assign(T.de, { navTarget:'Nächstes Ziel' });
+Object.assign(T.ru, { navTarget:'Следующая цель' });
