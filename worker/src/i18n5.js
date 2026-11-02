@@ -120,3 +120,5 @@ Object.assign(T.de, { navTarget:'Nächstes Ziel' });
 Object.assign(T.ru, { navTarget:'Следующая цель' });
 Object.assign(T.de, { dayEndBtn:'Tag {n} beenden · Tag {m} starten', dayEndQ:'Tag {n} beenden?', dayEndText:'Von Tag {n} sind noch ≈ {p} % offen. Diese Reste werden als „nicht nötig“ markiert (der Admin sieht das) und es geht sofort mit Tag {m} weiter.', dayEndYes:'Tag {m} starten', dayEndDone:'Weiter mit Tag {m}' });
 Object.assign(T.ru, { dayEndBtn:'Закончить день {n} · начать день {m}', dayEndQ:'Закончить день {n}?', dayEndText:'В дне {n} осталось ≈ {p} % непройденного. Эти остатки будут помечены как «не нужно» (админ это увидит), и сразу начнётся день {m}.', dayEndYes:'Начать день {m}', dayEndDone:'Продолжаем: день {m}' });
+Object.assign(T.de, { rvOutside:'davon außerhalb der Routen' });
+Object.assign(T.ru, { rvOutside:'из них вне маршрутов' });
