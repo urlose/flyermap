@@ -375,25 +375,36 @@ const nameOf = id => (wById(id) || {}).name || '—';
 async function viewDayMap(routeId, back){
   let r = A.dayGroups && A.dayGroups.get(routeId);
   if(!r){ const { data } = await sb.from('routes').select('*').eq('id', routeId).maybeSingle(); if(!data) return back(); r = data; }
-  const [pl, pts] = await Promise.all([
-    r.plan_id ? sb.from('task_plans').select('path,color,boxes,idx').eq('id', r.plan_id).maybeSingle().then(x => x.data) : null,
+  const ids = new Set(r.ids || [r.id]);
+  const [pl, pts, prev] = await Promise.all([
+    r.plan_id ? sb.from('task_plans').select('*').eq('id', r.plan_id).maybeSingle().then(x => x.data) : null,
     r.track_deleted_at ? [] : dayPoints(r),
+    // the days before on the same route: what was already done then (lighter green) and for the checkpoints
+    r.plan_id ? sb.from('routes').select('id,track_deleted_at').eq('plan_id', r.plan_id).lt('started_at', r.started_at).then(async ({ data }) =>
+      Promise.all((data || []).filter(x => !ids.has(x.id) && !x.track_deleted_at).map(x => fetchPoints(x.id).then(a => a.map(q => [q.lat, q.lng])).catch(() => [])))) : [],
   ]);
   const ll = pts.map(p => [p.lat, p.lng]), col = (pl && pl.color) || '#2563EB';
-  let pct = null, fl = null, runs = [];
-  if(pl && pl.path && pl.path.length > 1 && ll.length > 1){
-    const tr = Planner.makeTracker(pl.path); tr.addTrack(ll); runs = tr.runs(); pct = tr.pct();
-    if(pl.boxes && pl.boxes.length){ const ct = Planner.makeBoxCounter(pl.boxes); ct.visitAll(ll); fl = ct.count(); }
+  let pct = null, fl = null, runs = [], runsPrev = [], cps = [], pctAll = null;
+  if(pl && pl.path && pl.path.length > 1){
+    const tr = Planner.makeTracker(pl.path), trAll = Planner.makeTracker(pl.path), trPrev = Planner.makeTracker(pl.path);
+    if(ll.length > 1){ tr.addTrack(ll); trAll.addTrack(ll); runs = tr.runs(); pct = tr.pct(); }
+    (prev || []).forEach(a => { if(a.length > 1){ trPrev.addTrack(a); trAll.addTrack(a); } });
+    runsPrev = trPrev.runs();
+    if((prev || []).some(a => a.length > 1)) pctAll = trAll.pct();
+    cps = checkpoints(pl, i => trAll.isDone(i));
+    if(pl.boxes && pl.boxes.length && ll.length > 1){ const ct = Planner.makeBoxCounter(pl.boxes); ct.visitAll(ll); fl = ct.count(); }
   }
   const d0 = new Date(r.started_at);
   openMapView({
     title:nameOf(r.worker_id), anonTitle:t('rvDistributor'), hasNames:true,
     lines:[d0.toLocaleDateString(loc(), { weekday:'long', day:'2-digit', month:'2-digit', year:'numeric' }) + ' · ' + hhmm(r.started_at) + '–' + (r.ended_at ? hhmm(r.ended_at) : t('active')), placeTxt(r)],
-    stats:[[t('rvDist'), fmtDist(r.distance_m || 0)], [t('rvWork'), fmtHm(workMin(r)) + ' ' + t('h')], fl != null ? [t('rvFlyers'), '≈ ' + fmtN(fl)] : null, pct != null ? [t('rvDayShare'), pct + ' %'] : null],
+    stats:[[t('rvDist'), fmtDist(r.distance_m || 0)], [t('rvWork'), fmtHm(workMin(r)) + ' ' + t('h')], fl != null ? [t('rvFlyers'), '≈ ' + fmtN(fl)] : null, pct != null ? [t('rvDayShare'), pct + ' %'] : null, pctAll != null ? [t('rvDayShare2'), pctAll + ' %'] : null],
     note:r.track_deleted_at ? t('trackDeleted') : (ll.length < 2 ? t('rvNoTrack') : ''),
     layers:[
       { key:'plan', label:pl ? t('rvPlan') : '', on:!!pl, add:g => { if(pl && pl.path && pl.path.length > 1) L.polyline(pl.path, { color:col, weight:4, opacity:.45, dashArray:'6 7', lineJoin:'round' }).addTo(g); } },
+      { key:'prev', label:runsPrev.length ? t('rvDoneBefore') : '', add:g => runsPrev.forEach(x => L.polyline(x, { color:'#86EFAC', weight:7, opacity:.75, lineJoin:'round', lineCap:'round' }).addTo(g)) },
       { key:'done', label:runs.length ? t('rvDone') : '', add:g => runs.forEach(x => L.polyline(x, { color:GREEN, weight:8, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g)) },
+      { key:'cp', label:cps.length ? t('checkpoints') : '', add:g => cps.forEach(c => cpMarker(c, col, (pl.days || []).length > 1).addTo(g)) },
       { key:'gps', label:ll.length > 1 ? t('rvGps') : '', add:g => {
         if(ll.length < 2) return;
         L.polyline(ll, { color:'#1D4ED8', weight:3, opacity:.95, lineJoin:'round' }).addTo(g);
