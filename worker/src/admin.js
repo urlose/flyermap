@@ -402,7 +402,7 @@ async function viewDayMap(routeId, back){
     r.plan_id ? sb.from('task_plans').select('*').eq('id', r.plan_id).maybeSingle().then(x => x.data) : null,
     r.track_deleted_at ? [] : dayPoints(r),
     // the days before on the same route: what was already done then (lighter green) and for the checkpoints
-    r.plan_id ? sb.from('routes').select('id,track_deleted_at').eq('plan_id', r.plan_id).lt('started_at', r.started_at).then(async ({ data }) =>
+    r.plan_id && r.task_id ? sb.from('routes').select('id,track_deleted_at').eq('task_id', r.task_id).lt('started_at', r.ended_at || new Date().toISOString()).then(async ({ data }) =>
       Promise.all((data || []).filter(x => !ids.has(x.id) && !x.track_deleted_at).map(x => fetchPoints(x.id).then(a => a.map(q => [q.lat, q.lng])).catch(() => [])))) : [],
   ]);
   const ll = pts.map(p => [p.lat, p.lng]), col = (pl && pl.color) || '#2563EB';
@@ -484,7 +484,8 @@ async function viewTaskMap(id, back){
   let doneM = 0, allM = 0, flAll = 0, hasFl = false;
   const res = (plans || []).map(p => {
     const tr = p.path && p.path.length > 1 ? addSkips(Planner.makeTracker(p.path), p) : null, ct = p.boxes && p.boxes.length ? Planner.makeBoxCounter(p.boxes) : null;
-    for(const pts of byPlan[p.id] || []){ if(tr) tr.addTrack(pts); if(ct) ct.visitAll(pts); }
+    // all tracks of the order count: streets of this route walked by somebody else are done too
+    for(const pts of tracks){ if(tr) tr.addTrack(pts); if(ct) ct.visitAll(pts); }
     const pct = tr ? tr.pct() : 0; doneM += pct * (p.length_m || 0) / 100; allM += p.length_m || 0; if(ct){ flAll += ct.count(); hasFl = true; }
     return { p, runs:tr ? tr.runs() : [], pct, fl:ct ? ct.count() : null, cps:tr ? checkpoints(p, i => tr.isDone(i)) : [] };
   });
@@ -965,16 +966,16 @@ async function viewTask(id){
     }, 60000);
   }
   // progress per route: all tracks recorded on that plan (also by a previous worker)
-  const byPlan = {};
+  const byPlan = {}, allTracks = [];
   for(const r of routes || []){
     const pid = r.plan_id || (plans.find(p => p.worker_id === r.worker_id) || {}).id; if(!pid) continue;
-    const pts = await fetchPoints(r.id); (byPlan[pid] = byPlan[pid] || []).push(pts.map(p => [p.lat, p.lng]));
+    const pts = await fetchPoints(r.id); (byPlan[pid] = byPlan[pid] || []).push(pts.map(p => [p.lat, p.lng])); allTracks.push(byPlan[pid][byPlan[pid].length - 1]);
   }
   for(const p of plans || []){
-    if((!byPlan[p.id] && !(p.skipped || []).length) || !p.path?.length) continue;
+    if((!allTracks.length && !(p.skipped || []).length) || !p.path?.length) continue;
     byPlan[p.id] = byPlan[p.id] || [];
     const tr = addSkips(Planner.makeTracker(p.path), p), ct = p.boxes && p.boxes.length ? Planner.makeBoxCounter(p.boxes) : null;
-    byPlan[p.id].forEach(pts => { tr.addTrack(pts); if(ct) ct.visitAll(pts); });
+    allTracks.forEach(pts => { tr.addTrack(pts); if(ct) ct.visitAll(pts); });   // also streets of this route walked by somebody else
     tr.runs().forEach(run => L.polyline(run, { color:GREEN, weight:6, opacity:.95 }).addTo(doneLayer));
     const pct = tr.pct(); const el = $('#pp' + p.idx); if(el) el.textContent = '· ' + t('done', { p:pct }); const bar = $('#pb' + p.idx); if(bar) bar.style.width = pct + '%';
     const pf = $('#pf' + p.idx); if(pf && ct) pf.textContent = t('flyersDone', { a:fmtN(ct.count()), b:fmtN(ct.total) });
