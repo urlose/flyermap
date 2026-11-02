@@ -77,7 +77,7 @@
   }
   // every road a person can walk along between houses (village lanes are often mapped as "service" or "unclassified");
   // not motorways, paths/tracks, or parking aisles and private driveways
-  const HW_FILTER = `["highway"]["highway"!~"^(${NO_WAY})$"]["service"!~"^(parking_aisle|driveway|drive-through|emergency_access)$"]["access"!~"^(private|no)$"]`;
+  const HW_FILTER = `["highway"]["highway"!~"^(${NO_WAY})$"]["service"!~"^(parking_aisle|driveway|drive-through|emergency_access)$"]["access"!~"^(private|no)$"]["foot"!~"^(no|private)$"]["motorroad"!="yes"]`;
   async function fetchStreets(poly, fetchImpl){
     const ps = poly.map(p => p[0].toFixed(6) + ' ' + p[1].toFixed(6)).join(' ');
     return overpass(`[out:json][timeout:110];way${HW_FILTER}(poly:"${ps}");out body;>;out skel qt;`, fetchImpl, 110000);

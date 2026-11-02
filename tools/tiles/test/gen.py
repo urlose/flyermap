@@ -21,6 +21,8 @@ for k in range(120):
     elif random.random() < 0.3: t['ref'] = 'K%d' % k
     if random.random() < 0.1: t['service'] = random.choice(['driveway', 'parking_aisle', 'alley'])
     if random.random() < 0.08: t['access'] = random.choice(['private', 'no', 'yes', 'destination'])
+    if random.random() < 0.06: t['foot'] = random.choice(['no', 'private', 'yes', 'use_sidepath'])
+    if random.random() < 0.04: t['motorroad'] = random.choice(['yes', 'no'])
     way(ids, t)
 # one long straight road crossing a square without a node inside it
 way([node(52.215, 8.60), node(52.215, 8.80)], {'highway': 'residential', 'name': 'Lange Straße'})

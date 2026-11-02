@@ -25,6 +25,7 @@ HOUSE_B = 'house|detached|semidetached_house|terrace|bungalow|villa|farm|cottage
 RX_NO_WAY = re.compile('^(' + NO_WAY + ')$')
 RX_SERVICE = re.compile('^(parking_aisle|driveway|drive-through|emergency_access)$')
 RX_ACCESS = re.compile('^(private|no)$')
+RX_FOOT_NO = re.compile('^(no|private)$')
 RX_NO_MAILBOX = re.compile('^(' + NO_B + ')$')
 RX_HOUSE = re.compile('^(' + HOUSE_B + ')$')
 RX_HOUSE_OR_NO = re.compile('^(' + HOUSE_B + '|' + NO_B + ')$')
@@ -44,6 +45,8 @@ def is_street(tags):
     if hw is None or RX_NO_WAY.search(hw): return False
     if RX_SERVICE.search(tags.get('service') or ''): return False
     if RX_ACCESS.search(tags.get('access') or ''): return False
+    if RX_FOOT_NO.search(tags.get('foot') or ''): return False   # walking forbidden (e.g. a Bundesstraße outside town)
+    if tags.get('motorroad') == 'yes': return False                # Kraftfahrstraße: no pedestrians
     return True
 
 def estimate_mailboxes(tags, area):   # = estimateMailboxes() in admin/planner.js

@@ -7,7 +7,7 @@ const N = new Map(D.nodes.map(([id, lat, lon]) => [id, { id, lat, lon }]));
 const HOUSE = /^(house|detached|semidetached_house|terrace|bungalow|villa|farm|cottage|houseboat|static_caravan)$/;
 const src = readFileSync(new URL('../../../admin/planner.js', import.meta.url), 'utf8');
 const NO_B = new RegExp('^(' + src.match(/const NO_B = '([^']*)'/)[1] + ')$'), NO_WAY = new RegExp('^(' + src.match(/const NO_WAY = '([^']*)'/)[1] + ')$');
-const street = t => t.highway && !NO_WAY.test(t.highway) && !/^(parking_aisle|driveway|drive-through|emergency_access)$/.test(t.service || '') && !/^(private|no)$/.test(t.access || '');
+const street = t => t.highway && !NO_WAY.test(t.highway) && !/^(parking_aisle|driveway|drive-through|emergency_access)$/.test(t.service || '') && !/^(private|no)$/.test(t.access || '') && !/^(no|private)$/.test(t.foot || '') && t.motorroad !== 'yes';
 // segment–rectangle intersection (Overpass bbox semantics for ways)
 const inside = (p, b) => p.lat >= b[0] && p.lat <= b[2] && p.lon >= b[1] && p.lon <= b[3];
 function segHits(a, c, b){
