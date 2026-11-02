@@ -179,7 +179,8 @@ function viewLive(){
 /* ---------- MITARBEITER: admin profile + team ---------- */
 /* ---------- working days (routes): shared by the Mitarbeiter list and the worker page ---------- */
 const dayKey = r => new Date(r.started_at).toLocaleDateString('sv-SE');   // local YYYY-MM-DD
-const workMin = r => r._min != null ? r._min : Math.max(0, ((r.ended_at ? new Date(r.ended_at) : Date.now()) - new Date(r.started_at)) / 60000 - (r.break_s || 0) / 60);
+// net working time: start to end minus breaks, plus a correction by the admin (adj_s; the GPS times stay as recorded)
+const workMin = r => r._min != null ? r._min : Math.max(0, ((r.ended_at ? new Date(r.ended_at) : Date.now()) - new Date(r.started_at)) / 60000 - (r.break_s || 0) / 60 + (r.adj_s || 0) / 60);
 // several sessions of one person on one day (Feierabend + start again, app restarted …) are one working day:
 // one line, one map, distances and times added up. id = first session (newest first lists stay newest first).
 function mergeDays(routes){
@@ -294,7 +295,7 @@ async function viewPeople(){
     document.querySelectorAll('.wc-days .rbtn').forEach(b => b.onclick = () => viewDayMap(b.dataset.r, viewPeople));
   };
   $('#wQ').oninput = render; render();
-  sb.from('routes').select('id,worker_id,task_id,plan_id,started_at,ended_at,distance_m,break_s,place,task_title').order('started_at', { ascending:false }).limit(2000)
+  sb.from('routes').select('id,worker_id,task_id,plan_id,started_at,ended_at,distance_m,break_s,adj_s,place,task_title').order('started_at', { ascending:false }).limit(2000)
     .then(({ data }) => { if(!document.getElementById('dFilter')) return; days = mergeDays(data || []); render(); fillPlaces(days, () => { if(document.getElementById('dFilter')) render(); }); });
   $('#tOut').onclick = async () => { if(await confirmBox(t('logout'), t('logoutQ'), t('logout'))){ await sb.auth.signOut(); for(const k of ['role', 'token', 'me', 'canAdmin']) await store.del(k); A.hooks.loggedOut && A.hooks.loggedOut(); } };
   $('#tWork').onclick = openAsWorker;
