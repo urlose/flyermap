@@ -918,6 +918,40 @@
   }
   // Cuts the angular ring of selected street pieces into n arcs of about equal estimated time (walk + way out and back + mailboxes).
   // Binary search on the time limit with a greedy sweep, repeated from several starting angles.
+  // share of junctions where streets of different days meet: ~0.05 for two compact halves, 0.2+ for interleaved wedges
+  function mixShare(g, parts){
+    const own = owners(g, parts); let shared = 0;
+    for(const m of own.values()) if(m.size > 1) shared++;
+    return own.size ? shared / own.size : 0;
+  }
+  // near/far bands: streets sorted by walking distance from the start, cut into n slices of equal weight (and shifted cuts)
+  function bandSplits(g, start, n, ids, weight){
+    if(n < 2 || ids.length < n) return [];
+    const root = nearestNode(g, start, g.pts.map((_, i) => i)), dd = sssp(g, root).d, wf = weight || (e => e.len);
+    const items = ids.map(i => ({ i, d:Math.min(dd[g.edges[i].a], dd[g.edges[i].b]), w:wf(g.edges[i]) })).sort((a, b) => a.d - b.d);
+    const total = items.reduce((a, x) => a + x.w, 0), out = [];
+    for(const shift of [0, -0.08, 0.08]){
+      const parts = Array.from({ length:n }, () => []); let cum = 0;
+      for(const x of items){ const f = (cum + x.w / 2) / total; let p = 0; for(let k = 1; k < n; k++) if(f > k / n + shift) p = k; parts[p].push(x.i); cum += x.w; }
+      if(parts.every(q => q.length)) out.push(parts);
+    }
+    return out;
+  }
+  // sectors around the centre of the area itself (not around the start), several rotations: compact pieces of one area
+  function centreSplits(g, n, ids, weight, tries){
+    if(n < 2 || ids.length < n) return [];
+    const wf = weight || (e => e.len), mid = i => { const c = g.edges[i].coords; return c[Math.floor(c.length / 2)]; };
+    let la = 0, lo = 0, W = 0; for(const i of ids){ const m = mid(i), x = wf(g.edges[i]) || 1e-6; la += m[0] * x; lo += m[1] * x; W += x; }
+    const c = [la / W, lo / W], cosLat = Math.cos(c[0] * RAD);
+    const items = ids.map(i => { const m = mid(i); return { i, w:wf(g.edges[i]), ang:Math.atan2(m[0] - c[0], (m[1] - c[1]) * cosLat) }; }).sort((a, b) => a.ang - b.ang);
+    const total = items.reduce((a, x) => a + x.w, 0), M = items.length, out = [];
+    for(let t = 0; t < tries; t++){
+      const off = Math.floor(t * M / tries), ring = items.slice(off).concat(items.slice(0, off)), parts = Array.from({ length:n }, () => []);
+      let cum = 0; for(const x of ring){ parts[Math.min(n - 1, Math.floor((cum + x.w / 2) / total * n))].push(x.i); cum += x.w; }
+      if(parts.every(q => q.length)) out.push(parts);
+    }
+    return out;
+  }
   function balancedSplits(g, start, n, ids, tries){
     const cosLat = Math.cos(start[0] * RAD), root = nearestNode(g, start, g.pts.map((_, i) => i)), dd = sssp(g, root).d;
     const items = ids.map(i => {
@@ -1065,13 +1099,17 @@
     const withDays = (part, k, base) => {
       const nd = Math.min(maxDays, Math.max(1, Math.ceil(base.minutes / 60 / hpd)));
       if(nd < 2 || part.length < nd) return { ...base, days:[{ i0:0, i1:Math.max(0, base.path.length - 1), ...dayInfo(base) }] };
-      const cands = [partition(g, start, nd, part, w), ...balancedSplits(g, start, nd, part, 4)].flatMap(ps => { const t = tidyParts(g, ps); return [ps, t, balanceParts(g, t)]; });
+      // Sectors around the start alone give long thin wedges when the whole area lies on one side of the start: the days
+      // then run side by side through the same streets. So compact candidates are added too (near/far bands along the walking
+      // distance, sectors around the area's own centre), and a split whose days interleave is penalised.
+      const raw = [partition(g, start, nd, part, w), ...balancedSplits(g, start, nd, part, 4), ...bandSplits(g, start, nd, part, w), ...centreSplits(g, nd, part, w, 4)];
+      const cands = raw.flatMap(ps => { const t = tidyParts(g, ps); return [ps, t, balanceParts(g, t)]; });
       let best = null;
       for(const ps of cands){
         const rs = build(ps.filter(x => x.length), base.root);
         if(rs.length < 2) continue;
         const mx = Math.max(...rs.map(r => r.minutes)), mn = Math.min(...rs.map(r => r.minutes));
-        const sc = mx + 0.3 * rs.reduce((a, r) => a + r.minutes, 0) / rs.length + 0.01 * (mx - mn);
+        const sc = mx + 0.3 * rs.reduce((a, r) => a + r.minutes, 0) / rs.length + 0.01 * (mx - mn) + 250 * mixShare(g, ps.filter(x => x.length));
         if(!best || sc < best.sc){ best = { rs, sc }; }
       }
       if(!best) return { ...base, days:[{ i0:0, i1:Math.max(0, base.path.length - 1), ...dayInfo(base) }] };
