@@ -451,7 +451,7 @@ function viewTracking(){
     <div class="float-card ${W.mapFull ? 'mini' : ''}">
       <div class="fc-row">${paused ? `<span class="rec paused">${esc(t('pauseRunning'))}</span><b id="sPause">0:00</b>` : `<span class="rec">${esc(t('recording'))}</span><span class="gps" id="gps" role="status"></span>`}
         <button class="fc-size" id="fcSize" aria-label="${esc(t(W.mapFull ? 'mapSmall' : 'mapBig'))}">${W.mapFull ? ICONS.expand : ICONS.shrink}<span>${esc(t(W.mapFull ? 'mapSmall' : 'mapBig'))}</span></button></div>
-      ${task ? `<div class="fc-title">${esc(task.title)}</div>` : ''}
+      ${task ? `<div class="fc-title">${esc(task.title)}${W.route.dayIdx != null && task.plan && (task.plan.days || []).length > 1 ? ' · ' + esc(t('dayN', { n:W.route.dayIdx + 1 })) : ''}</div>` : ''}
       <div class="stats"><div><span>${esc(t('netTime'))} · ${esc(t('today'))}</span><b id="sT">0:00</b></div><div><span>${esc(t('dist'))} · ${esc(t('today'))}</span><b id="sD">0 m</b></div>${W.counter ? `<div><span>${esc(t('flyersEst'))}</span><b id="sF">0</b></div>` : hasPlan ? `<div><span>${esc(t('progress'))}</span><b id="sP">0%</b></div>` : ''}</div>
       ${hasPlan ? `<div class="bar"><i id="sBar"></i></div>${W.counter ? `<p class="small muted" style="margin:6px 0 0" id="sFl"></p>` : ''}` : ''}
       ${quota && !paused ? `<div class="quota" id="quota"><i></i><span id="quotaTxt"></span></div>` : ''}
