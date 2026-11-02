@@ -372,6 +372,22 @@ async function viewWorker(id, back, focusId){
 }
 
 /* ---------- big map views (also for screenshots for clients) ---------- */
+// mailboxes along a walked track from the own map squares – also outside the planned route (the walker left the area or did
+// streets of a colleague). Houses within 25 m of the track; jumps (no GPS for > 150 m) count nothing in between.
+async function boxesAlong(ll){
+  if(!ll || ll.length < 2 || typeof fetch === 'undefined') return null;
+  const keys = new Set(); for(let i = 0; i < ll.length; i += 5) for(const k of Planner.tilesFor(ll[i], 60)) keys.add(k);
+  if(keys.size > 80) return null;
+  const tiles = await Promise.all([...keys].map(k => Planner.fetchOwnTile(Planner.TILES_URL, k, fetch).catch(() => null)));
+  if(tiles.some(x => !x)) return null;   // a square missing (outside Germany / offline): no number rather than a wrong one
+  const seen = new Map(); for(const tl of tiles) for(const b of tl.b || []) seen.set(b[1] + ',' + b[2], [b[1], b[2], b[3]]);
+  const ct = Planner.makeBoxCounter([...seen.values()].filter(b => b[2] > 0), 25);
+  for(let i = 1; i < ll.length; i++){
+    const a = ll[i - 1], b = ll[i], d = hav(a[0], a[1], b[0], b[1]); if(d > 150){ ct.visit(b[0], b[1]); continue; }
+    const n = Math.max(1, Math.ceil(d / 10)); for(let k = 0; k <= n; k++) ct.visit(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n);
+  }
+  return ct.count();
+}
 // pieces a distributor marked as not needed: grey, dashed (pieces the admin closed are only counted as done, not drawn)
 const byWorker = x => x && !/^Admin/.test(x.by || '');
 const workerSkips = p => ((p && p.skipped) || []).filter(byWorker);
@@ -416,6 +432,8 @@ async function viewDayMap(routeId, back){
     cps = checkpoints(pl, i => trAll.isDone(i));
     if(pl.boxes && pl.boxes.length && ll.length > 1){ const ct = Planner.makeBoxCounter(pl.boxes); ct.visitAll(ll); fl = ct.count(); }
   }
+  // every house along the track counts (also outside the route); the planned boxes only when the map squares are not available
+  try{ const n = await Promise.race([boxesAlong(ll), new Promise(r => setTimeout(() => r(null), 8000))]); if(n != null) fl = n; }catch{}
   const d0 = new Date(r.started_at);
   openMapView({
     title:nameOf(r.worker_id), anonTitle:t('rvDistributor'), hasNames:true,
