@@ -456,6 +456,7 @@ function viewTracking(){
       ${hasPlan ? `<div class="bar"><i id="sBar"></i></div>${W.counter ? `<p class="small muted" style="margin:6px 0 0" id="sFl"></p>` : ''}` : ''}
       ${quota && !paused ? `<div class="quota" id="quota"><i></i><span id="quotaTxt"></span></div>` : ''}
       ${hasPlan && !paused ? `<p class="small muted" style="margin:6px 0 10px">${esc(t('followLine'))}</p>` : '<div style="height:8px"></div>'}
+      ${!paused ? `<button class="btn primary" id="nextDay" hidden></button>` : ''}
       ${paused ? `<button class="btn primary" id="resume">${esc(t('resumeBtn'))}</button>` : `<button class="btn ghost" id="pause">${esc(t('pause'))}</button>`}
       <button class="btn danger" id="stop">${esc(t('stop'))}</button>
       ${W.sim ? `<button class="btn ghost" id="demo">${esc(t('demoStop'))}</button>` : ''}
@@ -541,6 +542,38 @@ function viewTracking(){
     cpLayer.clearLayers(); if(plan && plan.path) checkpoints(plan, i => W.tracker.isDone(i)).filter(c => c.day === (dayIdx || 0)).forEach(c => cpMarker(c, plan.color, false).addTo(cpLayer));
     W.tracker.runs().forEach(r => L.polyline(r, { color:GREEN, weight:7, opacity:.95, lineJoin:'round' }).addTo(doneLayer));
     const p = W.tracker.pct(), sp = $('#sP'); if(sp) sp.textContent = p + '%'; const bar = $('#sBar'); if(bar) bar.style.width = p + '%';
+    checkDayEnd();
+  };
+  // the day is nearly done (≥ 90 %): "finish day N · start day N+1" – the open rest of the day is handed in as not needed
+  // (the admin sees it grey), and this session goes on with the next day right away
+  const dayShare = () => {
+    const cnt = nav.days.map(() => [0, 0]);
+    for(let i = 0; i < W.tracker.samples.length; i++){ const k = nav.dayAt(nav.posOf[i]); cnt[k][1]++; if(W.tracker.isDone(i)) cnt[k][0]++; }
+    return cnt.map(([d, n]) => n ? Math.round(100 * d / n) : 100);
+  };
+  let nextK = -1;
+  const checkDayEnd = () => {
+    const b = $('#nextDay'); if(!b || !nav || !W.tracker || nav.days.length < 2) return;
+    const pc = dayShare(), cur = dayIdx || 0; nextK = pc[cur] >= 90 ? pc.findIndex((p, k) => k !== cur && p < 95) : -1;
+    b.hidden = nextK < 0; if(nextK >= 0) b.textContent = t('dayEndBtn', { n:cur + 1, m:nextK + 1 });
+  };
+  if($('#nextDay')) $('#nextDay').onclick = async () => {
+    if(nextK < 0) return; const cur = dayIdx || 0, k = nextK, S = W.tracker.samples;
+    const pc = dayShare();
+    if(!await confirmBox(t('dayEndQ', { n:cur + 1 }), t('dayEndText', { n:cur + 1, p:100 - pc[cur], m:k + 1 }), t('dayEndYes', { m:k + 1 }))) return;
+    // open pieces of the finished day, each a run of neighbouring samples
+    const runs = []; let run = null;
+    for(let i = 0; i < S.length; i++){
+      const open = !W.tracker.isDone(i) && nav.dayAt(nav.posOf[i]) === cur;
+      if(open && run && hav(S[i - 1][0], S[i - 1][1], S[i][0], S[i][1]) <= 20 && run.length < 400) run.push(S[i]);
+      else if(open){ run = [S[i]]; runs.push(run); }
+      else run = null;
+    }
+    for(const r of runs.filter(r => r.length > 1).slice(0, 60)){
+      const pts = r.map(q => [+q[0].toFixed(6), +q[1].toFixed(6)]);
+      try{ await rpc('skip_part', { p_token:W.token, p_plan_id:plan.id, p_pts:pts }); (plan.skipped = plan.skipped || []).push({ pts }); }catch{}
+    }
+    W.route.dayIdx = k; await saveRoute(); W.tracker = null; toast(t('dayEndDone', { m:k + 1 })); viewTracking();
   };
   const stats = () => {
     if(!W.route) return;
