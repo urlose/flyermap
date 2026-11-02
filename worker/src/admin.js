@@ -372,8 +372,10 @@ async function viewWorker(id, back, focusId){
 }
 
 /* ---------- big map views (also for screenshots for clients) ---------- */
-// pieces a distributor marked as not needed: grey, dashed
-const drawSkips = (g, plans) => (plans || []).forEach(p => (p && p.skipped || []).forEach(x => { if(x && x.pts && x.pts.length > 1) L.polyline(x.pts, { color:'#6B7280', weight:7, opacity:.85, dashArray:'3 9', lineCap:'round' }).bindTooltip(t('rvSkipped') + (x.by ? ' · ' + x.by : '') + (x.at ? ' · ' + fmtDT(x.at) : '')).addTo(g); }));
+// pieces a distributor marked as not needed: grey, dashed (pieces the admin closed are only counted as done, not drawn)
+const byWorker = x => x && !/^Admin/.test(x.by || '');
+const workerSkips = p => ((p && p.skipped) || []).filter(byWorker);
+const drawSkips = (g, plans) => (plans || []).forEach(p => workerSkips(p).forEach(x => { if(x && x.pts && x.pts.length > 1) L.polyline(x.pts, { color:'#6B7280', weight:7, opacity:.85, dashArray:'3 9', lineCap:'round' }).bindTooltip(t('rvSkipped') + (x.by ? ' · ' + x.by : '') + (x.at ? ' · ' + fmtDT(x.at) : '')).addTo(g); }));
 // GPS track: its own colour (yellow with a dark edge) so it never looks like a planned route
 const GPS = '#FACC15';
 const gpsLine = (g, ll, w = 3) => { L.polyline(ll, { color:'#111827', weight:w + 3, opacity:.45, lineJoin:'round' }).addTo(g); return L.polyline(ll, { color:GPS, weight:w, opacity:1, lineJoin:'round' }).addTo(g); };
@@ -426,7 +428,7 @@ async function viewDayMap(routeId, back){
         ds.forEach((d, k) => L.polyline(pl.path.slice(d.i0, d.i1 + 1), { color:dayColor(col, k), weight:4, opacity:.6, dashArray:'6 7', lineJoin:'round' }).addTo(g)); } },
       { key:'prev', label:runsPrev.length ? t('rvDoneBefore') : '', add:g => runsPrev.forEach(x => L.polyline(x, { color:'#86EFAC', weight:7, opacity:.75, lineJoin:'round', lineCap:'round' }).addTo(g)) },
       { key:'done', label:runs.length ? t('rvDone') : '', add:g => runs.forEach(x => L.polyline(x, { color:GREEN, weight:8, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g)) },
-      { key:'skip', label:pl && (pl.skipped || []).length ? t('rvSkipped') : '', add:g => drawSkips(g, [pl]) },
+      { key:'skip', label:workerSkips(pl).length ? t('rvSkipped') : '', add:g => drawSkips(g, [pl]) },
       { key:'cp', label:cps.length ? t('checkpoints') : '', add:g => cps.forEach(c => cpMarker(c, dayColor(col, c.day), (pl.days || []).length > 1).addTo(g)) },
       { key:'gps', label:ll.length > 1 ? t('rvGps') : '', add:g => {
         if(ll.length < 2) return;
@@ -508,7 +510,7 @@ async function viewTaskMap(id, back){
       })(),
       { key:'done', label:t('rvDone'), add:g => res.forEach(x => x.runs.forEach(run => L.polyline(run, { color:GREEN, weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g))) },
       { key:'gps', label:tracks.some(x => x.length > 1) ? t('rvGps') : '', on:false, add:g => tracks.forEach(ll => { if(ll.length > 1) gpsLine(g, ll, 2.5); }) },
-      ...((plans || []).some(p => (p.skipped || []).length) ? [{ key:'skip', label:t('rvSkipped'), add:g => drawSkips(g, plans) }] : []),
+      ...((plans || []).some(p => workerSkips(p).length) ? [{ key:'skip', label:t('rvSkipped'), add:g => drawSkips(g, plans) }] : []),
       { key:'cp', label:t('checkpoints'), add:g => res.forEach(({ p, cps }) => cps.forEach(c => cpMarker(c, dayColor(p.color, c.day), (p.days || []).length > 1).addTo(g))) },
       { key:'live', label:t('rvLive'), add:g => { redrawLive = liveWorkers(g, tk, plans, () => names); } },
     ],
