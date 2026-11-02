@@ -448,8 +448,8 @@ async function viewDayMap(routeId, back){
       { key:'plan', label:pl ? t('rvPlan') : '', on:!!pl, add:g => { if(!pl || !pl.path || pl.path.length < 2) return;
         const ds = (pl.days || []).length > 1 ? pl.days : [{ i0:0, i1:pl.path.length - 1 }];
         ds.forEach((d, k) => L.polyline(pl.path.slice(d.i0, d.i1 + 1), { color:dayColor(col, k), weight:4, opacity:.6, dashArray:'6 7', lineJoin:'round' }).addTo(g)); } },
-      { key:'prev', label:runsPrev.length ? t('rvDoneBefore') : '', add:g => runsPrev.forEach(x => L.polyline(x, { color:'#86EFAC', weight:7, opacity:.75, lineJoin:'round', lineCap:'round' }).addTo(g)) },
-      { key:'done', label:runs.length ? t('rvDone') : '', add:g => runs.forEach(x => L.polyline(x, { color:GREEN, weight:8, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g)) },
+      // one layer: everything done on this route – this day, earlier days and colleagues alike
+      { key:'done', label:runs.length || runsPrev.length ? t('rvDone') : '', add:g => [...runsPrev, ...runs].forEach(x => L.polyline(x, { color:GREEN, weight:8, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g)) },
       { key:'skip', label:workerSkips(pl).length ? t('rvSkipped') : '', add:g => drawSkips(g, [pl]) },
       { key:'cp', label:cps.length ? t('checkpoints') : '', add:g => cps.forEach(c => cpMarker(c, dayColor(col, c.day), (pl.days || []).length > 1).addTo(g)) },
       { key:'gps', label:ll.length > 1 ? t('rvGps') : '', add:g => {
