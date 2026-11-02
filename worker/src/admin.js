@@ -372,6 +372,25 @@ async function viewWorker(id, back, focusId){
 }
 
 /* ---------- big map views (also for screenshots for clients) ---------- */
+// pieces of the tracks away from every planned route (> 30 m): walked streets outside the plan, drawn green like done ones
+function offRoute(tracks, plans){
+  const cell = 0.0004, grid = new Map(), key = (a, b) => Math.floor(a / cell) + ':' + Math.floor(b / cell);
+  for(const p of plans || []) if(p.path && p.path.length > 1) for(const q of Planner.densifyPath(p.path, 10)){ const k = key(q[0], q[1]); let l = grid.get(k); if(!l) grid.set(k, l = []); l.push(q); }
+  const near = (la, lo) => { const cy = Math.floor(la / cell), cx = Math.floor(lo / cell);
+    for(let dy = -1; dy <= 1; dy++) for(let dx = -1; dx <= 1; dx++){ const l = grid.get((cy + dy) + ':' + (cx + dx)); if(l && l.some(q => hav(la, lo, q[0], q[1]) <= 30)) return true; }
+    return false; };
+  const out = [];
+  for(const ll of tracks || []){
+    let cur = [];
+    for(let i = 0; i < ll.length; i++){
+      const off = !near(ll[i][0], ll[i][1]), jump = i && hav(ll[i - 1][0], ll[i - 1][1], ll[i][0], ll[i][1]) > 150;
+      if(!off || jump){ if(cur.length > 2) out.push(cur); cur = []; }
+      if(off) cur.push(ll[i]);
+    }
+    if(cur.length > 2) out.push(cur);
+  }
+  return out;
+}
 // mailboxes along a walked track from the own map squares – also outside the planned route (the walker left the area or did
 // streets of a colleague). Houses within 25 m of the track; jumps (no GPS for > 150 m) count nothing in between.
 async function boxesAlong(tracks, exclude){
@@ -449,7 +468,7 @@ async function viewDayMap(routeId, back){
         const ds = (pl.days || []).length > 1 ? pl.days : [{ i0:0, i1:pl.path.length - 1 }];
         ds.forEach((d, k) => L.polyline(pl.path.slice(d.i0, d.i1 + 1), { color:dayColor(col, k), weight:4, opacity:.6, dashArray:'6 7', lineJoin:'round' }).addTo(g)); } },
       // one layer: everything done on this route – this day, earlier days and colleagues alike
-      { key:'done', label:runs.length || runsPrev.length ? t('rvDone') : '', add:g => [...runsPrev, ...runs].forEach(x => L.polyline(x, { color:GREEN, weight:8, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g)) },
+      { key:'done', label:runs.length || runsPrev.length ? t('rvDone') : '', add:g => [...runsPrev, ...runs, ...(pl ? offRoute([ll], [pl]) : [])].forEach(x => L.polyline(x, { color:GREEN, weight:8, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g)) },
       { key:'skip', label:workerSkips(pl).length ? t('rvSkipped') : '', add:g => drawSkips(g, [pl]) },
       { key:'cp', label:cps.length ? t('checkpoints') : '', add:g => cps.forEach(c => cpMarker(c, dayColor(col, c.day), (pl.days || []).length > 1).addTo(g)) },
       { key:'gps', label:ll.length > 1 ? t('rvGps') : '', add:g => {
@@ -511,15 +530,19 @@ async function viewTaskMap(id, back){
     const pct = tr ? tr.pct() : 0; doneM += pct * (p.length_m || 0) / 100; allM += p.length_m || 0; if(ct){ flAll += ct.count(); hasFl = true; }
     return { p, runs:tr ? tr.runs() : [], pct, fl:ct ? ct.count() : null, cps:tr ? checkpoints(p, i => tr.isDone(i)) : [] };
   });
-  let outside = null;
-  try{ outside = await Promise.race([boxesAlong(tracks, (plans || []).flatMap(p => p.boxes || [])), new Promise(r => setTimeout(() => r(null), 9000))]); }catch{}
-  if(outside){ flAll += outside; hasFl = true; }
+  // houses along a route's tracks outside every planned route count for that route like planned ones
+  const allBoxes = (plans || []).flatMap(p => p.boxes || []);
+  try{
+    const extra = await Promise.race([Promise.all(res.map(x => boxesAlong(byPlan[x.p.id] || [], allBoxes).catch(() => null))), new Promise(r => setTimeout(() => r(null), 9000))]);
+    (extra || []).forEach((n, k) => { if(n){ res[k].fl = (res[k].fl || 0) + n; flAll += n; hasFl = true; } });
+  }catch{}
+  const offRuns = offRoute(tracks, plans);
   const walked = (routes || []).reduce((a, r) => a + (r.distance_m || 0), 0), days = new Set((routes || []).map(dayKey)).size;
   let names = true, redrawLive = null;
   openMapView({
     title:tk.title, hasNames:true, onNames:v => { names = v; if(redrawLive) redrawLive(); },
     lines:[[tk.district, tk.city_name].filter(Boolean).join(', '), tk.work_date ? fmtDay(tk.work_date) : ''],
-    stats:[tk.flyers ? [t('flyers'), fmtN(tk.flyers)] : null, hasFl ? [t('rvFlyers'), '≈ ' + fmtN(flAll)] : null, outside ? [t('rvOutside'), '≈ ' + fmtN(outside)] : null, [t('rvDist'), fmtDist(walked)], allM ? [t('rvDayShare2'), Math.round(100 * doneM / allM) + ' %'] : null, days ? [t('rvDays'), String(days)] : null],
+    stats:[tk.flyers ? [t('flyers'), fmtN(tk.flyers)] : null, hasFl ? [t('rvFlyers'), '≈ ' + fmtN(flAll)] : null, [t('rvDist'), fmtDist(walked)], allM ? [t('rvDayShare2'), Math.round(100 * doneM / allM) + ' %'] : null, days ? [t('rvDays'), String(days)] : null],
     legend:res.map(({ p, pct, fl }) => ({ color:p.color || '#2563EB', label:(p.worker_id ? nameOf(p.worker_id) : t('planRoute', { n:p.idx + 1 })), anonLabel:t('planRoute', { n:p.idx + 1 }), sub:pct + ' %' + (fl != null ? ' · ≈ ' + fmtN(fl) + ' ' + t('flyers') : '') })),
     layers:[
       { key:'zone', on:false, add:g => { if(tk.zone_polygon) L.polygon(tk.zone_polygon, { color:css('--brand'), weight:2, fillOpacity:.05, interactive:false }).addTo(g); } },
@@ -534,7 +557,7 @@ async function viewTaskMap(id, back){
         return nd > 1 ? [...Array.from({ length:nd }, (_, k) => ({ key:'day' + k, label:t('dayN', { n:k + 1 }) + (k ? ' ┄' : ' ━'), add:g => drawDay(g, k) })), { key:'start', add:start }]
           : [{ key:'plan', label:t('rvPlan'), add:g => { drawDay(g, 0); start(g); } }];
       })(),
-      { key:'done', label:t('rvDone'), add:g => res.forEach(x => x.runs.forEach(run => L.polyline(run, { color:GREEN, weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g))) },
+      { key:'done', label:t('rvDone'), add:g => { res.forEach(x => x.runs.forEach(run => L.polyline(run, { color:GREEN, weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g))); offRuns.forEach(run => L.polyline(run, { color:GREEN, weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g)); } },
       { key:'gps', label:tracks.some(x => x.length > 1) ? t('rvGps') : '', on:false, add:g => tracks.forEach(ll => { if(ll.length > 1) gpsLine(g, ll, 2.5); }) },
       ...((plans || []).some(p => workerSkips(p).length) ? [{ key:'skip', label:t('rvSkipped'), add:g => drawSkips(g, plans) }] : []),
       { key:'cp', label:t('checkpoints'), add:g => res.forEach(({ p, cps }) => cps.forEach(c => cpMarker(c, dayColor(p.color, c.day), (p.days || []).length > 1).addTo(g))) },
