@@ -4,7 +4,10 @@ mkdirSync('www', { recursive: true });
 // the route planner runs in a Web Worker: bundled first and embedded as a string (started from a Blob, works in every WebView)
 const pw = await build({ entryPoints: ['src/planworker.js'], bundle: true, minify: true, format: 'iife', target: 'safari15', write: false });
 await build({ entryPoints: ['src/app.js'], bundle: true, minify: true, format: 'iife', target: 'safari15', outfile: 'www/app.js', define: { __PLANWORKER__: JSON.stringify(pw.outputFiles[0].text) } });
-copyFileSync('src/index.html', 'www/index.html');
+// app.js?v=<content hash>: a new version is loaded right away instead of an old copy from the browser cache
+{ const { readFileSync, writeFileSync } = await import('fs'); const { createHash } = await import('crypto');
+  const v = createHash('sha1').update(readFileSync('www/app.js')).digest('hex').slice(0, 10);
+  writeFileSync('www/index.html', readFileSync('src/index.html', 'utf8').replace('src="app.js"', `src="app.js?v=${v}"`)); }
 copyFileSync('node_modules/leaflet/dist/leaflet.css', 'www/leaflet.css');
 cpSync('node_modules/leaflet/dist/images', 'www/images', { recursive: true });
 copyFileSync('assets/icon-only.png', 'www/icon.png');
