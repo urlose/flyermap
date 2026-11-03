@@ -9,7 +9,7 @@ import { locationNote, legalLinks, bindLegal } from './legalview.js';
 import { setLegalFirm } from './legal.js';
 import { t, I } from './i18n.js';
 import { NATIVE, PRIVACY_URL, store, rpc, errText, deMobile, $, esc, css, hav, fmtDist, fmtHm, fmtN, fmtTime, fmtDay, loopPath } from './core.js';
-import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, fit, modal, confirmBox, toast, cityPicker, langSwitch, themeSwitch, statusPill, emptyState, avatar, every } from './ui.js';
+import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, fit, modal, confirmBox, reasonBox, toast, cityPicker, langSwitch, themeSwitch, statusPill, emptyState, avatar, every } from './ui.js';
 
 const BackgroundGeolocation = registerPlugin('BackgroundGeolocation');
 const GREEN = '#16A34A';
@@ -144,6 +144,7 @@ function hereOnce(ms){
     }else fin(null);
   });
 }
+const WHY_CHOICES = () => [t('why1'), t('why2'), t('why3'), t('why4'), t('why5')];
 const START_RADIUS = 150;   // metres from the start point within which the working day can begin
 const AHEAD_M = 400;        // bright stretch of the route in front of the walker
 // the working day starts at the start point or anywhere close to an open part of an unfinished day (then that day is worked);
@@ -520,11 +521,11 @@ function viewTracking(){
     const pts = S.slice(i0, i1 + 1).map(q => [+q[0].toFixed(6), +q[1].toFixed(6)]); if(pts.length < 2){ toast(t('skipNone')); return; }
     skipLayer.clearLayers(); L.polyline(pts, { color:'#DC2626', weight:9, opacity:.85, dashArray:'4 10', lineCap:'round', interactive:false }).addTo(skipLayer);
     view.follow = false; try{ m.fitBounds(L.latLngBounds(pts), { padding:[60, 60], maxZoom:17 }); }catch{}
-    const yes = await confirmBox(t('skipQ'), t('skipText', { d:fmtDist(pts.length * 8) }), t('skipYes'));
+    const why = await reasonBox(t('skipQ'), t('skipText', { d:fmtDist(pts.length * 8) }), t('skipYes'), WHY_CHOICES());
     skipLayer.clearLayers(); view.follow = true;
-    if(!yes) return;
-    try{ await rpc('skip_part', { p_token:W.token, p_plan_id:plan.id, p_pts:pts }); }catch(e){ toast(errText(e)); return; }
-    (plan.skipped = plan.skipped || []).push({ pts }); saveRoute();
+    if(why == null) return;
+    try{ await rpc('skip_part', { p_token:W.token, p_plan_id:plan.id, p_pts:pts, p_why:why }); }catch(e){ toast(errText(e)); return; }
+    (plan.skipped = plan.skipped || []).push({ pts, why }); saveRoute();
     W.tracker.addTrack(pts); lastRR = 0;
     const me = W.track[W.track.length - 1]; if(me) reroute(me[0], me[1]);
     drawDone(); drawAhead(); updateNav(); tgt = null; sendTarget(); toast(t('skipDone'));
@@ -558,7 +559,7 @@ function viewTracking(){
   if($('#nextDay')) $('#nextDay').onclick = async () => {
     if(nextK < 0) return; const cur = dayIdx || 0, k = nextK, S = W.tracker.samples;
     const pc = dayShare();
-    if(!await confirmBox(t('dayEndQ', { n:cur + 1 }), t('dayEndText', { n:cur + 1, p:100 - pc[cur], m:k + 1 }), t('dayEndYes', { m:k + 1 }))) return;
+    const why = await reasonBox(t('dayEndQ', { n:cur + 1 }), t('dayEndText', { n:cur + 1, p:100 - pc[cur], m:k + 1 }), t('dayEndYes', { m:k + 1 }), WHY_CHOICES()); if(why == null) return;
     // open pieces of the finished day, each a run of neighbouring samples
     const runs = []; let run = null;
     for(let i = 0; i < S.length; i++){
@@ -569,7 +570,7 @@ function viewTracking(){
     }
     for(const r of runs.filter(r => r.length > 1).slice(0, 60)){
       const pts = r.map(q => [+q[0].toFixed(6), +q[1].toFixed(6)]);
-      try{ await rpc('skip_part', { p_token:W.token, p_plan_id:plan.id, p_pts:pts }); (plan.skipped = plan.skipped || []).push({ pts }); }catch{}
+      try{ await rpc('skip_part', { p_token:W.token, p_plan_id:plan.id, p_pts:pts, p_why:why }); (plan.skipped = plan.skipped || []).push({ pts, why }); }catch{}
     }
     W.route.dayIdx = k; await saveRoute(); W.tracker = null; toast(t('dayEndDone', { m:k + 1 })); viewTracking();
   };

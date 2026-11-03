@@ -130,3 +130,5 @@ Object.assign(T.de, { startTooFar2:'Du bist {d} vom Startpunkt entfernt und auch
 Object.assign(T.ru, { startTooFar2:'Вы в {d} от точки старта и не рядом с непройденной частью своего маршрута. Начать можно на точке старта или прямо у ещё не пройденной улицы своего маршрута (до {r}).' });
 Object.assign(T.de, { hoursLbl:'Arbeitszeit (gemacht / Plan)' });
 Object.assign(T.ru, { hoursLbl:'Часы (сделано / по плану)' });
+Object.assign(T.de, { whyLbl:'Warum?', whyPh:'Grund kurz beschreiben', whyNeed:'Bitte einen Grund wählen oder schreiben.', why1:'Keine Häuser / nur Straße', why2:'Kein Zugang (privat, Tor, Baustelle)', why3:'Schon verteilt (von anderer Straße)', why4:'Gefährlich (keine Gehwege, Schnellstraße)', why5:'Keine Zeit / keine Flyer mehr' });
+Object.assign(T.ru, { whyLbl:'Почему?', whyPh:'Коротко опишите причину', whyNeed:'Выберите или напишите причину.', why1:'Нет домов / только дорога', why2:'Нет доступа (частное, ворота, стройка)', why3:'Уже разнесено (с другой улицы)', why4:'Опасно (нет тротуара, трасса)', why5:'Нет времени / закончились флаеры' });

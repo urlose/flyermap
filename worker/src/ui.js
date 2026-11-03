@@ -123,6 +123,20 @@ export function confirmBox(title, text, yes, danger){
     m.addEventListener('click', e => { if(e.target === m) res(false); });   // tap outside = cancel (the promise must not hang)
   });
 }
+// asks why: quick choices + own text; resolves the reason (string) or null on cancel
+export function reasonBox(title, text, yes, choices){
+  return new Promise(res => {
+    const m = modal(`<h2>${esc(title)}</h2><p class="muted">${esc(text)}</p><label class="f">${esc(t('whyLbl'))}</label>
+      <div class="chips">${choices.map((c, i) => `<button class="chip" data-c="${i}">${esc(c)}</button>`).join('')}</div>
+      <textarea class="in" id="rbTx" maxlength="300" placeholder="${esc(t('whyPh'))}"></textarea>
+      <button class="btn primary" data-y>${esc(yes)}</button><button class="btn ghost" data-n>${esc(t('cancel'))}</button><div class="err" id="rbErr"></div>`);
+    const tx = m.querySelector('#rbTx');
+    m.querySelectorAll('[data-c]').forEach(b => b.onclick = () => { m.querySelectorAll('[data-c]').forEach(x => x.classList.toggle('on', x === b)); tx.value = choices[+b.dataset.c]; });
+    m.querySelector('[data-y]').onclick = () => { const v = tx.value.trim(); if(v.length < 2){ m.querySelector('#rbErr').textContent = t('whyNeed'); return; } m.remove(); res(v); };
+    m.querySelector('[data-n]').onclick = () => { m.remove(); res(null); };
+    m.addEventListener('click', e => { if(e.target === m) res(null); });
+  });
+}
 export function toast(text){
   const el = document.createElement('div'); el.className = 'toast'; el.textContent = text; document.body.appendChild(el);
   setTimeout(() => el.classList.add('show'), 10); setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 300); }, 2600);

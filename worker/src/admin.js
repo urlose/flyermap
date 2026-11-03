@@ -413,7 +413,7 @@ async function boxesAlong(tracks, exclude){
 // pieces a distributor marked as not needed: grey, dashed (pieces the admin closed are only counted as done, not drawn)
 const byWorker = x => x && !/^Admin/.test(x.by || '');
 const workerSkips = p => ((p && p.skipped) || []).filter(byWorker);
-const drawSkips = (g, plans) => (plans || []).forEach(p => workerSkips(p).forEach(x => { if(x && x.pts && x.pts.length > 1) L.polyline(x.pts, { color:'#6B7280', weight:7, opacity:.85, dashArray:'3 9', lineCap:'round' }).bindTooltip(t('rvSkipped') + (x.by ? ' · ' + x.by : '') + (x.at ? ' · ' + fmtDT(x.at) : '')).addTo(g); }));
+const drawSkips = (g, plans) => (plans || []).forEach(p => workerSkips(p).forEach(x => { if(x && x.pts && x.pts.length > 1) L.polyline(x.pts, { color:'#6B7280', weight:7, opacity:.85, dashArray:'3 9', lineCap:'round' }).bindTooltip(t('rvSkipped') + (x.by ? ' · ' + x.by : '') + (x.why ? ' · „' + x.why + '“' : '') + (x.at ? ' · ' + fmtDT(x.at) : '')).addTo(g); }));
 // GPS track: its own colour (yellow with a dark edge) so it never looks like a planned route
 const GPS = '#FACC15';
 const splitJumps = ll => { const out = []; let cur = []; for(let i = 0; i < ll.length; i++){ if(i && hav(ll[i - 1][0], ll[i - 1][1], ll[i][0], ll[i][1]) > 150){ if(cur.length > 1) out.push(cur); cur = []; } cur.push(ll[i]); } if(cur.length > 1) out.push(cur); return out; };
