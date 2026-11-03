@@ -881,7 +881,8 @@ function viewCreate(edit){
     $('#cSave').disabled = true; $('#cSave').classList.add('loading');
     try{
       const pl = d.plan, quota = Math.max(200, Math.round(+saved.quota || 1500)), date = saved.date || null;
-      const row = { title, city_name:(d.place && d.place.city) || (tkE && tkE.city_name) || null, district:(d.place && d.place.district) || (tkE && tkE.district) || null, start_lat:d.start.lat, start_lng:d.start.lng,
+      const cityN = (d.place && d.place.city) || (tkE && tkE.city_name) || null;
+      const row = { title:withCity(title, cityN), city_name:(d.place && d.place.city) || (tkE && tkE.city_name) || null, district:(d.place && d.place.district) || (tkE && tkE.district) || null, start_lat:d.start.lat, start_lng:d.start.lng,
         walk_minutes:15, zone_polygon:pl.zone, must_areas:d.must.length ? d.must.map(a => ({ p:a.p, n:a.n })) : null, work_area:d.zone || null, work_date:date, notes:(saved.notes || '').trim() || null, street_m:d.streetM || null,
         flyers:d.flyers, quota_m30:quota, work_days:d.days, work_hours:d.hours, est_mailboxes:pl.mailboxes, route_m:pl.routes.reduce((s, r) => s + r.length_m, 0) };
       let tk;
@@ -913,6 +914,8 @@ async function notifyAssigned(tk, p){
 }
 
 /* edit an existing task: texts / date / pace right here; flyers, workers and routes only while nobody has walked yet */
+// the city always belongs in the order's name ("Löhne · Bahnhofstraße 94")
+const withCity = (title, city) => city && !title.toLowerCase().includes(String(city).toLowerCase()) ? city + ' · ' + title : title;
 function editTaskSheet(tk, plans, routes){
   const day = tk.work_date ? String(tk.work_date).slice(0, 10) : '';
   const mo = modal(`<h2>${esc(t('editTask'))}</h2>
@@ -926,7 +929,7 @@ function editTaskSheet(tk, plans, routes){
   mo.querySelector('#eClose').onclick = () => mo.remove();
   mo.querySelector('#eSave').onclick = async () => {
     const title = mo.querySelector('#eTitle').value.trim(); if(!title){ mo.querySelector('#eErr').textContent = t('needTitle'); return; }
-    const { error } = await sb.from('tasks').update({ title, work_date:mo.querySelector('#eDate').value || null, work_hours:Math.max(1, Math.min(12, parseFloat(mo.querySelector('#eHours').value) || 7)), quota_m30:Math.max(200, Math.round(+mo.querySelector('#eQuota').value || 1500)), notes:mo.querySelector('#eNotes').value.trim() || null }).eq('id', tk.id);
+    const { error } = await sb.from('tasks').update({ title:withCity(title, tk.city_name), work_date:mo.querySelector('#eDate').value || null, work_hours:Math.max(1, Math.min(12, parseFloat(mo.querySelector('#eHours').value) || 7)), quota_m30:Math.max(200, Math.round(+mo.querySelector('#eQuota').value || 1500)), notes:mo.querySelector('#eNotes').value.trim() || null }).eq('id', tk.id);
     if(error){ mo.querySelector('#eErr').textContent = error.message; return; }
     mo.remove(); await loadTasks(); toast(t('saved')); viewTask(tk.id);
   };
