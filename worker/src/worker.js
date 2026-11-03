@@ -731,7 +731,7 @@ function viewProfile(){
     let ph = null; if($('#pPhone')){ ph = deMobile($('#pPhone').value); if(!ph){ $('#pErr').textContent = t('badPhone'); return; } }
     if(!cp.get().length){ $('#pErr').textContent = t('e_city_required'); return; }
     $('#pSave').disabled = true; $('#pSave').classList.add('loading'); $('#pErr').textContent = '';
-    try{ if(ph) await rpc('set_worker_phone', { p_token:W.token, p_phone:ph }); await rpc('update_worker_profile', { p_token:W.token, p_name:$('#pName').value, p_cities:cp.get() }); await loadMe(); toast(t('saved')); }
+    try{ if(ph && ph !== (W.me && W.me.phone)) await rpc('set_worker_phone', { p_token:W.token, p_phone:ph }); await rpc('update_worker_profile', { p_token:W.token, p_name:$('#pName').value, p_cities:cp.get() }); await loadMe(); toast(t('saved')); }
     catch(e){ $('#pErr').textContent = errText(e); }
     $('#pSave').disabled = false; $('#pSave').classList.remove('loading');
   };
