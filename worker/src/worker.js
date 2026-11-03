@@ -2,7 +2,7 @@ import L from 'leaflet';
 import { registerPlugin } from '@capacitor/core';
 import { App } from '@capacitor/app';
 import Planner from '../../admin/planner.js';
-import { makeNav, dayProgress, rerouteDay, stepsFromPath, checkpoints, addSkips } from './nav.js';
+import { makeNav, dayProgress, nearestOpen, rerouteDay, stepsFromPath, checkpoints, addSkips } from './nav.js';
 import { cpMarker } from './admin.js';
 import { openMapView } from './routeview.js';
 import { locationNote, legalLinks, bindLegal } from './legalview.js';
@@ -146,38 +146,43 @@ function hereOnce(ms){
 }
 const START_RADIUS = 150;   // metres from the start point within which the working day can begin
 const AHEAD_M = 400;        // bright stretch of the route in front of the walker
-// the working day starts only at the start point: checks the position first; a test worker / admin may override
-async function atStartOrAsk(task){
-  if(!task || task.start_lat == null) return true;
+// the working day starts at the start point or anywhere close to an open part of an unfinished day (then that day is worked);
+// resolves { ok, day } – a test worker / admin may override
+async function startHereOrAsk(task, plan, prev){
+  if(!task || task.start_lat == null) return { ok:true };
   const mo = modal(`<h2>${esc(t('startCheck'))}</h2><p class="muted">${esc(t('startLocating'))}</p>`);
   const here = await hereOnce(20000); mo.remove();
   const tester = W.canAdmin || String((W.me && W.me.phone) || '').startsWith('+4900000000');
+  const slack = here ? Math.min(here.acc || 0, 50) : 0;
   const d = here ? hav(here.lat, here.lng, task.start_lat, task.start_lng) : null;
-  if(d != null && d - Math.min(here.acc || 0, 50) <= START_RADIUS) return true;
+  let near = null;
+  if(here && plan && plan.path && plan.path.length > 1){ const tr = addSkips(Planner.makeTracker(plan.path), plan); if(prev && prev.length) tr.addTrack(prev); near = nearestOpen(plan, tr, here.lat, here.lng); }
+  if(near && near.d - slack <= START_RADIUS) return { ok:true, day:near.day };
+  if(d != null && d - slack <= START_RADIUS) return { ok:true };
   return new Promise(resolve => {
     const m2 = modal(`<h2>${esc(t('notAtStart'))}</h2>
-      <p>${esc(d == null ? t('startNoGps') : t('startTooFar', { d:fmtDist(d), r:START_RADIUS + ' ' + t('m') }))}</p>
+      <p>${esc(d == null ? t('startNoGps') : t('startTooFar2', { d:fmtDist(d), r:START_RADIUS + ' ' + t('m') }))}</p>
       <a class="btn primary" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${task.start_lat},${task.start_lng}&travelmode=walking">${esc(t('toStart'))}</a>
       <button class="btn ghost" data-again>${esc(t('checkAgain'))}</button>
       ${tester ? `<button class="btn ghost" data-force>${esc(t('startAnyway'))}</button>` : ''}
       <button class="btn ghost" data-n>${esc(t('cancel'))}</button>`);
-    m2.querySelector('[data-n]').onclick = () => { m2.remove(); resolve(false); };
-    m2.querySelector('[data-again]').onclick = async () => { m2.remove(); resolve(await atStartOrAsk(task)); };
-    const f = m2.querySelector('[data-force]'); if(f) f.onclick = () => { m2.remove(); resolve(true); };
+    m2.querySelector('[data-n]').onclick = () => { m2.remove(); resolve({ ok:false }); };
+    m2.querySelector('[data-again]').onclick = async () => { m2.remove(); resolve(await startHereOrAsk(task, plan, prev)); };
+    const f = m2.querySelector('[data-force]'); if(f) f.onclick = () => { m2.remove(); resolve({ ok:true }); };
   });
 }
 export async function beginRoute(task){
   if(!await locationNote(W.me, async v => { await rpc('ack_privacy', { p_token:W.token, p_version:v }); if(W.me){ W.me.privacy_version = v; await store.set('me', W.me); } })) return;
   const plan = task && task.plan;
-  // a day that was already begun (part of it walked) is continued where the walker is: no start-point check then
+  // start at the start point, or right where an open part of an unfinished day is (no walk back to the start)
   let prev = null; if(plan && plan.id){ try{ prev = await rpc('plan_progress', { p_token:W.token, p_plan_id:plan.id }); }catch{} }
-  if(!dayBegun(plan, prev) && !await atStartOrAsk(task)) return;
+  const st = await startHereOrAsk(task, plan, prev); if(!st.ok) return;
   W.route = { id:null, taskId:task ? task.id : null, planId:plan ? plan.id : null, task:task || null, startedAt:Date.now(), endedAt:null, distance:0, paused:false, pausedAt:null, breakMs:0, ops:[] };
   W.queue = []; W.track = []; W.tracker = null; W.counter = null; W.prev = null;
   await saveRoute();
   W.prev = prev;
   // the day this session works on = the first day that is not finished yet (a few open metres of an earlier day do not count)
-  const nd = nextDay(plan, prev); if(nd != null){ W.route.dayIdx = nd; await saveRoute(); }
+  const nd = st.day != null && plan && plan.days && plan.days.length > 1 ? st.day : nextDay(plan, prev); if(nd != null){ W.route.dayIdx = nd; await saveRoute(); }
   setTimeout(() => loadMe().catch(() => {}), 4000);   // today's totals without this new session
   workerTab('map');
   await startWatching(); flush();
@@ -186,13 +191,6 @@ function nextDay(plan, prev){
   if(!plan || !plan.path || plan.path.length < 2 || !(plan.days && plan.days.length > 1)) return null;
   const tr = addSkips(Planner.makeTracker(plan.path), plan); if(prev) tr.addTrack(prev);
   const k = dayProgress(plan, tr).findIndex(p => p < 95); return k >= 0 ? k : null;
-}
-// the next unfinished day already has walked streets (≥ 3 %): it is continued, not started again
-function dayBegun(plan, prev){
-  if(!plan || !plan.path || plan.path.length < 2 || !prev || !prev.length) return false;
-  const tr = addSkips(Planner.makeTracker(plan.path), plan); tr.addTrack(prev);
-  const pc = dayProgress(plan, tr), next = pc.findIndex(p => p < 95);
-  return next >= 0 && pc[next] >= 3;
 }
 const workMs = () => { const r = W.route; return Math.max(0, (r.paused ? r.pausedAt : Date.now()) - r.startedAt - (r.breakMs || 0)); };
 function pace30(){ const now = Date.now(); let s = 0; for(let i = W.track.length - 1; i > 0; i--){ const a = W.track[i-1], b = W.track[i]; if(now - b[2] > 30 * 60e3) break; if(b[2] - a[2] > 90e3) continue; s += hav(a[0], a[1], b[0], b[1]); } return s; }

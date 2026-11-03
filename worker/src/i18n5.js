@@ -126,3 +126,5 @@ Object.assign(T.de, { haveLink:'Ich habe einen Login-Link', haveLinkHint:'Den Li
 Object.assign(T.ru, { haveLink:'У меня есть ссылка для входа', haveLinkHint:'Вставьте сюда ссылку, которую прислал админ (например, в WhatsApp).', haveLinkGo:'Войти', haveLinkBad:'Это не ссылка для входа.' });
 Object.assign(T.de, { handedLbl:'Verteilt' });
 Object.assign(T.ru, { handedLbl:'Роздано' });
+Object.assign(T.de, { startTooFar2:'Du bist {d} vom Startpunkt entfernt und auch nicht an einer offenen Stelle deiner Route. Starten kannst du am Startpunkt oder direkt an einer noch offenen Straße deiner Route (bis {r}).' });
+Object.assign(T.ru, { startTooFar2:'Вы в {d} от точки старта и не рядом с непройденной частью своего маршрута. Начать можно на точке старта или прямо у ещё не пройденной улицы своего маршрута (до {r}).' });

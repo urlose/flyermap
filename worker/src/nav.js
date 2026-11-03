@@ -93,6 +93,17 @@ export function makeNav(plan){
 }
 
 // share of every day's route that has been walked (tracker needs isDone); returns [pct per day]
+// nearest open (not yet walked) spot of an unfinished day (< 95 %): { d metres, day } or null
+export function nearestOpen(plan, tracker, lat, lng){
+  const nav = makeNav(plan), pc = dayProgress(plan, tracker), k = Math.cos(lat * Math.PI / 180);
+  let best = null;
+  for(let i = 0; i < tracker.samples.length; i++){
+    if(tracker.isDone(i)) continue; const day = nav.dayAt(nav.posOf[i]); if(pc[day] >= 95) continue;
+    const s = tracker.samples[i], d = 111320 * Math.hypot(s[0] - lat, (s[1] - lng) * k);
+    if(!best || d < best.d) best = { d, day };
+  }
+  return best;
+}
 export function dayProgress(plan, tracker){
   const nav = makeNav(plan), cnt = nav.days.map(() => [0, 0]);
   for(let i = 0; i < tracker.samples.length; i++){ const k = nav.dayAt(nav.posOf[i]); cnt[k][1]++; if(tracker.isDone(i)) cnt[k][0]++; }
