@@ -946,6 +946,14 @@ function planWalked(p, routes){
   const live = own.some(r => !r.ended_at);
   return esc(t('walkedLine', { km:fmtDist(m), h:fmtHm(min) })) + (live ? ' · <b class="live-txt">' + esc(t('walkedLive')) + '</b>' : '');
 }
+function taskHours(plans, routes){
+  const ownR = p => { const rs = (routes || []).filter(r => r.plan_id === p.id || (!r.plan_id && r.worker_id && r.worker_id === p.worker_id)); const end = r => r.ended_at ? +new Date(r.ended_at) : Date.now();
+    return rs.filter(r => !rs.some(o => o !== r && +new Date(o.started_at) <= +new Date(r.started_at) && end(o) >= end(r) && (o.distance_m || 0) > (r.distance_m || 0))); };
+  const seen = new Set(); let done = 0;
+  (plans || []).forEach(p => ownR(p).forEach(r => { if(!seen.has(r.id)){ seen.add(r.id); done += workMin(r); } }));
+  const plan = (plans || []).reduce((s, p) => s + (p.minutes || 0), 0);
+  return esc(fmtHm(done)) + ' / ' + esc(fmtHm(plan)) + ' ' + esc(t('h')) + (plan ? ' (' + Math.round(100 * done / plan) + ' %)' : '');
+}
 async function viewTask(id){
   const tk = A.tasks.find(x => x.id === id); if(!tk) return viewTasks();
   A.curTask = id;
@@ -962,6 +970,7 @@ async function viewTask(id){
         ${tk.route_m ? `<div><span>${esc(t('dist2'))}</span><b>${esc(fmtDist(tk.route_m))}</b></div>` : ''}
         ${tk.quota_m30 ? `<div><span>${esc(t('quotaInfo'))}</span><b>${fmtN(tk.quota_m30)} m / 30 ${esc(t('min'))}</b></div>` : ''}
         <div><span>${esc(t('walkedLbl'))}</span><b>${esc(fmtDist(walked))}</b></div>
+        <div><span>${esc(t('hoursLbl'))}</span><b id="tHrs">${taskHours(plans, routes)}</b></div>
         <div id="tFlRow" style="display:none"><span>${esc(t('handedLbl'))}</span><b id="tFl"></b></div>
         ${tk.notes ? `<div><span>${esc(t('note'))}</span><b>${esc(tk.notes)}</b></div>` : ''}
       </div>
@@ -1012,6 +1021,7 @@ async function viewTask(id){
       if(A.curTask !== id || !$('#tMap')){ clearInterval(iv); return; }
       const { data } = await sb.from('routes').select('*').eq('task_id', id); if(!data) return;
       (plans || []).forEach(p => { const el = $('#pw' + p.idx); if(el) el.innerHTML = planWalked(p, data); });
+      const th = $('#tHrs'); if(th) th.innerHTML = taskHours(plans, data);
     }, 60000);
   }
   // progress per route: all tracks recorded on that plan (also by a previous worker)

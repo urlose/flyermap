@@ -150,3 +150,4 @@ T.en = {
 };
 T.en.handedLbl = 'Distributed';
 T.en.startTooFar2 = 'You are {d} away from the start point and not at an open part of your route either. You can start at the start point or right at a street of your route that is still open (within {r}).';
+T.en.hoursLbl = 'Working time (done / planned)';
