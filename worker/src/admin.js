@@ -229,7 +229,7 @@ function dayFilterHtml(f, places){
   const iso = d => d.toLocaleDateString('sv-SE'), today = new Date(), yest = new Date(Date.now() - 864e5), wk = new Date(Date.now() - 6 * 864e5);
   const quick = [['dToday', iso(today), iso(today)], ['dYesterday', iso(yest), iso(yest)], ['d7', iso(wk), iso(today)]];
   return `<div class="chips" style="margin:0 0 8px">${quick.map(([k, a, b]) => `<button class="chip ${f.from === a && f.to === b ? 'on' : ''}" data-q="${a}|${b}" style="padding:7px 14px">${esc(t(k))}</button>`).join('')}<button class="chip ${filterOn(f) ? '' : 'on'}" data-q="|" style="padding:7px 14px">${esc(t('fAll'))}</button></div>
-    <div class="steppers"><div><label class="f">${esc(t('fFrom'))}</label><input class="in small" type="date" id="dfFrom" value="${esc(f.from)}"></div><div><label class="f">${esc(t('fTo'))}</label><input class="in small" type="date" id="dfTo" value="${esc(f.to)}"></div><div><label class="f">${esc(t('place'))}</label><select class="in small" id="dfPlace"><option value="">${esc(t('fAll'))}</option>${places.map(p => `<option ${p === f.place ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></div></div>`;
+    <div class="dfilter"><div><label class="f">${esc(t('fFrom'))}</label><input class="in small" type="date" id="dfFrom" value="${esc(f.from)}"></div><div><label class="f">${esc(t('fTo'))}</label><input class="in small" type="date" id="dfTo" value="${esc(f.to)}"></div><div><label class="f">${esc(t('place'))}</label><select class="in small" id="dfPlace"><option value="">${esc(t('fAll'))}</option>${places.map(p => `<option ${p === f.place ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></div></div>`;
 }
 function bindDayFilter(f, again){
   document.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { const [a, z] = b.dataset.q.split('|'); f.from = a; f.to = z; if(!a) f.place = ''; again(); });
@@ -600,7 +600,7 @@ function viewTasks(){
       <div class="chips" style="margin:0 0 10px">${[['open', t('fOpen')], ['live', t('stLive')], ['done', t('fDone')], ['all', t('fAll')]].map(([k, l]) => `<button class="chip ${f.status === k ? 'on' : ''}" data-st="${k}" aria-pressed="${f.status === k}">${esc(l)}</button>`).join('')}</div>
       <details class="filters" ${nf ? 'open' : ''}><summary>${ICONS.search}${esc(t('filter'))}${nf ? `<span class="cnt">${nf}</span>` : ''}</summary><div class="f-body">
         <div class="steppers">${sel('fCity', t('fCity'), opts('city_name'), f.city)}${sel('fDist', t('fDistrict'), opts('district'), f.district)}</div>
-        <div class="steppers"><div><label class="f" for="fFrom">${esc(t('fFrom'))}</label><input class="in small" type="date" id="fFrom" value="${esc(f.from)}"></div><div><label class="f" for="fTo">${esc(t('fTo'))}</label><input class="in small" type="date" id="fTo" value="${esc(f.to)}"></div></div>
+        <div class="dfilter"><div><label class="f" for="fFrom">${esc(t('fFrom'))}</label><input class="in small" type="date" id="fFrom" value="${esc(f.from)}"></div><div><label class="f" for="fTo">${esc(t('fTo'))}</label><input class="in small" type="date" id="fTo" value="${esc(f.to)}"></div></div>
         ${nf ? `<button class="link" id="fReset" style="margin-top:8px">${esc(t('reset'))}</button>` : ''}</div></details>
       ${list.length ? list.map(card).join('') : A.tasks.length ? emptyState(t('noMatch'), 'search') : `${emptyState(t('noOpenTasks'), 'flag')}<button class="btn primary" id="create" style="margin-top:12px">${ICONS.plus}${esc(t('createTask'))}</button>`}
     </div>`, { fab:t('createTask') });
