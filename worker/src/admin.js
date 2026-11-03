@@ -218,7 +218,10 @@ const hhmm = d => new Date(d).toLocaleTimeString(loc(), { hour:'2-digit', minute
 const dayFilter = () => A.dFilter || (A.dFilter = { from:'', to:'', place:'' });
 const dayMatches = (r, f) => { const d = dayKey(r); return (!f.from || d >= f.from) && (!f.to || d <= f.to) && (!f.place || r.place === f.place); };
 const filterOn = f => !!(f.from || f.to || f.place);
-const dayLine = (r, cls) => `<button class="row-line rbtn ${cls || ''}" data-r="${r.id}" data-w="${r.worker_id}"><div class="rb-main"><b>${esc(new Date(r.started_at).toLocaleDateString(loc(), { weekday:'short', day:'2-digit', month:'2-digit', year:'2-digit' }))} · ${esc(hhmm(r.started_at))}–${esc(r.ended_at ? hhmm(r.ended_at) : t('active'))}</b><small data-place="${r.id}">${esc(placeTxt(r) || '…')}</small></div><span>${esc(fmtDist(r.distance_m || 0))} · ${esc(fmtHm(workMin(r)) + ' ' + t('h'))}</span></button>`;
+// pause of a working day in minutes (also a pause that is running right now)
+const brkMin = r => ((r.break_s || 0) + (r.paused_at && !r.ended_at ? Math.max(0, (Date.now() - new Date(r.paused_at)) / 1000) : 0)) / 60;
+const brkTxt = min => min >= 1 ? ' · ' + t('pauseLbl') + ' ' + fmtHm(min) + ' ' + t('h') : '';
+const dayLine = (r, cls) => `<button class="row-line rbtn ${cls || ''}" data-r="${r.id}" data-w="${r.worker_id}"><div class="rb-main"><b>${esc(new Date(r.started_at).toLocaleDateString(loc(), { weekday:'short', day:'2-digit', month:'2-digit', year:'2-digit' }))} · ${esc(hhmm(r.started_at))}–${esc(r.ended_at ? hhmm(r.ended_at) : t('active'))}</b><small data-place="${r.id}">${esc(placeTxt(r) || '…')}</small></div><span>${esc(fmtDist(r.distance_m || 0))} · ${esc(fmtHm(workMin(r)) + ' ' + t('h') + brkTxt(brkMin(r)))}</span></button>`;
 const daysSum = list => list.length ? t(list.length === 1 ? 'daysSum1' : 'daysSum', { n:list.length, km:fmtDist(list.reduce((a, r) => a + (r.distance_m || 0), 0)), h:fmtHm(list.reduce((a, r) => a + workMin(r), 0)) }) : '';
 // days without an order (or whose order was deleted): name the place from the first GPS point, once, and keep it
 async function fillPlaces(list, done){
@@ -472,7 +475,7 @@ async function viewDayMap(routeId, back){
   openMapView({
     title:nameOf(r.worker_id), anonTitle:t('rvDistributor'), hasNames:true,
     lines:[d0.toLocaleDateString(loc(), { weekday:'long', day:'2-digit', month:'2-digit', year:'numeric' }) + ' · ' + hhmm(r.started_at) + '–' + (r.ended_at ? hhmm(r.ended_at) : t('active')), placeTxt(r)],
-    stats:[[t('rvDist'), fmtDist(r.distance_m || 0)], [t('rvWork'), fmtHm(workMin(r)) + ' ' + t('h')], fl != null ? [t('rvFlyers'), '≈ ' + fmtN(fl)] : null, pct != null ? [t('rvDayShare'), pct + ' %'] : null, pctAll != null ? [t('rvDayShare2'), pctAll + ' %'] : null],
+    stats:[[t('rvDist'), fmtDist(r.distance_m || 0)], [t('rvWork'), fmtHm(workMin(r)) + ' ' + t('h')], brkMin(r) >= 1 ? [t('pauseLbl'), fmtHm(brkMin(r)) + ' ' + t('h')] : null, fl != null ? [t('rvFlyers'), '≈ ' + fmtN(fl)] : null, pct != null ? [t('rvDayShare'), pct + ' %'] : null, pctAll != null ? [t('rvDayShare2'), pctAll + ' %'] : null],
     note:r.track_deleted_at ? t('trackDeleted') : (ll.length < 2 ? t('rvNoTrack') : ''),
     layers:[
       { key:'plan', label:pl ? t('rvPlan') : '', on:!!pl, add:g => { if(!pl || !pl.path || pl.path.length < 2) return;
@@ -958,15 +961,15 @@ function planWalked(p, routes){
   if(!own.length) return '';
   const m = own.reduce((s, r) => s + (r.distance_m || 0), 0), min = own.reduce((s, r) => s + workMin(r), 0);
   const live = own.some(r => !r.ended_at);
-  return esc(t('walkedLine', { km:fmtDist(m), h:fmtHm(min) })) + (live ? ' · <b class="live-txt">' + esc(t('walkedLive')) + '</b>' : '');
+  return esc(t('walkedLine', { km:fmtDist(m), h:fmtHm(min) }) + brkTxt(own.reduce((s, r) => s + brkMin(r), 0))) + (live ? ' · <b class="live-txt">' + esc(t('walkedLive')) + '</b>' : '');
 }
 function taskHours(plans, routes){
   const ownR = p => { const rs = (routes || []).filter(r => r.plan_id === p.id || (!r.plan_id && r.worker_id && r.worker_id === p.worker_id)); const end = r => r.ended_at ? +new Date(r.ended_at) : Date.now();
     return rs.filter(r => !rs.some(o => o !== r && +new Date(o.started_at) <= +new Date(r.started_at) && end(o) >= end(r) && (o.distance_m || 0) > (r.distance_m || 0))); };
-  const seen = new Set(); let done = 0;
-  (plans || []).forEach(p => ownR(p).forEach(r => { if(!seen.has(r.id)){ seen.add(r.id); done += workMin(r); } }));
+  const seen = new Set(); let done = 0, brk = 0;
+  (plans || []).forEach(p => ownR(p).forEach(r => { if(!seen.has(r.id)){ seen.add(r.id); done += workMin(r); brk += brkMin(r); } }));
   const plan = (plans || []).reduce((s, p) => s + (p.minutes || 0), 0);
-  return esc(fmtHm(done)) + ' / ' + esc(fmtHm(plan)) + ' ' + esc(t('h')) + (plan ? ' (' + Math.round(100 * done / plan) + ' %)' : '');
+  return esc(fmtHm(done)) + ' / ' + esc(fmtHm(plan)) + ' ' + esc(t('h')) + (plan ? ' (' + Math.round(100 * done / plan) + ' %)' : '') + esc(brkTxt(brk));
 }
 async function viewTask(id){
   const tk = A.tasks.find(x => x.id === id); if(!tk) return viewTasks();

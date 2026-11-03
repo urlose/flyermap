@@ -154,3 +154,4 @@ T.en.hoursLbl = 'Working time (done / planned)';
 Object.assign(T.en, { whyLbl:'Why?', whyPh:'Describe the reason briefly', whyNeed:'Please pick or write a reason.', why1:'No houses / road only', why2:'No access (private, gate, construction)', why3:'Already served (from another street)', why4:'Dangerous (no sidewalk, fast road)', why5:'No time / out of flyers' });
 Object.assign(T.en, { chgDates:'Change days', datesChangedTitle:'New working days: {title}' });
 Object.assign(T.en, { allLinks:'Login links of all workers' });
+T.en.pauseLbl = 'Break';

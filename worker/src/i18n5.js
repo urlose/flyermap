@@ -136,3 +136,5 @@ Object.assign(T.de, { chgDates:'Tage ändern', datesChangedTitle:'Neue Arbeitsta
 Object.assign(T.ru, { chgDates:'Изменить дни', datesChangedTitle:'Новые рабочие дни: {title}' });
 Object.assign(T.de, { allLinks:'Login-Links aller Mitarbeiter' });
 Object.assign(T.ru, { allLinks:'Ссылки для входа всех работников' });
+Object.assign(T.de, { pauseLbl:'Pause' });
+Object.assign(T.ru, { pauseLbl:'Пауза' });
