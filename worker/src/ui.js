@@ -100,6 +100,8 @@ export function makeMap(el, center, zoom = 15, opts = {}){
   const m = L.map(el, { zoomControl:false, attributionControl:true, ...opts }).setView(center || [51.2277, 6.7735], zoom);
   L.tileLayer(TILES, { maxZoom:19, attribution:'© OpenStreetMap' }).addTo(m);
   UI.maps.push(m); el._map = m;
+  // zoomed out (country / region): only the markers, names come back from city level on (people on the way keep theirs)
+  const far = () => el.classList.toggle('map-far', m.getZoom() < 10); m.on('zoomend', far); far();
   setTimeout(() => m.invalidateSize(), 60);
   return m;
 }
