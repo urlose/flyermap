@@ -193,7 +193,8 @@ function nextDay(plan, prev){
   const tr = addSkips(Planner.makeTracker(plan.path), plan); if(prev) tr.addTrack(prev);
   const k = dayProgress(plan, tr).findIndex(p => p < 95); return k >= 0 ? k : null;
 }
-const workMs = () => { const r = W.route; return Math.max(0, (r.paused ? r.pausedAt : Date.now()) - r.startedAt - (r.breakMs || 0)); };
+// a pause counts in full hours only (1:15 → 1 h); a running pause is not working time
+const workMs = () => { const r = W.route; return Math.max(0, (r.paused ? r.pausedAt : Date.now()) - r.startedAt - Math.floor((r.breakMs || 0) / 3600e3) * 3600e3); };
 function pace30(){ const now = Date.now(); let s = 0; for(let i = W.track.length - 1; i > 0; i--){ const a = W.track[i-1], b = W.track[i]; if(now - b[2] > 30 * 60e3) break; if(b[2] - a[2] > 90e3) continue; s += hav(a[0], a[1], b[0], b[1]); } return s; }
 async function pauseRoute(){
   const r = W.route; if(!r || r.paused) return;

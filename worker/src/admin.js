@@ -190,15 +190,18 @@ function viewLive(){
 /* ---------- working days (routes): shared by the Mitarbeiter list and the worker page ---------- */
 const dayKey = r => new Date(r.started_at).toLocaleDateString('sv-SE');   // local YYYY-MM-DD
 // net working time: start to end minus breaks, plus a correction by the admin (adj_s; the GPS times stay as recorded)
-const workMin = r => r._min != null ? r._min : Math.max(0, ((r.ended_at ? new Date(r.ended_at) : Date.now()) - new Date(r.started_at)) / 60000 - (r.break_s || 0) / 60 + (r.adj_s || 0) / 60);
+// a pause counts in full hours only (1:15 → 1 h, 0:40 → 0): the rest is working time
+const pauseFull = sec => Math.floor((sec || 0) / 3600) * 60;   // minutes
+const rawMin = r => ((r.ended_at ? new Date(r.ended_at) : Date.now()) - new Date(r.started_at)) / 60000 + (r.adj_s || 0) / 60;
+const workMin = r => r._min != null ? r._min : Math.max(0, rawMin(r) - pauseFull(r.break_s));
 // several sessions of one person on one day (Feierabend + start again, app restarted …) are one working day:
 // one line, one map, distances and times added up. id = first session (newest first lists stay newest first).
 function mergeDays(routes){
   const groups = new Map();
   for(const r of routes || []){
     const k = r.worker_id + '|' + dayKey(r); let g = groups.get(k);
-    if(!g){ g = { ...r, ids:[], _routes:[], distance_m:0, break_s:0, _min:0 }; groups.set(k, g); }
-    g.ids.push(r.id); g._routes.push(r); g.distance_m += r.distance_m || 0; g.break_s += r.break_s || 0; g._min += workMin(r);
+    if(!g){ g = { ...r, ids:[], _routes:[], distance_m:0, break_s:0, _min:0, _raw:0 }; groups.set(k, g); }
+    g.ids.push(r.id); g._routes.push(r); g.distance_m += r.distance_m || 0; g.break_s += r.break_s || 0; g._raw += rawMin(r); g._min = Math.max(0, g._raw - pauseFull(g.break_s));
     if(new Date(r.started_at) < new Date(g.started_at)) g.started_at = r.started_at;
     if(!r.ended_at) g.ended_at = null; else if(g.ended_at && new Date(r.ended_at) > new Date(g.ended_at)) g.ended_at = r.ended_at;
     if(!g.place && r.place) g.place = r.place; if(!g.plan_id && r.plan_id) g.plan_id = r.plan_id;
@@ -219,7 +222,7 @@ const dayFilter = () => A.dFilter || (A.dFilter = { from:'', to:'', place:'' });
 const dayMatches = (r, f) => { const d = dayKey(r); return (!f.from || d >= f.from) && (!f.to || d <= f.to) && (!f.place || r.place === f.place); };
 const filterOn = f => !!(f.from || f.to || f.place);
 // pause of a working day in minutes (also a pause that is running right now)
-const brkMin = r => ((r.break_s || 0) + (r.paused_at && !r.ended_at ? Math.max(0, (Date.now() - new Date(r.paused_at)) / 1000) : 0)) / 60;
+const brkMin = r => pauseFull(r.break_s);
 const brkTxt = min => min >= 1 ? ' · ' + t('pauseLbl') + ' ' + fmtHm(min) + ' ' + t('h') : '';
 const dayLine = (r, cls) => `<button class="row-line rbtn ${cls || ''}" data-r="${r.id}" data-w="${r.worker_id}"><div class="rb-main"><b>${esc(new Date(r.started_at).toLocaleDateString(loc(), { weekday:'short', day:'2-digit', month:'2-digit', year:'2-digit' }))} · ${esc(hhmm(r.started_at))}–${esc(r.ended_at ? hhmm(r.ended_at) : t('active'))}</b><small data-place="${r.id}">${esc(placeTxt(r) || '…')}</small></div><span>${esc(fmtDist(r.distance_m || 0))} · ${esc(fmtHm(workMin(r)) + ' ' + t('h') + brkTxt(brkMin(r)))}</span></button>`;
 const daysSum = list => list.length ? t(list.length === 1 ? 'daysSum1' : 'daysSum', { n:list.length, km:fmtDist(list.reduce((a, r) => a + (r.distance_m || 0), 0)), h:fmtHm(list.reduce((a, r) => a + workMin(r), 0)) }) : '';
@@ -959,15 +962,16 @@ function planWalked(p, routes){
   const end = r => r.ended_at ? +new Date(r.ended_at) : Date.now();
   const own = rs.filter(r => !rs.some(o => o !== r && +new Date(o.started_at) <= +new Date(r.started_at) && end(o) >= end(r) && (o.distance_m || 0) > (r.distance_m || 0)));
   if(!own.length) return '';
-  const m = own.reduce((s, r) => s + (r.distance_m || 0), 0), min = own.reduce((s, r) => s + workMin(r), 0);
+  const m = own.reduce((s, r) => s + (r.distance_m || 0), 0), dd = mergeDays(own), min = dd.reduce((s, r) => s + workMin(r), 0);
   const live = own.some(r => !r.ended_at);
-  return esc(t('walkedLine', { km:fmtDist(m), h:fmtHm(min) }) + brkTxt(own.reduce((s, r) => s + brkMin(r), 0))) + (live ? ' · <b class="live-txt">' + esc(t('walkedLive')) + '</b>' : '');
+  return esc(t('walkedLine', { km:fmtDist(m), h:fmtHm(min) }) + brkTxt(dd.reduce((s, r) => s + brkMin(r), 0))) + (live ? ' · <b class="live-txt">' + esc(t('walkedLive')) + '</b>' : '');
 }
 function taskHours(plans, routes){
   const ownR = p => { const rs = (routes || []).filter(r => r.plan_id === p.id || (!r.plan_id && r.worker_id && r.worker_id === p.worker_id)); const end = r => r.ended_at ? +new Date(r.ended_at) : Date.now();
     return rs.filter(r => !rs.some(o => o !== r && +new Date(o.started_at) <= +new Date(r.started_at) && end(o) >= end(r) && (o.distance_m || 0) > (r.distance_m || 0))); };
   const seen = new Set(); let done = 0, brk = 0;
-  (plans || []).forEach(p => ownR(p).forEach(r => { if(!seen.has(r.id)){ seen.add(r.id); done += workMin(r); brk += brkMin(r); } }));
+  const mine = []; (plans || []).forEach(p => ownR(p).forEach(r => { if(!seen.has(r.id)){ seen.add(r.id); mine.push(r); } }));
+  mergeDays(mine).forEach(r => { done += workMin(r); brk += brkMin(r); });
   const plan = (plans || []).reduce((s, p) => s + (p.minutes || 0), 0);
   return esc(fmtHm(done)) + ' / ' + esc(fmtHm(plan)) + ' ' + esc(t('h')) + (plan ? ' (' + Math.round(100 * done / plan) + ' %)' : '') + esc(brkTxt(brk));
 }
@@ -1000,6 +1004,7 @@ async function viewTask(id){
         ${dayLines(p.days, p.color)}
         <div class="bar"><i id="pb${p.idx}"></i></div><span id="pf${p.idx}" style="margin-top:4px"></span><span class="small" id="pw${p.idx}">${planWalked(p, routes)}</span>
         ${p.worker_id ? `<span class="pill ${(A.live || []).some(r => r.plan_id === p.id && !r.paused_at) ? 'live' : stCls(p)}">${(A.live || []).some(r => r.plan_id === p.id && !r.paused_at) ? esc(t('stLive')) + ' · ' : ''}${esc(stText(p))}${p.status === 'accepted' && (p.work_dates || []).length ? ' · ' + esc(p.work_dates.map(fmtDay).join(', ')) : ''}</span>` : ''}${p.worker_id && p.status === 'accepted' ? ` <button class="link small" data-dates="${p.id}">${esc(t('chgDates'))}</button>` : ''}
+        ${w ? `<button class="btn ghost small" data-wk="${w.id}" style="margin-top:8px;justify-content:flex-start">${ICONS.users}${esc(w.name)} ›</button>` : ''}
         <div class="rr-act"><select class="in small" data-plan="${p.id}">${workerOptions(tk.start_lat, tk.start_lng, p.worker_id)}</select>${w ? `<a class="btn ghost small" target="_blank" rel="noopener" href="${waLink(w.phone, invite(w))}">${ICONS.chat}${esc(t('write'))}</a>` : ''}</div>
         <span class="small">${esc(t('replaceHint'))}</span></div></div>`; }).join('') : `<p class="muted small">${esc(t('noPlans'))}</p>`}
       <div class="tool-row" style="margin-top:16px"><button class="btn ghost small" id="tEdit">${ICONS.edit}${esc(t('editTask'))}</button><button class="btn ghost small" id="tDone">${ICONS.check}${esc(tk.status === 'open' ? t('finish') : t('reopen'))}</button><button class="btn ghost small danger-text" id="tDel">${esc(t('del'))}</button></div>
@@ -1029,6 +1034,7 @@ async function viewTask(id){
     }
     await loadTasks(); toast(t('saved')); viewTask(id);
   });
+  document.querySelectorAll('[data-wk]').forEach(bt => bt.onclick = () => viewWorker(bt.dataset.wk, () => viewTask(id)));
   document.querySelectorAll('[data-dates]').forEach(bt => bt.onclick = () => {
     const p = plans.find(x => x.id === bt.dataset.dates), ds = (p.work_dates || []).map(d => String(d).slice(0, 10)).sort(), n = Math.max(1, ds.length, (p.days || []).length);
     const mo = modal(`<h2>${esc(t('chgDates'))}</h2><p class="muted small">${esc(t('planRoute', { n:p.idx + 1 }))}${wById(p.worker_id) ? ' · ' + esc(wById(p.worker_id).name) : ''}</p>
