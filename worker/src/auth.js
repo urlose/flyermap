@@ -19,11 +19,22 @@ export function viewLogin(){
       <p class="small muted">${esc(t('smsHint'))}</p>
       <button class="btn primary big" id="lSend">${esc(t('sendCode'))}</button><div class="err" id="lErr"></div>
       ${langSwitch(I.lang)}
+      <p class="small center"><button class="link" id="lLink">${esc(t('haveLink'))}</button></p>
       <p class="small center"><button class="link" id="lEmail">${esc(t('emailAdmin'))}</button></p>
       ${legalLinks()}
     </div>`);
   bindLegal(viewLogin);
   $('#lEmail').onclick = () => viewAdminLogin(viewLogin);
+  // login link from the admin (WhatsApp etc.): in the installed app a link does not open the app, so it is pasted here
+  $('#lLink').onclick = () => {
+    const m = modal(`<h2>${esc(t('haveLink'))}</h2><p class="muted small">${esc(t('haveLinkHint'))}</p>
+      <input class="in" id="lkIn" autocomplete="off" placeholder="https://…/app/?konto=…"><button class="btn primary" id="lkGo">${esc(t('haveLinkGo'))}</button><div class="err" id="lkErr"></div>`);
+    m.querySelector('#lkGo').onclick = async () => {
+      const id = (m.querySelector('#lkIn').value.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) || [])[0];
+      if(!id){ m.querySelector('#lkErr').textContent = t('haveLinkBad'); return; }
+      m.remove(); await store.set('canAdmin', false); await acceptToken(id);
+    };
+  };
   $('#lPhone').addEventListener('keydown', e => { if(e.key === 'Enter') $('#lSend').click(); });
   $('#lSend').onclick = async () => {
     const phone = deMobile($('#lPhone').value);
