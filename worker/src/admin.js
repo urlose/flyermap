@@ -962,6 +962,7 @@ async function viewTask(id){
         ${tk.route_m ? `<div><span>${esc(t('dist2'))}</span><b>${esc(fmtDist(tk.route_m))}</b></div>` : ''}
         ${tk.quota_m30 ? `<div><span>${esc(t('quotaInfo'))}</span><b>${fmtN(tk.quota_m30)} m / 30 ${esc(t('min'))}</b></div>` : ''}
         <div><span>${esc(t('walkedLbl'))}</span><b>${esc(fmtDist(walked))}</b></div>
+        <div id="tFlRow" style="display:none"><span>${esc(t('handedLbl'))}</span><b id="tFl"></b></div>
         ${tk.notes ? `<div><span>${esc(t('note'))}</span><b>${esc(tk.notes)}</b></div>` : ''}
       </div>
       <div class="mapbox" id="tMap"></div>
@@ -1019,6 +1020,7 @@ async function viewTask(id){
     const pid = r.plan_id || (plans.find(p => p.worker_id === r.worker_id) || {}).id; if(!pid) continue;
     const pts = await fetchPoints(r.id); (byPlan[pid] = byPlan[pid] || []).push(pts.map(p => [p.lat, p.lng])); allTracks.push(byPlan[pid][byPlan[pid].length - 1]);
   }
+  let flSum = 0, flHas = false;
   for(const p of plans || []){
     if((!allTracks.length && !(p.skipped || []).length) || !p.path?.length) continue;
     byPlan[p.id] = byPlan[p.id] || [];
@@ -1027,7 +1029,10 @@ async function viewTask(id){
     tr.runs().forEach(run => L.polyline(run, { color:GREEN, weight:6, opacity:.95 }).addTo(doneLayer));
     const pct = tr.pct(); const el = $('#pp' + p.idx); if(el) el.textContent = '· ' + t('done', { p:pct }); const bar = $('#pb' + p.idx); if(bar) bar.style.width = pct + '%';
     const pf = $('#pf' + p.idx); if(pf && ct) pf.textContent = t('flyersDone', { a:fmtN(ct.count()), b:fmtN(ct.total) });
+    if(ct){ flSum += ct.count(); flHas = true; }
   }
+  const fr = $('#tFlRow'), fe = $('#tFl');
+  if(fr && fe && flHas){ const tot = tk.flyers || 0; fe.textContent = '≈ ' + fmtN(flSum) + (tot ? ' / ' + fmtN(tot) + ' (' + Math.min(100, Math.round(100 * flSum / tot)) + ' %)' : ''); fr.style.display = ''; }
 }
 
 /* ---------- worker view for the admin (no SMS needed): own number, or a test worker ---------- */

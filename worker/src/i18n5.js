@@ -124,3 +124,5 @@ Object.assign(T.de, { rvOutside:'davon außerhalb der Routen' });
 Object.assign(T.ru, { rvOutside:'из них вне маршрутов' });
 Object.assign(T.de, { haveLink:'Ich habe einen Login-Link', haveLinkHint:'Den Link, den du vom Admin bekommen hast (z. B. per WhatsApp), hier einfügen.', haveLinkGo:'Anmelden', haveLinkBad:'Das ist kein gültiger Login-Link.' });
 Object.assign(T.ru, { haveLink:'У меня есть ссылка для входа', haveLinkHint:'Вставьте сюда ссылку, которую прислал админ (например, в WhatsApp).', haveLinkGo:'Войти', haveLinkBad:'Это не ссылка для входа.' });
+Object.assign(T.de, { handedLbl:'Verteilt' });
+Object.assign(T.ru, { handedLbl:'Роздано' });
