@@ -134,3 +134,5 @@ Object.assign(T.de, { whyLbl:'Warum?', whyPh:'Grund kurz beschreiben', whyNeed:'
 Object.assign(T.ru, { whyLbl:'Почему?', whyPh:'Коротко опишите причину', whyNeed:'Выберите или напишите причину.', why1:'Нет домов / только дорога', why2:'Нет доступа (частное, ворота, стройка)', why3:'Уже разнесено (с другой улицы)', why4:'Опасно (нет тротуара, трасса)', why5:'Нет времени / закончились флаеры' });
 Object.assign(T.de, { chgDates:'Tage ändern', datesChangedTitle:'Neue Arbeitstage: {title}' });
 Object.assign(T.ru, { chgDates:'Изменить дни', datesChangedTitle:'Новые рабочие дни: {title}' });
+Object.assign(T.de, { allLinks:'Login-Links aller Mitarbeiter' });
+Object.assign(T.ru, { allLinks:'Ссылки для входа всех работников' });

@@ -12,6 +12,16 @@ import { viewMaster, poolHtml } from './master.js';
 
 const GREEN = '#16A34A';
 const APP_LINK = 'https://urlose.github.io/flyermap/app/';
+// all login links of the team in one place (Mitarbeiter page), loaded when the box is opened
+document.addEventListener('toggle', async e => {
+  if(e.target.id !== 'linkBox' || !e.target.open) return;
+  const box = document.getElementById('linkList'); if(!box) return;
+  const ids = (A.workers || []).map(w => w.id); if(!ids.length){ box.innerHTML = ''; return; }
+  const { data } = await sb.from('workers').select('id,name,token,cities').in('id', ids).order('name');
+  box.innerHTML = `<p class="small muted">${esc(t('loginLinkHint'))}</p>` + (data || []).filter(w => w.token).map(w => { const link = APP_LINK + '?konto=' + w.token, c = (w.cities || []).map(x => x.name).filter(Boolean).join(', ');
+    return `<div style="padding:10px 0;border-top:1px solid var(--color-border)"><b>${esc(w.name)}</b>${c ? ` <span class="small muted">· ${esc(c)}</span>` : ''}<div class="code-row" style="margin-top:6px"><input class="in small" readonly value="${esc(link)}" style="flex:1;min-width:0"><button class="btn ghost small" data-cp="${esc(link)}">${esc(t('copy'))}</button></div></div>`; }).join('');
+  box.querySelectorAll('[data-cp]').forEach(b => b.onclick = async () => { try{ await navigator.clipboard.writeText(b.dataset.cp); toast(t('copied')); }catch{ toast(b.dataset.cp); } });
+}, true);
 // finished map-data answers are shared through our own server (edge function 'osm'): same area = instant for every admin
 const osmCache = {
   async get(queries){ const { data, error } = await sb.functions.invoke('osm', { body:{ mode:'get', queries } }); if(error || !data || !data.results) throw new Error('cache'); return data.results; },
@@ -252,6 +262,7 @@ async function viewPeople(){
       <div id="dFilter"></div>
       <div class="sec-row"><h2>${esc(t('workersN', { n:A.workers.length }))}</h2></div>
       <div id="wList"></div>
+      <details class="filters" id="linkBox"><summary>${ICONS.users}${esc(t('allLinks'))}</summary><div class="f-body" id="linkList"><p class="muted small">${esc(t('loadingShort'))}</p></div></details>
       ${A.company && A.company.id ? `<details class="filters" id="poolBox"><summary>${ICONS.users}${esc(t('poolTitle'))}</summary><div class="f-body" id="poolList"><p class="muted small">${esc(t('loadingShort'))}</p></div></details>` : ''}
       ${A.company && A.company.master ? `<button class="btn primary" id="tMaster" style="margin-top:16px">${ICONS.users}${esc(t('master'))}</button>` : ''}
       ${A.company && A.company.id ? firmCardHtml(A.company) : ''}
