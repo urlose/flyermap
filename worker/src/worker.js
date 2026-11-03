@@ -361,7 +361,9 @@ function viewTaskDetail(task){
       ${plan && (st === 'offered' || st === 'open') ? `<h2 class="sec">${esc(t('pickDays'))}</h2><p class="small muted" style="margin-top:-6px">${esc(t('dayHint', { h:(plan.minutes / 60).toFixed(1).replace('.', ','), n:need }))}</p>
         <div class="dates">${Array.from({ length:need }, (_, i) => `<label><span>${esc(t('dayN', { n:i + 1 }))}</span><input class="in" type="date" data-day="${i}" min="${today}" value="${addDays(first, i)}"></label>`).join('')}</div>
         ${st === 'open' ? `<button class="btn primary" id="claim">${esc(t('claim'))}</button>` : `<button class="btn primary" id="acc">${esc(t('accept'))}</button><button class="btn ghost" id="dec">${esc(t('decline'))}</button>`}<div class="err" id="accErr"></div>` : ''}
-      ${plan && st === 'accepted' ? `<p class="hint">${esc(t('yourDates'))}: <b>${esc(dayList(plan).map(fmtDay).join(', '))}</b></p>` : ''}
+      ${plan && st === 'accepted' ? `<p class="hint">${esc(t('yourDates'))}: <b>${esc(dayList(plan).map(fmtDay).join(', '))}</b> <button class="link" id="chgDates">${esc(t('chgDates'))}</button></p>
+        <div id="chgBox" hidden><div class="dates">${Array.from({ length:need }, (_, i) => `<label><span>${esc(t('dayN', { n:i + 1 }))}</span><input class="in" type="date" data-cday="${i}" value="${esc(dayList(plan)[i] || addDays(dayList(plan)[0] || first, i))}"></label>`).join('')}</div>
+        <button class="btn primary" id="chgSave">${esc(t('save'))}</button><div class="err" id="chgErr"></div></div>` : ''}
       ${plan && st === 'declined' ? `<p class="note">${esc(t('stDeclined'))}</p>` : ''}
       ${(!plan || st === 'accepted') ? `<button class="btn primary big" id="go">${ICONS.play}<span>${esc(t('startRoute'))}</span></button>` : ''}
       <a class="btn ghost" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${task.start_lat},${task.start_lng}&travelmode=transit">${ICONS.pin}${esc(t('directions'))}</a>
@@ -381,6 +383,14 @@ function viewTaskDetail(task){
       const next = pc.findIndex(p => p < 95), go = $('#go'); if(go && next >= 0) go.querySelector('span').textContent = t(pc[next] >= 3 ? 'contDayN' : 'startDayN', { n:next + 1 });
     }).catch(() => {});
   }
+  if($('#chgDates')) $('#chgDates').onclick = () => { $('#chgBox').hidden = !$('#chgBox').hidden; };
+  if($('#chgSave')) $('#chgSave').onclick = async () => {
+    const dates = [...document.querySelectorAll('[data-cday]')].map(i => i.value).filter(Boolean);
+    if(dates.length < need || new Set(dates).size !== dates.length){ $('#chgErr').textContent = t('e_date_required'); return; }
+    $('#chgSave').disabled = true;
+    try{ await rpc('respond_plan', { p_token:W.token, p_plan_id:plan.id, p_accept:true, p_dates:dates.sort() }); await loadMe(); toast(t('saved')); viewTaskDetail(tasks().find(x => x.id === task.id) || task); }
+    catch(e){ $('#chgErr').textContent = errText(e); $('#chgSave').disabled = false; }
+  };
   if($('#acc')) $('#acc').onclick = async () => {
     const dates = [...document.querySelectorAll('[data-day]')].map(i => i.value).filter(Boolean);
     if(dates.length < need || new Set(dates).size !== dates.length){ $('#accErr').textContent = t('e_date_required'); return; }

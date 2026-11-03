@@ -982,7 +982,7 @@ async function viewTask(id){
         <span>${esc(t('routeLine', { km:fmtDist(p.length_m), h:fmtHm(p.minutes || 0), mb:fmtN(p.mailboxes || 0) }))}</span>
         ${dayLines(p.days, p.color)}
         <div class="bar"><i id="pb${p.idx}"></i></div><span id="pf${p.idx}" style="margin-top:4px"></span><span class="small" id="pw${p.idx}">${planWalked(p, routes)}</span>
-        ${p.worker_id ? `<span class="pill ${(A.live || []).some(r => r.plan_id === p.id && !r.paused_at) ? 'live' : stCls(p)}">${(A.live || []).some(r => r.plan_id === p.id && !r.paused_at) ? esc(t('stLive')) + ' · ' : ''}${esc(stText(p))}${p.status === 'accepted' && (p.work_dates || []).length ? ' · ' + esc(p.work_dates.map(fmtDay).join(', ')) : ''}</span>` : ''}
+        ${p.worker_id ? `<span class="pill ${(A.live || []).some(r => r.plan_id === p.id && !r.paused_at) ? 'live' : stCls(p)}">${(A.live || []).some(r => r.plan_id === p.id && !r.paused_at) ? esc(t('stLive')) + ' · ' : ''}${esc(stText(p))}${p.status === 'accepted' && (p.work_dates || []).length ? ' · ' + esc(p.work_dates.map(fmtDay).join(', ')) : ''}</span>` : ''}${p.worker_id && p.status === 'accepted' ? ` <button class="link small" data-dates="${p.id}">${esc(t('chgDates'))}</button>` : ''}
         <div class="rr-act"><select class="in small" data-plan="${p.id}">${workerOptions(tk.start_lat, tk.start_lng, p.worker_id)}</select>${w ? `<a class="btn ghost small" target="_blank" rel="noopener" href="${waLink(w.phone, invite(w))}">${ICONS.chat}${esc(t('write'))}</a>` : ''}</div>
         <span class="small">${esc(t('replaceHint'))}</span></div></div>`; }).join('') : `<p class="muted small">${esc(t('noPlans'))}</p>`}
       <div class="tool-row" style="margin-top:16px"><button class="btn ghost small" id="tEdit">${ICONS.edit}${esc(t('editTask'))}</button><button class="btn ghost small" id="tDone">${ICONS.check}${esc(tk.status === 'open' ? t('finish') : t('reopen'))}</button><button class="btn ghost small danger-text" id="tDel">${esc(t('del'))}</button></div>
@@ -1011,6 +1011,21 @@ async function viewTask(id){
       await notifyAssigned(tk, { ...p, worker_id:wid });
     }
     await loadTasks(); toast(t('saved')); viewTask(id);
+  });
+  document.querySelectorAll('[data-dates]').forEach(bt => bt.onclick = () => {
+    const p = plans.find(x => x.id === bt.dataset.dates), ds = (p.work_dates || []).map(d => String(d).slice(0, 10)).sort(), n = Math.max(1, ds.length, (p.days || []).length);
+    const mo = modal(`<h2>${esc(t('chgDates'))}</h2><p class="muted small">${esc(t('planRoute', { n:p.idx + 1 }))}${wById(p.worker_id) ? ' · ' + esc(wById(p.worker_id).name) : ''}</p>
+      <div class="dates">${Array.from({ length:n }, (_, i) => `<label><span>${esc(t('dayN', { n:i + 1 }))}</span><input class="in" type="date" data-ad="${i}" value="${esc(ds[i] || '')}"></label>`).join('')}</div>
+      <button class="btn primary" id="adSave">${esc(t('save'))}</button><button class="btn ghost small" id="adX">${esc(t('close'))}</button><div class="err" id="adErr"></div>`);
+    mo.querySelector('#adX').onclick = () => mo.remove();
+    mo.querySelector('#adSave').onclick = async () => {
+      const dates = [...mo.querySelectorAll('[data-ad]')].map(i => i.value).filter(Boolean).sort();
+      if(!dates.length || new Set(dates).size !== dates.length){ mo.querySelector('#adErr').textContent = t('e_date_required'); return; }
+      const { error } = await sb.from('task_plans').update({ work_dates:dates }).eq('id', p.id);
+      if(error){ mo.querySelector('#adErr').textContent = error.message; return; }
+      await sb.from('notifications').insert({ worker_id:p.worker_id, kind:'assigned', task_id:id, plan_id:p.id, title:t('datesChangedTitle', { title:tk.title }), body:dates.map(fmtDay).join(', ') });
+      mo.remove(); toast(t('saved')); viewTask(id);
+    };
   });
   $('#tBig').onclick = () => viewTaskMap(id, () => viewTask(id));
   $('#tEdit').onclick = () => editTaskSheet(tk, plans || [], routes || []);
