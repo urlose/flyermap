@@ -98,8 +98,10 @@ function onLocation(lat, lng, acc, time, sim){
     if(dt < 30 && d / dt > 12) return;
     W.route.distance += d;
   }
-  if(W.tracker){ if(last && sim !== 'first'){ const g = hav(last[0], last[1], lat, lng); if(g < 120) W.tracker.markLine([last[0], last[1]], [lat, lng]); else { W.tracker.fillGap([last[0], last[1]], [lat, lng]); W.tracker.mark([lat, lng]); } } else W.tracker.mark([lat, lng]); }   // a long gap (screen was off) counts only along the route
-  if(W.counter){ if(last && sim !== 'first') W.counter.visitLine([last[0], last[1]], [lat, lng]); else W.counter.visit(lat, lng); }
+  // riding the bike between villages (faster than ≈ 12 km/h): no flyers then – streets passed do not count as done
+  const riding = !!(W.route.task && W.route.task.bike) && last && sim !== 'first' && (time - last[2]) > 0 && hav(last[0], last[1], lat, lng) / ((time - last[2]) / 1000) > 3.4;
+  if(W.tracker && !riding){ if(last && sim !== 'first'){ const g = hav(last[0], last[1], lat, lng); if(g < 120) W.tracker.markLine([last[0], last[1]], [lat, lng]); else { W.tracker.fillGap([last[0], last[1]], [lat, lng]); W.tracker.mark([lat, lng]); } } else W.tracker.mark([lat, lng]); }   // a long gap (screen was off) counts only along the route
+  if(W.counter && !riding){ if(last && sim !== 'first') W.counter.visitLine([last[0], last[1]], [lat, lng]); else W.counter.visit(lat, lng); }
   W.track.push([lat, lng, time]);
   W.queue.push({ t:new Date(time).toISOString(), lat:+lat.toFixed(6), lng:+lng.toFixed(6), acc: acc == null ? null : Math.round(acc) });
   saveRoute();
@@ -148,7 +150,9 @@ const WHY_CHOICES = () => [t('why1'), t('why2'), t('why3'), t('why4'), t('why5')
 const START_RADIUS = 150;
 const TRANSIT_M = 1500;   // further than this to where the route goes on: bus / train suggested (the walker decides)
 const gTransit = (lat, lng) => `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=transit`;
-const aTransit = (lat, lng) => `https://maps.apple.com/?daddr=${lat},${lng}&dirflg=r`;   // metres from the start point within which the working day can begin
+const aTransit = (lat, lng) => `https://maps.apple.com/?daddr=${lat},${lng}&dirflg=r`;
+const gBike = (lat, lng) => `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=bicycling`;
+const BIKE_M = 700;   // order with bike: from this distance on, riding is suggested   // metres from the start point within which the working day can begin
 const AHEAD_M = 400;        // bright stretch of the route in front of the walker
 // the working day starts at the start point or anywhere close to an open part of an unfinished day (then that day is worked);
 // resolves { ok, day } – a test worker / admin may override
@@ -370,7 +374,7 @@ function viewTaskDetail(task){
         <button class="btn primary" id="chgSave">${esc(t('save'))}</button><div class="err" id="chgErr"></div></div>` : ''}
       ${plan && st === 'declined' ? `<p class="note">${esc(t('stDeclined'))}</p>` : ''}
       ${(!plan || st === 'accepted') ? `<button class="btn primary big" id="go">${ICONS.play}<span>${esc(t('startRoute'))}</span></button>` : ''}
-      <div class="rr-btns" id="dirRow"><a class="btn ghost" id="dirG" target="_blank" rel="noopener" href="${esc(gTransit(task.start_lat, task.start_lng))}">${ICONS.pin}${esc(t('directions'))}</a><a class="btn ghost" id="dirA" target="_blank" rel="noopener" href="${esc(aTransit(task.start_lat, task.start_lng))}">${ICONS.map}${esc(t('appleMaps'))}</a></div>
+      <div class="rr-btns" id="dirRow"><a class="btn ghost" id="dirG" target="_blank" rel="noopener" href="${esc((task.bike ? gBike : gTransit)(task.start_lat, task.start_lng))}">${ICONS.pin}${esc(t(task.bike ? 'byBike' : 'directions'))}</a><a class="btn ghost" id="dirA" target="_blank" rel="noopener" href="${esc(aTransit(task.start_lat, task.start_lng))}">${ICONS.map}${esc(t('appleMaps'))}</a></div>
     </div>`);
   bindBack(() => workerTab('tasks'));
   if(st === 'open'){ const p0 = document.querySelector('.sec-row'); if(p0) p0.insertAdjacentHTML('afterend', `<p class="small muted" style="margin:-4px 0 10px">${esc(t('planRoute', { n:plan.idx + 1 }))}</p>`); }
@@ -385,7 +389,7 @@ function viewTaskDetail(task){
       const tr = addSkips(Planner.makeTracker(plan.path), plan); tr.addTrack(prev || []);
       const pc = dayProgress(plan, tr); pc.forEach((p, k) => { const el = $('#dp' + k); if(el) el.innerHTML = p >= 95 ? statusPill('ok', t('stDone')) : p ? '· ' + p + '%' : ''; });
       const next = pc.findIndex(p => p < 95), go = $('#go');
-      if(next >= 0 && plan.days[next]){ const q = plan.path[plan.days[next].i0]; if(q){ const g = $('#dirG'), a = $('#dirA'); if(g) g.href = gTransit(q[0], q[1]); if(a) a.href = aTransit(q[0], q[1]); } } if(go && next >= 0) go.querySelector('span').textContent = t(pc[next] >= 3 ? 'contDayN' : 'startDayN', { n:next + 1 });
+      if(next >= 0 && plan.days[next]){ const q = plan.path[plan.days[next].i0]; if(q){ const g = $('#dirG'), a = $('#dirA'); if(g) g.href = (task.bike ? gBike : gTransit)(q[0], q[1]); if(a) a.href = aTransit(q[0], q[1]); } } if(go && next >= 0) go.querySelector('span').textContent = t(pc[next] >= 3 ? 'contDayN' : 'startDayN', { n:next + 1 });
     }).catch(() => {});
   }
   if($('#chgDates')) $('#chgDates').onclick = () => { $('#chgBox').hidden = !$('#chgBox').hidden; };
@@ -649,7 +653,8 @@ function viewTracking(){
     $('#navIc').innerHTML = icon; $('#navMain').textContent = main; $('#navSub').textContent = sub;
     const at = approachTo || n.at || guide.path[guide.path.length - 1]; $('#navExt').href = 'https://www.google.com/maps/dir/?api=1&destination=' + at[0] + ',' + at[1] + '&travelmode=walking';
     const me2 = W.track[W.track.length - 1], far = approachTo && me2 ? hav(me2[0], me2[1], approachTo[0], approachTo[1]) : 0, tr = $('#navTr');
-    if(tr){ tr.hidden = far < TRANSIT_M; if(far >= TRANSIT_M){ $('#navTrT').textContent = t('farAway', { d:fmtDist(far) }); $('#navTrG').href = gTransit(at[0], at[1]); $('#navTrA').href = aTransit(at[0], at[1]); $('#navTrW').href = 'https://www.google.com/maps/dir/?api=1&destination=' + at[0] + ',' + at[1] + '&travelmode=walking'; } }
+    const bike = !!(W.route && W.route.task && W.route.task.bike), lim = bike ? BIKE_M : TRANSIT_M;
+    if(tr){ tr.hidden = far < lim; if(far >= lim){ $('#navTrT').textContent = t(bike ? 'farBike' : 'farAway', { d:fmtDist(far) }); $('#navTrG').href = bike ? gBike(at[0], at[1]) : gTransit(at[0], at[1]); $('#navTrG').textContent = t(bike ? 'byBike' : 'busTrain'); $('#navTrA').href = bike ? gTransit(at[0], at[1]) : aTransit(at[0], at[1]); $('#navTrA').textContent = t(bike ? 'busTrain' : 'appleMaps'); $('#navTrW').href = 'https://www.google.com/maps/dir/?api=1&destination=' + at[0] + ',' + at[1] + '&travelmode=walking'; } }
   };
   // the walker's dot stays in the free part of the map (between the turn banner and the card), not hidden behind the card
   const followTo = (ll, zoom, animate) => {

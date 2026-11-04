@@ -27,7 +27,7 @@ export function createPlanService(cache){
   // far places are shared out so that everyone gets about the same hours (LPT). A worker's work is one line: main parts first,
   // then the far places (first point marked [lat,lng,1] = jump, no street). The days are then cut by time, wherever the hours
   // are full – the next day starts where the walker stopped (starting at an open part of the route is allowed).
-  const TRAVEL_MIN = 30, EMPTY_GAP = 1000;   // bus ride counted for packing; > 1 km without mailboxes on the way → bus
+  const TRAVEL_MIN = 30, EMPTY_GAP = 1000, EMPTY_GAP_BIKE = 600;   // with a bike, a shorter empty road is already worth riding   // bus ride counted for packing; > 1 km without mailboxes on the way → bus
   const segLen = (a, b) => { const k = Math.cos(a[0] * Math.PI / 180); return 111320 * Math.hypot(b[0] - a[0], (b[1] - a[1]) * k); };
   // items: { min, far? } → n bins. Far places first, each to a DIFFERENT worker while there are workers left (fair: everybody
   // travels at most once); then the rest largest first into the emptiest bin
@@ -40,16 +40,16 @@ export function createPlanService(cache){
     return bins;
   };
   // one worker's line from its pieces (routes of the planner); pieces: [{ r, name|null }] in walking order
-  const buildLine = (pieces, hours) => {
+  const buildLine = (pieces, hours, bike) => {
     const path = [], steps = [], boxes = [], segMin = [], segMb = [], segSt = [], place = [];
     let length_m = 0, street_m = 0, minutes = 0, mailboxes = 0;
     for(const { r, name } of pieces){
       const L = path.length, jump = !!name && L > 0;
       const tot = r.path.slice(1).reduce((s, q, j) => s + segLen(r.path[j], q), 0) || 1;
-      r.path.forEach((q, j) => {
+      r.path.forEach((q, j) => {   // a jump costs the ride: bike ≈ 15 km/h + 5 min, bus 30 min
         path.push(j === 0 && jump ? [q[0], q[1], 1] : [q[0], q[1]]);
         const d = j ? segLen(r.path[j - 1], q) : 0;
-        segMin.push(j === 0 ? (jump ? TRAVEL_MIN : 0) : r.minutes * d / tot); segMb.push(j ? (r.mailboxes || 0) * d / tot : 0); segSt.push(j ? (r.street_m || 0) * d / tot : 0); place.push(name || '');
+        segMin.push(j === 0 ? (jump ? (bike ? 5 + segLen(path[L - 1], q) * 1.3 / 250 : TRAVEL_MIN) : 0) : r.minutes * d / tot); segMb.push(j ? (r.mailboxes || 0) * d / tot : 0); segSt.push(j ? (r.street_m || 0) * d / tot : 0); place.push(name || '');
       });
       (r.steps || []).forEach(st => steps.push([st[0] + L, st[1], st[2]])); (r.boxes || []).forEach(x => boxes.push(x));
       length_m += r.length_m || 0; street_m += r.street_m || 0; minutes += r.minutes || 0; mailboxes += r.mailboxes || 0;
@@ -75,7 +75,7 @@ export function createPlanService(cache){
       return info();
     },
     // plans the routes; loads a larger square first when the plan reaches the edge of what is loaded
-    async plan({ start, flyers, n, days, hours, must, zone, side, quota }, stage, stale){
+    async plan({ start, flyers, n, days, hours, must, zone, side, quota, bike }, stage, stale){
       Planner.setPace(quota);   // hours from the order's quota (metres per 30 minutes)
       side = (side || []).filter(c => c && c.flyers > 0);
       // a near Nebenstadt is walked only when there are mailboxes on the way; an empty road to it (> EMPTY_GAP) → bus, like a far place
@@ -88,7 +88,7 @@ export function createPlanService(cache){
         const keepMust = [];
         for(const a of must){
           const gap = a && a.name && a.p && a.p.length > 2 ? Planner.emptyGap(G, start, a.p) : 0;
-          if(gap > EMPTY_GAP){
+          if(gap > (bike ? EMPTY_GAP_BIKE : EMPTY_GAP)){
             const ctr = a.c || a.p.reduce((x, q) => [x[0] + q[0] / a.p.length, x[1] + q[1] / a.p.length], [0, 0]);   // town centre when known
             side.push({ name:a.name, lat:ctr[0], lng:ctr[1], flyers:a.n || 1000, zone:a.p }); bus.push({ name:a.name, gap });
           }else keepMust.push(a);
@@ -96,13 +96,13 @@ export function createPlanService(cache){
         must = keepMust;
       }
       if(side.length){
-        const res = await this.planSide({ start, flyers, n, days, hours, must, zone, side }, stage, stale);
+        const res = await this.planSide({ start, flyers, n, days, hours, must, zone, side, bike }, stage, stale);
         if(res && res.plan) res.plan.bus = bus;
         return res;
       }
       return this.planMain({ start, flyers, n, days, hours, must, zone }, stage, stale);
     },
-    async planSide({ start, flyers, n, days, hours, must, zone, side }, stage, stale){
+    async planSide({ start, flyers, n, days, hours, must, zone, side, bike }, stage, stale){
 
         // each far place as one whole route (one worker)
         const far = [];
@@ -127,8 +127,11 @@ export function createPlanService(cache){
         const items = [...far.map(x => ({ min:x.min, far:x, isFar:true })), ...res.plan.routes.map(r => ({ min:r.minutes, main:r }))];
         const bins = lpt(items, n);
         res.plan.routes = bins.map((b, k) => {
-          const pieces = [...b.items.filter(x => x.main).map(x => ({ r:x.main, name:null })), ...b.items.filter(x => x.far).map(x => ({ r:x.far.r, name:x.far.c.name }))];
-          return { idx:k, ...buildLine(pieces, hours) };
+          // far places of one worker in a sensible order: always the nearest next one (villages one after another, no zig-zag)
+          const fars = b.items.filter(x => x.far).map(x => x.far), ordered = []; let at = start;
+          while(fars.length){ let bi = 0; fars.forEach((x, i) => { if(segLen(at, x.r.path[0]) < segLen(at, fars[bi].r.path[0])) bi = i; }); const x = fars.splice(bi, 1)[0]; ordered.push(x); at = x.r.path[x.r.path.length - 1]; }
+          const pieces = [...b.items.filter(x => x.main).map(x => ({ r:x.main, name:null })), ...ordered.map(x => ({ r:x.r, name:x.c.name }))];
+          return { idx:k, ...buildLine(pieces, hours, bike) };
         });
         res.plan.mailboxes += far.reduce((s, x) => s + x.mb, 0);
         res.plan.side_info = far.map(x => ({ name:x.c.name, mailboxes:x.mb, worker:bins.findIndex(b => b.items.some(i => i.far === x)) }));

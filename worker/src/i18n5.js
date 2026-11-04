@@ -166,3 +166,5 @@ Object.assign(T.de, { sideTownsShort:'Nebenstädte' });
 Object.assign(T.ru, { sideTownsShort:'Доп. города' });
 Object.assign(T.de, { areaWhole:'ganze Gemeinde, ≈ {km2} km²', areaPart:'nur Ortsteil, ≈ {km2} km²' });
 Object.assign(T.ru, { areaWhole:'вся община, ≈ {km2} км²', areaPart:'только район, ≈ {km2} км²' });
+Object.assign(T.de, { bikeOk:'Fahrrad zwischen den Orten erlaubt', bikeHint:'Z. B. Dörfer, die 1–3 km auseinander liegen: die Wege zwischen den Orten werden mit dem Rad gerechnet (≈ 15 km/h statt Bus), der Mitarbeiter bekommt dafür Radrouten. Verteilt wird zu Fuß.', bikeLbl:'Fahrrad zwischen Orten', yes:'ja', byBike:'Mit dem Fahrrad (Google Maps)', farBike:'Noch {d} bis zur Route – mit dem Fahrrad hinfahren?' });
+Object.assign(T.ru, { bikeOk:'Можно на велосипеде между местами', bikeHint:'Например, деревни в 1–3 км друг от друга: переезды между местами считаются на велосипеде (≈ 15 км/ч вместо автобуса), работник получает маршрут для велосипеда. Раздают пешком.', bikeLbl:'Велосипед между местами', yes:'да', byBike:'На велосипеде (Google Maps)', farBike:'До маршрута ещё {d} – доехать на велосипеде?' });

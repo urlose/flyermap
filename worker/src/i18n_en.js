@@ -169,3 +169,4 @@ Object.assign(T.en, { addrMain:'Start address in the main town', mainCityAuto:'t
 T.en.quotaHours = 'Hours are calculated from it: route length ÷ quota × 30 min plus 5 s per mailbox.';
 T.en.sideTownsShort = 'More towns';
 Object.assign(T.en, { areaWhole:'whole municipality, ≈ {km2} km²', areaPart:'district only, ≈ {km2} km²' });
+Object.assign(T.en, { bikeOk:'Bike allowed between the places', bikeHint:'E.g. villages 1–3 km apart: the trips between the places are counted by bike (≈ 15 km/h instead of bus), the worker gets bike routes. Distributing is on foot.', bikeLbl:'Bike between places', yes:'yes', byBike:'By bike (Google Maps)', farBike:'Still {d} to the route – ride there by bike?' });
