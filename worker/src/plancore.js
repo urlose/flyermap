@@ -17,9 +17,9 @@ export function createPlanService(cache){
   // far places of the order (bus / train): own street graph around their centre, planned with the same workers as extra days
   const sideG = new Map();
   const sideGraph = async (c, stage, stale) => {
-    const k = keyOf([c.lat, c.lng]) + ':' + c.flyers; if(sideG.has(k)) return sideG.get(k);
+    const z = c.zone && c.zone.length > 2 ? c.zone : null, k = keyOf([c.lat, c.lng]) + ':' + c.flyers + ':' + (z ? z.length + ',' + z[0].join(',') : ''); if(sideG.has(k)) return sideG.get(k);
     if(sideG.size > 6) sideG.clear();
-    const g = await Planner.loadForFlyers([c.lat, c.lng], c.flyers, { cache, tiles, stale, progress:(done, total) => { if(stage && total > 1) stage('loadingSide|' + done + '|' + total); } });
+    const g = await Planner.loadForFlyers([c.lat, c.lng], c.flyers, { cache, tiles, stale, zone:z, progress:(done, total) => { if(stage && total > 1) stage('loadingSide|' + done + '|' + total); } });
     sideG.set(k, g); return g;
   };
   // ---- far places of the order (bus / train) ----
@@ -77,7 +77,7 @@ export function createPlanService(cache){
         const far = [];
         for(const c of side){
           stage('loadingSide'); const g = await sideGraph(c, stage, stale); if(stale()) return { skipped:true };
-          const p = Planner.planFlyers(g, [c.lat, c.lng], c.flyers, 1, { days:1, hoursPerDay:hours });
+          const p = Planner.planFlyers(g, [c.lat, c.lng], c.flyers, 1, { days:1, hoursPerDay:hours, zone:c.zone && c.zone.length > 2 ? c.zone : null });   // inside its borders (named place or drawn)
           const { part, ...r } = p.routes[0]; far.push({ c, r, min:r.minutes, mb:p.mailboxes });
         }
         const mainFlyers = Math.max(100, flyers - side.reduce((s, c) => s + c.flyers, 0));
