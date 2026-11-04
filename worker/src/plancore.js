@@ -27,6 +27,17 @@ export function createPlanService(cache){
   // far places are shared out so that everyone gets about the same hours (LPT). A worker's work is one line: main parts first,
   // then the far places (first point marked [lat,lng,1] = jump, no street). The days are then cut by time, wherever the hours
   // are full – the next day starts where the walker stopped (starting at an open part of the route is allowed).
+  // real road length between the places (one Valhalla matrix request); without answer: straight line × 1.3
+  const roadMatrix = async (pts, costing) => {
+    try{
+      const q = { sources:pts.map(p => ({ lat:p[0], lon:p[1] })), targets:pts.map(p => ({ lat:p[0], lon:p[1] })), costing, units:'kilometers' };
+      const ctrl = new AbortController(), tm = setTimeout(() => ctrl.abort(), 9000);
+      const r = await fetch('https://valhalla1.openstreetmap.de/sources_to_targets?json=' + encodeURIComponent(JSON.stringify(q)), { signal:ctrl.signal }); clearTimeout(tm);
+      if(!r.ok) return null; const j = await r.json(); const m = j.sources_to_targets; if(!Array.isArray(m)) return null;
+      return m.map(row => row.map(c => c && c.distance != null ? c.distance * 1000 : null));
+    }catch{ return null; }
+  };
+  const SPEED = { bike:250, car:667 };   // metres per minute: bike ≈ 15 km/h, car ≈ 40 km/h (villages, parking) – plus 5 min per trip
   const TRAVEL_MIN = 30, EMPTY_GAP = 1000, EMPTY_GAP_BIKE = 600;   // with a bike, a shorter empty road is already worth riding   // bus ride counted for packing; > 1 km without mailboxes on the way → bus
   const segLen = (a, b) => { const k = Math.cos(a[0] * Math.PI / 180); return 111320 * Math.hypot(b[0] - a[0], (b[1] - a[1]) * k); };
   // items: { min, far? } → n bins. Far places first, each to a DIFFERENT worker while there are workers left (fair: everybody
@@ -40,7 +51,7 @@ export function createPlanService(cache){
     return bins;
   };
   // one worker's line from its pieces (routes of the planner); pieces: [{ r, name|null }] in walking order
-  const buildLine = (pieces, hours, bike) => {
+  const buildLine = (pieces, hours, rideMin) => {
     const path = [], steps = [], boxes = [], segMin = [], segMb = [], segSt = [], place = [];
     let length_m = 0, street_m = 0, minutes = 0, mailboxes = 0;
     for(const { r, name } of pieces){
@@ -49,7 +60,7 @@ export function createPlanService(cache){
       r.path.forEach((q, j) => {   // a jump costs the ride: bike ≈ 15 km/h + 5 min, bus 30 min
         path.push(j === 0 && jump ? [q[0], q[1], 1] : [q[0], q[1]]);
         const d = j ? segLen(r.path[j - 1], q) : 0;
-        segMin.push(j === 0 ? (jump ? (bike ? 5 + segLen(path[L - 1], q) * 1.3 / 250 : TRAVEL_MIN) : 0) : r.minutes * d / tot); segMb.push(j ? (r.mailboxes || 0) * d / tot : 0); segSt.push(j ? (r.street_m || 0) * d / tot : 0); place.push(name || '');
+        segMin.push(j === 0 ? (jump ? (rideMin ? rideMin(path[L - 1], q) : TRAVEL_MIN) : 0) : r.minutes * d / tot); segMb.push(j ? (r.mailboxes || 0) * d / tot : 0); segSt.push(j ? (r.street_m || 0) * d / tot : 0); place.push(name || '');
       });
       (r.steps || []).forEach(st => steps.push([st[0] + L, st[1], st[2]])); (r.boxes || []).forEach(x => boxes.push(x));
       length_m += r.length_m || 0; street_m += r.street_m || 0; minutes += r.minutes || 0; mailboxes += r.mailboxes || 0;
@@ -75,7 +86,8 @@ export function createPlanService(cache){
       return info();
     },
     // plans the routes; loads a larger square first when the plan reaches the edge of what is loaded
-    async plan({ start, flyers, n, days, hours, must, zone, side, quota, bike }, stage, stale){
+    async plan({ start, flyers, n, days, hours, must, zone, side, quota, bike, travel }, stage, stale){
+      travel = travel === 'bike' || travel === 'car' ? travel : (bike ? 'bike' : 'bus'); bike = travel !== 'bus';
       Planner.setPace(quota);   // hours from the order's quota (metres per 30 minutes)
       side = (side || []).filter(c => c && c.flyers > 0);
       // a near Nebenstadt is walked only when there are mailboxes on the way; an empty road to it (> EMPTY_GAP) → bus, like a far place
@@ -96,13 +108,13 @@ export function createPlanService(cache){
         must = keepMust;
       }
       if(side.length){
-        const res = await this.planSide({ start, flyers, n, days, hours, must, zone, side, bike }, stage, stale);
+        const res = await this.planSide({ start, flyers, n, days, hours, must, zone, side, bike, travel }, stage, stale);
         if(res && res.plan) res.plan.bus = bus;
         return res;
       }
       return this.planMain({ start, flyers, n, days, hours, must, zone }, stage, stale);
     },
-    async planSide({ start, flyers, n, days, hours, must, zone, side, bike }, stage, stale){
+    async planSide({ start, flyers, n, days, hours, must, zone, side, bike, travel }, stage, stale){
 
         // each far place as one whole route (one worker)
         const far = [], failed = [];
@@ -135,7 +147,10 @@ export function createPlanService(cache){
         }
         // 2) the line [main parts …, far places in tour order] is cut into n pieces that follow each other (every worker gets
         //    neighbouring places, no crossing), as even in hours as possible (minimise the longest); the ride to a place counts
-        const ride = (a, b) => bike ? 5 + segLen(a, b) * 1.3 / 250 : TRAVEL_MIN;
+        // ride time: bus 30 min per trip; bike / car: road length (matrix) at their speed + 5 min
+        let mat = null; const mPts = [start, ...far.map(x => ent(x))], idx = p => mPts.findIndex(q => Math.abs(q[0] - p[0]) < 1e-7 && Math.abs(q[1] - p[1]) < 1e-7);
+        if(travel !== 'bus' && far.length){ stage('loadingSide'); mat = await roadMatrix(mPts, travel === 'car' ? 'auto' : 'bicycle'); if(stale()) return { skipped:true }; }
+        const ride = (a, b) => { if(travel === 'bus') return TRAVEL_MIN; const i = idx(a), j = idx(b), road = mat && i >= 0 && j >= 0 && mat[i][j] != null ? mat[i][j] : segLen(a, b) * 1.3; return 5 + road / SPEED[travel]; };
         const vill = []; { let prev = start; tour.forEach(x => { vill.push({ min:x.min + ride(prev, ent(x)), far:x }); prev = ext(x); }); }
         const cut = (items, n) => {   // contiguous partition minimising the largest sum (small n · m², fine here)
           const m = items.length, P = [0]; items.forEach(x => P.push(P[P.length - 1] + x.min));
@@ -154,7 +169,8 @@ export function createPlanService(cache){
         for(let k = n; k <= 3 * n; k++){ const mx = Math.max(...share(Array.from({ length:k }, () => ({ minutes:M / k }))).map(b => b.min)); if(mx < bestMax - 15){ bestMax = mx; bestK = k; } }
         if(bestK !== n){ stage('calculating'); const r2 = await this.planMain({ start, flyers:mainFlyers, n:bestK, days:1, hours, must, zone }, stage, stale); if(!r2 || r2.skipped) return r2; res = r2; }
         const bins = share(res.plan.routes).filter(b => b.mains.length || b.vill.length).map(b => ({ ...b, items:b.vill }));
-        res.plan.routes = bins.map((b, k) => ({ idx:k, ...buildLine([...b.mains.map(r => ({ r, name:null })), ...b.vill.map(x => ({ r:x.far.r, name:x.far.c.name }))], hours, bike) }));
+        res.plan.routes = bins.map((b, k) => ({ idx:k, ...buildLine([...b.mains.map(r => ({ r, name:null })), ...b.vill.map(x => ({ r:x.far.r, name:x.far.c.name }))], hours, ride) }));
+        res.plan.road_km = mat ? true : false;
         res.plan.mailboxes += far.reduce((s, x) => s + x.mb, 0);
         res.plan.side_failed = failed;
         res.plan.side_info = far.map(x => ({ name:x.c.name, mailboxes:x.mb, worker:bins.findIndex(b => b.items.some(i => i.far === x)) }));

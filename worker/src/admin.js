@@ -698,7 +698,7 @@ function viewCreate(edit){
   if(tkE && Array.isArray(tkE.work_area) && tkE.work_area.length > 2) d.zone = tkE.work_area;
   if(tkE) Object.assign(d, { flyers:tkE.flyers || 5000, hours:+tkE.work_hours || 7, quota:tkE.quota_m30 || 1500, days:tkE.work_days || 2, n:Math.max(1, edit.plans.length), nAuto:false });
   d.side = tkE && Array.isArray(tkE.side_towns) ? tkE.side_towns : [];
-  d.bike = !!(tkE && tkE.bike);   // bike allowed between the places of the order (e.g. villages)   // far places of this order (own start, own day, reached by bus / train)
+  d.travel = (tkE && tkE.travel) || (tkE && tkE.bike ? 'bike' : 'bus'); d.bike = d.travel !== 'bus';   // how the places of the order are reached   // far places of this order (own start, own day, reached by bus / train)
   // the start address (also typed in step 1 under "Hauptstadt"); the main town comes from it
   const pickAddr = (c, q) => { saved = keep(); d.place = c; d.mainCity = null; const txt = c.name + (c.sub ? ', ' + c.sub : ''); if(q) q.value = txt; const top = $('#cSearch'); if(top) top.value = txt; setStart(c.lat, c.lng); };
   const mainCity = () => (d.place && (d.place.city || (d.place.kind === 'city' || d.place.kind === 'town' || d.place.kind === 'village' ? d.place.name : ''))) || d.mainCity || (tkE && tkE.city_name) || '';
@@ -855,7 +855,7 @@ function viewCreate(edit){
     if(!d.loaded){ renderSheet(); return; }
     const tok = ++d.token, pr = progress(tok, false);
     let res = null;
-    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, quota:Math.max(200, Math.round(+saved.quota || 1500)), bike:d.bike, must:d.must, zone:d.zone, side:d.side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers, zone:x.p && x.p.length > 2 ? x.p : null })) }, pr.stage); }
+    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, quota:Math.max(200, Math.round(+saved.quota || 1500)), bike:d.bike, travel:d.travel, must:d.must, zone:d.zone, side:d.side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers, zone:x.p && x.p.length > 2 ? x.p : null })) }, pr.stage); }
     catch(e){ pr.stop(); if(tok !== d.token || !alive()) return; d.err = errText2(e); d.busy = false; toast(t('streetsFail', { e:d.err })); renderSheet(); return; }
     pr.stop();
     if(tok !== d.token || !alive() || !res || res.skipped) return;
@@ -875,14 +875,14 @@ function viewCreate(edit){
   // values typed in any step survive re-renders and step changes (only fields that are on screen are read)
   function saveDraft(){
     if(tkE || !d.start) return;
-    try{ localStorage.setItem(DRAFT_KEY, JSON.stringify({ at:Date.now(), saved, d:{ start:d.start, place:d.place, must:d.must, side:d.side, flyers:d.flyers, n:d.n, hours:d.hours, days:d.days, bike:d.bike, zone:d.zone, mainCity:d.mainCity } })); }catch{}
+    try{ localStorage.setItem(DRAFT_KEY, JSON.stringify({ at:Date.now(), saved, d:{ start:d.start, place:d.place, must:d.must, side:d.side, flyers:d.flyers, n:d.n, hours:d.hours, days:d.days, bike:d.bike, travel:d.travel, zone:d.zone, mainCity:d.mainCity } })); }catch{}
   }
   async function restoreDraft(){
     const x = readDraft(); if(!x || !x.d || !x.d.start) return;
     const name = (x.saved && x.saved.title) || (x.d.place && x.d.place.name) || '—';
     if(!await confirmBox(t('draftQ'), t('draftText', { name }), t('draftYes'))){ clearDraft(); return; }
     if(!alive()) return;
-    Object.assign(d, x.d); saved = { ...saved, ...(x.saved || {}) };
+    Object.assign(d, x.d); if(!x.d.travel) d.travel = x.d.bike ? 'bike' : 'bus'; d.bike = d.travel !== 'bus'; saved = { ...saved, ...(x.saved || {}) };
     const qi = $('#cSearch'); if(qi && d.place) qi.value = d.place.name + (d.place.sub ? ', ' + d.place.sub : '');
     drawMust(); setStart(d.start.lat, d.start.lng);
   }
@@ -932,7 +932,7 @@ function viewCreate(edit){
       ${d.side.length ? `<div class="chips" style="margin:0 0 8px">${d.side.map((x, k) => `<span class="chip">${esc(x.name)} · ${esc(t('sideOwn', { km:String(x.km).replace('.', ','), n:fmtN(x.flyers) }))}<button class="link" data-srm="${k}" aria-label="${esc(t('del'))}">✕</button></span>`).join('')}</div><p class="small muted" style="margin:-4px 0 8px">${esc(t('sideOwnHint'))}</p>` : ''}
       ${d.start ? sfTown('cTown1').html + `<button class="btn ghost small" id="cMustAdd" style="margin-top:8px">${ICONS.edit}${esc(t('drawOwn'))}</button>` : `<p class="small muted">${esc(t('sideNeedStart'))}</p>`}
       <label class="f" for="cQuota">${esc(t('quota'))}</label><input class="in" type="number" id="cQuota" min="200" step="100" value="${esc(saved.quota)}"><p class="small muted" style="margin:4px 0 0">${esc(t('quotaHours'))}</p>
-      <label class="check" style="margin-top:12px"><input type="checkbox" id="cBike" ${d.bike ? 'checked' : ''}><span>${esc(t('bikeOk'))}</span></label><p class="small muted" style="margin:2px 0 0">${esc(t('bikeHint'))}</p>`;
+      <label class="f" for="cTravel">${esc(t('travelLbl'))}</label><select class="in" id="cTravel">${['bus', 'bike', 'car'].map(v => `<option value="${v}" ${d.travel === v ? 'selected' : ''}>${esc(t('travel_' + v))}</option>`).join('')}</select><p class="small muted" style="margin:4px 0 0">${esc(t('travelHint'))}</p>`;
     else if(d.step === 2) body = `
       <div class="steppers">
         <div><label class="f">${esc(t('flyersCount'))}</label><div class="stepper"><button data-s="f:-500" aria-label="−500">−</button><input id="cFly" type="number" inputmode="numeric" min="100" step="100" value="${d.flyers}"><button data-s="f:500" aria-label="+500">+</button></div></div>
@@ -992,7 +992,7 @@ function viewCreate(edit){
     });
     if($('#cFly')) $('#cFly').onchange = () => { saved = keep(); d.flyers = Math.max(100, Math.round(num('#cFly', d.flyers))); d.nAuto = true; recompute(); };
     if($('#cQuota')) $('#cQuota').onchange = () => { saved = keep(); recompute(); };
-    if($('#cBike')) $('#cBike').onchange = e => { saved = keep(); d.bike = e.target.checked; recompute(); };
+    if($('#cTravel')) $('#cTravel').onchange = e => { saved = keep(); d.travel = e.target.value; d.bike = d.travel !== 'bus'; recompute(); };
     if($('#cHours')) $('#cHours').onchange = () => { saved = keep(); d.hours = Math.max(1, Math.min(12, num('#cHours', 7))); recompute(); };
     const sg = $('#cSug'); if(sg) sg.onclick = () => { saved = keep(); d.n = d.sug; d.assign = {}; recompute(); };
     const red = $('#cReduce'); if(red) red.onclick = () => { saved = keep(); d.flyers = Math.max(100, cap.suggestedFlyers); d.nAuto = false; recompute(); };
@@ -1020,7 +1020,7 @@ function viewCreate(edit){
       const pl = d.plan, quota = Math.max(200, Math.round(+saved.quota || 1500)), date = saved.date || null;
       const cityN = mainCity() || null;
       const row = { title:withCity(title, cityN), city_name:cityN, district:(d.place && d.place.district) || (tkE && tkE.district) || null, start_lat:d.start.lat, start_lng:d.start.lng,
-        walk_minutes:15, zone_polygon:pl.zone, must_areas:d.must.length ? d.must.map(a => ({ p:a.p, n:a.n, name:a.name || undefined, c:a.c })) : null, side_towns:d.side.length ? d.side : null, bike:!!d.bike, work_area:d.zone || null, work_date:date, notes:(saved.notes || '').trim() || null, street_m:d.streetM || null,
+        walk_minutes:15, zone_polygon:pl.zone, must_areas:d.must.length ? d.must.map(a => ({ p:a.p, n:a.n, name:a.name || undefined, c:a.c })) : null, side_towns:d.side.length ? d.side : null, bike:d.travel !== 'bus', travel:d.travel, work_area:d.zone || null, work_date:date, notes:(saved.notes || '').trim() || null, street_m:d.streetM || null,
         flyers:d.flyers, quota_m30:quota, work_days:d.days, work_hours:d.hours, est_mailboxes:pl.mailboxes, route_m:pl.routes.reduce((s, r) => s + r.length_m, 0) };
       let tk;
       if(tkE){
@@ -1061,7 +1061,7 @@ function editTaskSheet(tk, plans, routes){
     <label class="f">${esc(t('title'))}</label><input class="in" id="eTitle" value="${esc(tk.title)}">
     <div class="steppers"><div><label class="f">${esc(t('startDate'))}</label><input class="in" type="date" id="eDate" value="${esc(day)}"></div><div><label class="f">${esc(t('hoursDay'))}</label><input class="in" type="number" id="eHours" min="1" max="12" step="0.5" value="${+tk.work_hours || 7}"></div></div>
     <label class="f">${esc(t('quota'))}</label><input class="in" type="number" id="eQuota" min="200" step="100" value="${tk.quota_m30 || 1500}">
-    <label class="check" style="margin-top:12px"><input type="checkbox" id="eBike" ${tk.bike ? 'checked' : ''}><span>${esc(t('bikeOk'))}</span></label>
+    <label class="f" for="eTravel">${esc(t('travelLbl'))}</label><select class="in" id="eTravel">${['bus', 'bike', 'car'].map(v => `<option value="${v}" ${(tk.travel || (tk.bike ? 'bike' : 'bus')) === v ? 'selected' : ''}>${esc(t('travel_' + v))}</option>`).join('')}</select>
     <label class="f">${esc(t('note'))}</label><textarea class="in" id="eNotes">${esc(tk.notes || '')}</textarea>
     <button class="btn primary" id="eSave" style="margin-top:12px">${esc(t('save'))}</button>
     ${routes.length ? `<p class="small muted">${esc(t('editNoReplan'))}</p>` : `<button class="btn ghost" id="eReplan">${esc(t('replan'))}</button>`}
@@ -1069,7 +1069,7 @@ function editTaskSheet(tk, plans, routes){
   mo.querySelector('#eClose').onclick = () => mo.remove();
   mo.querySelector('#eSave').onclick = async () => {
     const title = mo.querySelector('#eTitle').value.trim(); if(!title){ mo.querySelector('#eErr').textContent = t('needTitle'); return; }
-    const { error } = await sb.from('tasks').update({ title:withCity(title, tk.city_name), work_date:mo.querySelector('#eDate').value || null, work_hours:Math.max(1, Math.min(12, parseFloat(mo.querySelector('#eHours').value) || 7)), quota_m30:Math.max(200, Math.round(+mo.querySelector('#eQuota').value || 1500)), notes:mo.querySelector('#eNotes').value.trim() || null, bike:mo.querySelector('#eBike').checked }).eq('id', tk.id);
+    const { error } = await sb.from('tasks').update({ title:withCity(title, tk.city_name), work_date:mo.querySelector('#eDate').value || null, work_hours:Math.max(1, Math.min(12, parseFloat(mo.querySelector('#eHours').value) || 7)), quota_m30:Math.max(200, Math.round(+mo.querySelector('#eQuota').value || 1500)), notes:mo.querySelector('#eNotes').value.trim() || null, bike:mo.querySelector('#eTravel').value !== 'bus', travel:mo.querySelector('#eTravel').value }).eq('id', tk.id);
     if(error){ mo.querySelector('#eErr').textContent = error.message; return; }
     // new quota → the hours of the routes follow (route length ÷ quota × 30 min), no new planning needed
     const q = Math.max(200, Math.round(+mo.querySelector('#eQuota').value || 1500));
@@ -1119,7 +1119,7 @@ async function viewTask(id){
         ${tk.flyers ? `<div><span>${esc(t('flyers'))}</span><b>${esc(fmtN(tk.flyers))} · ${esc(t('mbApprox', { n:fmtN(tk.est_mailboxes || 0) }))}</b></div>` : ''}
         ${tk.route_m ? `<div><span>${esc(t('dist2'))}</span><b>${esc(fmtDist(tk.route_m))}</b></div>` : ''}
         ${tk.quota_m30 ? `<div><span>${esc(t('quotaInfo'))}</span><b>${fmtN(tk.quota_m30)} m / 30 ${esc(t('min'))}</b></div>` : ''}
-        ${tk.bike ? `<div><span>${esc(t('bikeLbl'))}</span><b>${esc(t('yes'))}</b></div>` : ''}
+        ${(tk.travel && tk.travel !== 'bus') || tk.bike ? `<div><span>${esc(t('travelLbl'))}</span><b>${esc(t('travel_' + (tk.travel || 'bike')))}</b></div>` : ''}
         ${(tk.side_towns || []).length ? `<div><span>${esc(t('sideTitle'))}</span><b>${esc(tk.side_towns.map(x => x.name + ' (' + fmtN(x.flyers) + ')').join(', '))}</b></div>` : ''}
         ${(tk.must_areas || []).length ? `<div><span>${esc(t('mustTitle'))}</span><b>${esc(tk.must_areas.map((a, k) => mName(mArea(a), k) + (mArea(a).n ? ' (' + fmtN(mArea(a).n) + ')' : '')).join(', '))}</b></div>` : ''}
         <div><span>${esc(t('walkedLbl'))}</span><b>${esc(fmtDist(walked))}</b></div>

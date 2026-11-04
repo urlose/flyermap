@@ -174,3 +174,5 @@ Object.assign(T.de, { draftQ:'Entwurf fortsetzen?', draftText:'Es gibt einen nic
 Object.assign(T.ru, { draftQ:'Продолжить черновик?', draftText:'Есть несохранённый заказ «{name}». Продолжить с того места?', draftYes:'Продолжить' });
 Object.assign(T.de, { tripsBike:'Radwege', tripsBus:'Bus/Bahn-Fahrten' });
 Object.assign(T.ru, { tripsBike:'Велопереезды', tripsBus:'Переезды на автобусе' });
+Object.assign(T.de, { travelLbl:'Zwischen den Orten', travel_bus:'Bus / Bahn (30 Min. pro Fahrt)', travel_bike:'Fahrrad (≈ 15 km/h)', travel_car:'Auto (≈ 40 km/h)', travelHint:'So werden die Fahrten zwischen Hauptstadt und Nebenstädten gerechnet (echte Straßenlänge, + 5 Min. pro Fahrt). Verteilt wird zu Fuß.', byCar:'Mit dem Auto (Google Maps)' });
+Object.assign(T.ru, { travelLbl:'Между местами', travel_bus:'Автобус / поезд (30 мин на поездку)', travel_bike:'Велосипед (≈ 15 км/ч)', travel_car:'Машина (≈ 40 км/ч)', travelHint:'Так считаются переезды между основным городом и доп. городами (реальная длина дорог, + 5 мин на поездку). Раздают пешком.', byCar:'На машине (Google Maps)' });

@@ -173,3 +173,4 @@ Object.assign(T.en, { bikeOk:'Drive between the places (bike, car or bus)', bike
 T.en.sideFailed = 'No streets with mailboxes were found inside the border of these places, they are not in the route: {list}. Please remove the place and draw it on the map yourself.';
 Object.assign(T.en, { draftQ:'Continue the draft?', draftText:'There is an unsaved order “{name}”. Continue where you stopped?', draftYes:'Continue' });
 Object.assign(T.en, { tripsBike:'Bike trips', tripsBus:'Bus / train trips' });
+Object.assign(T.en, { travelLbl:'Between the places', travel_bus:'Bus / train (30 min per trip)', travel_bike:'Bike (≈ 15 km/h)', travel_car:'Car (≈ 40 km/h)', travelHint:'This is how the trips between the main town and the other towns are counted (real road length, + 5 min per trip). Distributing is on foot.', byCar:'By car (Google Maps)' });
