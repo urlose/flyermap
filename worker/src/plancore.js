@@ -103,7 +103,9 @@ export function createPlanService(cache){
         const far = [];
         for(const c of side){
           stage('loadingSide'); const g = await sideGraph(c, stage, stale); if(stale()) return { skipped:true };
-          const p = Planner.planFlyers(g, [c.lat, c.lng], c.flyers, 1, { days:1, hoursPerDay:hours, zone:c.zone && c.zone.length > 2 ? c.zone : null });   // inside its borders (named place or drawn)
+          // begin on the side towards the main town where there are enough mailboxes (not in the middle of the place)
+          const z = c.zone && c.zone.length > 2 ? c.zone : null, st = Planner.denseEntry(g, start, z, Math.min(300, Math.max(100, c.flyers * 0.2))) || [c.lat, c.lng];
+          const p = Planner.planFlyers(g, st, c.flyers, 1, { days:1, hoursPerDay:hours, zone:z });   // inside its borders (named place or drawn)
           const { part, ...r } = p.routes[0]; far.push({ c, r, min:r.minutes, mb:p.mailboxes });
         }
         const mainFlyers = Math.max(100, flyers - side.reduce((s, c) => s + c.flyers, 0));

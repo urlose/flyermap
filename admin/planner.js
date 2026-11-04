@@ -308,6 +308,21 @@
     }
     return Infinity;
   }
+  // where to begin in a far place: the street point closest to `from` (the main town) that has enough mailboxes around it
+  // (about 300 m); if no spot is dense enough, the densest one. zone: borders of the place (optional)
+  function denseEntry(g, from, zone, need){
+    const cy = 0.0027, cx = cy / Math.max(0.2, Math.cos((from[0] || 51) * RAD)), key = (i, j) => i + ':' + j, cells = new Map();
+    for(const e of g.edges){ if(!(e.mb > 0)) continue; const p = g.pts[e.a]; if(zone && zone.length > 2 && !inPoly(p, zone)) continue; const k = key(Math.floor(p[0] / cy), Math.floor(p[1] / cx)); cells.set(k, (cells.get(k) || 0) + e.mb); }
+    const around = p => { const i = Math.floor(p[0] / cy), j = Math.floor(p[1] / cx); let s = 0; for(let a = -1; a <= 1; a++) for(let b = -1; b <= 1; b++) s += cells.get(key(i + a, j + b)) || 0; return s; };
+    let best = null, dense = null;
+    for(let v = 0; v < g.pts.length; v++){
+      if(!g.adj[v] || !g.adj[v].length) continue; const p = g.pts[v]; if(zone && zone.length > 2 && !inPoly(p, zone)) continue;
+      const mb = around(p), dd = dist(p, from);
+      if(mb >= need && (!best || dd < best.dd)) best = { p, dd };
+      if(!dense || mb > dense.mb) dense = { p, mb };
+    }
+    return (best || dense || {}).p || null;
+  }
   function pathFrom(tree, target){ const out = []; let x = target; while(tree.pe[x] !== -1){ out.push(tree.pe[x]); x = tree.pv[x]; } return out.reverse(); }
 
   /* ---------- 3. split ---------- */
@@ -1158,6 +1173,6 @@
     return partition(g, start, n).map((part, k) => ({ idx:k, ...planPart(g, part, start) }));
   }
 
-  const api = { setPace, pathRuns, emptyGap, tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, makeBoxCounter, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
+  const api = { setPace, denseEntry, pathRuns, emptyGap, tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, makeBoxCounter, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
   if(typeof module !== 'undefined' && module.exports) module.exports = api; else root.Planner = api;
 })(typeof window !== 'undefined' ? window : globalThis);
