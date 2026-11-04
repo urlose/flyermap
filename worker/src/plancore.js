@@ -121,21 +121,40 @@ export function createPlanService(cache){
         let res = await this.planMain({ start, flyers:mainFlyers, n, days:1, hours, must, zone }, stage, stale);
         if(!res || res.skipped) return res;
         const M = res.plan.routes.reduce((s, r) => s + r.minutes, 0);
-        let bestK = n, bestMax = Infinity;
-        for(let k = n; k <= 3 * n; k++){
-          const mx = Math.max(...lpt([...far.map(x => ({ min:x.min, isFar:true })), ...Array.from({ length:k }, () => ({ min:M / k }))], n).map(b => b.min));
-          if(mx < bestMax - 15){ bestMax = mx; bestK = k; }   // more parts only when it saves a quarter hour or more
+        // 1) one tour through all far places from the start (like a navigation app): nearest next, then untangled (2-opt)
+        const ent = x => x.r.path[0], ext = x => x.r.path[x.r.path.length - 1];
+        let tour = [], left = [...far], at = start;
+        while(left.length){ let bi = 0; left.forEach((x, i) => { if(segLen(at, ent(x)) < segLen(at, ent(left[bi]))) bi = i; }); const x = left.splice(bi, 1)[0]; tour.push(x); at = ext(x); }
+        const tourLen = tr => tr.reduce((s, x, i) => s + segLen(i ? ext(tr[i - 1]) : start, ent(x)), 0);
+        for(let improved = true, guard = 0; improved && guard < 50; guard++){
+          improved = false;
+          for(let i = 0; i < tour.length - 1; i++) for(let j = i + 1; j < tour.length; j++){
+            const cand = [...tour.slice(0, i), ...tour.slice(i, j + 1).reverse(), ...tour.slice(j + 1)];
+            if(tourLen(cand) < tourLen(tour) - 1){ tour = cand; improved = true; }
+          }
         }
+        // 2) the line [main parts …, far places in tour order] is cut into n pieces that follow each other (every worker gets
+        //    neighbouring places, no crossing), as even in hours as possible (minimise the longest); the ride to a place counts
+        const ride = (a, b) => bike ? 5 + segLen(a, b) * 1.3 / 250 : TRAVEL_MIN;
+        const vill = []; { let prev = start; tour.forEach(x => { vill.push({ min:x.min + ride(prev, ent(x)), far:x }); prev = ext(x); }); }
+        const cut = (items, n) => {   // contiguous partition minimising the largest sum (small n · m², fine here)
+          const m = items.length, P = [0]; items.forEach(x => P.push(P[P.length - 1] + x.min));
+          const k = Math.min(n, m); if(!k) return Array.from({ length:n }, () => []);
+          const dp = Array.from({ length:k + 1 }, () => new Array(m + 1).fill(Infinity)), at2 = Array.from({ length:k + 1 }, () => new Array(m + 1).fill(0));
+          dp[0][0] = 0;
+          for(let j = 1; j <= k; j++) for(let i = j; i <= m; i++) for(let p = j - 1; p < i; p++){ const v = Math.max(dp[j - 1][p], P[i] - P[p]); if(v < dp[j][i]){ dp[j][i] = v; at2[j][i] = p; } }
+          const parts = []; let i = m; for(let j = k; j >= 1; j--){ const p = at2[j][i]; parts.unshift(items.slice(p, i)); i = p; }
+          while(parts.length < n) parts.push([]);
+          return parts;
+        };
+        // villages: neighbouring ones together; the main town is then shared out so that everyone gets about the same hours
+        const vparts = cut(vill, n);
+        const share = mains => { const bins = vparts.map(p => ({ min:p.reduce((s, x) => s + x.min, 0), mains:[], vill:p })); [...mains].sort((x, y) => y.minutes - x.minutes).forEach(r => { const b = bins.reduce((m, x) => x.min < m.min ? x : m, bins[0]); b.mains.push(r); b.min += r.minutes; }); return bins; };
+        let bestK = n, bestMax = Infinity;
+        for(let k = n; k <= 3 * n; k++){ const mx = Math.max(...share(Array.from({ length:k }, () => ({ minutes:M / k }))).map(b => b.min)); if(mx < bestMax - 15){ bestMax = mx; bestK = k; } }
         if(bestK !== n){ stage('calculating'); const r2 = await this.planMain({ start, flyers:mainFlyers, n:bestK, days:1, hours, must, zone }, stage, stale); if(!r2 || r2.skipped) return r2; res = r2; }
-        const items = [...far.map(x => ({ min:x.min, far:x, isFar:true })), ...res.plan.routes.map(r => ({ min:r.minutes, main:r }))];
-        const bins = lpt(items, n);
-        res.plan.routes = bins.map((b, k) => {
-          // far places of one worker in a sensible order: always the nearest next one (villages one after another, no zig-zag)
-          const fars = b.items.filter(x => x.far).map(x => x.far), ordered = []; let at = start;
-          while(fars.length){ let bi = 0; fars.forEach((x, i) => { if(segLen(at, x.r.path[0]) < segLen(at, fars[bi].r.path[0])) bi = i; }); const x = fars.splice(bi, 1)[0]; ordered.push(x); at = x.r.path[x.r.path.length - 1]; }
-          const pieces = [...b.items.filter(x => x.main).map(x => ({ r:x.main, name:null })), ...ordered.map(x => ({ r:x.r, name:x.c.name }))];
-          return { idx:k, ...buildLine(pieces, hours, bike) };
-        });
+        const bins = share(res.plan.routes).filter(b => b.mains.length || b.vill.length).map(b => ({ ...b, items:b.vill }));
+        res.plan.routes = bins.map((b, k) => ({ idx:k, ...buildLine([...b.mains.map(r => ({ r, name:null })), ...b.vill.map(x => ({ r:x.far.r, name:x.far.c.name }))], hours, bike) }));
         res.plan.mailboxes += far.reduce((s, x) => s + x.mb, 0);
         res.plan.side_failed = failed;
         res.plan.side_info = far.map(x => ({ name:x.c.name, mailboxes:x.mb, worker:bins.findIndex(b => b.items.some(i => i.far === x)) }));
