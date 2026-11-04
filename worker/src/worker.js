@@ -341,7 +341,7 @@ function drawTaskBase(m, task, dayIdx, dim){
 
 function viewTaskDetail(task){
   const me = W.me || {}, plan = task.plan, hrs = task.work_hours || 7;
-  const need = plan ? Math.max(1, Math.ceil((plan.minutes || 0) / 60 / hrs)) : 1;
+  const need = plan ? (plan.days && plan.days.length > 1 ? plan.days.length : Math.max(1, Math.ceil((plan.minutes || 0) / 60 / hrs))) : 1;   // the planned days decide (7,3 h days must not ask for a third date)
   const today = new Date().toISOString().slice(0, 10), addDays = (d, n) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
   const first = (task.work_date && String(task.work_date).slice(0, 10) >= today) ? String(task.work_date).slice(0, 10) : addDays(today, 1);
   const st = plan ? plan.status : null;
@@ -750,7 +750,7 @@ function viewProfile(){
     let ph = null; if($('#pPhone')){ ph = deMobile($('#pPhone').value); if(!ph){ $('#pErr').textContent = t('badPhone'); return; } }
     if(!cp.get().length){ $('#pErr').textContent = t('e_city_required'); return; }
     $('#pSave').disabled = true; $('#pSave').classList.add('loading'); $('#pErr').textContent = '';
-    try{ if(ph && ph !== (W.me && W.me.phone)) await rpc('set_worker_phone', { p_token:W.token, p_phone:ph }); await rpc('update_worker_profile', { p_token:W.token, p_name:$('#pName').value, p_cities:cp.get() }); await loadMe(); toast(t('saved')); }
+    try{ if(ph && ph !== (W.me && W.me.phone)) await rpc('set_worker_phone', { p_token:W.token, p_phone:ph }); await rpc('update_worker_profile', { p_token:W.token, p_name:$('#pName').value, p_cities:cp.get() }); await loadMe(); toast(t('saved')); viewProfile(); return; }
     catch(e){ $('#pErr').textContent = errText(e); }
     $('#pSave').disabled = false; $('#pSave').classList.remove('loading');
   };
