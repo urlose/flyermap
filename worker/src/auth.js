@@ -10,7 +10,7 @@ import { AVV_VERSION, setLegalFirm } from './legal.js';
 
 // invitation link of a firm (…/app/?neu=CODE): the worker creates the own account right away (no SMS); phone and towns follow in the profile
 export async function viewJoinLink(code){
-  let firm = null; try{ const { data } = await sb.rpc('company_by_code', { p_code:code }); firm = data && data.name; }catch{}
+  let firm = null; try{ const { data } = await sb.rpc('firm_by_link', { p_code:code }); firm = data || null; }catch{}
   plain(`<div class="login"><h1 class="hero">${esc(t('joinTitle'))}</h1>
     <p class="muted">${esc(firm ? t('joinFirm', { name:firm }) : t('joinCodeBad'))}</p>
     ${firm ? `<label class="f" for="jName">${esc(t('name'))}</label><input class="in" id="jName" autocomplete="name">
