@@ -19,17 +19,36 @@ const tasks = () => (W.me && W.me.tasks) || [];
 const openRoutes = () => (W.me && W.me.open) || [];   // routes of the company nobody has yet: can be taken
 
 /* ================= sync ================= */
+// this phone's own id: a session belongs to one phone, another phone of the same account takes it over only on purpose
+async function deviceId(){ let d = await store.get('deviceId'); if(!d){ d = (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)); await store.set('deviceId', d); } return d; }
+async function clearRoute(){ W.route = null; W.queue = []; W.track = []; W.tracker = null; W.counter = null; W.prev = null; await store.del('route'); await store.del('queue'); await store.del('track'); }
+// the session goes on on another phone: this one stops (nothing is counted twice)
+async function routeTaken(){
+  await clearRoute(); stopDemoWalk(); keepAwake(false); await stopWatching(); await loadMe(); workerTab('tasks');
+  const mo = modal(`<h2>${esc(t('takenT'))}</h2><p>${esc(t('takenQ'))}</p><button class="btn primary" data-n>${esc(t('ok'))}</button>`); mo.querySelector('[data-n]').onclick = () => mo.remove();
+}
+// the server paused a session that did not move for 45 minutes: this phone shows the pause, "Weiter" goes on
+async function routeAutoPaused(at){
+  const r = W.route; if(!r) return;
+  W.queue = []; if(r.paused){ await saveRoute(); return; }   // paused here too: the pause / resume steps go through
+  r.paused = true; r.pausedAt = Math.min(Date.now(), at || Date.now());
+  await stopWatching(); keepAwake(false); await saveRoute();
+  if(UI.tab === 'map') viewTracking();
+  toast(t('autoPaused', { t:new Date(r.pausedAt).toLocaleTimeString(I.lang, { hour:'2-digit', minute:'2-digit' }) }));
+}
 async function saveRoute(){ await store.set('route', W.route); await store.set('queue', W.queue); await store.set('track', W.track.slice(-6000)); }
 export async function flush(){
   if(W.busy || !W.token || !W.route) return;
-  W.busy = true;
+  W.busy = true; let after = null;
   try{
     const r = W.route;
-    if(!r.id){ r.id = await rpc('start_route', { p_token:W.token, p_task_id:r.taskId, p_started_at:new Date(r.startedAt).toISOString(), p_plan_id:r.planId || null }); await saveRoute(); }
+    if(!r.id){ r.id = await rpc('start_route', { p_token:W.token, p_task_id:r.taskId, p_started_at:new Date(r.startedAt).toISOString(), p_plan_id:r.planId || null, p_device:await deviceId() }); await saveRoute(); }
     const pushUpTo = async limit => {
       while(W.queue.length && (limit == null || Date.parse(W.queue[0].t) < limit)){
         const batch = []; for(const p of W.queue){ if(batch.length >= 300 || (limit != null && Date.parse(p.t) >= limit)) break; batch.push(p); }
-        await rpc('push_points', { p_token:W.token, p_route_id:r.id, p_points:batch });
+        const res = await rpc('push_points2', { p_token:W.token, p_route_id:r.id, p_points:batch });
+        if(res && res.state === 'taken'){ after = () => routeTaken(); throw 'stop'; }
+        if(res && res.state === 'paused'){ after = () => routeAutoPaused(Date.parse(res.paused_at)); throw 'stop'; }
         W.queue.splice(0, batch.length); await store.set('queue', W.queue);
       }
     };
@@ -46,8 +65,10 @@ export async function flush(){
     }
     W.flushFailed = false;
   }catch(e){
-    if(e.message === 'invalid_token') await forceLogout(t('e_invalid_token')); else W.flushFailed = true;
+    if(e === 'stop'){ W.flushFailed = false; }
+    else if(e.message === 'invalid_token') await forceLogout(t('e_invalid_token')); else W.flushFailed = true;
   }finally{ W.busy = false; updateSync(); }
+  if(after) await after();
 }
 setInterval(flush, 8000);
 
@@ -187,6 +208,9 @@ export async function beginRoute(task){
   // start at the start point, or right where an open part of an unfinished day is (no walk back to the start)
   let prev = null; if(plan && plan.id){ try{ prev = await rpc('plan_progress', { p_token:W.token, p_plan_id:plan.id }); }catch{} }
   const st = await startHereOrAsk(task, plan, prev); if(!st.ok) return;
+  // already working on another phone with this account? only on purpose (that phone then stops)
+  try{ const el = await rpc('route_elsewhere', { p_token:W.token, p_device:await deviceId() });
+    if(el && el.busy && !await confirmBox(t('otherPhoneT'), t('otherPhoneQ', { t:new Date(el.since).toLocaleTimeString(I.lang, { hour:'2-digit', minute:'2-digit' }) }), t('otherPhoneYes'), true)) return; }catch{}
   W.route = { id:null, taskId:task ? task.id : null, planId:plan ? plan.id : null, task:task || null, startedAt:Date.now(), endedAt:null, distance:0, paused:false, pausedAt:null, breakMs:0, ops:[] };
   W.queue = []; W.track = []; W.tracker = null; W.counter = null; W.prev = null;
   await saveRoute();

@@ -1222,7 +1222,7 @@ async function viewTask(id){
     allTracks.forEach(pts => { tr.addTrack(pts); if(ct) ct.visitAll(pts); });   // also streets of this route walked by somebody else
     tr.runs().forEach(run => L.polyline(run, { color:GREEN, weight:6, opacity:.95 }).addTo(doneLayer));
     const pct = tr.pct(); const el = $('#pp' + p.idx); if(el) el.textContent = '· ' + t('done', { p:pct }); const bar = $('#pb' + p.idx); if(bar) bar.style.width = pct + '%';
-    const pf = $('#pf' + p.idx); if(pf && ct) pf.textContent = t('flyersDone', { a:fmtN(ct.count()), b:fmtN(ct.total) });
+    const pf = $('#pf' + p.idx); if(pf && ct) pf.textContent = t('flyersDone', { a:fmtN(ct.count()), b:fmtN(ct.total) }) + (ct.total ? ' · ' + Math.round(ct.count() / ct.total * 100) + ' %' : '');
     if(ct){ flSum += ct.count(); flHas = true; }
   }
   const fr = $('#tFlRow'), fe = $('#tFl');
