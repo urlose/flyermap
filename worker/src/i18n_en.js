@@ -165,3 +165,4 @@ Object.assign(T.en, { sideTowns:'More towns (optional)', sideTownsHint:'Where th
 Object.assign(T.en, { busHint:'By bus / train instead of walking (no mailboxes on the way): {list}' });
 Object.assign(T.en, { joinTitle:'Create account', joinFirm:'You were invited by {name}. Enter your name – phone and towns follow in your profile.', joinGo:'Create account', inviteTitle:'Invitation link for new workers', inviteHint:'Send this link to new workers (e.g. via WhatsApp). Whoever opens it creates their own account in your firm – no SMS. New link: renew the code under “Firm” below.', inviteMsg:'Hi! Here you can create your account for the flyer distribution: {link}' });
 T.en.noPhoneYet = 'Phone number not entered yet';
+Object.assign(T.en, { addrMain:'Start address in the main town', mainCityAuto:'taken from the address', startOnMap:'Start point set on the map.' });

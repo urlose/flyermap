@@ -687,7 +687,10 @@ function viewCreate(edit){
   if(tkE && Array.isArray(tkE.work_area) && tkE.work_area.length > 2) d.zone = tkE.work_area;
   if(tkE) Object.assign(d, { flyers:tkE.flyers || 5000, hours:+tkE.work_hours || 7, quota:tkE.quota_m30 || 1500, days:tkE.work_days || 2, n:Math.max(1, edit.plans.length), nAuto:false });
   d.side = tkE && Array.isArray(tkE.side_towns) ? tkE.side_towns : [];   // far places of this order (own start, own day, reached by bus / train)
-  const sf = searchField('cSearch', t('searchAddr'), (c, q) => { d.place = c; if(q) q.value = c.name + (c.sub ? ', ' + c.sub : ''); setStart(c.lat, c.lng); }, { near:() => d.start ? [d.start.lat, d.start.lng] : null });
+  // the start address (also typed in step 1 under "Hauptstadt"); the main town comes from it
+  const pickAddr = (c, q) => { saved = keep(); d.place = c; d.mainCity = null; const txt = c.name + (c.sub ? ', ' + c.sub : ''); if(q) q.value = txt; const top = $('#cSearch'); if(top) top.value = txt; setStart(c.lat, c.lng); };
+  const mainCity = () => (d.place && (d.place.city || (d.place.kind === 'city' || d.place.kind === 'town' || d.place.kind === 'village' ? d.place.name : ''))) || d.mainCity || (tkE && tkE.city_name) || '';
+  const sf = searchField('cSearch', t('searchAddr'), pickAddr, { near:() => d.start ? [d.start.lat, d.start.lng] : null });
   shell('tasks', `<div id="fullMap" class="fullmap"></div>
     <div class="map-top"><button class="icon-btn" id="cBack" aria-label="${esc(t('back'))}">${ICONS.back}</button><div class="grow">${sf.html}</div></div>
     <button class="chip pick-btn" id="cPick" hidden></button>
@@ -784,6 +787,7 @@ function viewCreate(edit){
     if(d.start && !d.pick) return;
     d.pick = false; d.place = null; const qi = $('#cSearch'); if(qi) qi.value = '';
     setStart(e.latlng.lat, e.latlng.lng, true);
+    d.mainCity = null; reversePlace(e.latlng.lat, e.latlng.lng).then(x => { if(x && alive()){ d.mainCity = x.split(', ').pop(); renderSheet(); } }).catch(() => {});
   });
   const alive = () => !!document.getElementById('cSheet');   // false once the admin left this screen
   const sheet = html => { const el = $('#cSheet'); if(el) el.innerHTML = html; };
@@ -886,13 +890,14 @@ function viewCreate(edit){
         ${p.mailboxes < d.flyers * 0.95 ? `<p class="small err">${esc(t('areaSmall', { mb:fmtN(p.mailboxes) }))}</p>` : ''}
         <div class="${cap.ok ? 'hint' : 'warnbox'}">${cap.ok ? esc(t('fitsOk', { d:d.days })) : `${esc(t('tooBig', { h:cap.slowest.toFixed(1).replace('.', ','), lim:cap.limit, d:d.days }))} <button class="link" id="cReduce">${esc(t('reduceTo', { f:fmtN(cap.suggestedFlyers) }))}</button> ${esc(t('moreWorkers'))}`}</div>`
       : d.err ? `<p class="small err">${esc(t('streetsFail', { e:d.err }))}</p><button class="btn ghost small" id="cRetry">${ICONS.refresh}${esc(t('retryBtn'))}</button>` : `<p class="small muted" style="margin:10px 0 0">${esc(t('calculating'))}</p>`;
+    let addrSf = null; const sfAddr = () => (addrSf = addrSf || searchField('cAddr', t('searchAddr'), pickAddr, { near:() => d.start ? [d.start.lat, d.start.lng] : null }));
     const towns = {}, sfTown = id => (towns[id] = towns[id] || searchField(id, t('townSearch'), c => addPlaceArea(c), { citiesOnly:true, near:() => d.start ? [d.start.lat, d.start.lng] : null }));
     let body = '';
     if(d.step === 1) body = `
       <label class="f" for="cTitle">${esc(t('title'))}</label><input class="in" id="cTitle" value="${esc(title)}" autocomplete="off">
-      <label class="f">${esc(t('startPoint'))}</label>
-      <div class="note" style="margin:0;display:flex;gap:10px;align-items:flex-start">${ICONS.pin.replace('<svg', '<svg width="20" height="20" style="fill:none;stroke:currentColor;stroke-width:2;flex:none;margin-top:1px"')}<span>${d.start ? esc(d.place ? [d.place.name, d.place.sub].filter(Boolean).join(', ') : d.start.lat.toFixed(5) + ', ' + d.start.lng.toFixed(5)) : esc(t('tapMap'))}</span></div>
-      <label class="f">${esc(t('mainCity'))}</label><div class="note" style="margin:0">${esc((d.place && d.place.city) || (tkE && tkE.city_name) || '—')}</div>
+      <label class="f" for="cAddr">${esc(t('addrMain'))}</label>${sfAddr().html}
+      ${d.start && !d.place ? `<p class="small muted" style="margin:4px 0 0">${esc(t('startOnMap'))}</p>` : ''}
+      <label class="f">${esc(t('mainCity'))}</label><div class="note" style="margin:0">${esc(mainCity() || t('mainCityAuto'))}</div>
       <label class="f">${esc(t('sideTowns'))}</label><p class="small muted" style="margin:-2px 0 6px">${esc(t('sideTownsHint'))}</p>
       ${d.must.length ? `<div class="chips" style="margin:0 0 8px">${d.must.map((a, k) => `<span class="chip"><button class="link" data-med="${k}">${esc(mName(a, k))} · ${esc(a.n ? fmtN(a.n) : t('mustAllShort'))}</button><button class="link" data-mrm="${k}" aria-label="${esc(t('del'))}">✕</button></span>`).join('')}</div>` : ''}
       ${d.side.length ? `<div class="chips" style="margin:0 0 8px">${d.side.map((x, k) => `<span class="chip">${esc(x.name)} · ${esc(t('sideOwn', { km:String(x.km).replace('.', ','), n:fmtN(x.flyers) }))}<button class="link" data-srm="${k}" aria-label="${esc(t('del'))}">✕</button></span>`).join('')}</div><p class="small muted" style="margin:-4px 0 8px">${esc(t('sideOwnHint'))}</p>` : ''}
@@ -962,6 +967,7 @@ function viewCreate(edit){
     if($('#cSave')) $('#cSave').onclick = save;
     if($('#cMustAdd')) $('#cMustAdd').onclick = () => drawMode(true, 'must');
     Object.values(towns).forEach(x => x.bind());
+    if(addrSf){ addrSf.bind(); const ai = $('#cAddr'); if(ai && d.place) ai.value = d.place.name + (d.place.sub ? ', ' + d.place.sub : ''); }
     document.querySelectorAll('[data-srm]').forEach(b => b.onclick = () => { saved = keep(); d.side.splice(+b.dataset.srm, 1); recompute(); });
     if($('#cZoneDraw')) $('#cZoneDraw').onclick = () => { saved = keep(); drawMode(true, 'zone'); };
     if($('#cZoneAuto')) $('#cZoneAuto').onclick = () => { saved = keep(); d.zone = null; drawMust(); recompute(); };
@@ -979,8 +985,8 @@ function viewCreate(edit){
     $('#cSave').disabled = true; $('#cSave').classList.add('loading');
     try{
       const pl = d.plan, quota = Math.max(200, Math.round(+saved.quota || 1500)), date = saved.date || null;
-      const cityN = (d.place && d.place.city) || (tkE && tkE.city_name) || null;
-      const row = { title:withCity(title, cityN), city_name:(d.place && d.place.city) || (tkE && tkE.city_name) || null, district:(d.place && d.place.district) || (tkE && tkE.district) || null, start_lat:d.start.lat, start_lng:d.start.lng,
+      const cityN = mainCity() || null;
+      const row = { title:withCity(title, cityN), city_name:cityN, district:(d.place && d.place.district) || (tkE && tkE.district) || null, start_lat:d.start.lat, start_lng:d.start.lng,
         walk_minutes:15, zone_polygon:pl.zone, must_areas:d.must.length ? d.must.map(a => ({ p:a.p, n:a.n, name:a.name || undefined })) : null, side_towns:d.side.length ? d.side : null, work_area:d.zone || null, work_date:date, notes:(saved.notes || '').trim() || null, street_m:d.streetM || null,
         flyers:d.flyers, quota_m30:quota, work_days:d.days, work_hours:d.hours, est_mailboxes:pl.mailboxes, route_m:pl.routes.reduce((s, r) => s + r.length_m, 0) };
       let tk;

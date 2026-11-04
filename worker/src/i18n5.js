@@ -158,3 +158,5 @@ Object.assign(T.de, { joinTitle:'Konto erstellen', joinFirm:'Du wurdest von {nam
 Object.assign(T.ru, { joinTitle:'Создать аккаунт', joinFirm:'Вас пригласила фирма {name}. Введите имя – номер телефона и города потом впишете в профиле.', joinGo:'Создать аккаунт', inviteTitle:'Ссылка-приглашение для новых работников', inviteHint:'Отправьте эту ссылку новым работникам (например, в WhatsApp). Кто её откроет, сам создаст себе аккаунт в вашей фирме – без SMS. Новая ссылка: внизу в «Фирма» обновить код.', inviteMsg:'Привет! Здесь можно создать аккаунт для раздачи флаеров: {link}' });
 Object.assign(T.de, { noPhoneYet:'Handynummer noch nicht eingetragen' });
 Object.assign(T.ru, { noPhoneYet:'Номер телефона ещё не указан' });
+Object.assign(T.de, { addrMain:'Startadresse in der Hauptstadt', mainCityAuto:'wird aus der Adresse übernommen', startOnMap:'Startpunkt auf der Karte gesetzt.' });
+Object.assign(T.ru, { addrMain:'Адрес старта в основном городе', mainCityAuto:'берётся из адреса', startOnMap:'Точка старта выбрана на карте.' });
