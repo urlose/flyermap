@@ -311,6 +311,7 @@
   // where to begin in a far place: the street point closest to `from` (the main town) that has enough mailboxes around it
   // (about 300 m); if no spot is dense enough, the densest one. zone: borders of the place (optional)
   function denseEntry(g, from, zone, need){
+    if(!g || !g.pts || !g.edges || !g.adj) return null;
     const cy = 0.0027, cx = cy / Math.max(0.2, Math.cos((from[0] || 51) * RAD)), key = (i, j) => i + ':' + j, cells = new Map();
     for(const e of g.edges){ if(!(e.mb > 0)) continue; const p = g.pts[e.a]; if(zone && zone.length > 2 && !inPoly(p, zone)) continue; const k = key(Math.floor(p[0] / cy), Math.floor(p[1] / cx)); cells.set(k, (cells.get(k) || 0) + e.mb); }
     const around = p => { const i = Math.floor(p[0] / cy), j = Math.floor(p[1] / cx); let s = 0; for(let a = -1; a <= 1; a++) for(let b = -1; b <= 1; b++) s += cells.get(key(i + a, j + b)) || 0; return s; };

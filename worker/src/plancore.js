@@ -29,9 +29,14 @@ export function createPlanService(cache){
   // are full – the next day starts where the walker stopped (starting at an open part of the route is allowed).
   const TRAVEL_MIN = 30, EMPTY_GAP = 1000;   // bus ride counted for packing; > 1 km without mailboxes on the way → bus
   const segLen = (a, b) => { const k = Math.cos(a[0] * Math.PI / 180); return 111320 * Math.hypot(b[0] - a[0], (b[1] - a[1]) * k); };
-  const lpt = (items, n) => {   // items: { min } → n bins, largest first into the emptiest bin
-    const bins = Array.from({ length:n }, () => ({ min:0, items:[] }));
-    [...items].sort((x, y) => y.min - x.min).forEach(it => { const b = bins.reduce((m, x) => x.min < m.min ? x : m, bins[0]); b.items.push(it); b.min += it.min; });
+  // items: { min, far? } → n bins. Far places first, each to a DIFFERENT worker while there are workers left (fair: everybody
+  // travels at most once); then the rest largest first into the emptiest bin
+  const lpt = (items, n) => {
+    const bins = Array.from({ length:n }, () => ({ min:0, items:[], far:0 }));
+    const fars = items.filter(x => x.isFar).sort((x, y) => y.min - x.min), rest = items.filter(x => !x.isFar).sort((x, y) => y.min - x.min);
+    const put = (it, among) => { const b = among.reduce((m, x) => x.min < m.min ? x : m, among[0]); b.items.push(it); b.min += it.min; if(it.isFar) b.far++; };
+    fars.forEach(it => { const free = bins.filter(b => !b.far); put(it, free.length ? free : bins); });
+    rest.forEach(it => put(it, bins));
     return bins;
   };
   // one worker's line from its pieces (routes of the planner); pieces: [{ r, name|null }] in walking order
@@ -115,11 +120,11 @@ export function createPlanService(cache){
         const M = res.plan.routes.reduce((s, r) => s + r.minutes, 0);
         let bestK = n, bestMax = Infinity;
         for(let k = n; k <= 3 * n; k++){
-          const mx = Math.max(...lpt([...far.map(x => ({ min:x.min })), ...Array.from({ length:k }, () => ({ min:M / k }))], n).map(b => b.min));
+          const mx = Math.max(...lpt([...far.map(x => ({ min:x.min, isFar:true })), ...Array.from({ length:k }, () => ({ min:M / k }))], n).map(b => b.min));
           if(mx < bestMax - 15){ bestMax = mx; bestK = k; }   // more parts only when it saves a quarter hour or more
         }
         if(bestK !== n){ stage('calculating'); const r2 = await this.planMain({ start, flyers:mainFlyers, n:bestK, days:1, hours, must, zone }, stage, stale); if(!r2 || r2.skipped) return r2; res = r2; }
-        const items = [...far.map(x => ({ min:x.min, far:x })), ...res.plan.routes.map(r => ({ min:r.minutes, main:r }))];
+        const items = [...far.map(x => ({ min:x.min, far:x, isFar:true })), ...res.plan.routes.map(r => ({ min:r.minutes, main:r }))];
         const bins = lpt(items, n);
         res.plan.routes = bins.map((b, k) => {
           const pieces = [...b.items.filter(x => x.main).map(x => ({ r:x.main, name:null })), ...b.items.filter(x => x.far).map(x => ({ r:x.far.r, name:x.far.c.name }))];
