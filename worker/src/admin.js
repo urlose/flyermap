@@ -122,7 +122,7 @@ function viewLive(){
     for(const tk of open){
       const go = () => viewTask(tk.id), tip = `${tk.title}${tk.district || tk.city_name ? ' · ' + [tk.district, tk.city_name].filter(Boolean).join(', ') : ''}`;
       (plans || []).filter(p => p.task_id === tk.id && p.path && p.path.length > 1).forEach(p => {
-        const ln = L.polyline(p.path, { color:p.color || '#2563EB', weight:4, opacity:.55, lineJoin:'round' }).bindTooltip(tip, { sticky:true }).on('click', go).addTo(taskLayer); b.extend(ln.getBounds());
+        const ln = L.polyline(Planner.pathRuns(p.path), { color:p.color || '#2563EB', weight:4, opacity:.55, lineJoin:'round' }).bindTooltip(tip, { sticky:true }).on('click', go).addTo(taskLayer); b.extend(ln.getBounds());
       });
       L.marker([tk.start_lat, tk.start_lng], { icon:labelIcon('pin-start', tk.title), zIndexOffset:200 }).on('click', go).addTo(taskLayer); b.extend([tk.start_lat, tk.start_lng]);
     }
@@ -371,7 +371,7 @@ async function viewWorker(id, back, focusId){
     document.querySelectorAll('.rbtn').forEach(x => x.classList.toggle('sel', x.dataset.r === r.id));
     wl.clearLayers(); const b = L.latLngBounds([]);
     try{
-      if(r.plan_id){ const { data:pl } = await sb.from('task_plans').select('path,color').eq('id', r.plan_id).maybeSingle(); if(pl && pl.path && pl.path.length > 1){ L.polyline(pl.path, { color:'#64748B', weight:4, opacity:.55, dashArray:'2 8', lineCap:'round' }).addTo(wl); pl.path.forEach(p => b.extend(p)); } }
+      if(r.plan_id){ const { data:pl } = await sb.from('task_plans').select('path,color').eq('id', r.plan_id).maybeSingle(); if(pl && pl.path && pl.path.length > 1){ L.polyline(Planner.pathRuns(pl.path), { color:'#64748B', weight:4, opacity:.55, dashArray:'2 8', lineCap:'round' }).addTo(wl); pl.path.forEach(p => b.extend(p)); } }
       const pts = r.track_deleted_at ? [] : await dayPoints(r);
       if(pts.length > 1){
         const ll = pts.map(p => [p.lat, p.lng]); gpsLine(wl, ll, 4); ll.forEach(p => b.extend(p));
@@ -499,7 +499,7 @@ async function viewDayMap(routeId, back){
     layers:[
       { key:'plan', label:pl ? t('rvPlan') : '', on:!!pl, add:g => { if(!pl || !pl.path || pl.path.length < 2) return;
         const ds = (pl.days || []).length > 1 ? pl.days : [{ i0:0, i1:pl.path.length - 1 }];
-        ds.forEach((d, k) => L.polyline(pl.path.slice(d.i0, d.i1 + 1), { color:dayColor(col, k), weight:4, opacity:.6, dashArray:'6 7', lineJoin:'round' }).addTo(g)); } },
+        ds.forEach((d, k) => L.polyline(Planner.pathRuns(pl.path.slice(d.i0, d.i1 + 1)), { color:dayColor(col, k), weight:4, opacity:.6, dashArray:'6 7', lineJoin:'round' }).addTo(g)); } },
       // one layer: everything done on this route – this day, earlier days and colleagues alike
       { key:'done', label:runs.length || runsPrev.length ? t('rvDone') : '', add:g => [...runsPrev, ...runs, ...(pl ? offRoute([ll], [pl]) : [])].forEach(x => L.polyline(x, { color:GREEN, weight:8, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g)) },
       { key:'skip', label:workerSkips(pl).length ? t('rvSkipped') : '', add:g => drawSkips(g, [pl]) },
@@ -585,7 +585,7 @@ async function viewTaskMap(id, back){
       ...(() => {
         const nd = Math.max(1, ...(plans || []).map(p => (p.days || []).length));
         const drawDay = (g, k) => (plans || []).forEach(p => { if(!p.path || p.path.length < 2) return; const d = nd > 1 ? (p.days || [])[k] : null; if(nd > 1 && !d) return;
-          L.polyline(d ? p.path.slice(d.i0, d.i1 + 1) : p.path, { color:dayColor(p.color, k), weight:k ? 4 : 5, opacity:.8, dashArray:k ? (k % 2 ? '10 8' : '2 8') : null, lineJoin:'round', lineCap:'round' }).addTo(g); });
+          L.polyline(Planner.pathRuns(d ? p.path.slice(d.i0, d.i1 + 1) : p.path), { color:dayColor(p.color, k), weight:k ? 4 : 5, opacity:.8, dashArray:k ? (k % 2 ? '10 8' : '2 8') : null, lineJoin:'round', lineCap:'round' }).addTo(g); });
         const start = g => L.marker([tk.start_lat, tk.start_lng], { icon:dot('pin-start', 24) }).addTo(g);
         return nd > 1 ? [...Array.from({ length:nd }, (_, k) => ({ key:'day' + k, label:t('dayN', { n:k + 1 }) + (k ? ' ┄' : ' ━'), add:g => drawDay(g, k) })), { key:'start', add:start }]
           : [{ key:'plan', label:t('rvPlan'), add:g => { drawDay(g, 0); start(g); } }];
@@ -658,9 +658,7 @@ function viewCreate(edit){
   if(tkE && Array.isArray(tkE.must_areas)) d.must = tkE.must_areas.map(mArea).filter(a => a.p.length > 2);
   if(tkE && Array.isArray(tkE.work_area) && tkE.work_area.length > 2) d.zone = tkE.work_area;
   if(tkE) Object.assign(d, { flyers:tkE.flyers || 5000, hours:+tkE.work_hours || 7, quota:tkE.quota_m30 || 1500, days:tkE.work_days || 2, n:Math.max(1, edit.plans.length), nAuto:false });
-  const pre = edit && edit.pre;   // a far town of the order before: its own order with its own start point (e.g. day 2)
-  d.side = []; d.queue = (pre && pre.queue) || [];
-  if(pre) Object.assign(d, { flyers:pre.flyers || 2000, hours:pre.hours || 7, quota:pre.quota || 1500, days:1, n:Math.max(1, pre.n || 1), nAuto:false, prefAssign:pre.assign || null });
+  d.side = tkE && Array.isArray(tkE.side_towns) ? tkE.side_towns : [];   // far places of this order (own start, own day, reached by bus / train)
   const sf = searchField('cSearch', t('searchAddr'), (c, q) => { d.place = c; if(q) q.value = c.name + (c.sub ? ', ' + c.sub : ''); setStart(c.lat, c.lng); }, { near:() => d.start ? [d.start.lat, d.start.lng] : null });
   shell('tasks', `<div id="fullMap" class="fullmap"></div>
     <div class="map-top"><button class="icon-btn" id="cBack" aria-label="${esc(t('back'))}">${ICONS.back}</button><div class="grow">${sf.html}</div></div>
@@ -729,7 +727,7 @@ function viewCreate(edit){
     if(dist > SIDE_R){
       const n = await askMustN(null, 0); if(n === null || !alive()) return;
       d.side.push({ name:c.name, lat:c.lat, lng:c.lng, sub:c.sub || '', city:c.city || c.name, district:c.district || '', flyers:n || 1000, km:Math.round(dist / 100) / 10 });
-      toast(t('sideAdded', { name:c.name })); renderSheet(); return;
+      toast(t('sideAdded', { name:c.name })); recompute(); return;
     }
     const far = Math.max(...pts.map(q => hav(d.start.lat, d.start.lng, q[0], q[1])));
     if(far > Planner.MUST_MAX_R){ toast(t('placeTooFar', { km:Math.round(Planner.MUST_MAX_R / 1000) })); return; }
@@ -781,7 +779,7 @@ function viewCreate(edit){
   async function setStart(lat, lng, fromClick){
     const tok = ++d.token; d.start = { lat, lng }; d.keepView = !!fromClick;   // a tap on the map keeps the zoom the admin chose
     d.pick = false; updPick();
-    d.loaded = false; d.plan = null; d.err = null; d.assign = d.prefAssign ? { ...d.prefAssign } : {};
+    d.loaded = false; d.plan = null; d.err = null; d.assign = {};
     zoneLayer.clearLayers(); planLayer.clearLayers();
     L.marker([lat, lng], { icon:dot('pin-start', 26) }).addTo(zoneLayer); if(!fromClick) m.setView([lat, lng], 15, { animate:false });
     let pr = progress(tok, true); pr.stage('loadingArea');
@@ -799,7 +797,7 @@ function viewCreate(edit){
     if(!d.loaded){ renderSheet(); return; }
     const tok = ++d.token, pr = progress(tok, false);
     let res = null;
-    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, must:d.must, zone:d.zone }, pr.stage); }
+    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, must:d.must, zone:d.zone, side:d.side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers })) }, pr.stage); }
     catch(e){ pr.stop(); if(tok !== d.token || !alive()) return; d.err = errText2(e); d.busy = false; toast(t('streetsFail', { e:d.err })); renderSheet(); return; }
     pr.stop();
     if(tok !== d.token || !alive() || !res || res.skipped) return;
@@ -811,7 +809,7 @@ function viewCreate(edit){
     zoneLayer.clearLayers(); planLayer.clearLayers();
     if(d.plan.zone.length > 2) var z = L.polygon(d.plan.zone, { color:css('--brand'), weight:2, fillOpacity:.06, interactive:false }).addTo(zoneLayer);
     L.marker(startArr(), { icon:dot('pin-start', 26) }).addTo(zoneLayer); drawMust();
-    d.plan.routes.forEach((r, i) => { if(r.path.length > 1) L.polyline(r.path, { color:Planner.COLORS[i % 10], weight:4, opacity:.85 }).addTo(planLayer); });
+    d.plan.routes.forEach((r, i) => { if(r.path.length > 1) L.polyline(Planner.pathRuns(r.path), { color:Planner.COLORS[i % 10], weight:4, opacity:.85 }).addTo(planLayer); });
     if(z && !d.keepView) m.fitBounds(z.getBounds(), { paddingTopLeft:[24, 80], paddingBottomRight:[24, Math.round(innerHeight * .5)], maxZoom:17, animate:false });
   }
   const num = (id, def) => { const v = parseFloat(($(id) || {}).value); return isFinite(v) ? v : def; };
@@ -826,7 +824,6 @@ function viewCreate(edit){
   }
   function restore(k){ if($('#cTitle')) $('#cTitle').value = k.title || ''; if($('#cDate')) $('#cDate').value = k.date || ''; if($('#cNotes')) $('#cNotes').value = k.notes || ''; if($('#cQuota')) $('#cQuota').value = k.quota; }
   let saved = tkE ? { title:tkE.title, date:tkE.work_date ? String(tkE.work_date).slice(0, 10) : '', notes:tkE.notes || '', quota:tkE.quota_m30 || 1500 } : { title:'', date:'', notes:'', quota:1500 };
-  if(pre) saved = { title:pre.title, date:pre.date || '', notes:pre.notes || '', quota:pre.quota || 1500 };
   // five steps on top of the live map: 1 start · 2 route · 3 time · 4 workers · 5 review. Planning keeps running underneath.
   const STEPS = ['wzStart', 'wzRoute', 'wzTime', 'wzTeam', 'wzReview'];
   d.step = tkE ? 2 : 1;
@@ -896,6 +893,7 @@ function viewCreate(edit){
         <div><span>${esc(t('dist2'))}</span><b>${esc(km)} · ${esc(fmtHm(p ? p.routes.reduce((s, r) => s + r.minutes, 0) : 0))} ${esc(t('h'))}</b></div>
         <div><span>${esc(t('startDate'))}</span><b>${esc(saved.date ? fmtDay(saved.date) : t('noDate'))} · ${esc(String(d.hours).replace('.', ','))} ${esc(t('h'))}/${esc(t('dayShort'))}</b></div>
         <div><span>${esc(t('quota'))}</span><b>${esc(fmtN(+saved.quota || 1500))} m / 30 ${esc(t('min'))}</b></div>
+        ${d.side.length ? `<div><span>${esc(t('sideTitle'))}</span><b>${esc(d.side.map(x => x.name + ' (' + fmtN(x.flyers) + ')').join(', '))}</b></div>` : ''}
         <div><span>${esc(t('zoneTitle'))}</span><b>${esc(d.zone ? t('zoneOwn') : t('zoneAuto'))}</b></div>
         ${d.must.length ? `<div><span>${esc(t('mustTitle'))}</span><b>${esc((d.must.some(a => a.name) ? d.must.map((a, k) => mName(a, k)).join(', ') + ' · ' : '') + t('mustSum', { n:d.must.length, mb:fmtN((p && p.must_mb) || 0) }))}</b></div>` : ''}
         ${saved.notes ? `<div><span>${esc(t('note'))}</span><b>${esc(saved.notes)}</b></div>` : ''}
@@ -931,7 +929,7 @@ function viewCreate(edit){
     if($('#cSave')) $('#cSave').onclick = save;
     if($('#cMustAdd')) $('#cMustAdd').onclick = () => drawMode(true, 'must');
     Object.values(towns).forEach(x => x.bind());
-    document.querySelectorAll('[data-srm]').forEach(b => b.onclick = () => { saved = keep(); d.side.splice(+b.dataset.srm, 1); renderSheet(); });
+    document.querySelectorAll('[data-srm]').forEach(b => b.onclick = () => { saved = keep(); d.side.splice(+b.dataset.srm, 1); recompute(); });
     if($('#cZoneDraw')) $('#cZoneDraw').onclick = () => { saved = keep(); drawMode(true, 'zone'); };
     if($('#cZoneAuto')) $('#cZoneAuto').onclick = () => { saved = keep(); d.zone = null; drawMust(); recompute(); };
     if($('#cZoneFit')) $('#cZoneFit').onclick = () => { saved = keep(); d.flyers = Math.max(100, Math.floor(p.zone_mb / 50) * 50); d.nAuto = true; recompute(); };
@@ -950,7 +948,7 @@ function viewCreate(edit){
       const pl = d.plan, quota = Math.max(200, Math.round(+saved.quota || 1500)), date = saved.date || null;
       const cityN = (d.place && d.place.city) || (tkE && tkE.city_name) || null;
       const row = { title:withCity(title, cityN), city_name:(d.place && d.place.city) || (tkE && tkE.city_name) || null, district:(d.place && d.place.district) || (tkE && tkE.district) || null, start_lat:d.start.lat, start_lng:d.start.lng,
-        walk_minutes:15, zone_polygon:pl.zone, must_areas:d.must.length ? d.must.map(a => ({ p:a.p, n:a.n, name:a.name || undefined })) : null, work_area:d.zone || null, work_date:date, notes:(saved.notes || '').trim() || null, street_m:d.streetM || null,
+        walk_minutes:15, zone_polygon:pl.zone, must_areas:d.must.length ? d.must.map(a => ({ p:a.p, n:a.n, name:a.name || undefined })) : null, side_towns:d.side.length ? d.side : null, work_area:d.zone || null, work_date:date, notes:(saved.notes || '').trim() || null, street_m:d.streetM || null,
         flyers:d.flyers, quota_m30:quota, work_days:d.days, work_hours:d.hours, est_mailboxes:pl.mailboxes, route_m:pl.routes.reduce((s, r) => s + r.length_m, 0) };
       let tk;
       if(tkE){
@@ -962,20 +960,11 @@ function viewCreate(edit){
       }
       await savePlans(tk, pl.routes.map((r, i) => ({ task_id:tk.id, idx:i, worker_id:d.assign[i] || null, color:Planner.COLORS[i % 10], path:r.path, length_m:r.length_m, street_m:r.street_m, mailboxes:r.mailboxes, boxes:r.boxes, minutes:r.minutes, days:r.days, steps:r.steps })));
       await loadTasks();
-      const queue = [...d.side.map(x => ({ x, from:tk })), ...d.queue];
-      if(queue.length){
-        const { x, from } = queue[0], dd = from.work_date ? new Date(String(from.work_date).slice(0, 10) + 'T12:00:00') : null;
-        if(dd) dd.setDate(dd.getDate() + Math.max(1, +from.work_days || 1));
-        const assign = {}; pl.routes.forEach((_, i) => { if(d.assign[i]) assign[i] = d.assign[i]; });
-        toast(t('sideNext', { name:x.name }));
-        return viewCreate({ pre:{ title:withCity(x.name, x.city), place:x, flyers:x.flyers, date:dd ? dd.toISOString().slice(0, 10) : '', hours:d.hours, quota, n:Math.max(1, Object.keys(assign).length || 1), assign, notes:'', queue:queue.slice(1) } });
-      }
       viewTask(tk.id);
     }catch(e){ if($('#cErr')) $('#cErr').textContent = e.message; else toast(e.message); const sv = $('#cSave'); if(sv){ sv.disabled = false; sv.classList.remove('loading'); } }
   }
   renderSheet();
   if(tkE) setStart(tkE.start_lat, tkE.start_lng);
-  else if(pre && pre.place){ d.place = pre.place; const qi = $('#cSearch'); if(qi) qi.value = pre.place.name + (pre.place.sub ? ', ' + pre.place.sub : ''); setStart(pre.place.lat, pre.place.lng); }
 }
 // saves plans, links workers and sends each assigned worker a notification
 async function savePlans(tk, rows){
@@ -1013,7 +1002,7 @@ function editTaskSheet(tk, plans, routes){
   const rp = mo.querySelector('#eReplan'); if(rp) rp.onclick = () => { mo.remove(); viewCreate({ tk, plans }); };
 }
 /* task detail: info + map + routes with status, worker assignment and progress */
-const dayLines = (days, col) => (days && days.length > 1) ? days.map((x, k) => `<span class="small day-line"><b><i class="dsw" style="background:${esc(dayColor(col, k))}"></i>${esc(t('dayN', { n:k + 1 }))}:</b> ${esc(t('routeLine', { km:fmtDist(x.length_m), h:fmtHm(x.minutes), mb:fmtN(x.mailboxes) }))}</span>`).join('') : '';
+const dayLines = (days, col) => (days && days.length > 1) ? days.map((x, k) => `<span class="small day-line"><b><i class="dsw" style="background:${esc(dayColor(col, k))}"></i>${esc(t('dayN', { n:k + 1 }) + (x.place ? ' · ' + x.place : ''))}:</b> ${esc(t('routeLine', { km:fmtDist(x.length_m), h:fmtHm(x.minutes), mb:fmtN(x.mailboxes) }))}</span>`).join('') : '';
 const stText = p => p.status === 'accepted' ? t('stAccepted') : p.status === 'declined' ? t('stDeclined') : p.status === 'done' ? t('stDone') : t('stOffered');
 const stCls = p => p.status === 'done' ? 'ok' : p.status === 'accepted' ? '' : p.status === 'declined' ? 'bad' : 'neutral';   // angeboten = neutral, angenommen = blau, erledigt = grün, abgelehnt = rot
 // walked so far on one route (all sessions, also the running one; a session lying inside another one counts once)
@@ -1050,6 +1039,7 @@ async function viewTask(id){
         ${tk.flyers ? `<div><span>${esc(t('flyers'))}</span><b>${esc(fmtN(tk.flyers))} · ${esc(t('mbApprox', { n:fmtN(tk.est_mailboxes || 0) }))}</b></div>` : ''}
         ${tk.route_m ? `<div><span>${esc(t('dist2'))}</span><b>${esc(fmtDist(tk.route_m))}</b></div>` : ''}
         ${tk.quota_m30 ? `<div><span>${esc(t('quotaInfo'))}</span><b>${fmtN(tk.quota_m30)} m / 30 ${esc(t('min'))}</b></div>` : ''}
+        ${(tk.side_towns || []).length ? `<div><span>${esc(t('sideTitle'))}</span><b>${esc(tk.side_towns.map(x => x.name + ' (' + fmtN(x.flyers) + ')').join(', '))}</b></div>` : ''}
         ${(tk.must_areas || []).length ? `<div><span>${esc(t('mustTitle'))}</span><b>${esc(tk.must_areas.map((a, k) => mName(mArea(a), k) + (mArea(a).n ? ' (' + fmtN(mArea(a).n) + ')' : '')).join(', '))}</b></div>` : ''}
         <div><span>${esc(t('walkedLbl'))}</span><b>${esc(fmtDist(walked))}</b></div>
         <div><span>${esc(t('hoursLbl'))}</span><b id="tHrs">${taskHours(plans, routes)}</b></div>
@@ -1078,7 +1068,7 @@ async function viewTask(id){
   (tk.must_areas || []).forEach(a => L.polygon(mArea(a).p, { color:'#EA580C', weight:2, dashArray:'8 6', fillOpacity:.1, interactive:false }).addTo(m));
   if(tk.work_area) L.polygon(tk.work_area, { color:'#7C3AED', weight:2, dashArray:'10 6', fillOpacity:.03, interactive:false }).addTo(m);
   (plans || []).forEach(p => { if(!(p.path?.length > 1)) return; const ds = (p.days || []).length > 1 ? p.days : [{ i0:0, i1:p.path.length - 1 }];
-    ds.forEach((d, k) => L.polyline(p.path.slice(d.i0, d.i1 + 1), { color:dayColor(p.color, k), weight:4, opacity:.7, dashArray:k ? '10 8' : null }).addTo(m)); });
+    ds.forEach((d, k) => L.polyline(Planner.pathRuns(p.path.slice(d.i0, d.i1 + 1)), { color:dayColor(p.color, k), weight:4, opacity:.7, dashArray:k ? '10 8' : null }).addTo(m)); });
   drawSkips(m, plans);
   const doneLayer = L.layerGroup().addTo(m);
   L.marker([tk.start_lat, tk.start_lng], { icon:dot('pin-start', 24) }).addTo(m);

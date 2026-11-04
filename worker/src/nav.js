@@ -25,10 +25,11 @@ export function makeNav(plan){
   const path = plan.path || [];
   const steps = (plan.steps && plan.steps.length ? plan.steps : stepsFromPath(path)).slice().sort((x, y) => x[0] - y[0]);
   const days = plan.days && plan.days.length ? plan.days : [{ i0:0, i1:Math.max(0, path.length - 1) }];
-  const cum = [0]; for(let i = 1; i < path.length; i++) cum.push(cum[i - 1] + hv(path[i - 1], path[i]));
+  const sg = (a, b) => b[2] === 1 ? 0 : hv(a, b);   // jump to a far place of the order: no street in between
+  const cum = [0]; for(let i = 1; i < path.length; i++) cum.push(cum[i - 1] + sg(path[i - 1], path[i]));
   // position of every tracker sample (8 m steps, same densify as the progress tracker) along the path, as a fractional index
   const posOf = [0];
-  for(let i = 1; i < path.length; i++){ const n = Math.max(1, Math.ceil(hv(path[i - 1], path[i]) / 8)); for(let k = 1; k <= n; k++) posOf.push(i - 1 + k / n); }
+  for(let i = 1; i < path.length; i++){ const n = Math.max(1, Math.ceil(sg(path[i - 1], path[i]) / 8)); for(let k = 1; k <= n; k++) posOf.push(i - 1 + k / n); }
   let pos = 0, isDone = null, dayR = null;
   const mAt = q => { const j = Math.max(0, Math.min(path.length - 1, Math.floor(q))); return j < path.length - 1 ? cum[j] + (q - j) * (cum[j + 1] - cum[j]) : cum[j]; };   // metres along the line
   const seg = (p, j) => {   // distance from p to segment j (path[j]→path[j+1]) and the fraction along it, in metres (flat approximation)
@@ -126,7 +127,7 @@ export function rerouteDay(plan, dayIdx, isDone, here, head){
   for(let j = 0; j < path.length - 1; j++) open[j] = nO[j] >= Math.max(3, nS[j] * 0.5) ? 1 : 0;
   const E = [], byKey = new Map(), adj = pts.map(() => []);
   for(let j = 0; j < path.length - 1; j++){
-    const a = vid[j], b = vid[j + 1]; if(a === b) continue;
+    const a = vid[j], b = vid[j + 1]; if(a === b || path[j + 1][2] === 1) continue;   // a jump to a far place is no street
     const k = a < b ? a + '_' + b : b + '_' + a; let e = byKey.get(k);
     if(!e){ e = { a, b, len:hv(pts[a], pts[b]), req:false }; byKey.set(k, e); adj[a].push(E.length); adj[b].push(E.length); E.push(e); }
     if(j >= day.i0 && j < day.i1 && open[j]) e.req = true;

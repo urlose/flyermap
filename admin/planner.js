@@ -504,11 +504,15 @@
 
   /* ---------- progress: which parts of a planned path are already walked ---------- */
   const COLORS = ['#2563EB','#C2185B','#D97706','#7C3AED','#059669','#0891B2','#DC2626','#4D7C0F','#DB2777','#EA580C'];
+  // a path in pieces between jumps (a far place of the order reached by bus / train) – for drawing
+  function pathRuns(path){ const out = []; let cur = []; for(const q of path || []){ if(q[2] === 1 && cur.length){ out.push(cur); cur = []; } cur.push(q); } if(cur.length) out.push(cur); return out; }
   function densifyPath(path, step){
     const out = [];
     for(let i = 0; i < path.length; i++){
       if(i === 0){ out.push(path[0]); continue; }
-      const a = path[i-1], b = path[i], d = dist(a, b), n = Math.max(1, Math.ceil(d / step));
+      const a = path[i-1], b = path[i];
+      if(b[2] === 1){ out.push(b); continue; }   // [lat,lng,1]: jump to another place of the order (bus / train) – no street before it
+      const d = dist(a, b), n = Math.max(1, Math.ceil(d / step));
       for(let k = 1; k <= n; k++) out.push([a[0] + (b[0]-a[0]) * k/n, a[1] + (b[1]-a[1]) * k/n]);
     }
     return out;
@@ -561,7 +565,9 @@
     function runs(){ // covered stretches as polylines
       const out = []; let cur = null;
       for(let i = 0; i < samples.length; i++){
-        if(done[i]){ if(!cur){ cur = []; if(i) cur.push(samples[i-1]); } cur.push(samples[i]); }
+        const jump = samples[i][2] === 1;   // never draw a line across a jump to another place
+        if(jump && cur){ out.push(cur); cur = null; }
+        if(done[i]){ if(!cur){ cur = []; if(i && !jump) cur.push(samples[i-1]); } cur.push(samples[i]); }
         else if(cur){ cur.push(samples[i]); out.push(cur); cur = null; }
       }
       if(cur) out.push(cur);
@@ -1133,6 +1139,6 @@
     return partition(g, start, n).map((part, k) => ({ idx:k, ...planPart(g, part, start) }));
   }
 
-  const api = { tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, makeBoxCounter, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
+  const api = { pathRuns, tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, makeBoxCounter, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
   if(typeof module !== 'undefined' && module.exports) module.exports = api; else root.Planner = api;
 })(typeof window !== 'undefined' ? window : globalThis);

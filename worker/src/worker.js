@@ -145,7 +145,10 @@ function hereOnce(ms){
   });
 }
 const WHY_CHOICES = () => [t('why1'), t('why2'), t('why3'), t('why4'), t('why5')];
-const START_RADIUS = 150;   // metres from the start point within which the working day can begin
+const START_RADIUS = 150;
+const TRANSIT_M = 1500;   // further than this to where the route goes on: bus / train suggested (the walker decides)
+const gTransit = (lat, lng) => `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=transit`;
+const aTransit = (lat, lng) => `https://maps.apple.com/?daddr=${lat},${lng}&dirflg=r`;   // metres from the start point within which the working day can begin
 const AHEAD_M = 400;        // bright stretch of the route in front of the walker
 // the working day starts at the start point or anywhere close to an open part of an unfinished day (then that day is worked);
 // resolves { ok, day } – a test worker / admin may override
@@ -328,7 +331,7 @@ function drawTaskBase(m, task, dayIdx, dim){
   if(pl && pl.path && pl.path.length > 1){
     const col = pl.color || '#2563EB', days = pl.days && pl.days.length > 1 ? pl.days : null;
     if(days){   // several working days: today's loop is drawn strong, the other days faded (alternating dashes tell them apart)
-      planLine = L.featureGroup(days.map((d, k) => { const on = dayIdx == null || dayIdx === k; return L.polyline(pl.path.slice(d.i0, d.i1 + 1), { color:col, weight:on ? (dim ? 4 : 5) : 3, opacity:on ? (dim ? .35 : .8) : (dim ? .15 : .3), dashArray:k % 2 ? '9 7' : null, lineJoin:'round' }).addTo(m); }));
+      planLine = L.featureGroup(days.map((d, k) => { const on = dayIdx == null || dayIdx === k; return L.polyline(Planner.pathRuns(pl.path.slice(d.i0, d.i1 + 1)), { color:col, weight:on ? (dim ? 4 : 5) : 3, opacity:on ? (dim ? .35 : .8) : (dim ? .15 : .3), dashArray:k % 2 ? '9 7' : null, lineJoin:'round' }).addTo(m); }));
     }else planLine = L.polyline(pl.path, { color:col, weight:dim ? 4 : 5, opacity:dim ? .35 : .75, lineJoin:'round' }).addTo(m);
     b = planLine.getBounds();
   }
@@ -354,7 +357,7 @@ function viewTaskDetail(task){
         ${task.quota_m30 ? `<div><span>${esc(t('quotaInfo'))}</span><b>${fmtN(task.quota_m30)} m / 30 ${esc(t('min'))}</b></div>` : ''}
         ${task.notes ? `<div><span>${esc(t('note'))}</span><b>${esc(task.notes)}</b></div>` : ''}
       </div>
-      ${plan && plan.days && plan.days.length > 1 ? `<h2 class="sec">${esc(t('route'))}:</h2><div class="info">${plan.days.map((d, k) => `<div class="day-row" data-dbig="${k}" role="button" tabindex="0"><span>${esc(t('dayN', { n:k + 1 }))}${dayList(plan)[k] ? ' · ' + esc(fmtDay(dayList(plan)[k])) : ''}</span><b>${esc(t('routeLine', { km:fmtDist(d.length_m), h:fmtHm(d.minutes || 0), mb:fmtN(d.mailboxes || 0) }))} <i id="dp${k}"></i></b></div>`).join('')}</div>` : ''}
+      ${plan && plan.days && plan.days.length > 1 ? `<h2 class="sec">${esc(t('route'))}:</h2><div class="info">${plan.days.map((d, k) => `<div class="day-row" data-dbig="${k}" role="button" tabindex="0"><span>${esc(t('dayN', { n:k + 1 }) + (d.place ? ' · ' + d.place : ''))}${dayList(plan)[k] ? ' · ' + esc(fmtDay(dayList(plan)[k])) : ''}</span><b>${esc(t('routeLine', { km:fmtDist(d.length_m), h:fmtHm(d.minutes || 0), mb:fmtN(d.mailboxes || 0) }))} <i id="dp${k}"></i></b></div>`).join('')}</div>` : ''}
       <div class="mapbox" id="tdMap"></div>
       ${plan && plan.path && plan.path.length > 1 ? `<button class="btn ghost small" id="tdBig" style="margin-top:8px">${ICONS.expand}${esc(t('rvBig'))}</button>` : ''}
       ${plan ? '' : `<p class="note">${esc(t('noPlan'))}</p>`}
@@ -367,7 +370,7 @@ function viewTaskDetail(task){
         <button class="btn primary" id="chgSave">${esc(t('save'))}</button><div class="err" id="chgErr"></div></div>` : ''}
       ${plan && st === 'declined' ? `<p class="note">${esc(t('stDeclined'))}</p>` : ''}
       ${(!plan || st === 'accepted') ? `<button class="btn primary big" id="go">${ICONS.play}<span>${esc(t('startRoute'))}</span></button>` : ''}
-      <a class="btn ghost" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination=${task.start_lat},${task.start_lng}&travelmode=transit">${ICONS.pin}${esc(t('directions'))}</a>
+      <div class="rr-btns" id="dirRow"><a class="btn ghost" id="dirG" target="_blank" rel="noopener" href="${esc(gTransit(task.start_lat, task.start_lng))}">${ICONS.pin}${esc(t('directions'))}</a><a class="btn ghost" id="dirA" target="_blank" rel="noopener" href="${esc(aTransit(task.start_lat, task.start_lng))}">${ICONS.map}${esc(t('appleMaps'))}</a></div>
     </div>`);
   bindBack(() => workerTab('tasks'));
   if(st === 'open'){ const p0 = document.querySelector('.sec-row'); if(p0) p0.insertAdjacentHTML('afterend', `<p class="small muted" style="margin:-4px 0 10px">${esc(t('planRoute', { n:plan.idx + 1 }))}</p>`); }
@@ -381,7 +384,8 @@ function viewTaskDetail(task){
     rpc('plan_progress', { p_token:W.token, p_plan_id:plan.id }).then(prev => {
       const tr = addSkips(Planner.makeTracker(plan.path), plan); tr.addTrack(prev || []);
       const pc = dayProgress(plan, tr); pc.forEach((p, k) => { const el = $('#dp' + k); if(el) el.innerHTML = p >= 95 ? statusPill('ok', t('stDone')) : p ? '· ' + p + '%' : ''; });
-      const next = pc.findIndex(p => p < 95), go = $('#go'); if(go && next >= 0) go.querySelector('span').textContent = t(pc[next] >= 3 ? 'contDayN' : 'startDayN', { n:next + 1 });
+      const next = pc.findIndex(p => p < 95), go = $('#go');
+      if(next >= 0 && plan.days[next]){ const q = plan.path[plan.days[next].i0]; if(q){ const g = $('#dirG'), a = $('#dirA'); if(g) g.href = gTransit(q[0], q[1]); if(a) a.href = aTransit(q[0], q[1]); } } if(go && next >= 0) go.querySelector('span').textContent = t(pc[next] >= 3 ? 'contDayN' : 'startDayN', { n:next + 1 });
     }).catch(() => {});
   }
   if($('#chgDates')) $('#chgDates').onclick = () => { $('#chgBox').hidden = !$('#chgBox').hidden; };
@@ -421,8 +425,8 @@ function viewTaskDetail(task){
 const DAY_COLORS = ['#2563EB', '#EA580C', '#16A34A', '#9333EA', '#DC2626', '#0891B2'];
 function bigRouteMap(task, dayIdx){
   const pl = task.plan, days = pl.days && pl.days.length > 1 ? pl.days : null, dates = dayList(pl);
-  const layers = days ? days.map((d, k) => ({ key:'d' + k, label:t('dayN', { n:k + 1 }), on:dayIdx == null || dayIdx === k,
-      add:g => { L.polyline(pl.path.slice(d.i0, d.i1 + 1), { color:'#fff', weight:9, opacity:.9, lineJoin:'round' }).addTo(g); L.polyline(pl.path.slice(d.i0, d.i1 + 1), { color:DAY_COLORS[k % DAY_COLORS.length], weight:5, opacity:.95, lineJoin:'round' }).addTo(g); } }))
+  const layers = days ? days.map((d, k) => ({ key:'d' + k, label:t('dayN', { n:k + 1 }) + (d.place ? ' · ' + d.place : ''), on:dayIdx == null || dayIdx === k,
+      add:g => { L.polyline(Planner.pathRuns(pl.path.slice(d.i0, d.i1 + 1)), { color:'#fff', weight:9, opacity:.9, lineJoin:'round' }).addTo(g); L.polyline(Planner.pathRuns(pl.path.slice(d.i0, d.i1 + 1)), { color:DAY_COLORS[k % DAY_COLORS.length], weight:5, opacity:.95, lineJoin:'round' }).addTo(g); } }))
     : [{ key:'route', label:t('route'), add:g => L.polyline(pl.path, { color:pl.color || '#2563EB', weight:5, opacity:.9, lineJoin:'round' }).addTo(g) }];
   if(task.zone_polygon) layers.unshift({ key:'zone', label:t('area'), on:false, add:g => L.polygon(task.zone_polygon, { color:css('--brand'), weight:2, fillOpacity:.05, interactive:false }).addTo(g) });
   layers.push({ key:'start', add:g => L.marker([task.start_lat, task.start_lng], { icon:dot('pin-start', 26) }).addTo(g) });
@@ -432,7 +436,7 @@ function bigRouteMap(task, dayIdx){
     lines:[[task.district, task.city_name].filter(Boolean).join(', '), sel && dates[dayIdx] ? fmtDay(dates[dayIdx]) : taskDates(task)],
     stats:sel ? [[t('routeLen'), fmtDist(sel.length_m)], [t('duration'), fmtHm(sel.minutes || 0) + ' ' + t('h')], [t('mailboxes'), fmtN(sel.mailboxes || 0)]]
       : [[t('routeLen'), fmtDist(pl.length_m)], [t('duration'), fmtHm(pl.minutes || 0) + ' ' + t('h')], [t('mailboxes'), fmtN(pl.mailboxes || 0)]],
-    legend:days ? days.map((d, k) => ({ color:DAY_COLORS[k % DAY_COLORS.length], label:t('dayN', { n:k + 1 }) + (dates[k] ? ' · ' + fmtDay(dates[k]) : ''), sub:fmtDist(d.length_m) + ' · ' + fmtN(d.mailboxes || 0) })) : [],
+    legend:days ? days.map((d, k) => ({ color:DAY_COLORS[k % DAY_COLORS.length], label:t('dayN', { n:k + 1 }) + (d.place ? ' · ' + d.place : '') + (dates[k] ? ' · ' + fmtDay(dates[k]) : ''), sub:fmtDist(d.length_m) + ' · ' + fmtN(d.mailboxes || 0) })) : [],
     layers,
     back:() => viewTaskDetail(task),
   });
@@ -457,7 +461,8 @@ function viewTracking(){
   const hasPlan = !!W.tracker, paused = !!W.route.paused, quota = task && task.quota_m30;
   shell('map', `<div id="fullMap" class="fullmap"></div>
     <button class="icon-btn map-btn" id="recenter" aria-label="center">${ICONS.locate}</button>
-    ${hasPlan ? `<div class="nav" id="nav"><div class="nav-ic" id="navIc"></div><div class="nav-tx"><b id="navMain"></b><span id="navSub"></span><button class="nav-skip" id="navSkip">${esc(t('skipBtn'))}</button></div><a class="nav-ext" id="navExt" target="_blank" rel="noopener" aria-label="${esc(t('navExt'))}">${ICONS.map}</a></div>` : ''}
+    ${hasPlan ? `<div class="nav" id="nav"><div class="nav-ic" id="navIc"></div><div class="nav-tx"><b id="navMain"></b><span id="navSub"></span><button class="nav-skip" id="navSkip">${esc(t('skipBtn'))}</button></div><a class="nav-ext" id="navExt" target="_blank" rel="noopener" aria-label="${esc(t('navExt'))}">${ICONS.map}</a></div>
+      <div class="nav-transit" id="navTr" hidden><b id="navTrT"></b><div class="rr-btns"><a class="btn primary small" id="navTrG" target="_blank" rel="noopener">${esc(t('busTrain'))}</a><a class="btn ghost small" id="navTrA" target="_blank" rel="noopener">${esc(t('appleMaps'))}</a></div><a class="link small" id="navTrW" target="_blank" rel="noopener">${esc(t('onFoot'))}</a></div>` : ''}
     <div class="float-card ${W.mapFull ? 'mini' : ''}">
       <div class="fc-row">${paused ? `<span class="rec paused">${esc(t('pauseRunning'))}</span><b id="sPause">0:00</b>` : `<span class="rec">${esc(t('recording'))}</span><span class="gps" id="gps" role="status"></span>`}
         <button class="fc-size" id="fcSize" aria-label="${esc(t(W.mapFull ? 'mapSmall' : 'mapBig'))}">${W.mapFull ? ICONS.expand : ICONS.shrink}<span>${esc(t(W.mapFull ? 'mapSmall' : 'mapBig'))}</span></button></div>
@@ -643,6 +648,8 @@ function viewTracking(){
     }
     $('#navIc').innerHTML = icon; $('#navMain').textContent = main; $('#navSub').textContent = sub;
     const at = approachTo || n.at || guide.path[guide.path.length - 1]; $('#navExt').href = 'https://www.google.com/maps/dir/?api=1&destination=' + at[0] + ',' + at[1] + '&travelmode=walking';
+    const me2 = W.track[W.track.length - 1], far = approachTo && me2 ? hav(me2[0], me2[1], approachTo[0], approachTo[1]) : 0, tr = $('#navTr');
+    if(tr){ tr.hidden = far < TRANSIT_M; if(far >= TRANSIT_M){ $('#navTrT').textContent = t('farAway', { d:fmtDist(far) }); $('#navTrG').href = gTransit(at[0], at[1]); $('#navTrA').href = aTransit(at[0], at[1]); $('#navTrW').href = 'https://www.google.com/maps/dir/?api=1&destination=' + at[0] + ',' + at[1] + '&travelmode=walking'; } }
   };
   // the walker's dot stays in the free part of the map (between the turn banner and the card), not hidden behind the card
   const followTo = (ll, zoom, animate) => {
