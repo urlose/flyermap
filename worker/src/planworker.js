@@ -2,8 +2,9 @@
 //   in : { type:'run', job, op:'load'|'plan', args } · { type:'answer', id, result }   (answers to cache requests)
 //   out: { type:'stage', job, stage } · { type:'done', job, result } · { type:'error', job, message } · { type:'ask', id, op, payload }
 import { createPlanService } from './plancore.js';
+import Planner from '../../admin/planner.js';
 
-let seq = 0, latest = 0;
+let seq = 0, latest = 0, stampReady = null;
 const waiting = new Map();
 const ask = (op, payload) => new Promise(resolve => { const id = ++seq; waiting.set(id, resolve); postMessage({ type:'ask', id, op, payload }); });
 // the shared map cache lives behind the admin's login on the main thread
@@ -25,6 +26,8 @@ self.onmessage = e => {
     const stale = () => m.job < latest;
     if(stale()){ postMessage({ type:'done', job:m.job, result:{ skipped:true } }); return; }
     try{
+      if(!stampReady) stampReady = ask('tileStamp').then(s => Planner.setTileStamp(s)).catch(() => {});
+      await stampReady;
       const stage = s => postMessage({ type:'stage', job:m.job, stage:s });
       const result = await svc[m.op](m.args, stage, stale);
       postMessage({ type:'done', job:m.job, result });

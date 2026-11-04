@@ -923,6 +923,8 @@ function viewCreate(edit){
     const p = d.plan, title = saved.title || (d.place ? d.place.name : '');
     if(!saved.title && title) saved.title = title;
     const cap = p ? Planner.capacity(p.routes, d.flyers, { hoursPerDay:d.hours, days:d.days }) : null;
+    const totMin = p ? p.routes.reduce((s, r) => s + (r.minutes || 0), 0) : 0, oneDay = p && totMin / 60 <= d.hours && (d.n > 1 || d.days > 1);   // all of it fits into one working day of one person
+    const needDays = cap ? Math.min(d.days, Math.max(1, Math.ceil(cap.slowest / d.hours - 0.05))) : d.days;
     const km = p ? fmtDist(p.routes.reduce((s, r) => s + r.length_m, 0)) : '';
     const routeRow = (r, i, withSelect) => `<div class="route-row"><span class="swatch" style="background:${Planner.COLORS[i % 10]}"></span>
         <div class="grow"><b>${esc(t('planRoute', { n:i + 1 }))} <span class="muted">· ${esc(t('daysN', { n:Math.max(1, Math.ceil(r.minutes / 60 / d.hours)) }))}</span></b><span>${esc(t('routeLine', { km:fmtDist(r.length_m), h:fmtHm(r.minutes), mb:fmtN(r.mailboxes) }))}</span>
@@ -930,7 +932,7 @@ function viewCreate(edit){
         ${withSelect ? `<select class="in small" data-r="${i}" aria-label="${esc(t('planRoute', { n:i + 1 }))}">${workerOptions(d.start.lat, d.start.lng, d.assign[i])}</select>` : ''}</div></div>`;
     const planBlock = () => p ? `${(p.side_failed || []).length ? `<div class="warnbox">${esc(t('sideFailed', { list:p.side_failed.join(', ') }))}</div>` : ''}${(p.bus || []).length ? `<div class="hint">${esc(t('busHint', { list:p.bus.map(x => x.name + ' (' + fmtDist(x.gap) + ')').join(', ') }))}</div>` : ''}${(p.side_info || []).length ? `<p class="small muted" style="margin:8px 0 0">${esc(p.side_info.map(x => x.name + ' → ' + t('planRoute', { n:x.worker + 1 })).join(' · '))}</p>` : ''}<p class="small muted" style="margin:10px 0 0">${esc(t('planSum', { mb:fmtN(p.mailboxes), km, h:fmtHm(p.routes.reduce((s, r) => s + r.minutes, 0)) }))}</p>
         ${p.mailboxes < d.flyers * 0.95 ? `<p class="small err">${esc(t('areaSmall', { mb:fmtN(p.mailboxes) }))}</p>` : ''}
-        <div class="${cap.ok ? 'hint' : 'warnbox'}">${cap.ok ? esc(t('fitsOk', { d:d.days })) : `${esc(t('tooBig', { h:cap.slowest.toFixed(1).replace('.', ','), lim:cap.limit, d:d.days }))} <button class="link" id="cReduce">${esc(t('reduceTo', { f:fmtN(cap.suggestedFlyers) }))}</button> ${esc(t('moreWorkers'))}`}</div>`
+        <div class="${cap.ok ? 'hint' : 'warnbox'}">${cap.ok ? esc(needDays === 1 ? t('fitsOne') : t('fitsOk', { d:needDays })) : `${esc(t('tooBig', { h:cap.slowest.toFixed(1).replace('.', ','), lim:cap.limit, d:d.days }))} <button class="link" id="cReduce">${esc(t('reduceTo', { f:fmtN(cap.suggestedFlyers) }))}</button> ${esc(t('moreWorkers'))}`}</div>`
       : d.err ? `<p class="small err">${esc(t('streetsFail', { e:d.err }))}</p><button class="btn ghost small" id="cRetry">${ICONS.refresh}${esc(t('retryBtn'))}</button>` : `<p class="small muted" style="margin:10px 0 0">${esc(t('calculating'))}</p>`;
     let addrSf = null; const sfAddr = () => (addrSf = addrSf || searchField('cAddr', t('searchAddr'), pickAddr, { near:() => d.start ? [d.start.lat, d.start.lng] : null }));
     const towns = {}, sfTown = id => (towns[id] = towns[id] || searchField(id, t('townSearch'), c => addPlaceArea(c), { citiesOnly:true, near:() => d.start ? [d.start.lat, d.start.lng] : null }));
@@ -951,7 +953,7 @@ function viewCreate(edit){
         <div><label class="f">${esc(t('flyersCount'))}</label><div class="stepper"><button data-s="f:-500" aria-label="−500">−</button><input id="cFly" type="number" inputmode="numeric" min="100" step="100" value="${d.flyers}"><button data-s="f:500" aria-label="+500">+</button></div></div>
         <div><label class="f">${esc(t('workersCount'))}</label><div class="stepper"><button data-s="n:-1" ${p ? '' : 'disabled'} aria-label="−1">−</button><b id="vN">${p ? d.n : '—'}</b><button data-s="n:1" ${p ? '' : 'disabled'} aria-label="+1">+</button></div></div>
       </div>
-      ${p && d.sug && d.sug !== d.n ? `<div class="hint">${esc(t('sugWorkers', { n:d.sug, d:d.days }))} <button class="link" id="cSug">${esc(t('applySug'))}</button></div>` : ''}
+      ${p && oneDay ? `<div class="hint">${esc(t('oneDayHint', { h:fmtHm(totMin) }))} <button class="link" id="cOneDay">${esc(t('applySug'))}</button></div>` : p && d.sug && d.sug !== d.n ? `<div class="hint">${esc(t('sugWorkers', { n:d.sug, d:d.days }))} <button class="link" id="cSug">${esc(t('applySug'))}</button></div>` : ''}
       ${planBlock()}
       <div class="must-box zone-box"><div class="sec-row" style="margin:0"><b>${esc(t('zoneTitle'))}</b><span class="small muted">${esc(d.zone ? t('zoneOwn') + (p && p.zone_mb != null ? ' · ' + t('mustMb', { mb:fmtN(p.zone_mb) }) : '') : t('zoneAuto'))}</span></div>
         <p class="small muted" style="margin:2px 0 8px">${esc(t(d.zone ? 'zoneHintOwn' : 'zoneHint'))}</p>
@@ -964,7 +966,7 @@ function viewCreate(edit){
       <div class="steppers"><div><label class="f" for="cDate">${esc(t('startDate'))}</label><input class="in" type="date" id="cDate"></div><div><label class="f" for="cHours">${esc(t('hoursDay'))}</label><input class="in" type="number" id="cHours" min="1" max="12" step="0.5" value="${d.hours}"></div></div>
       <label class="f" for="cQuota">${esc(t('quota'))}</label><input class="in" type="number" id="cQuota" min="200" step="100" value="${esc(saved.quota)}">
       <label class="f" for="cNotes">${esc(t('note'))}</label><textarea class="in" id="cNotes" placeholder="${esc(t('notesPh'))}"></textarea>
-      ${p ? `<div class="${cap.ok ? 'hint' : 'warnbox'}">${cap.ok ? esc(t('fitsOk', { d:d.days })) : esc(t('tooBig', { h:cap.slowest.toFixed(1).replace('.', ','), lim:cap.limit, d:d.days }))}</div>` : ''}`;
+      ${p ? `<div class="${cap.ok ? 'hint' : 'warnbox'}">${cap.ok ? esc(needDays === 1 ? t('fitsOne') : t('fitsOk', { d:needDays })) : esc(t('tooBig', { h:cap.slowest.toFixed(1).replace('.', ','), lim:cap.limit, d:d.days }))}</div>` : ''}`;
     else if(d.step === 4) body = `<p class="small muted" style="margin:0 0 4px">${esc(t('assignHint'))}</p>${p ? p.routes.map((r, i) => routeRow(r, i, true)).join('') : ''}`;
     else {
       const assigned = p ? p.routes.filter((_, i) => d.assign[i]).length : 0;
@@ -1008,6 +1010,7 @@ function viewCreate(edit){
     if($('#cQuota')) $('#cQuota').onchange = () => { saved = keep(); recompute(); };
     if($('#cTravel')) $('#cTravel').onchange = e => { saved = keep(); d.travel = e.target.value; d.bike = d.travel !== 'bus'; recompute(); };
     if($('#cHours')) $('#cHours').onchange = () => { saved = keep(); d.hours = Math.max(1, Math.min(12, num('#cHours', 7))); recompute(); };
+    const od = $('#cOneDay'); if(od) od.onclick = () => { saved = keep(); d.n = 1; d.days = 1; d.assign = {}; recompute(); };
     const sg = $('#cSug'); if(sg) sg.onclick = () => { saved = keep(); d.n = d.sug; d.assign = {}; recompute(); };
     const red = $('#cReduce'); if(red) red.onclick = () => { saved = keep(); d.flyers = Math.max(100, cap.suggestedFlyers); d.nAuto = false; recompute(); };
     document.querySelectorAll('[data-r]').forEach(s => s.onchange = () => { d.assign[+s.dataset.r] = s.value || null; });

@@ -153,8 +153,10 @@
     return { osm:{ elements }, buildings:[...bs.values()].map(x => ({ lat:x[1], lng:x[2], n:x[3] })) };
   }
   const TILES_URL = 'https://xobrvfkwqessbkdwiavu.supabase.co/storage/v1/object/public/tiles/v4/';
+  let tileStamp = '';   // build time of the map squares: a new build gets new URLs, so no stale copy from the cache
+  function setTileStamp(s){ tileStamp = s ? '?b=' + encodeURIComponent(s) : ''; }
   async function fetchOwnTile(base, k, f){
-    const r = await f(base + k.replace(':', '_') + '.json.gz');
+    const r = await f(base + k.replace(':', '_') + '.json.gz' + tileStamp);
     if(!r.ok) return null;
     const buf = new Uint8Array(await r.arrayBuffer());
     let text;
@@ -1178,6 +1180,6 @@
     return partition(g, start, n).map((part, k) => ({ idx:k, ...planPart(g, part, start) }));
   }
 
-  const api = { setPace, denseEntry, pathRuns, emptyGap, tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, makeBoxCounter, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
+  const api = { setTileStamp, setPace, denseEntry, pathRuns, emptyGap, tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, makeBoxCounter, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
   if(typeof module !== 'undefined' && module.exports) module.exports = api; else root.Planner = api;
 })(typeof window !== 'undefined' ? window : globalThis);

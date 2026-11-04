@@ -2,6 +2,11 @@
 // If a Web Worker cannot be started (old WebView), the same service runs on the main thread.
 /* global __PLANWORKER__ */
 import { createPlanService } from './plancore.js';
+import Planner from '../../admin/planner.js';
+import { sb } from './core.js';
+let stampP = null;
+export function tileStamp(){ if(!stampP) stampP = sb.rpc('tiles_stamp').then(r => { const s = (r && r.data) || ''; Planner.setTileStamp(s); return s; }).catch(() => ''); return stampP; }
+tileStamp();
 
 export function makePlanEngine(cache, allowWorker = true){
   let worker = null, job = 0, local = null;
@@ -15,7 +20,7 @@ export function makePlanEngine(cache, allowWorker = true){
         const m = e.data || {};
         if(m.type === 'ask'){
           let result = null;
-          try{ result = m.op === 'cacheGet' ? await cache.get(m.payload) : (await (cache.putChecked || cache.put)(m.payload), true); }catch{ result = null; }
+          try{ result = m.op === 'tileStamp' ? await tileStamp() : m.op === 'cacheGet' ? await cache.get(m.payload) : (await (cache.putChecked || cache.put)(m.payload), true); }catch{ result = null; }
           worker.postMessage({ type:'answer', id:m.id, result }); return;
         }
         const j = jobs.get(m.job); if(!j) return;
