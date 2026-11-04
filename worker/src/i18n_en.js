@@ -155,3 +155,4 @@ Object.assign(T.en, { whyLbl:'Why?', whyPh:'Describe the reason briefly', whyNee
 Object.assign(T.en, { chgDates:'Change days', datesChangedTitle:'New working days: {title}' });
 Object.assign(T.en, { allLinks:'Login links of all workers' });
 T.en.pauseLbl = 'Break';
+Object.assign(T.en, { openWorker:'Open worker page', swapWorker:'Change' });
