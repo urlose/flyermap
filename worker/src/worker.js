@@ -9,7 +9,7 @@ import { locationNote, legalLinks, bindLegal } from './legalview.js';
 import { setLegalFirm } from './legal.js';
 import { t, I } from './i18n.js';
 import { NATIVE, PRIVACY_URL, store, rpc, errText, deMobile, $, esc, css, hav, fmtDist, fmtHm, fmtN, fmtTime, fmtDay, loopPath } from './core.js';
-import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, fit, modal, confirmBox, reasonBox, toast, cityPicker, langSwitch, themeSwitch, statusPill, emptyState, avatar, every } from './ui.js';
+import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, fit, drawJumps, modal, confirmBox, reasonBox, toast, cityPicker, langSwitch, themeSwitch, statusPill, emptyState, avatar, every } from './ui.js';
 
 const BackgroundGeolocation = registerPlugin('BackgroundGeolocation');
 const GREEN = '#16A34A';
@@ -337,7 +337,7 @@ function drawTaskBase(m, task, dayIdx, dim){
     if(days){   // several working days: today's loop is drawn strong, the other days faded (alternating dashes tell them apart)
       planLine = L.featureGroup(days.map((d, k) => { const on = dayIdx == null || dayIdx === k; return L.polyline(Planner.pathRuns(pl.path.slice(d.i0, d.i1 + 1)), { color:col, weight:on ? (dim ? 4 : 5) : 3, opacity:on ? (dim ? .35 : .8) : (dim ? .15 : .3), dashArray:k % 2 ? '9 7' : null, lineJoin:'round' }).addTo(m); }));
     }else planLine = L.polyline(pl.path, { color:col, weight:dim ? 4 : 5, opacity:dim ? .35 : .75, lineJoin:'round' }).addTo(m);
-    b = planLine.getBounds();
+    b = planLine.getBounds(); drawJumps(m, pl.path, task.bike);
   }
   L.marker([task.start_lat, task.start_lng], { icon:dot('pin-start', 24) }).addTo(m);
   return { b, planLine };

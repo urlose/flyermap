@@ -172,3 +172,5 @@ Object.assign(T.de, { sideFailed:'In diesen Orten wurden innerhalb der Grenze ke
 Object.assign(T.ru, { sideFailed:'В этих местах внутри границы не найдено улиц с ящиками, они не вошли в маршрут: {list}. Удалите место и нарисуйте его на карте сами.' });
 Object.assign(T.de, { draftQ:'Entwurf fortsetzen?', draftText:'Es gibt einen nicht gespeicherten Auftrag „{name}“. Weitermachen, wo du aufgehört hast?', draftYes:'Fortsetzen' });
 Object.assign(T.ru, { draftQ:'Продолжить черновик?', draftText:'Есть несохранённый заказ «{name}». Продолжить с того места?', draftYes:'Продолжить' });
+Object.assign(T.de, { tripsBike:'Radwege', tripsBus:'Bus/Bahn-Fahrten' });
+Object.assign(T.ru, { tripsBike:'Велопереезды', tripsBus:'Переезды на автобусе' });

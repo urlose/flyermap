@@ -1,6 +1,6 @@
 import L from 'leaflet';
 import { t } from './i18n.js';
-import { $, esc, css, searchPlaces } from './core.js';
+import { $, esc, css, searchPlaces, bikeRoute } from './core.js';
 
 export const TILES = 'https://tile.openstreetmap.de/{z}/{x}/{y}.png';
 export const ICONS = {
@@ -107,6 +107,18 @@ export function makeMap(el, center, zoom = 15, opts = {}){
 }
 export const dot = (cls, size = 22) => L.divIcon({ className:'', html:`<div class="${cls}"></div>`, iconSize:[size, size], iconAnchor:[size/2, size/2] });
 export const labelIcon = (cls, text) => L.divIcon({ className:'', html:`<div class="pin-wrap"><div class="${cls}"></div><span class="pin-label">${esc(text)}</span></div>`, iconSize:[24, 24], iconAnchor:[12, 12] });
+// the trips between the places of an order (jump points [lat,lng,1] in a route): bike → the road for the bike (loaded),
+// bus / train → a dotted line with a symbol (the exact connection comes from Google / Apple Maps)
+export function drawJumps(g, path, bike){
+  (path || []).forEach((q, i) => {
+    if(!i || q[2] !== 1) return;
+    const a = [path[i - 1][0], path[i - 1][1]], b = [q[0], q[1]];
+    const ln = L.polyline([a, b], { color:bike ? '#16A34A' : '#64748B', weight:4, opacity:.9, dashArray:bike ? '6 6' : '2 9', lineCap:'round', interactive:false }).addTo(g);
+    const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const mk = L.marker(mid, { icon:L.divIcon({ className:'', html:`<span class="jump-ic">${bike ? '🚲' : '🚌'}</span>`, iconSize:[26, 26], iconAnchor:[13, 13] }), interactive:false, keyboard:false }).addTo(g);
+    if(bike) bikeRoute(a, b).then(pts => { if(pts && pts.length > 1){ ln.setLatLngs(pts); mk.setLatLng(pts[Math.floor(pts.length / 2)]); } }).catch(() => {});
+  });
+}
 export function fit(m, b, pad = 30){ try{ if(b && b.isValid()) m.fitBounds(b, { padding:[pad, pad], maxZoom:17, animate:false }); }catch{} }   // no zoom animation: leaving the screen mid-animation broke Leaflet
 
 /* ---------- dialogs ---------- */

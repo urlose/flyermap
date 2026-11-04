@@ -2,7 +2,7 @@ import L from 'leaflet';
 import Planner from '../../admin/planner.js';
 import { t, I } from './i18n.js';
 import { sb, store, $, esc, css, hav, fmtDist, fmtH, fmtHm, fmtN, fmtDay, fmtDT, ago, waLink, telLink, loopPath, deMobile, loc, reversePlace, placeArea } from './core.js';
-import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, labelIcon, fit, modal, confirmBox, toast, searchField, langSwitch, themeSwitch, statusPill, emptyState, avatar, every, personIcon } from './ui.js';
+import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, labelIcon, fit, drawJumps, modal, confirmBox, toast, searchField, langSwitch, themeSwitch, statusPill, emptyState, avatar, every, personIcon } from './ui.js';
 import { legalLinks, bindLegal } from './legalview.js';
 import { makePlanEngine } from './planengine.js';
 import { openMapView } from './routeview.js';
@@ -626,6 +626,7 @@ async function viewTaskMap(id, back){
       })(),
       { key:'done', label:t('rvDone'), add:g => { res.forEach(x => x.runs.forEach(run => L.polyline(run, { color:GREEN, weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g))); offRuns.forEach(run => L.polyline(run, { color:GREEN, weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g)); } },
       { key:'gps', label:tracks.some(x => x.length > 1) ? t('rvGps') : '', on:false, add:g => tracks.forEach(ll => { if(ll.length > 1) gpsLine(g, ll, 2.5); }) },
+      ...((plans || []).some(p => (p.path || []).some(q => q[2] === 1)) ? [{ key:'jumps', label:t(tk.bike ? 'tripsBike' : 'tripsBus'), add:g => (plans || []).forEach(p => drawJumps(g, p.path, tk.bike)) }] : []),
       ...((plans || []).some(p => workerSkips(p).length) ? [{ key:'skip', label:t('rvSkipped'), add:g => drawSkips(g, plans) }] : []),
       { key:'cp', label:t('checkpoints'), add:g => res.forEach(({ p, cps }) => cps.forEach(c => cpMarker(c, dayColor(p.color, c.day), (p.days || []).length > 1).addTo(g))) },
       { key:'live', label:t('rvLive'), add:g => { redrawLive = liveWorkers(g, tk, plans, () => names); } },
@@ -867,6 +868,7 @@ function viewCreate(edit){
     if(d.plan.zone.length > 2) var z = L.polygon(d.plan.zone, { color:css('--brand'), weight:2, fillOpacity:.06, interactive:false }).addTo(zoneLayer);
     L.marker(startArr(), { icon:dot('pin-start', 26) }).addTo(zoneLayer); drawMust();
     d.plan.routes.forEach((r, i) => { if(r.path.length > 1) L.polyline(Planner.pathRuns(r.path), { color:Planner.COLORS[i % 10], weight:4, opacity:.85 }).addTo(planLayer); });
+    d.plan.routes.forEach(r => drawJumps(planLayer, r.path, d.bike));
     if(z && !d.keepView) m.fitBounds(z.getBounds(), { paddingTopLeft:[24, 80], paddingBottomRight:[24, Math.round(innerHeight * .5)], maxZoom:17, animate:false });
   }
   const num = (id, def) => { const v = parseFloat(($(id) || {}).value); return isFinite(v) ? v : def; };
@@ -1149,6 +1151,7 @@ async function viewTask(id){
   (plans || []).forEach(p => { if(!(p.path?.length > 1)) return; const ds = (p.days || []).length > 1 ? p.days : [{ i0:0, i1:p.path.length - 1 }];
     ds.forEach((d, k) => L.polyline(Planner.pathRuns(p.path.slice(d.i0, d.i1 + 1)), { color:dayColor(p.color, k), weight:4, opacity:.7, dashArray:k ? '10 8' : null }).addTo(m)); });
   drawSkips(m, plans);
+  (plans || []).forEach(p => drawJumps(m, p.path, tk.bike));
   const doneLayer = L.layerGroup().addTo(m);
   L.marker([tk.start_lat, tk.start_lng], { icon:dot('pin-start', 24) }).addTo(m);
   liveWorkers(L.layerGroup().addTo(m), tk, plans, () => true);
