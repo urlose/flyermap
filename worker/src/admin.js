@@ -308,18 +308,19 @@ async function viewPeople(){
   const nLive = A.workers.filter(isLive).length;
   shell('people', `${topbar(t('tabPeople'))}
     <div class="pad">
-      ${A.company && A.company.join_code ? `<div class="card" style="display:block;margin-top:0"><b>${esc(t('inviteTitle'))}</b><p class="small muted" style="margin:4px 0 8px">${esc(t('inviteHint'))}</p>
-        <div class="code-row"><input class="in small" readonly id="invLink" value="${esc(APP_LINK + '?neu=' + A.company.join_code)}" style="flex:1;min-width:0"><button class="btn ghost small" id="invCp">${esc(t('copy'))}</button></div>
-        <a class="btn ghost small" style="margin-top:8px" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(t('inviteMsg', { link:APP_LINK + '?neu=' + A.company.join_code }))}">${ICONS.chat}WhatsApp</a></div>` : ''}
-      <button class="btn ghost" id="wNewLink" style="margin-top:12px">${ICONS.plus}${esc(t('newLinkAcc'))}</button>
-      <details class="filters" id="linkBox"><summary>${ICONS.users}${esc(t('allLinks'))}</summary><div class="f-body" id="linkList"><p class="muted small">${esc(t('loadingShort'))}</p></div></details>
-      ${A.company && A.company.id ? `<details class="filters" id="poolBox"><summary>${ICONS.users}${esc(t('poolTitle'))}</summary><div class="f-body" id="poolList"><p class="muted small">${esc(t('loadingShort'))}</p></div></details>` : ''}
-      <div style="height:12px"></div>
       <div class="kpis two"><div class="kpi k-info"><b>${A.workers.length}</b><span>${esc(t('kTotal'))}</span></div><div class="kpi k-ok"><b>${nLive}</b><span>${esc(t('stLive'))}</span></div></div>
       <div class="searchbox"><span class="sb-ic">${ICONS.search}</span><input id="wQ" class="sb-in" placeholder="${esc(t('searchNamePhone'))}" aria-label="${esc(t('searchNamePhone'))}"></div>
       <label class="f">${esc(t('whoCanGo'))}</label>${sf.html}
       <label class="f">${esc(t('workedWhen'))}</label>
       <div id="dFilter"></div>
+      <details class="filters" id="invBox"><summary>${ICONS.plus}${esc(t('invSection'))}</summary><div class="f-body">
+      ${A.company && A.company.join_code ? `<div class="card" style="display:block;margin:0 0 4px"><b>${esc(t('inviteTitle'))}</b><p class="small muted" style="margin:4px 0 8px">${esc(t('inviteHint'))}</p>
+        <div class="code-row"><input class="in small" readonly id="invLink" value="${esc(APP_LINK + '?neu=' + A.company.join_code)}" style="flex:1;min-width:0"><button class="btn ghost small" id="invCp">${esc(t('copy'))}</button></div>
+        <a class="btn ghost small" style="margin-top:8px" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(t('inviteMsg', { link:APP_LINK + '?neu=' + A.company.join_code }))}">${ICONS.chat}WhatsApp</a></div>` : ''}
+      <button class="btn ghost" id="wNewLink" style="margin-top:12px">${ICONS.plus}${esc(t('newLinkAcc'))}</button>
+      <details class="filters" id="linkBox"><summary>${ICONS.users}${esc(t('allLinks'))}</summary><div class="f-body" id="linkList"><p class="muted small">${esc(t('loadingShort'))}</p></div></details>
+      ${A.company && A.company.id ? `<details class="filters" id="poolBox"><summary>${ICONS.users}${esc(t('poolTitle'))}</summary><div class="f-body" id="poolList"><p class="muted small">${esc(t('loadingShort'))}</p></div></details>` : ''}
+      </div></details>
       <div class="sec-row"><h2>${esc(t('workersN', { n:A.workers.length }))}</h2></div>
       <div id="wList"></div>
     </div>`);

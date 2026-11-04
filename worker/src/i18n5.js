@@ -186,3 +186,5 @@ Object.assign(T.de, { takenT:'Schicht auf anderem Handy', takenQ:'Deine Schicht 
 Object.assign(T.ru, { takenT:'Смена на другом телефоне', takenQ:'Твоя смена продолжается на другом телефоне. Здесь она завершена, ничего не считается дважды.', otherPhoneT:'Смена уже идёт', otherPhoneQ:'С твоего аккаунта с {t} идёт смена на другом телефоне. Начать здесь? Там она завершится.', otherPhoneYes:'Начать здесь', autoPaused:'Автопауза: нет движения с {t}. Нажми «Продолжить», когда продолжишь.' });
 Object.assign(T.de, { progLbl:'Fortschritt' });
 Object.assign(T.ru, { progLbl:'Выполнено' });
+Object.assign(T.de, { invSection:'Neue Mitarbeiter einladen & Login-Links' });
+Object.assign(T.ru, { invSection:'Пригласить работников и логин-ссылки' });

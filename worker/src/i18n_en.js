@@ -179,3 +179,4 @@ Object.assign(T.en, { sideOwnKm:'with travel · {km} km', splitHint:'The flyers 
 Object.assign(T.en, { tabSettings:'Settings' });
 Object.assign(T.en, { takenT:'Shift on another phone', takenQ:'Your shift continues on another phone. It was ended here, nothing is counted twice.', otherPhoneT:'Shift already running', otherPhoneQ:'A shift with your account has been running on another phone since {t}. Start here? It will end there.', otherPhoneYes:'Start here', autoPaused:'Paused automatically: no movement since {t}. Tap "Continue" when you go on.' });
 Object.assign(T.en, { progLbl:'Progress' });
+Object.assign(T.en, { invSection:'Invite workers & login links' });
