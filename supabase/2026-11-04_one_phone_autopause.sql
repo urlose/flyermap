@@ -119,13 +119,13 @@ begin
   update workers set active_route_id = null where id = w.id and active_route_id = p_route_id;
 end $$;
 
--- every 5 minutes: a running session (new apps only) that has not moved 50 m for 45 minutes is paused
+-- every 5 minutes: a running session (new apps only) that has not moved 50 m for more than an hour is paused
 -- from the moment it stood still; the worker continues with "Weiter"
 create or replace function public.auto_pause_still()
 returns int language plpgsql security definer set search_path to 'public' as $$
 declare r record; v_n int := 0; v_last record; v_moved timestamptz;
 begin
-  for r in select * from routes where ended_at is null and paused_at is null and device is not null and started_at < now() - interval '45 minutes' loop
+  for r in select * from routes where ended_at is null and paused_at is null and device is not null and started_at < now() - interval '60 minutes' loop
     select lat, lng, t into v_last from route_points where route_id = r.id order by t desc limit 1;
     if v_last.t is null then v_moved := r.started_at;
     else
@@ -133,7 +133,7 @@ begin
       v_moved := greatest(coalesce(v_moved, r.started_at), r.started_at);
       -- no point for a long time counts like standing still: v_moved is at most the last point
     end if;
-    if v_moved < now() - interval '45 minutes' then
+    if v_moved < now() - interval '60 minutes' then
       update routes set paused_at = v_moved, auto_paused = true where id = r.id and paused_at is null and ended_at is null;
       v_n := v_n + 1;
     end if;
