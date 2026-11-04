@@ -8,6 +8,26 @@ import { bootAdmin, viewAdminLogin } from './admin.js';
 import { firmFields, readFirm, avvCheck, bindAvvRead, normCode } from './firm.js';
 import { AVV_VERSION, setLegalFirm } from './legal.js';
 
+// invitation link of a firm (…/app/?neu=CODE): the worker creates the own account right away (no SMS); phone and towns follow in the profile
+export async function viewJoinLink(code){
+  let firm = null; try{ const { data } = await sb.rpc('company_by_code', { p_code:code }); firm = data && data.name; }catch{}
+  plain(`<div class="login"><h1 class="hero">${esc(t('joinTitle'))}</h1>
+    <p class="muted">${esc(firm ? t('joinFirm', { name:firm }) : t('joinCodeBad'))}</p>
+    ${firm ? `<label class="f" for="jName">${esc(t('name'))}</label><input class="in" id="jName" autocomplete="name">
+    <button class="btn primary big" id="jGo" style="margin-top:14px">${esc(t('joinGo'))}</button>` : ''}
+    <div class="err" id="jErr"></div>
+    <p class="small center"><button class="link" id="jBack">${esc(t('back'))}</button></p>${legalLinks()}</div>`);
+  bindLegal(() => viewJoinLink(code));
+  $('#jBack').onclick = () => viewLogin();
+  if(!firm) return;
+  $('#jGo').onclick = async () => {
+    const b = $('#jGo'), name = $('#jName').value.trim(); if(name.length < 2){ $('#jErr').textContent = t('e_name_required'); return; }
+    b.disabled = true;
+    const { data, error } = await sb.rpc('join_by_link', { p_code:code, p_name:name });
+    if(error || !data){ $('#jErr').textContent = error ? errText(error) : t('joinCodeBad'); b.disabled = false; return; }
+    await store.set('canAdmin', false); await acceptToken(data);
+  };
+}
 export function viewLogin(){
   UI.role = null; UI.onTab = null;
   plain(`<div class="welcome">
@@ -30,7 +50,9 @@ export function viewLogin(){
     const m = modal(`<h2>${esc(t('haveLink'))}</h2><p class="muted small">${esc(t('haveLinkHint'))}</p>
       <input class="in" id="lkIn" autocomplete="off" placeholder="https://…/app/?konto=…"><button class="btn primary" id="lkGo">${esc(t('haveLinkGo'))}</button><div class="err" id="lkErr"></div>`);
     m.querySelector('#lkGo').onclick = async () => {
-      const id = (m.querySelector('#lkIn').value.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) || [])[0];
+      const v = m.querySelector('#lkIn').value, neu = (v.match(/[?&]neu=([A-Za-z0-9]+)/) || [])[1];
+      if(neu){ m.remove(); return viewJoinLink(neu); }   // invitation link of a firm pasted in the installed app
+      const id = (v.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) || [])[0];
       if(!id){ m.querySelector('#lkErr').textContent = t('haveLinkBad'); return; }
       m.remove(); await store.set('canAdmin', false); await acceptToken(id);
     };

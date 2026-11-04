@@ -26,6 +26,7 @@ document.addEventListener('click', e => {
     mo.remove(); toast(t('saved'));
   };
 });
+document.addEventListener('click', async e => { if(!e.target.closest || !e.target.closest('#invCp')) return; const v = ($('#invLink') || {}).value; try{ await navigator.clipboard.writeText(v); toast(t('copied')); }catch{ toast(v); } });
 // until SMS login works: the admin creates a worker account and hands over its login link (the worker sets name, phone, cities)
 document.addEventListener('click', e => {
   if(!e.target.closest || !e.target.closest('#wNewLink')) return;
@@ -306,6 +307,9 @@ async function viewPeople(){
       <div id="dFilter"></div>
       <div class="sec-row"><h2>${esc(t('workersN', { n:A.workers.length }))}</h2></div>
       <div id="wList"></div>
+      ${A.company && A.company.join_code ? `<div class="card" style="display:block;margin-top:16px"><b>${esc(t('inviteTitle'))}</b><p class="small muted" style="margin:4px 0 8px">${esc(t('inviteHint'))}</p>
+        <div class="code-row"><input class="in small" readonly id="invLink" value="${esc(APP_LINK + '?neu=' + A.company.join_code)}" style="flex:1;min-width:0"><button class="btn ghost small" id="invCp">${esc(t('copy'))}</button></div>
+        <a class="btn ghost small" style="margin-top:8px" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(t('inviteMsg', { link:APP_LINK + '?neu=' + A.company.join_code }))}">${ICONS.chat}WhatsApp</a></div>` : ''}
       <button class="btn ghost" id="wNewLink" style="margin-top:12px">${ICONS.plus}${esc(t('newLinkAcc'))}</button>
       <details class="filters" id="linkBox"><summary>${ICONS.users}${esc(t('allLinks'))}</summary><div class="f-body" id="linkList"><p class="muted small">${esc(t('loadingShort'))}</p></div></details>
       ${A.company && A.company.id ? `<details class="filters" id="poolBox"><summary>${ICONS.users}${esc(t('poolTitle'))}</summary><div class="f-body" id="poolList"><p class="muted small">${esc(t('loadingShort'))}</p></div></details>` : ''}

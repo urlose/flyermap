@@ -8,7 +8,7 @@ import { store } from './core.js';
 import { UI, applyTheme, initOffline } from './ui.js';
 import { W, bootWorker, workerTab, acceptToken } from './worker.js';
 import { A, bootAdmin, adminTab } from './admin.js';
-import { viewLogin, switchRole } from './auth.js';
+import { viewLogin, switchRole, viewJoinLink } from './auth.js';
 
 // language switch anywhere
 document.addEventListener('click', async e => {
@@ -45,6 +45,9 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener && matchMedia('(pref
   // login link of an account handed over by an admin: …/app/?konto=TOKEN
   let handed = null; try{ handed = new URL(location.href).searchParams.get('konto'); if(handed) history.replaceState(null, '', location.pathname); }catch{}
   if(handed && /^[0-9a-f-]{36}$/i.test(handed)){ await store.set('canAdmin', false); await acceptToken(handed); return; }
+  // invitation link of a firm without SMS: …/app/?neu=CODE → the worker creates the own account
+  let neu = null; try{ neu = new URL(location.href).searchParams.get('neu'); if(neu) history.replaceState(null, '', location.pathname); }catch{}
+  if(neu && /^[A-Za-z0-9]{4,16}$/.test(neu)){ const role0 = await store.get('role'); if(!(await store.get('token')) || role0 === 'admin') return viewJoinLink(neu); }
   const role = await store.get('role');
   if(role === 'admin' && await bootAdmin()) return;
   if(role !== 'admin' && await bootWorker()) return;
