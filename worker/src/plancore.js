@@ -105,15 +105,18 @@ export function createPlanService(cache){
     async planSide({ start, flyers, n, days, hours, must, zone, side, bike }, stage, stale){
 
         // each far place as one whole route (one worker)
-        const far = [];
+        const far = [], failed = [];
         for(const c of side){
           stage('loadingSide'); const g = await sideGraph(c, stage, stale); if(stale()) return { skipped:true };
           // begin on the side towards the main town where there are enough mailboxes (not in the middle of the place)
           const z = c.zone && c.zone.length > 2 ? c.zone : null, st = Planner.denseEntry(g, start, z, Math.min(300, Math.max(100, c.flyers * 0.2))) || [c.lat, c.lng];
           const p = Planner.planFlyers(g, st, c.flyers, 1, { days:1, hoursPerDay:hours, zone:z });   // inside its borders (named place or drawn)
-          const { part, ...r } = p.routes[0]; far.push({ c, r, min:r.minutes, mb:p.mailboxes });
+          const r0 = p && p.routes && p.routes[0];
+          if(!r0 || !r0.path || r0.path.length < 2){ failed.push(c.name); continue; }   // no street with mailboxes inside its border: skip, tell the admin
+          const { part, ...r } = r0; far.push({ c, r, min:r.minutes, mb:p.mailboxes });
         }
-        const mainFlyers = Math.max(100, flyers - side.reduce((s, c) => s + c.flyers, 0));
+        const mainFlyers = Math.max(100, flyers - far.reduce((s, x) => s + x.c.flyers, 0));
+        if(!far.length){ const r1 = await this.planMain({ start, flyers, n, days, hours, must, zone }, stage, stale); if(r1 && r1.plan) r1.plan.side_failed = failed; return r1; }
         // main place: first with n parts; then the number of equal parts that shares the hours best together with the far places
         let res = await this.planMain({ start, flyers:mainFlyers, n, days:1, hours, must, zone }, stage, stale);
         if(!res || res.skipped) return res;
@@ -134,6 +137,7 @@ export function createPlanService(cache){
           return { idx:k, ...buildLine(pieces, hours, bike) };
         });
         res.plan.mailboxes += far.reduce((s, x) => s + x.mb, 0);
+        res.plan.side_failed = failed;
         res.plan.side_info = far.map(x => ({ name:x.c.name, mailboxes:x.mb, worker:bins.findIndex(b => b.items.some(i => i.far === x)) }));
         res.plan.capacity = Planner.capacity(res.plan.routes, flyers);
         res.sug = Math.min(20, Planner.suggestWorkers(res.plan.routes.reduce((s, r) => s + r.minutes, 0), hours, days));
