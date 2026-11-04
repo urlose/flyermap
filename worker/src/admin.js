@@ -1041,8 +1041,8 @@ function editTaskSheet(tk, plans, routes){
     // new quota → the hours of the routes follow (route length ÷ quota × 30 min), no new planning needed
     const q = Math.max(200, Math.round(+mo.querySelector('#eQuota').value || 1500));
     if(q !== (tk.quota_m30 || 1500)) for(const p of plans || []){
-      const mm = len => Math.round((len || 0) / q * 30);
-      await sb.from('task_plans').update({ minutes:mm(p.length_m), days:Array.isArray(p.days) ? p.days.map(x => ({ ...x, minutes:mm(x.length_m) })) : p.days }).eq('id', p.id);
+      const mm = (len, mb) => Math.round((len || 0) / q * 30 + (mb || 0) * 5 / 60);   // walking at the quota + 5 s per mailbox (as the planner)
+      await sb.from('task_plans').update({ minutes:mm(p.length_m, p.mailboxes), days:Array.isArray(p.days) ? p.days.map(x => ({ ...x, minutes:mm(x.length_m, x.mailboxes) })) : p.days }).eq('id', p.id);
     }
     mo.remove(); await loadTasks(); toast(t('saved')); viewTask(tk.id);
   };

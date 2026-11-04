@@ -21,11 +21,11 @@
   // villages come before richer ones far away (otherwise the plan sends people kilometres out for a slightly denser street)
   const DIST_MB = 8;
   const BOX_SEC = 5;               // handling time per mailbox (seconds)
-  // pace of the order: metres per 30 minutes as GPS measures them while distributing (stops at the mailboxes included).
-  // When it is set (setPace), all times come from it; otherwise from walking speed + time per mailbox.
+  // pace of the order: metres per 30 minutes (the order's quota) gives the walking time; the time per mailbox comes on top.
+  // Without a quota (setPace not called) the default walking speed is used.
   let PACE_M30 = 0;
   function setPace(m30){ PACE_M30 = m30 > 0 ? +m30 : 0; }
-  const walkMin = (len, mb) => PACE_M30 ? len / PACE_M30 * 30 : len / 1000 / WALK_KMH * 60 + (mb || 0) * BOX_SEC / 60;
+  const walkMin = (len, mb) => (PACE_M30 ? len / PACE_M30 * 30 : len / 1000 / WALK_KMH * 60) + (mb || 0) * BOX_SEC / 60;   // walking (quota) + putting flyers into the mailboxes
 
   function dist(a, b){
     const x = Math.sin((b[0]-a[0])*RAD/2)**2 + Math.cos(a[0]*RAD)*Math.cos(b[0]*RAD)*Math.sin((b[1]-a[1])*RAD/2)**2;
