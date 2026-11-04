@@ -942,7 +942,7 @@ function editTaskSheet(tk, plans, routes){
     <label class="f">${esc(t('note'))}</label><textarea class="in" id="eNotes">${esc(tk.notes || '')}</textarea>
     <button class="btn primary" id="eSave" style="margin-top:12px">${esc(t('save'))}</button>
     ${routes.length ? `<p class="small muted">${esc(t('editNoReplan'))}</p>` : `<button class="btn ghost" id="eReplan">${esc(t('replan'))}</button>`}
-    <button class="btn ghost small" id="eClose">${esc(t('close'))}</button><div class="err" id="eErr"></div>`);
+    <button class="btn ghost" id="eClose">${esc(t('close'))}</button><div class="err" id="eErr"></div>`);
   mo.querySelector('#eClose').onclick = () => mo.remove();
   mo.querySelector('#eSave').onclick = async () => {
     const title = mo.querySelector('#eTitle').value.trim(); if(!title){ mo.querySelector('#eErr').textContent = t('needTitle'); return; }
@@ -1040,7 +1040,7 @@ async function viewTask(id){
     const p = plans.find(x => x.id === bt.dataset.dates), ds = (p.work_dates || []).map(d => String(d).slice(0, 10)).sort(), n = Math.max(1, ds.length, (p.days || []).length);
     const mo = modal(`<h2>${esc(t('chgDates'))}</h2><p class="muted small">${esc(t('planRoute', { n:p.idx + 1 }))}${wById(p.worker_id) ? ' · ' + esc(wById(p.worker_id).name) : ''}</p>
       <div class="dates">${Array.from({ length:n }, (_, i) => `<label><span>${esc(t('dayN', { n:i + 1 }))}</span><input class="in" type="date" data-ad="${i}" value="${esc(ds[i] || '')}"></label>`).join('')}</div>
-      <button class="btn primary" id="adSave">${esc(t('save'))}</button><button class="btn ghost small" id="adX">${esc(t('close'))}</button><div class="err" id="adErr"></div>`);
+      <button class="btn primary" id="adSave">${esc(t('save'))}</button><button class="btn ghost" id="adX">${esc(t('close'))}</button><div class="err" id="adErr"></div>`);
     mo.querySelector('#adX').onclick = () => mo.remove();
     mo.querySelector('#adSave').onclick = async () => {
       const dates = [...mo.querySelectorAll('[data-ad]')].map(i => i.value).filter(Boolean).sort();
