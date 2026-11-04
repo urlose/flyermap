@@ -66,6 +66,7 @@ def estimate_mailboxes(tags, area):   # = estimateMailboxes() in admin/planner.j
     if b == 'yes':
         if area < 30 or (not has_nr and area < 60): return 0
         if not lv_ok and area > 900: return 0
+        if not lv_ok: return 1 if area < 160 else 2 if area < 260 else max(3, min(250, js_round(area * 3 * 0.75 / 80)))   # = planner.js: house 1, big house 2, blocks by area
         return max(1, min(250, js_round(area * levels * 0.75 / 80)))
     return 0
 
