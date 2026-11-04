@@ -12,6 +12,20 @@ import { viewMaster, poolHtml } from './master.js';
 
 const GREEN = '#16A34A';
 const APP_LINK = 'https://urlose.github.io/flyermap/app/';
+// e-mail admins: change the password (e.g. the first one they got from the master admin)
+document.addEventListener('click', e => {
+  if(!e.target.closest || !e.target.closest('#aPw')) return;
+  const mo = modal(`<h2>${esc(t('pwChange'))}</h2><label class="f">${esc(t('pwNew'))}</label><input class="in" id="pw1" type="password" autocomplete="new-password">
+    <label class="f">${esc(t('pwAgain'))}</label><input class="in" id="pw2" type="password" autocomplete="new-password">
+    <button class="btn primary" id="pwOk" style="margin-top:12px">${esc(t('save'))}</button><button class="btn ghost" id="pwX">${esc(t('cancel'))}</button><div class="err" id="pwErr"></div>`);
+  mo.querySelector('#pwX').onclick = () => mo.remove();
+  mo.querySelector('#pwOk').onclick = async () => {
+    const a = mo.querySelector('#pw1').value, b = mo.querySelector('#pw2').value, er = mo.querySelector('#pwErr');
+    if(a.length < 8){ er.textContent = t('pwShort'); return; } if(a !== b){ er.textContent = t('pwDiff'); return; }
+    const { error } = await sb.auth.updateUser({ password:a }); if(error){ er.textContent = error.message; return; }
+    mo.remove(); toast(t('saved'));
+  };
+});
 // all login links of the team in one place (Mitarbeiter page), loaded when the box is opened
 document.addEventListener('toggle', async e => {
   if(e.target.id !== 'linkBox' || !e.target.open) return;
@@ -276,6 +290,7 @@ async function viewPeople(){
       <h2 class="sec">${esc(t('accountSettings'))}</h2>
       <div class="card" style="display:block">
         <div class="person-row" style="padding-top:0">${avatar()}<div><b>${esc(A.user?.phone ? '+' + A.user.phone.replace(/^\+/, '') : (A.user?.email || ''))}</b><span>${esc(t('admin'))}</span></div></div>
+        ${A.user?.email ? `<button class="btn ghost small" id="aPw" style="margin:0 0 12px">${ICONS.edit}${esc(t('pwChange'))}</button>` : ''}
         ${themeSwitch(A.theme)}
         ${langSwitch(I.lang, true)}
         <div class="tool-row" style="margin-top:16px"><button class="btn ghost small" id="tInv">${ICONS.users}${esc(t('inviteAdmin'))}</button><button class="btn ghost small" id="tWork">${ICONS.route}${esc(t('switchToWorker'))}</button><button class="btn ghost small" id="tDemo">${esc(t('demo'))}</button></div>
