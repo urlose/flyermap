@@ -28,6 +28,26 @@ export async function viewJoinLink(code){
     await store.set('canAdmin', false); await acceptToken(data);
   };
 }
+// personal invitation of a friend (…/app/?ref=CODE): like the firm link, plus the referral for the inviter's bonus
+export async function viewRefLink(code){
+  let inf = null; try{ const { data } = await sb.rpc('firm_by_ref', { p_code:code }); inf = data || null; }catch{}
+  plain(`<div class="login"><h1 class="hero">${esc(t('refJoinTitle'))}</h1>
+    <p class="muted">${esc(inf ? t('refJoinBy', { by:inf.by, firm:inf.firm }) : t('joinCodeBad'))}</p>
+    ${inf ? `<label class="f" for="jName">${esc(t('name'))}</label><input class="in" id="jName" autocomplete="name">
+    <button class="btn primary big" id="jGo" style="margin-top:14px">${esc(t('joinGo'))}</button>` : ''}
+    <div class="err" id="jErr"></div>
+    <p class="small center"><button class="link" id="jBack">${esc(t('back'))}</button></p>${legalLinks()}</div>`);
+  bindLegal(() => viewRefLink(code));
+  $('#jBack').onclick = () => viewLogin();
+  if(!inf) return;
+  $('#jGo').onclick = async () => {
+    const b = $('#jGo'), name = $('#jName').value.trim(); if(name.length < 2){ $('#jErr').textContent = t('e_name_required'); return; }
+    b.disabled = true;
+    const { data, error } = await sb.rpc('join_by_ref', { p_code:code, p_name:name });
+    if(error || !data){ $('#jErr').textContent = error ? errText(error) : t('joinCodeBad'); b.disabled = false; return; }
+    await store.set('canAdmin', false); await acceptToken(data);
+  };
+}
 export function viewLogin(){
   UI.role = null; UI.onTab = null;
   plain(`<div class="welcome">
@@ -52,6 +72,8 @@ export function viewLogin(){
     m.querySelector('#lkGo').onclick = async () => {
       const v = m.querySelector('#lkIn').value, neu = (v.match(/[?&]neu=([A-Za-z0-9]+)/) || [])[1];
       if(neu){ m.remove(); return viewJoinLink(neu); }   // invitation link of a firm pasted in the installed app
+      const ref = (v.match(/[?&]ref=([A-Za-z0-9]+)/) || [])[1];
+      if(ref){ m.remove(); return viewRefLink(ref); }   // a friend's invitation link pasted in the installed app
       const id = (v.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i) || [])[0];
       if(!id){ m.querySelector('#lkErr').textContent = t('haveLinkBad'); return; }
       m.remove(); await store.set('canAdmin', false); await acceptToken(id);

@@ -4,11 +4,12 @@ import './i18n3.js';
 import './i18n4.js';
 import './i18n5.js';
 import './i18n_en.js';
+import './i18n6.js';
 import { store } from './core.js';
 import { UI, applyTheme, initOffline } from './ui.js';
 import { W, bootWorker, workerTab, acceptToken } from './worker.js';
 import { A, bootAdmin, adminTab } from './admin.js';
-import { viewLogin, switchRole, viewJoinLink } from './auth.js';
+import { viewLogin, switchRole, viewJoinLink, viewRefLink } from './auth.js';
 
 // language switch anywhere
 document.addEventListener('click', async e => {
@@ -48,6 +49,9 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener && matchMedia('(pref
   // invitation link of a firm without SMS: …/app/?neu=CODE → the worker creates the own account
   let neu = null; try{ neu = new URL(location.href).searchParams.get('neu'); if(neu) history.replaceState(null, '', location.pathname); }catch{}
   if(neu && /^[A-Za-z0-9]{4,16}$/.test(neu)){ const role0 = await store.get('role'); if(!(await store.get('token')) || role0 === 'admin') return viewJoinLink(neu); }
+  // personal invitation of a friend (…/app/?ref=CODE): same as ?neu=, the inviter gets a bonus after the friend's first order
+  let ref = null; try{ ref = new URL(location.href).searchParams.get('ref'); if(ref) history.replaceState(null, '', location.pathname); }catch{}
+  if(ref && /^[A-Za-z0-9]{4,16}$/.test(ref)){ const role0 = await store.get('role'); if(!(await store.get('token')) || role0 === 'admin') return viewRefLink(ref); }
   const role = await store.get('role');
   if(role === 'admin' && await bootAdmin()) return;
   if(role !== 'admin' && await bootWorker()) return;
