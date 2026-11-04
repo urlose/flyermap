@@ -725,7 +725,7 @@ function viewProfile(){
   const cp = cityPicker(me.cities || []);
   shell('people', `${topbar(t('tabProfile'))}
     <div class="pad">
-      <div class="person-row big">${avatar(me.name)}<div><b>${esc(me.name || '')}</b><span>${esc(me.phone || '')}</span>${me.company && me.company.name && !/^\[/.test(me.company.name) ? `<span>${esc(t('myFirm'))}: ${esc(me.company.name)}</span>` : ''}</div></div>
+      <div class="person-row big">${avatar(me.name)}<div><b>${esc(me.name || '')}</b><span>${esc(/^\+490000/.test(me.phone || '') ? t('noPhoneYet') : (me.phone || ''))}</span>${me.company && me.company.name && !/^\[/.test(me.company.name) ? `<span>${esc(t('myFirm'))}: ${esc(me.company.name)}</span>` : ''}</div></div>
       ${hand ? `<div class="hint">${esc(t('handoverHint'))}</div>` : ''}
       <div class="card" style="display:block;margin-top:16px">
         <label class="f" for="pName" style="margin-top:0">${esc(t('name'))}</label><input class="in" id="pName" value="${esc(nameVal)}" autocomplete="name">
