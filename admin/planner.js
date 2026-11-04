@@ -642,7 +642,9 @@
       if(area < 30 || (!hasNr && area < 60)) return 0;
       if(!(lv > 0) && area > 900) return 0;   // large box without levels: almost always a shop, hall or factory
       // no levels known (villages: almost always): a house is one household, a big one two; only large blocks are flats
-      if(!(lv > 0)) return area < 160 ? 1 : area < 260 ? 2 : Math.max(3, Math.min(250, Math.round(area * 3 * 0.75 / 80)));
+      // big building without number and levels: barn, shed, hall (villages) – no letterbox
+      if(!(lv > 0) && !hasNr) return area < 160 ? 1 : 0;
+      if(!(lv > 0)) return area < 160 ? 1 : area < 260 ? 2 : area < 500 ? 3 : Math.max(3, Math.min(250, Math.round(area * 3 * 0.75 / 80)));
       return Math.max(1, Math.min(250, Math.round(area * levels * 0.75 / 80)));
     }
     return 0;   // any other building type is not counted
