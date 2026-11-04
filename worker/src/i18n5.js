@@ -160,3 +160,5 @@ Object.assign(T.de, { noPhoneYet:'Handynummer noch nicht eingetragen' });
 Object.assign(T.ru, { noPhoneYet:'Номер телефона ещё не указан' });
 Object.assign(T.de, { addrMain:'Startadresse in der Hauptstadt', mainCityAuto:'wird aus der Adresse übernommen', startOnMap:'Startpunkt auf der Karte gesetzt.' });
 Object.assign(T.ru, { addrMain:'Адрес старта в основном городе', mainCityAuto:'берётся из адреса', startOnMap:'Точка старта выбрана на карте.' });
+Object.assign(T.de, { quotaHours:'Danach werden die Stunden berechnet: Strecke ÷ Quote × 30 Min.' });
+Object.assign(T.ru, { quotaHours:'По ней считаются часы: длина маршрута ÷ квота × 30 мин.' });

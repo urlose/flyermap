@@ -21,6 +21,11 @@
   // villages come before richer ones far away (otherwise the plan sends people kilometres out for a slightly denser street)
   const DIST_MB = 8;
   const BOX_SEC = 5;               // handling time per mailbox (seconds)
+  // pace of the order: metres per 30 minutes as GPS measures them while distributing (stops at the mailboxes included).
+  // When it is set (setPace), all times come from it; otherwise from walking speed + time per mailbox.
+  let PACE_M30 = 0;
+  function setPace(m30){ PACE_M30 = m30 > 0 ? +m30 : 0; }
+  const walkMin = (len, mb) => PACE_M30 ? len / PACE_M30 * 30 : len / 1000 / WALK_KMH * 60 + (mb || 0) * BOX_SEC / 60;
 
   function dist(a, b){
     const x = Math.sin((b[0]-a[0])*RAD/2)**2 + Math.cos(a[0]*RAD)*Math.cos(b[0]*RAD)*Math.sin((b[1]-a[1])*RAD/2)**2;
@@ -371,7 +376,7 @@
     }
     return parts;
   }
-  const edgeMin = x => 1.35 * x.len / 1000 / WALK_KMH * 60 + x.mb * BOX_SEC / 60;   // rough minutes for one street piece
+  const edgeMin = x => walkMin(1.35 * x.len, x.mb);   // rough minutes for one street piece
   // neighbouring parts of P (they share a junction)
   function neighbours(g, parts, P, own){
     const nb = new Set();
@@ -894,8 +899,8 @@
   }
 
   function suggestWorkers(totalMinutes, hoursPerDay, days){ return Math.max(1, Math.ceil(totalMinutes / 60 / ((hoursPerDay || WORK_HOURS) * (days || 1)))); }
-  function hours(meters){ return meters / 1000 / WALK_KMH; }
-  function routeMinutes(len, mb){ return Math.round(len / 1000 / WALK_KMH * 60 + (mb || 0) * BOX_SEC / 60); }
+  function hours(meters){ return walkMin(meters, 0) / 60; }
+  function routeMinutes(len, mb){ return Math.round(walkMin(len, mb)); }
   /* does the plan fit the available time? */
   function capacity(routes, flyers, opt){
     const hpd = (opt && opt.hoursPerDay) || WORK_HOURS, days = (opt && opt.days) || 2, limit = hpd * days;
@@ -980,7 +985,7 @@
     }).sort((x, y) => x.ang - y.ang);
     const M = items.length, out = [];
     if(M < n) return out;
-    const cost = (len, mb, far) => (1.35 * len + 2 * far) / 1000 / WALK_KMH * 60 + mb * BOX_SEC / 60;
+    const cost = (len, mb, far) => walkMin(1.35 * len + 2 * far, mb);
     for(let t = 0; t < tries; t++){
       const off = Math.floor(t * M / tries), ring = items.slice(off).concat(items.slice(0, off));
       const cut = T => {   // greedy: how many arcs are needed with limit T; returns cut indices or null
@@ -1153,6 +1158,6 @@
     return partition(g, start, n).map((part, k) => ({ idx:k, ...planPart(g, part, start) }));
   }
 
-  const api = { pathRuns, emptyGap, tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, makeBoxCounter, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
+  const api = { setPace, pathRuns, emptyGap, tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, makeBoxCounter, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
   if(typeof module !== 'undefined' && module.exports) module.exports = api; else root.Planner = api;
 })(typeof window !== 'undefined' ? window : globalThis);
