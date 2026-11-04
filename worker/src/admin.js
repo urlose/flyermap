@@ -686,6 +686,10 @@ function viewTasks(){
 }
 
 /* Routenerstellung: full map + search on top, sheet with flyers / workers / routes */
+// a new order that is not saved yet survives a reload of the page (kept in this browser for 2 days)
+const DRAFT_KEY = 'fm.newOrderDraft';
+const readDraft = () => { try{ const x = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); return x && Date.now() - x.at < 2 * 864e5 ? x : null; }catch{ return null; } };
+const clearDraft = () => { try{ localStorage.removeItem(DRAFT_KEY); }catch{} };
 function viewCreate(edit){
   const tkE = edit && edit.tk;   // editing an existing task: same screen, prefilled, saves over the old routes
   const d = { start:null, place:null, flyers:10000, n:2, nAuto:false, hours:7, quota:1500, days:2, g:null, plan:null, assign:{}, err:null, token:0, must:[], zone:null, drawing:null, drawFor:'must' };
@@ -867,6 +871,19 @@ function viewCreate(edit){
   }
   const num = (id, def) => { const v = parseFloat(($(id) || {}).value); return isFinite(v) ? v : def; };
   // values typed in any step survive re-renders and step changes (only fields that are on screen are read)
+  function saveDraft(){
+    if(tkE || !d.start) return;
+    try{ localStorage.setItem(DRAFT_KEY, JSON.stringify({ at:Date.now(), saved, d:{ start:d.start, place:d.place, must:d.must, side:d.side, flyers:d.flyers, n:d.n, hours:d.hours, days:d.days, bike:d.bike, zone:d.zone, mainCity:d.mainCity } })); }catch{}
+  }
+  async function restoreDraft(){
+    const x = readDraft(); if(!x || !x.d || !x.d.start) return;
+    const name = (x.saved && x.saved.title) || (x.d.place && x.d.place.name) || '—';
+    if(!await confirmBox(t('draftQ'), t('draftText', { name }), t('draftYes'))){ clearDraft(); return; }
+    if(!alive()) return;
+    Object.assign(d, x.d); saved = { ...saved, ...(x.saved || {}) };
+    const qi = $('#cSearch'); if(qi && d.place) qi.value = d.place.name + (d.place.sub ? ', ' + d.place.sub : '');
+    drawMust(); setStart(d.start.lat, d.start.lng);
+  }
   function keep(){
     const k = { ...saved }, v = id => $(id) ? $(id).value : undefined;
     if(v('#cTitle') !== undefined) k.title = v('#cTitle');
@@ -886,6 +903,7 @@ function viewCreate(edit){
   function renderSheet(){
     if(!alive()) return;
     if($('#cWz')) saved = keep();
+    saveDraft();
     const sc = d.step === d.lastStep ? (($('#cSheet') || {}).scrollTop || 0) : 0; d.lastStep = d.step;
     const p = d.plan, title = saved.title || (d.place ? d.place.name : '');
     if(!saved.title && title) saved.title = title;
@@ -1012,11 +1030,12 @@ function viewCreate(edit){
       }
       await savePlans(tk, pl.routes.map((r, i) => ({ task_id:tk.id, idx:i, worker_id:d.assign[i] || null, color:Planner.COLORS[i % 10], path:r.path, length_m:r.length_m, street_m:r.street_m, mailboxes:r.mailboxes, boxes:r.boxes, minutes:r.minutes, days:r.days, steps:r.steps })));
       await loadTasks();
-      viewTask(tk.id);
+      clearDraft(); viewTask(tk.id);
     }catch(e){ if($('#cErr')) $('#cErr').textContent = e.message; else toast(e.message); const sv = $('#cSave'); if(sv){ sv.disabled = false; sv.classList.remove('loading'); } }
   }
   renderSheet();
   if(tkE) setStart(tkE.start_lat, tkE.start_lng);
+  else restoreDraft();
 }
 // saves plans, links workers and sends each assigned worker a notification
 async function savePlans(tk, rows){
