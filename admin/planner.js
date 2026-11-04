@@ -14,7 +14,7 @@
   // (private.coffee / kumi were dropped: they only ever timed out, which kept a failing round open for minutes)
   const OVERPASS = ['https://overpass.openstreetmap.fr/api/interpreter', 'https://overpass-api.de/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
   const WORK_HOURS = 7;            // 8 h shift minus 1 h unpaid break
-  const WALK_KMH = 2.5;            // effective walking speed while distributing (with a bag of flyers)
+  const WALK_KMH = 3.2;            // effective walking speed while distributing (with a bag of flyers) – calibrated to ≈ 2 000 flyers per 7 h shift in practice
   // way to a village counts 3x its length: out and back, plus the extra loops when the work is split between workers and days
   const TRANSIT_W = 3;
   // compact work area: every mailbox costs this many extra metres per km of walking distance from the start, so nearby
@@ -288,6 +288,20 @@
     const h = new Heap(); d[src] = 0; h.push(0, src);
     while(h.size){ const [k, v] = h.pop(); if(k > d[v]) continue; for(const { e, to } of g.adj[v]){ const nd = k + g.edges[e].len; if(nd < d[to]){ d[to] = nd; pe[to] = e; pv[to] = v; h.push(nd, to); } } }
     return { d, pe, pv };
+  }
+  // metres walked WITHOUT mailboxes on the cheapest way from the start into an area: streets with flyers on the way cost
+  // nothing (they are worth walking), empty roads count. Big value → better take the bus to that place.
+  function emptyGap(g, start, poly){
+    const nodes = g.pts.map((_, i) => i).filter(i => g.adj[i].length); if(!nodes.length) return Infinity;
+    const target = new Uint8Array(g.pts.length); let any = false;
+    for(const i of nodes) if(inPoly(g.pts[i], poly)){ target[i] = 1; any = true; }
+    if(!any) return Infinity;
+    const src = nearestNode(g, start, nodes), d = new Float64Array(g.pts.length).fill(Infinity), h = new Heap(); d[src] = 0; h.push(0, src);
+    while(h.size){
+      const [k, v] = h.pop(); if(k > d[v]) continue; if(target[v]) return Math.round(k);
+      for(const { e, to } of g.adj[v]){ const E = g.edges[e], c = (E.mb || 0) * 60 >= E.len ? 0 : E.len, nd = k + c; if(nd < d[to]){ d[to] = nd; h.push(nd, to); } }
+    }
+    return Infinity;
   }
   function pathFrom(tree, target){ const out = []; let x = target; while(tree.pe[x] !== -1){ out.push(tree.pe[x]); x = tree.pv[x]; } return out.reverse(); }
 
@@ -1139,6 +1153,6 @@
     return partition(g, start, n).map((part, k) => ({ idx:k, ...planPart(g, part, start) }));
   }
 
-  const api = { pathRuns, tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, makeBoxCounter, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
+  const api = { pathRuns, emptyGap, tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, makeBoxCounter, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
   if(typeof module !== 'undefined' && module.exports) module.exports = api; else root.Planner = api;
 })(typeof window !== 'undefined' ? window : globalThis);
