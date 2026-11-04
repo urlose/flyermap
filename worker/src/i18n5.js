@@ -180,3 +180,5 @@ Object.assign(T.de, { mustTooMany:'Die Nebenstädte mit „alle Briefkästen“ 
 Object.assign(T.ru, { mustTooMany:'В доп. городах с «все ящики» вместе ≈ {mb} ящиков, а флаеров всего {f}. В шаге 1 нажмите на название и впишите число флаеров – или увеличьте число флаеров.' });
 Object.assign(T.de, { sideOwnKm:'mit Anfahrt · {km} km', splitHint:'Die Flyer werden gleichmäßig auf die Orte verteilt (wo weniger Briefkästen sind, bekommen die anderen mehr): {list}' });
 Object.assign(T.ru, { sideOwnKm:'с переездом · {km} км', splitHint:'Флаеры поровну разделены по местам (где ящиков меньше, остаток получают другие): {list}' });
+Object.assign(T.de, { tabSettings:'Einstellungen' });
+Object.assign(T.ru, { tabSettings:'Настройки' });

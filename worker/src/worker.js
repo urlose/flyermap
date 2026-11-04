@@ -9,7 +9,7 @@ import { locationNote, legalLinks, bindLegal } from './legalview.js';
 import { setLegalFirm } from './legal.js';
 import { t, I } from './i18n.js';
 import { NATIVE, PRIVACY_URL, store, rpc, errText, deMobile, $, esc, css, hav, fmtDist, fmtHm, fmtN, fmtTime, fmtDay, loopPath } from './core.js';
-import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, fit, drawJumps, modal, confirmBox, reasonBox, toast, cityPicker, langSwitch, themeSwitch, statusPill, emptyState, avatar, every } from './ui.js';
+import { UI, ICONS, shell, setLoc, getLoc, plain, topbar, bindBack, makeMap, dot, fit, drawJumps, modal, confirmBox, reasonBox, toast, cityPicker, langSwitch, themeSwitch, statusPill, emptyState, avatar, every } from './ui.js';
 
 const BackgroundGeolocation = registerPlugin('BackgroundGeolocation');
 const GREEN = '#16A34A';
@@ -377,7 +377,7 @@ function viewTaskDetail(task){
       ${plan && st === 'declined' ? `<p class="note">${esc(t('stDeclined'))}</p>` : ''}
       ${(!plan || st === 'accepted') ? `<button class="btn primary big" id="go">${ICONS.play}<span>${esc(t('startRoute'))}</span></button>` : ''}
       <div class="rr-btns" id="dirRow"><a class="btn ghost" id="dirG" target="_blank" rel="noopener" href="${esc((task.bike ? rideLink(task) : gTransit)(task.start_lat, task.start_lng))}">${ICONS.pin}${esc(t(task.bike ? rideTxt(task) : 'directions'))}</a><a class="btn ghost" id="dirA" target="_blank" rel="noopener" href="${esc(aTransit(task.start_lat, task.start_lng))}">${ICONS.map}${esc(t('appleMaps'))}</a></div>
-    </div>`);
+    </div>`); setLoc('task/' + task.id);
   bindBack(() => workerTab('tasks'));
   if(st === 'open'){ const p0 = document.querySelector('.sec-row'); if(p0) p0.insertAdjacentHTML('afterend', `<p class="small muted" style="margin:-4px 0 10px">${esc(t('planRoute', { n:plan.idx + 1 }))}</p>`); }
   const m = makeMap($('#tdMap'), [task.start_lat, task.start_lng], 14, { dragging:true });
@@ -779,8 +779,10 @@ export async function bootWorker(){
     const pid = W.route.planId; if(pid && !W.prev){ try{ W.prev = await rpc('plan_progress', { p_token:W.token, p_plan_id:pid }); }catch{} }
     workerTab('map'); if(!W.route.paused) startWatching(); flush(); loadMe(); return true;
   }
-  workerTab('tasks'); flush(); await loadMe();
+  const [lk, lid] = getLoc().split('/');   // after a reload: the screen the worker was on
+  workerTab(lk === 'map' || lk === 'people' ? lk : 'tasks'); flush(); await loadMe();
   if(isHandover(W.me)) workerTab('people');   // first fill in name, number and cities
+  else if(lk === 'task' && lid){ const tk = tasks().find(x => x.id === lid); if(tk) viewTaskDetail(tk); else workerTab('tasks'); }
   else if(UI.tab === 'tasks' && !document.querySelector('.topbar #tbBack')) workerTab('tasks');
   return true;
 }

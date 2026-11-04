@@ -2,7 +2,7 @@ import L from 'leaflet';
 import Planner from '../../admin/planner.js';
 import { t, I } from './i18n.js';
 import { sb, store, $, esc, css, hav, fmtDist, fmtH, fmtHm, fmtN, fmtDay, fmtDT, ago, waLink, telLink, loopPath, deMobile, loc, reversePlace, placeArea } from './core.js';
-import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, labelIcon, fit, drawJumps, modal, confirmBox, toast, searchField, langSwitch, themeSwitch, statusPill, emptyState, avatar, every, personIcon } from './ui.js';
+import { UI, ICONS, shell, setLoc, getLoc, plain, topbar, bindBack, makeMap, dot, labelIcon, fit, drawJumps, modal, confirmBox, toast, searchField, langSwitch, themeSwitch, statusPill, emptyState, avatar, every, personIcon } from './ui.js';
 import { legalLinks, bindLegal } from './legalview.js';
 import { makePlanEngine } from './planengine.js';
 import { openMapView } from './routeview.js';
@@ -119,6 +119,7 @@ function workerOptions(lat, lng, sel){
 export function adminTab(tab){
   if(tab === 'map') return viewLive();
   if(tab === 'people') return viewPeople();
+  if(tab === 'settings') return viewSettings();
   return viewTasks();
 }
 
@@ -319,25 +320,9 @@ async function viewPeople(){
       <button class="btn ghost" id="wNewLink" style="margin-top:12px">${ICONS.plus}${esc(t('newLinkAcc'))}</button>
       <details class="filters" id="linkBox"><summary>${ICONS.users}${esc(t('allLinks'))}</summary><div class="f-body" id="linkList"><p class="muted small">${esc(t('loadingShort'))}</p></div></details>
       ${A.company && A.company.id ? `<details class="filters" id="poolBox"><summary>${ICONS.users}${esc(t('poolTitle'))}</summary><div class="f-body" id="poolList"><p class="muted small">${esc(t('loadingShort'))}</p></div></details>` : ''}
-      ${A.company && A.company.master ? `<button class="btn primary" id="tMaster" style="margin-top:16px">${ICONS.users}${esc(t('master'))}</button>` : ''}
-      ${A.company && A.company.id ? firmCardHtml(A.company) : ''}
-      <h2 class="sec">${esc(t('accountSettings'))}</h2>
-      <div class="card" style="display:block">
-        <div class="person-row" style="padding-top:0">${avatar()}<div><b>${esc(A.user?.phone ? '+' + A.user.phone.replace(/^\+/, '') : (A.user?.email || ''))}</b><span>${esc(t('admin'))}</span></div></div>
-        ${A.user?.email ? `<button class="btn ghost small" id="aPw" style="margin:0 0 12px">${ICONS.edit}${esc(t('pwChange'))}</button>` : ''}
-        ${themeSwitch(A.theme)}
-        ${langSwitch(I.lang, true)}
-        <div class="tool-row" style="margin-top:16px"><button class="btn ghost small" id="tInv">${ICONS.users}${esc(t('inviteAdmin'))}</button><button class="btn ghost small" id="tWork">${ICONS.route}${esc(t('switchToWorker'))}</button><button class="btn ghost small" id="tDemo">${esc(t('demo'))}</button></div>
-        <button class="btn ghost danger-text" id="tOut" style="margin-top:8px">${esc(t('logout'))}</button>
-      </div>
-      ${legalLinks()}
     </div>`);
-  store.get('theme').then(v => { A.theme = v; document.querySelectorAll('[data-theme-set]').forEach(b => { const on = b.dataset.themeSet === (v || 'system'); b.classList.toggle('on', on); b.setAttribute('aria-checked', on); }); });
-  sf.bind(); bindLegal(viewPeople);
-  if(A.company && A.company.id) bindFirmCard(A.company, c => { A.company = { ...c, master:A.company.master }; viewPeople(); });
-  if($('#tMaster')) $('#tMaster').onclick = () => viewMaster(viewPeople);
+  sf.bind();
   if($('#poolBox')) $('#poolBox').addEventListener('toggle', async () => { if($('#poolBox').open && !$('#poolBox').dataset.done){ $('#poolBox').dataset.done = 1; $('#poolList').innerHTML = await poolHtml(); } });
-  if(A.focusFirm){ A.focusFirm = false; const fc = $('#firmCard'); if(fc) fc.scrollIntoView({ block:'center' }); }
   let days = [];   // all working days (newest first), loaded below
   const render = () => {
     const places = [...new Set(days.map(r => r.place).filter(Boolean))].sort(); if(f.place && !places.includes(f.place)) f.place = '';
@@ -364,6 +349,30 @@ async function viewPeople(){
   $('#wQ').oninput = render; render();
   sb.from('routes').select('id,worker_id,task_id,plan_id,started_at,ended_at,distance_m,break_s,adj_s,place,task_title').order('started_at', { ascending:false }).limit(2000)
     .then(({ data }) => { if(!document.getElementById('dFilter')) return; days = mergeDays(data || []); render(); fillPlaces(days, () => { if(document.getElementById('dFilter')) render(); }); });
+}
+
+/* ---------- EINSTELLUNGEN: firm, own account, language, legal ---------- */
+function viewSettings(){
+  shell('settings', `${topbar(t('tabSettings'))}
+    <div class="pad">
+      ${A.company && A.company.master ? `<button class="btn primary" id="tMaster" style="margin-top:16px">${ICONS.users}${esc(t('master'))}</button>` : ''}
+      ${A.company && A.company.id ? firmCardHtml(A.company) : ''}
+      <h2 class="sec">${esc(t('accountSettings'))}</h2>
+      <div class="card" style="display:block">
+        <div class="person-row" style="padding-top:0">${avatar()}<div><b>${esc(A.user?.phone ? '+' + A.user.phone.replace(/^\+/, '') : (A.user?.email || ''))}</b><span>${esc(t('admin'))}</span></div></div>
+        ${A.user?.email ? `<button class="btn ghost small" id="aPw" style="margin:0 0 12px">${ICONS.edit}${esc(t('pwChange'))}</button>` : ''}
+        ${themeSwitch(A.theme)}
+        ${langSwitch(I.lang, true)}
+        <div class="tool-row" style="margin-top:16px"><button class="btn ghost small" id="tInv">${ICONS.users}${esc(t('inviteAdmin'))}</button><button class="btn ghost small" id="tWork">${ICONS.route}${esc(t('switchToWorker'))}</button><button class="btn ghost small" id="tDemo">${esc(t('demo'))}</button></div>
+        <button class="btn ghost danger-text" id="tOut" style="margin-top:8px">${esc(t('logout'))}</button>
+      </div>
+      ${legalLinks()}
+    </div>`);
+  store.get('theme').then(v => { A.theme = v; document.querySelectorAll('[data-theme-set]').forEach(b => { const on = b.dataset.themeSet === (v || 'system'); b.classList.toggle('on', on); b.setAttribute('aria-checked', on); }); });
+  bindLegal(viewSettings);
+  if(A.company && A.company.id) bindFirmCard(A.company, c => { A.company = { ...c, master:A.company.master }; viewSettings(); });
+  if($('#tMaster')) $('#tMaster').onclick = () => viewMaster(viewSettings);
+  if(A.focusFirm){ A.focusFirm = false; const fc = $('#firmCard'); if(fc) fc.scrollIntoView({ block:'center' }); }
   $('#tOut').onclick = async () => { if(await confirmBox(t('logout'), t('logoutQ'), t('logout'))){ await sb.auth.signOut(); for(const k of ['role', 'token', 'me', 'canAdmin']) await store.del(k); A.hooks.loggedOut && A.hooks.loggedOut(); } };
   $('#tWork').onclick = openAsWorker;
   $('#tInv').onclick = () => {
@@ -396,7 +405,7 @@ async function viewWorker(id, back, focusId){
       <button class="btn primary" id="wsave" style="margin-top:12px">${esc(t('save'))}</button>
       ${/^\+490000/.test(w.phone || '') && !/^\+4900000000/.test(w.phone || '') ? `<div id="wLink" class="card" style="display:block;margin-top:16px"><label class="f" style="margin-top:0">${esc(t('loginLink'))}</label><p class="small muted">${esc(t('loadingShort'))}</p></div>` : ''}
       <button class="btn ghost danger-text" id="wdel" style="margin-top:20px">${esc(t('del'))}</button>
-    </div>`);
+    </div>`); setLoc('worker/' + id);
   bindBack(back);
   const wm = makeMap($('#wMap'), (w.last_lat != null) ? [w.last_lat, w.last_lng] : null, 14), wl = L.layerGroup().addTo(wm);
   let curDay = null;
@@ -674,7 +683,7 @@ function viewTasks(){
     </div>`, { fab:t('createTask') });
   $('#fab').onclick = () => viewCreate();
   if($('#create')) $('#create').onclick = () => viewCreate();
-  if($('#firmTodo')) $('#firmTodo').onclick = () => { A.focusFirm = true; adminTab('people'); };
+  if($('#firmTodo')) $('#firmTodo').onclick = () => { A.focusFirm = true; adminTab('settings'); };
   const again = () => viewTasks();
   document.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { f.status = b.dataset.st; again(); });
   $('#fCity').onchange = e => { f.city = e.target.value; again(); }; $('#fDist').onchange = e => { f.district = e.target.value; again(); };
@@ -709,7 +718,7 @@ function viewCreate(edit){
     <button class="chip pick-btn" id="cPick" hidden></button>
     <div class="draw-bar" id="cDraw" hidden><b id="cDrawT">${esc(t('mustDrawHint'))}</b><span class="small" id="cDrawN"></span>
       <div class="tool-row"><button class="btn ghost small" id="cDrawUndo">${esc(t('mustUndo'))}</button><button class="btn ghost small" id="cDrawCancel">${esc(t('cancel'))}</button><button class="btn primary small" id="cDrawOk">${esc(t('mustDone'))}</button></div></div>
-    <div class="sheet" id="cSheet"></div>`, { map:true });
+    <div class="sheet" id="cSheet"></div>`, { map:true }); setLoc(tkE ? 'task/' + tkE.id : 'new');
   sf.bind();
   $('#cBack').onclick = () => { d.token++; viewTasks(); };
   const m = makeMap($('#fullMap'), null, 13);
@@ -1144,7 +1153,7 @@ async function viewTask(id){
         <div class="rr-swap" id="sw${p.id}" ${w ? 'hidden' : ''}><select class="in small" data-plan="${p.id}">${workerOptions(tk.start_lat, tk.start_lng, p.worker_id)}</select><span class="small muted">${esc(t('replaceHint'))}</span></div></div></div>`; }).join('') : `<p class="muted small">${esc(t('noPlans'))}</p>`}
       <div class="tool-row" style="margin-top:16px"><button class="btn ghost small" id="tEdit">${ICONS.edit}${esc(t('editTask'))}</button><button class="btn ghost small" id="tDone">${ICONS.check}${esc(tk.status === 'open' ? t('finish') : t('reopen'))}</button><button class="btn ghost small danger-text" id="tDel">${esc(t('del'))}</button></div>
       <p class="small muted">${esc(t('desktop'))}</p>
-    </div>`);
+    </div>`); setLoc('task/' + id);
   bindBack(viewTasks);
   const m = makeMap($('#tMap'), [tk.start_lat, tk.start_lng], 14);
   let b = L.latLngBounds([[tk.start_lat, tk.start_lng]]);
@@ -1344,6 +1353,14 @@ export async function bootAdmin(){
   await store.set('role', 'admin');
   try{ await loadAll(); }catch{}
   if(A.company && A.company.master && !A.company.id){ adminTab('people'); viewMaster(() => adminTab('people')); }
-  else adminTab('tasks');
+  else restoreAdmin();
   return true;
+}
+// after a reload: the screen the admin was on (order, worker, new order …), else the orders
+function restoreAdmin(){
+  const [k, id] = getLoc().split('/');
+  if(k === 'task' && id && A.tasks.some(x => x.id === id)) return viewTask(id);
+  if(k === 'worker' && id && A.workers.some(w => w.id === id)) return viewWorker(id);
+  if(k === 'new') return viewCreate();
+  adminTab(['map', 'people', 'tasks', 'settings'].includes(k) ? k : 'tasks');
 }

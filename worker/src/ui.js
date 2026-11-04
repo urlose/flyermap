@@ -5,6 +5,7 @@ import { $, esc, css, searchPlaces, bikeRoute } from './core.js';
 export const TILES = 'https://tile.openstreetmap.de/{z}/{x}/{y}.png';
 export const ICONS = {
   map:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4 3 6.2v13.6L9 18l6 2 6-2.2V4.2L15 6 9 4z"/><path d="M9 4v14M15 6v14"/></svg>',
+  gear:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>',
   person:'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.6"/><path d="M4.5 20.5c1.2-4 4.1-6 7.5-6s6.3 2 7.5 6"/></svg>',
   flag:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 21V3.5"/><path d="M5.5 4h12l-2.6 4.2 2.6 4.3h-12"/></svg>',
   search:'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg>',
@@ -81,13 +82,16 @@ export function every(ms, fn){ const id = setInterval(fn, ms); UI.timers.push(id
 // full screen without tab bar (welcome, auth)
 export function plain(html){ cleanup(); $('#root').innerHTML = `<div class="plain"><div class="plain-in">${html}</div></div>`; }
 // screen inside the tab shell
+// where the person is (…#task/<id>): kept in the address, so a reload opens the same screen again
+export function setLoc(s){ try{ history.replaceState(history.state, '', location.pathname + location.search + (s ? '#' + s : '')); }catch{} }
+export const getLoc = () => { try{ return decodeURIComponent((location.hash || '').slice(1)); }catch{ return ''; } };
 export function shell(tab, html, opts = {}){
-  cleanup(); UI.tab = tab;
+  cleanup(); UI.tab = tab; setLoc(tab);
   const peopleLabel = UI.role === 'admin' ? t('tabPeople') : t('tabProfile');
   $('#root').innerHTML = `<div class="shell">
     <main id="content" class="${opts.map ? 'content map-content' : 'content'}">${html}</main>
     <nav class="tabbar" role="tablist">
-      ${[['map', 'map', t('tabMap')], ['people', 'person', peopleLabel], ['tasks', 'flag', t('tabTasks')]].map(([k, ic, lb]) =>
+      ${[['map', 'map', t('tabMap')], ['people', UI.role === 'admin' ? 'users' : 'person', peopleLabel], ['tasks', 'flag', t('tabTasks')], ...(UI.role === 'admin' ? [['settings', 'gear', t('tabSettings')]] : [])].map(([k, ic, lb]) =>
         `<button role="tab" class="tab ${k === tab ? 'on' : ''}" data-tab="${k}" aria-selected="${k === tab}">${ICONS[ic]}<span>${esc(lb)}</span></button>`).join('')}
     </nav>${opts.fab ? `<button class="fab" id="fab" aria-label="${esc(opts.fab)}" title="${esc(opts.fab)}">${ICONS.plus}</button>` : ''}</div>`;
   document.querySelectorAll('.tab').forEach(b => b.onclick = () => UI.onTab && UI.onTab(b.dataset.tab));
