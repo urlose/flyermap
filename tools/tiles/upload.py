@@ -17,7 +17,7 @@ def token():
 def send(batch, d):
     """uploads the files; on a partial failure only the failed ones are sent again"""
     todo = list(batch)
-    for attempt in range(8):
+    for attempt in range(12):
         body = json.dumps({'files': [{'path': f, 'b64': base64.b64encode(open(os.path.join(d, f), 'rb').read()).decode()} for f in todo]}).encode()
         try:
             req = urllib.request.Request(URL, data=body, method='POST', headers={'Authorization': 'Bearer ' + token(), 'Content-Type': 'application/json'})
@@ -29,7 +29,7 @@ def send(batch, d):
             msg = e.read().decode()[:300] if hasattr(e, 'read') else str(e)
             print('retry', attempt, msg, flush=True)
             if 'forbidden' in msg: raise
-        time.sleep(4 * (attempt + 1))
+        time.sleep(min(60, 5 * (attempt + 1)))
     print('::error::upload failed for %d files, e.g. %s' % (len(todo), todo[0]))
     raise RuntimeError('upload failed: ' + todo[0])
 
@@ -39,11 +39,11 @@ def main():
     batches, cur, size = [], [], 0
     for f in files:
         s = os.path.getsize(os.path.join(d, f))
-        if cur and (size + s > 1_000_000 or len(cur) >= 60): batches.append(cur); cur, size = [], 0
+        if cur and (size + s > 400_000 or len(cur) >= 20): batches.append(cur); cur, size = [], 0
         cur.append(f); size += s
     if cur: batches.append(cur)
     done, t0 = 0, time.time()
-    with ThreadPoolExecutor(3) as ex:
+    with ThreadPoolExecutor(2) as ex:
         for n in ex.map(lambda b: send(b, d), batches):
             done += n
             if done % 2000 < n: print('uploaded %d/%d · %d s' % (done, len(files), time.time() - t0), flush=True)
