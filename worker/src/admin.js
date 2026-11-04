@@ -26,6 +26,29 @@ document.addEventListener('click', e => {
     mo.remove(); toast(t('saved'));
   };
 });
+// until SMS login works: the admin creates a worker account and hands over its login link (the worker sets name, phone, cities)
+document.addEventListener('click', e => {
+  if(!e.target.closest || !e.target.closest('#wNewLink')) return;
+  let city = null;
+  const sf = searchField('nlCity', t('whoPh'), c => { city = c; }, { citiesOnly:true });
+  const mo = modal(`<h2>${esc(t('newLinkAcc'))}</h2><p class="muted small">${esc(t('newLinkHint'))}</p>
+    <label class="f">${esc(t('nameOpt'))}</label><input class="in" id="nlName" autocomplete="off">
+    <label class="f">${esc(t('cityOpt'))}</label>${sf.html}
+    <button class="btn primary" id="nlOk" style="margin-top:12px">${esc(t('createLink'))}</button><button class="btn ghost" id="nlX">${esc(t('cancel'))}</button><div class="err" id="nlErr"></div><div id="nlOut"></div>`);
+  sf.bind();
+  mo.querySelector('#nlX').onclick = () => { mo.remove(); if(mo.dataset.made){ loadWorkers().then(() => viewPeople()); } };
+  mo.querySelector('#nlOk').onclick = async () => {
+    const b = mo.querySelector('#nlOk'); b.disabled = true;
+    const phone = '+490000002' + String(Date.now()).slice(-6) + Math.floor(Math.random() * 10);   // placeholder until the worker enters the real number
+    const { data, error } = await sb.from('workers').insert({ name:mo.querySelector('#nlName').value.trim() || t('newWorkerName'), phone, cities:city ? [{ name:city.city || city.name, lat:city.lat, lng:city.lng }] : [], zone_minutes:60 }).select('token').single();
+    if(error){ mo.querySelector('#nlErr').textContent = error.message; b.disabled = false; return; }
+    mo.dataset.made = '1'; b.hidden = true; mo.querySelector('#nlX').textContent = t('close');
+    const link = APP_LINK + '?konto=' + data.token;
+    mo.querySelector('#nlOut').innerHTML = `<label class="f">${esc(t('loginLink'))}</label><div class="code-row"><input class="in small" readonly value="${esc(link)}" style="flex:1;min-width:0"><button class="btn ghost small" id="nlCp">${esc(t('copy'))}</button></div>
+      <a class="btn ghost small" style="margin-top:8px" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(link)}">${ICONS.chat}WhatsApp</a>`;
+    mo.querySelector('#nlCp').onclick = async () => { try{ await navigator.clipboard.writeText(link); toast(t('copied')); }catch{ toast(link); } };
+  };
+});
 // all login links of the team in one place (Mitarbeiter page), loaded when the box is opened
 document.addEventListener('toggle', async e => {
   if(e.target.id !== 'linkBox' || !e.target.open) return;
@@ -283,6 +306,7 @@ async function viewPeople(){
       <div id="dFilter"></div>
       <div class="sec-row"><h2>${esc(t('workersN', { n:A.workers.length }))}</h2></div>
       <div id="wList"></div>
+      <button class="btn ghost" id="wNewLink" style="margin-top:12px">${ICONS.plus}${esc(t('newLinkAcc'))}</button>
       <details class="filters" id="linkBox"><summary>${ICONS.users}${esc(t('allLinks'))}</summary><div class="f-body" id="linkList"><p class="muted small">${esc(t('loadingShort'))}</p></div></details>
       ${A.company && A.company.id ? `<details class="filters" id="poolBox"><summary>${ICONS.users}${esc(t('poolTitle'))}</summary><div class="f-body" id="poolList"><p class="muted small">${esc(t('loadingShort'))}</p></div></details>` : ''}
       ${A.company && A.company.master ? `<button class="btn primary" id="tMaster" style="margin-top:16px">${ICONS.users}${esc(t('master'))}</button>` : ''}
