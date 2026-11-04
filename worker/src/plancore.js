@@ -22,32 +22,43 @@ export function createPlanService(cache){
     const g = await Planner.loadForFlyers([c.lat, c.lng], c.flyers, { cache, tiles, stale, progress:(done, total) => { if(stage && total > 1) stage('loadingSide|' + done + '|' + total); } });
     sideG.set(k, g); return g;
   };
-  // route k of the main place + route k of each far place = one route. The planner's loops (each returns to its start) are the
-  // pieces; they are packed into working days by time, so a day can finish the main place and go on in a far place after a bus
-  // ride (TRAVEL_MIN counted for packing). The first point of a far place is marked [lat,lng,1]: a jump, no street before it.
+  // ---- far places of the order (bus / train) ----
+  // Every far place goes WHOLE to one worker (nobody travels twice); the main place is cut into k equal parts and the parts and
+  // far places are shared out so that everyone gets about the same hours (LPT). A worker's work is one line: main parts first,
+  // then the far places (first point marked [lat,lng,1] = jump, no street). The days are then cut by time, wherever the hours
+  // are full – the next day starts where the walker stopped (starting at an open part of the route is allowed).
   const TRAVEL_MIN = 30;
-  const loops = r => r.days && r.days.length ? r.days : [{ i0:0, i1:r.path.length - 1, length_m:r.length_m, street_m:r.street_m, minutes:r.minutes, mailboxes:r.mailboxes }];
-  const joinRoutes = (a, sides, hours) => {
-    const path = [...a.path], steps = [...(a.steps || [])], boxes = [...(a.boxes || [])], pieces = loops(a).map(d => ({ ...d }));
-    for(const { r, name } of sides){
-      if(!r) continue; const L = path.length;
-      r.path.forEach((q, j) => path.push(j ? q : [q[0], q[1], 1]));
+  const segLen = (a, b) => { const k = Math.cos(a[0] * Math.PI / 180); return 111320 * Math.hypot(b[0] - a[0], (b[1] - a[1]) * k); };
+  const lpt = (items, n) => {   // items: { min } → n bins, largest first into the emptiest bin
+    const bins = Array.from({ length:n }, () => ({ min:0, items:[] }));
+    [...items].sort((x, y) => y.min - x.min).forEach(it => { const b = bins.reduce((m, x) => x.min < m.min ? x : m, bins[0]); b.items.push(it); b.min += it.min; });
+    return bins;
+  };
+  // one worker's line from its pieces (routes of the planner); pieces: [{ r, name|null }] in walking order
+  const buildLine = (pieces, hours) => {
+    const path = [], steps = [], boxes = [], segMin = [], segMb = [], segSt = [], place = [];
+    let length_m = 0, street_m = 0, minutes = 0, mailboxes = 0;
+    for(const { r, name } of pieces){
+      const L = path.length, jump = !!name && L > 0;
+      const tot = r.path.slice(1).reduce((s, q, j) => s + segLen(r.path[j], q), 0) || 1;
+      r.path.forEach((q, j) => {
+        path.push(j === 0 && jump ? [q[0], q[1], 1] : [q[0], q[1]]);
+        const d = j ? segLen(r.path[j - 1], q) : 0;
+        segMin.push(j === 0 ? (jump ? TRAVEL_MIN : 0) : r.minutes * d / tot); segMb.push(j ? (r.mailboxes || 0) * d / tot : 0); segSt.push(j ? (r.street_m || 0) * d / tot : 0); place.push(name || '');
+      });
       (r.steps || []).forEach(st => steps.push([st[0] + L, st[1], st[2]])); (r.boxes || []).forEach(x => boxes.push(x));
-      loops(r).forEach((d, j) => pieces.push({ ...d, i0:d.i0 + L, i1:d.i1 + L, place:name, jump:j === 0 }));
+      length_m += r.length_m || 0; street_m += r.street_m || 0; minutes += r.minutes || 0; mailboxes += r.mailboxes || 0;
     }
-    const lim = hours * 60 * 1.1, days = []; let cur = null, t = 0;
-    for(const p of pieces){
-      const need = p.minutes + (p.jump ? TRAVEL_MIN : 0);
-      if(cur && t + need > lim){ days.push(cur); cur = null; t = 0; }
-      if(!cur){ cur = { i0:p.i0, i1:p.i1, length_m:0, street_m:0, minutes:0, mailboxes:0, places:[] }; }
-      cur.i1 = p.i1; cur.length_m += p.length_m || 0; cur.street_m += p.street_m || 0; cur.minutes += p.minutes || 0; cur.mailboxes += p.mailboxes || 0;
-      if(p.place && !cur.places.includes(p.place)) cur.places.push(p.place);
-      t += need;
+    // days: cut where the hours of a day are full; a last bit under 45 min goes to the day before
+    const lim = hours * 60, days = []; let i0 = 0, t = 0, mb = 0, st = 0, ln = 0, pl = new Set();
+    const close = i1 => { days.push({ i0, i1, minutes:Math.round(t), mailboxes:Math.round(mb), street_m:Math.round(st), length_m:Math.round(ln), place:[...pl].filter(Boolean).join(' + ') || undefined }); i0 = i1; t = 0; mb = 0; st = 0; ln = 0; pl = new Set(); };
+    for(let i = 1; i < path.length; i++){
+      if(t >= lim && t > 0) close(i - 1);
+      t += segMin[i]; mb += segMb[i]; st += segSt[i]; ln += path[i][2] === 1 ? 0 : segLen(path[i - 1], path[i]); pl.add(place[i]);
     }
-    if(cur) days.push(cur);
-    days.forEach(d => { if(d.places.length) d.place = d.places.join(' + '); delete d.places; });
-    const sum = k => pieces.reduce((s, p) => s + (p[k] || 0), 0);
-    return { ...a, path, steps, boxes, days, length_m:sum('length_m'), street_m:sum('street_m'), minutes:sum('minutes'), mailboxes:sum('mailboxes') };
+    if(t > 0 || !days.length) close(path.length - 1);
+    if(days.length > 1 && days[days.length - 1].minutes < 45){ const x = days.pop(), y = days[days.length - 1]; y.i1 = x.i1; ['minutes', 'mailboxes', 'street_m', 'length_m'].forEach(k => y[k] += x[k]); if(x.place) y.place = [...new Set([...(y.place || '').split(' + '), ...x.place.split(' + ')].filter(Boolean))].join(' + '); }
+    return { path, steps, boxes, days, length_m, street_m, minutes, mailboxes };
   };
   return {
     // map data around a new start point
@@ -62,20 +73,34 @@ export function createPlanService(cache){
     async plan({ start, flyers, n, days, hours, must, zone, side }, stage, stale){
       side = (side || []).filter(c => c && c.flyers > 0);
       if(side.length){
-        // far places: own street graph and own loops with the same number of workers; the days are packed afterwards
-        const parts = [];
+        // each far place as one whole route (one worker)
+        const far = [];
         for(const c of side){
           stage('loadingSide'); const g = await sideGraph(c, stage, stale); if(stale()) return { skipped:true };
-          const p = Planner.planFlyers(g, [c.lat, c.lng], c.flyers, n, { days, hoursPerDay:hours });
-          p.routes = p.routes.map(({ part, ...r }) => r); parts.push({ c, p });
+          const p = Planner.planFlyers(g, [c.lat, c.lng], c.flyers, 1, { days:1, hoursPerDay:hours });
+          const { part, ...r } = p.routes[0]; far.push({ c, r, min:r.minutes, mb:p.mailboxes });
         }
         const mainFlyers = Math.max(100, flyers - side.reduce((s, c) => s + c.flyers, 0));
-        const res = await this.plan({ start, flyers:mainFlyers, n, days:days * 2, hours:hours / 2, must, zone }, stage, stale);   // half-day loops pack into fuller days
+        // main place: first with n parts; then the number of equal parts that shares the hours best together with the far places
+        let res = await this.plan({ start, flyers:mainFlyers, n, days:1, hours, must, zone }, stage, stale);
         if(!res || res.skipped) return res;
-        res.plan.routes = res.plan.routes.map((r, k) => joinRoutes(r, parts.map(({ c, p }) => ({ r:p.routes[k], name:c.name })), hours));
-        res.plan.mailboxes += parts.reduce((s, x) => s + x.p.mailboxes, 0);
-        res.plan.side_info = parts.map(({ c, p }) => ({ name:c.name, mailboxes:p.mailboxes }));
+        const M = res.plan.routes.reduce((s, r) => s + r.minutes, 0);
+        let bestK = n, bestMax = Infinity;
+        for(let k = n; k <= 3 * n; k++){
+          const mx = Math.max(...lpt([...far.map(x => ({ min:x.min })), ...Array.from({ length:k }, () => ({ min:M / k }))], n).map(b => b.min));
+          if(mx < bestMax - 15){ bestMax = mx; bestK = k; }   // more parts only when it saves a quarter hour or more
+        }
+        if(bestK !== n){ stage('calculating'); const r2 = await this.plan({ start, flyers:mainFlyers, n:bestK, days:1, hours, must, zone }, stage, stale); if(!r2 || r2.skipped) return r2; res = r2; }
+        const items = [...far.map(x => ({ min:x.min, far:x })), ...res.plan.routes.map(r => ({ min:r.minutes, main:r }))];
+        const bins = lpt(items, n);
+        res.plan.routes = bins.map((b, k) => {
+          const pieces = [...b.items.filter(x => x.main).map(x => ({ r:x.main, name:null })), ...b.items.filter(x => x.far).map(x => ({ r:x.far.r, name:x.far.c.name }))];
+          return { idx:k, ...buildLine(pieces, hours) };
+        });
+        res.plan.mailboxes += far.reduce((s, x) => s + x.mb, 0);
+        res.plan.side_info = far.map(x => ({ name:x.c.name, mailboxes:x.mb, worker:bins.findIndex(b => b.items.some(i => i.far === x)) }));
         res.plan.capacity = Planner.capacity(res.plan.routes, flyers);
+        res.sug = Math.min(20, Planner.suggestWorkers(res.plan.routes.reduce((s, r) => s + r.minutes, 0), hours, days));
         return res;
       }
       if(!G || gKey !== keyOf(start)){ stage('loadingArea'); await load(start, flyers, undefined, must, stage, stale, 'loadingArea', zone); }
