@@ -69,6 +69,12 @@ const osmCache = {
 const KM_PER_MIN_TRANSIT = 0.75;
 // priority area: [[lat,lng]…] (old orders: all streets inside) or { p:[[lat,lng]…], n:flyers }
 const mArea = a => Array.isArray(a) ? { p:a, n:0, name:'' } : { p:(a && a.p) || [], n:+(a && a.n) || 0, name:(a && a.name) || '', c:(a && a.c) || undefined };
+// borders of the Nebenstädte of an order with their names: near ones (part of the main plan) orange, far ones (bus) teal
+const townTip = (g, poly, txt, col) => { const pg = L.polygon(poly, { color:col, weight:0, fillOpacity:0, interactive:false }); L.marker(pg.getBounds().getCenter(), { icon:L.divIcon({ className:'', html:`<span class="must-tip" style="border-color:${col}">${esc(txt)}</span>`, iconSize:null }), interactive:false, keyboard:false }).addTo(g); };
+function drawTowns(g, tk, w){
+  (tk.must_areas || []).forEach((a0, k) => { const a = mArea(a0); if(a.p.length < 3) return; L.polygon(a.p, { color:'#EA580C', weight:w, dashArray:'8 6', fillOpacity:.08, interactive:false }).addTo(g); townTip(g, a.p, mName(a, k) + (a.n ? ' · ' + fmtN(a.n) : ''), '#EA580C'); });
+  (tk.side_towns || []).forEach(x => { if(!(x.p && x.p.length > 2)) return; L.polygon(x.p, { color:'#0D9488', weight:w, dashArray:'4 6', fillOpacity:.06, interactive:false }).addTo(g); townTip(g, x.p, x.name + ' · ' + fmtN(x.flyers || 0), '#0D9488'); });
+}
 const mName = (a, k) => (a && a.name) || t('mustN', { n:k + 1 });
 // route planning runs in a background worker (the screen never freezes); one engine for the session keeps the loaded map
 let engine = null;
@@ -607,7 +613,7 @@ async function viewTaskMap(id, back){
     legend:res.map(({ p, pct, fl }) => ({ color:p.color || '#2563EB', label:(p.worker_id ? nameOf(p.worker_id) : t('planRoute', { n:p.idx + 1 })), anonLabel:t('planRoute', { n:p.idx + 1 }), sub:pct + ' %' + (fl != null ? ' · ≈ ' + fmtN(fl) + ' ' + t('flyers') : '') })),
     layers:[
       { key:'zone', on:false, add:g => { if(tk.zone_polygon) L.polygon(tk.zone_polygon, { color:css('--brand'), weight:2, fillOpacity:.05, interactive:false }).addTo(g); } },
-      ...((tk.must_areas || []).length ? [{ key:'must', label:t('mustTitle'), add:g => tk.must_areas.forEach(a => L.polygon(mArea(a).p, { color:'#EA580C', weight:3, dashArray:'8 6', fillOpacity:.1, interactive:false }).addTo(g)) }] : []),
+      ...((tk.must_areas || []).length || (tk.side_towns || []).length ? [{ key:'must', label:t('sideTownsShort'), add:g => drawTowns(g, tk, 3) }] : []),
       ...(tk.work_area ? [{ key:'own', label:t('zoneTitle'), add:g => L.polygon(tk.work_area, { color:'#7C3AED', weight:3, dashArray:'10 6', fillOpacity:.04, interactive:false }).addTo(g) }] : []),
       // the planned routes; with several working days every day is its own layer (day 1 solid, day 2 dashed, …)
       ...(() => {
@@ -1114,7 +1120,7 @@ async function viewTask(id){
   const m = makeMap($('#tMap'), [tk.start_lat, tk.start_lng], 14);
   let b = L.latLngBounds([[tk.start_lat, tk.start_lng]]);
   if(tk.zone_polygon){ const z = L.polygon(tk.zone_polygon, { color:css('--brand'), weight:2, fillOpacity:.06, interactive:false }).addTo(m); b = z.getBounds(); }
-  (tk.must_areas || []).forEach(a => L.polygon(mArea(a).p, { color:'#EA580C', weight:2, dashArray:'8 6', fillOpacity:.1, interactive:false }).addTo(m));
+  drawTowns(m, tk, 2);
   if(tk.work_area) L.polygon(tk.work_area, { color:'#7C3AED', weight:2, dashArray:'10 6', fillOpacity:.03, interactive:false }).addTo(m);
   (plans || []).forEach(p => { if(!(p.path?.length > 1)) return; const ds = (p.days || []).length > 1 ? p.days : [{ i0:0, i1:p.path.length - 1 }];
     ds.forEach((d, k) => L.polyline(Planner.pathRuns(p.path.slice(d.i0, d.i1 + 1)), { color:dayColor(p.color, k), weight:4, opacity:.7, dashArray:k ? '10 8' : null }).addTo(m)); });

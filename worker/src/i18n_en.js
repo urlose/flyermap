@@ -167,3 +167,4 @@ Object.assign(T.en, { joinTitle:'Create account', joinFirm:'You were invited by 
 T.en.noPhoneYet = 'Phone number not entered yet';
 Object.assign(T.en, { addrMain:'Start address in the main town', mainCityAuto:'taken from the address', startOnMap:'Start point set on the map.' });
 T.en.quotaHours = 'Hours are calculated from it: route length ÷ quota × 30 min plus 5 s per mailbox.';
+T.en.sideTownsShort = 'More towns';

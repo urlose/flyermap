@@ -162,3 +162,5 @@ Object.assign(T.de, { addrMain:'Startadresse in der Hauptstadt', mainCityAuto:'w
 Object.assign(T.ru, { addrMain:'Адрес старта в основном городе', mainCityAuto:'берётся из адреса', startOnMap:'Точка старта выбрана на карте.' });
 Object.assign(T.de, { quotaHours:'Danach werden die Stunden berechnet: Strecke ÷ Quote × 30 Min. plus 5 Sek. pro Briefkasten.' });
 Object.assign(T.ru, { quotaHours:'По ней считаются часы: длина маршрута ÷ квота × 30 мин. плюс 5 сек. на каждый ящик.' });
+Object.assign(T.de, { sideTownsShort:'Nebenstädte' });
+Object.assign(T.ru, { sideTownsShort:'Доп. города' });
