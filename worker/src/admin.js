@@ -698,6 +698,7 @@ function viewCreate(edit){
   if(tkE && Array.isArray(tkE.work_area) && tkE.work_area.length > 2) d.zone = tkE.work_area;
   if(tkE) Object.assign(d, { flyers:tkE.flyers || 5000, hours:+tkE.work_hours || 7, quota:tkE.quota_m30 || 1500, days:tkE.work_days || 2, n:Math.max(1, edit.plans.length), nAuto:false });
   d.side = tkE && Array.isArray(tkE.side_towns) ? tkE.side_towns : [];
+  d.split = tkE ? (tkE.split || null) : 'even';   // new orders: total flyers shared evenly over all places; old orders keep their numbers
   d.travel = (tkE && tkE.travel) || (tkE && tkE.bike ? 'bike' : 'bus'); d.bike = d.travel !== 'bus';   // how the places of the order are reached   // far places of this order (own start, own day, reached by bus / train)
   // the start address (also typed in step 1 under "Hauptstadt"); the main town comes from it
   const pickAddr = (c, q) => { saved = keep(); d.place = c; d.mainCity = null; const txt = c.name + (c.sub ? ', ' + c.sub : ''); if(q) q.value = txt; const top = $('#cSearch'); if(top) top.value = txt; setStart(c.lat, c.lng); };
@@ -767,11 +768,11 @@ function viewCreate(edit){
     const ctr = pts.reduce((a, q) => [a[0] + q[0] / pts.length, a[1] + q[1] / pts.length], [0, 0]), dist = hav(d.start.lat, d.start.lng, ctr[0], ctr[1]);
     if(!exact) toast(t('placeCircle'));
     try{ m.fitBounds(L.latLngBounds([[d.start.lat, d.start.lng], ...pts]), { padding:[40, 40] }); }catch{}
-    const n = await askMustN(null, 0); if(n === null || !alive()) return renderSheet();
+    const n = d.split ? 0 : await askMustN(null, 0); if(n === null || !alive()) return renderSheet();
     if(dist > SIDE_R){
       // start in the town centre (search point) – the middle of a municipality's border is often fields and hamlets; drawn areas: their middle
       const st0 = c.lat != null && !c.drawn ? [c.lat, c.lng] : ctr;
-      d.side.push({ name:c.name, lat:+(+st0[0]).toFixed(6), lng:+(+st0[1]).toFixed(6), p:pts, flyers:n || 1000, km:Math.round(dist / 100) / 10 });
+      d.side.push({ name:c.name, lat:+(+st0[0]).toFixed(6), lng:+(+st0[1]).toFixed(6), p:pts, flyers:d.split ? 0 : (n || 1000), km:Math.round(dist / 100) / 10 });
       toast(t('sideAdded', { name:c.name }));
     }else{
       const far = Math.max(...pts.map(q => hav(d.start.lat, d.start.lng, q[0], q[1])));
@@ -855,7 +856,7 @@ function viewCreate(edit){
     if(!d.loaded){ renderSheet(); return; }
     const tok = ++d.token, pr = progress(tok, false);
     let res = null;
-    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, quota:Math.max(200, Math.round(+saved.quota || 1500)), bike:d.bike, travel:d.travel, must:d.must, zone:d.zone, side:d.side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers, zone:x.p && x.p.length > 2 ? x.p : null })) }, pr.stage); }
+    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, quota:Math.max(200, Math.round(+saved.quota || 1500)), bike:d.bike, travel:d.travel, split:d.split, must:d.must, zone:d.zone, side:d.side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers, zone:x.p && x.p.length > 2 ? x.p : null })) }, pr.stage); }
     catch(e){ pr.stop(); if(tok !== d.token || !alive()) return; d.err = errText2(e); d.busy = false; toast(t('streetsFail', { e:d.err })); renderSheet(); return; }
     pr.stop();
     if(tok !== d.token || !alive() || !res || res.skipped) return;
@@ -875,7 +876,7 @@ function viewCreate(edit){
   // values typed in any step survive re-renders and step changes (only fields that are on screen are read)
   function saveDraft(){
     if(tkE || !d.start) return;
-    try{ localStorage.setItem(DRAFT_KEY, JSON.stringify({ at:Date.now(), saved, d:{ start:d.start, place:d.place, must:d.must, side:d.side, flyers:d.flyers, n:d.n, hours:d.hours, days:d.days, bike:d.bike, travel:d.travel, zone:d.zone, mainCity:d.mainCity } })); }catch{}
+    try{ localStorage.setItem(DRAFT_KEY, JSON.stringify({ at:Date.now(), saved, d:{ start:d.start, place:d.place, must:d.must, side:d.side, flyers:d.flyers, n:d.n, hours:d.hours, days:d.days, bike:d.bike, travel:d.travel, split:d.split, zone:d.zone, mainCity:d.mainCity } })); }catch{}
   }
   async function restoreDraft(){
     const x = readDraft(); if(!x || !x.d || !x.d.start) return;
@@ -928,8 +929,8 @@ function viewCreate(edit){
       ${d.start && !d.place ? `<p class="small muted" style="margin:4px 0 0">${esc(t('startOnMap'))}</p>` : ''}
       <label class="f">${esc(t('mainCity'))}</label><div class="note" style="margin:0">${esc(mainCity() || t('mainCityAuto'))}</div>
       <label class="f">${esc(t('sideTowns'))}</label><p class="small muted" style="margin:-2px 0 6px">${esc(t('sideTownsHint'))}</p>
-      ${d.must.length ? `<div class="chips" style="margin:0 0 8px">${d.must.map((a, k) => `<span class="chip"><button class="link" data-med="${k}">${esc(mName(a, k))} · ${esc(a.n ? fmtN(a.n) : t('mustAllShort'))}</button><button class="link" data-mrm="${k}" aria-label="${esc(t('del'))}">✕</button></span>`).join('')}</div>` : ''}
-      ${d.side.length ? `<div class="chips" style="margin:0 0 8px">${d.side.map((x, k) => `<span class="chip">${esc(x.name)} · ${esc(t('sideOwn', { km:String(x.km).replace('.', ','), n:fmtN(x.flyers) }))}<button class="link" data-srm="${k}" aria-label="${esc(t('del'))}">✕</button></span>`).join('')}</div><p class="small muted" style="margin:-4px 0 8px">${esc(t('sideOwnHint'))}</p>` : ''}
+      ${d.must.length ? `<div class="chips" style="margin:0 0 8px">${d.must.map((a, k) => `<span class="chip">${d.split ? `<span>${esc(mName(a, k))}</span>` : `<button class="link" data-med="${k}">${esc(mName(a, k))} · ${esc(a.n ? fmtN(a.n) : t('mustAllShort'))}</button>`}<button class="link" data-mrm="${k}" aria-label="${esc(t('del'))}">✕</button></span>`).join('')}</div>` : ''}
+      ${d.side.length ? `<div class="chips" style="margin:0 0 8px">${d.side.map((x, k) => `<span class="chip">${esc(x.name)} · ${esc(d.split ? t('sideOwnKm', { km:String(x.km).replace('.', ',') }) : t('sideOwn', { km:String(x.km).replace('.', ','), n:fmtN(x.flyers) }))}<button class="link" data-srm="${k}" aria-label="${esc(t('del'))}">✕</button></span>`).join('')}</div><p class="small muted" style="margin:-4px 0 8px">${esc(t('sideOwnHint'))}</p>` : ''}
       ${d.start ? sfTown('cTown1').html + `<button class="btn ghost small" id="cMustAdd" style="margin-top:8px">${ICONS.edit}${esc(t('drawOwn'))}</button>` : `<p class="small muted">${esc(t('sideNeedStart'))}</p>`}
       <label class="f" for="cQuota">${esc(t('quota'))}</label><input class="in" type="number" id="cQuota" min="200" step="100" value="${esc(saved.quota)}"><p class="small muted" style="margin:4px 0 0">${esc(t('quotaHours'))}</p>
       <label class="f" for="cTravel">${esc(t('travelLbl'))}</label><select class="in" id="cTravel">${['bus', 'bike', 'car'].map(v => `<option value="${v}" ${d.travel === v ? 'selected' : ''}>${esc(t('travel_' + v))}</option>`).join('')}</select><p class="small muted" style="margin:4px 0 0">${esc(t('travelHint'))}</p>`;
@@ -944,7 +945,8 @@ function viewCreate(edit){
         <p class="small muted" style="margin:2px 0 8px">${esc(t(d.zone ? 'zoneHintOwn' : 'zoneHint'))}</p>
         ${d.zone && p && p.zone_mb != null && p.zone_mb < d.flyers * 0.95 ? `<div class="warnbox" style="margin:0 0 8px">${esc(t('zoneSmall', { mb:fmtN(p.zone_mb), f:fmtN(d.flyers) }))} <button class="link" id="cZoneFit">${esc(t('reduceTo', { f:fmtN(Math.max(100, Math.floor(p.zone_mb / 50) * 50)) }))}</button></div>` : ''}
         <div class="tool-row"><button class="btn ghost small" id="cZoneDraw" ${d.start ? '' : 'disabled'}>${ICONS.edit}${esc(t(d.zone ? 'zoneRedraw' : 'zoneDraw'))}</button>${d.zone ? `<button class="btn ghost small" id="cZoneAuto">${esc(t('zoneBackAuto'))}</button>` : ''}</div></div>
-      ${p && p.must_mb > d.flyers ? `<div class="warnbox" style="margin:8px 0">${esc(t('mustTooMany', { mb:fmtN(p.must_mb), f:fmtN(d.flyers) }))}</div>` : ''}
+      ${p && p.split ? `<div class="hint">${esc(t('splitHint', { list:p.split.map(x => (x.name || mainCity() || t('mainCity')) + ' ' + fmtN(x.flyers)).join(' · ') }))}</div>` : ''}
+      ${p && !d.split && p.must_mb > d.flyers ? `<div class="warnbox" style="margin:8px 0">${esc(t('mustTooMany', { mb:fmtN(p.must_mb), f:fmtN(d.flyers) }))}</div>` : ''}
       ${p ? p.routes.map((r, i) => routeRow(r, i, false)).join('') : ''}`;
     else if(d.step === 3) body = `
       <div class="steppers"><div><label class="f" for="cDate">${esc(t('startDate'))}</label><input class="in" type="date" id="cDate"></div><div><label class="f" for="cHours">${esc(t('hoursDay'))}</label><input class="in" type="number" id="cHours" min="1" max="12" step="0.5" value="${d.hours}"></div></div>
@@ -1019,8 +1021,9 @@ function viewCreate(edit){
     try{
       const pl = d.plan, quota = Math.max(200, Math.round(+saved.quota || 1500)), date = saved.date || null;
       const cityN = mainCity() || null;
+      if(pl.split){ const by = new Map(pl.split.filter(x => x.name).map(x => [x.name, x.flyers])); d.must.forEach(a => { if(by.has(a.name)) a.n = by.get(a.name); }); d.side.forEach(x => { if(by.has(x.name)) x.flyers = by.get(x.name); }); }
       const row = { title:withCity(title, cityN), city_name:cityN, district:(d.place && d.place.district) || (tkE && tkE.district) || null, start_lat:d.start.lat, start_lng:d.start.lng,
-        walk_minutes:15, zone_polygon:pl.zone, must_areas:d.must.length ? d.must.map(a => ({ p:a.p, n:a.n, name:a.name || undefined, c:a.c })) : null, side_towns:d.side.length ? d.side : null, bike:d.travel !== 'bus', travel:d.travel, work_area:d.zone || null, work_date:date, notes:(saved.notes || '').trim() || null, street_m:d.streetM || null,
+        walk_minutes:15, zone_polygon:pl.zone, must_areas:d.must.length ? d.must.map(a => ({ p:a.p, n:a.n, name:a.name || undefined, c:a.c })) : null, side_towns:d.side.length ? d.side : null, bike:d.travel !== 'bus', travel:d.travel, split:d.split, work_area:d.zone || null, work_date:date, notes:(saved.notes || '').trim() || null, street_m:d.streetM || null,
         flyers:d.flyers, quota_m30:quota, work_days:d.days, work_hours:d.hours, est_mailboxes:pl.mailboxes, route_m:pl.routes.reduce((s, r) => s + r.length_m, 0) };
       let tk;
       if(tkE){

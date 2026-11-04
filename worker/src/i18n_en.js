@@ -175,3 +175,4 @@ Object.assign(T.en, { draftQ:'Continue the draft?', draftText:'There is an unsav
 Object.assign(T.en, { tripsBike:'Bike trips', tripsBus:'Bus / train trips' });
 Object.assign(T.en, { travelLbl:'Between the places', travel_bus:'Bus / train (30 min per trip)', travel_bike:'Bike (≈ 15 km/h)', travel_car:'Car (≈ 40 km/h)', travelHint:'This is how the trips between the main town and the other towns are counted (real road length, + 5 min per trip). Distributing is on foot.', byCar:'By car (Google Maps)' });
 T.en.mustTooMany = 'The towns set to “all mailboxes” have ≈ {mb} mailboxes together, but there are only {f} flyers. In step 1 tap the name and enter a number of flyers – or enter more flyers.';
+Object.assign(T.en, { sideOwnKm:'with travel · {km} km', splitHint:'The flyers are shared out evenly over the places (where there are fewer mailboxes, the others get more): {list}' });

@@ -17,7 +17,7 @@ export function createPlanService(cache){
   // far places of the order (bus / train): own street graph around their centre, planned with the same workers as extra days
   const sideG = new Map();
   const sideGraph = async (c, stage, stale) => {
-    const z = c.zone && c.zone.length > 2 ? c.zone : null, k = keyOf([c.lat, c.lng]) + ':' + c.flyers + ':' + (z ? z.length + ',' + z[0].join(',') : ''); if(sideG.has(k)) return sideG.get(k);
+    const z = c.zone && c.zone.length > 2 ? c.zone : null, k = keyOf([c.lat, c.lng]) + ':' + (z ? 'z' + z.length + ',' + z[0].join(',') : c.flyers); if(sideG.has(k)) return sideG.get(k);
     if(sideG.size > 6) sideG.clear();
     const g = await Planner.loadForFlyers([c.lat, c.lng], c.flyers, { cache, tiles, stale, zone:z, progress:(done, total) => { if(stage && total > 1) stage('loadingSide|' + done + '|' + total); } });
     sideG.set(k, g); return g;
@@ -86,7 +86,7 @@ export function createPlanService(cache){
       return info();
     },
     // plans the routes; loads a larger square first when the plan reaches the edge of what is loaded
-    async plan({ start, flyers, n, days, hours, must, zone, side, quota, bike, travel }, stage, stale){
+    async plan({ start, flyers, n, days, hours, must, zone, side, quota, bike, travel, split }, stage, stale){
       travel = travel === 'bike' || travel === 'car' ? travel : (bike ? 'bike' : 'bus'); bike = travel !== 'bus';
       Planner.setPace(quota);   // hours from the order's quota (metres per 30 minutes)
       side = (side || []).filter(c => c && c.flyers > 0);
@@ -107,12 +107,41 @@ export function createPlanService(cache){
         }
         must = keepMust;
       }
+      // new orders (split 'even'): the flyers of the order are shared out evenly over the main town and all Nebenstädte;
+      // a place with fewer mailboxes than its share gets what it has, the rest goes to the others. Old orders: unchanged.
+      let splitInfo = null;
+      if(split === 'even' && ((must || []).some(a => a && a.name) || side.length)){
+        if(!G || gKey !== keyOf(start)){ stage('loadingArea'); await load(start, flyers, undefined, must, stage, stale, 'loadingArea', zone); }
+        if(stale()) return { skipped:true };
+        const near = (must || []).filter(a => a && a.name && a.p && a.p.length > 2);
+        const capNear = near.map(a => Planner.mustPick(G, start, [{ p:a.p, n:0 }]).info[0].avail);
+        const capFar = [];
+        for(const c of side){
+          stage('loadingSide'); c.flyers = c.flyers || flyers; const g = await sideGraph(c, stage, stale); if(stale()) return { skipped:true };
+          capFar.push(c.zone && c.zone.length > 2 ? Planner.mustPick(g, [c.lat, c.lng], [{ p:c.zone, n:0 }]).info[0].avail : (g.usable != null ? g.usable : g.mailboxes) || 0);
+        }
+        const capMain = Math.max(0, (G.usable != null ? G.usable : G.mailboxes) - capNear.reduce((a, b) => a + b, 0));
+        const caps = [capMain, ...capNear, ...capFar], share = new Array(caps.length).fill(0);
+        let rest = flyers, open = caps.map((_, i) => i);
+        while(rest > 0 && open.length){   // water filling: equal shares, capped by what a place has
+          const each = rest / open.length, full = open.filter(i => caps[i] - share[i] <= each);
+          if(!full.length){ open.forEach(i => { share[i] += each; }); rest = 0; break; }
+          full.forEach(i => { rest -= caps[i] - share[i]; share[i] = caps[i]; }); open = open.filter(i => !full.includes(i));
+        }
+        const r50 = x => Math.max(0, Math.round(x / 50) * 50);
+        near.forEach((a, i) => { a.n = Math.max(50, r50(share[1 + i])); });
+        side.forEach((c, i) => { c.flyers = r50(share[1 + near.length + i]); });
+        splitInfo = [{ name:null, flyers:r50(share[0]) }, ...near.map(a => ({ name:a.name, flyers:a.n })), ...side.map(c => ({ name:c.name, flyers:c.flyers }))];
+        side = side.filter(c => c.flyers > 0);
+      }
       if(side.length){
         const res = await this.planSide({ start, flyers, n, days, hours, must, zone, side, bike, travel }, stage, stale);
-        if(res && res.plan) res.plan.bus = bus;
+        if(res && res.plan){ res.plan.bus = bus; res.plan.split = splitInfo; }
         return res;
       }
-      return this.planMain({ start, flyers, n, days, hours, must, zone }, stage, stale);
+      const resM = await this.planMain({ start, flyers, n, days, hours, must, zone }, stage, stale);
+      if(resM && resM.plan) resM.plan.split = splitInfo;
+      return resM;
     },
     async planSide({ start, flyers, n, days, hours, must, zone, side, bike, travel }, stage, stale){
 
