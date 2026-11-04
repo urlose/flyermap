@@ -28,6 +28,33 @@ export async function viewJoinLink(code){
     await store.set('canAdmin', false); await acceptToken(data);
   };
 }
+// number confirmed by WhatsApp: the person sends a code from the own WhatsApp to the firm number (the sender's number is the proof)
+export async function waVerify(token, back){
+  const { data:s, error } = await sb.rpc('wa_start', { p_token:token || null });
+  if(error || !s || !s.enabled){ toast(error ? errText(error) : t('waOff')); back(); return null; }
+  const link = 'https://wa.me/' + s.number + '?text=' + encodeURIComponent('FlyerMap Code ' + s.code);
+  plain(`<div class="login"><h1 class="hero">${esc(t('waTitle'))}</h1><p class="muted">${esc(t('waHint'))}</p>
+    <div class="wa-code">${esc(s.code)}</div>
+    <a class="btn primary big" href="${esc(link)}" target="_blank" rel="noopener">${esc(t('waOpen'))}</a>
+    <p class="small muted center" id="waSt">${esc(t('waWait'))}</p><div class="err" id="waErr"></div>
+    <p class="small center"><button class="link" id="waBack">${esc(t('back'))}</button></p></div>`);
+  let stop = false; $('#waBack').onclick = () => { stop = true; back(); };
+  const t0 = Date.now();
+  while(!stop && Date.now() - t0 < 15 * 60e3){
+    await new Promise(r => setTimeout(r, 3000)); if(stop || !document.getElementById('waSt')) return null;
+    const { data:c, error:e } = await sb.rpc('wa_check', { p_nonce:s.nonce });
+    if(e){ const el = $('#waErr'); if(el) el.textContent = errText(e); if(/expired|taken/.test(e.message || '')) return null; continue; }
+    if(c && c.state !== 'wait') return { ...c, nonce:s.nonce };
+  }
+  const st = $('#waSt'); if(!stop && st) st.textContent = t('waTimeout');
+  return null;
+}
+async function waLogin(){
+  const r = await waVerify(null, viewLogin); if(!r) return;
+  await store.set('canAdmin', false);
+  if(r.state === 'login') return acceptToken(r.token);
+  if(r.state === 'new') return viewProfileForm(false, r.nonce);
+}
 export function viewLogin(){
   UI.role = null; UI.onTab = null;
   plain(`<div class="welcome">
@@ -38,12 +65,14 @@ export function viewLogin(){
       <input class="in" id="lPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+49 170 1234567">
       <p class="small muted">${esc(t('smsHint'))}</p>
       <button class="btn primary big" id="lSend">${esc(t('sendCode'))}</button><div class="err" id="lErr"></div>
+      <button class="btn ghost big hidden" id="lWa" style="margin-top:10px">${esc(t('waLogin'))}</button>
       ${langSwitch(I.lang)}
       <p class="small center"><button class="link" id="lLink">${esc(t('haveLink'))}</button></p>
       <p class="small center"><button class="link" id="lEmail">${esc(t('emailAdmin'))}</button></p>
       ${legalLinks()}
     </div>`);
   bindLegal(viewLogin);
+  sb.rpc('wa_enabled').then(({ data }) => { const b = $('#lWa'); if(data && b){ b.classList.remove('hidden'); b.onclick = waLogin; } }).catch(() => {});
   $('#lEmail').onclick = () => viewAdminLogin(viewLogin);
   // login link from the admin (WhatsApp etc.): in the installed app a link does not open the app, so it is pasted here
   $('#lLink').onclick = () => {
@@ -152,9 +181,9 @@ export async function enterAsWorker(signOut){
   if(tok) return finishWorker(tok, signOut);
   viewProfileForm(signOut);
 }
-async function viewProfileForm(signOut){
+async function viewProfileForm(signOut, waNonce){
   const cp = cityPicker([]);
-  const own = !signOut && !!(await store.get('canAdmin'));   // an admin's own distributor profile joins his company
+  const own = !waNonce && !signOut && !!(await store.get('canAdmin'));   // an admin's own distributor profile joins his company
   const code0 = normCode(await store.get('joinCode'));
   plain(`<h1 class="hero">${esc(t('yourData'))}</h1>
     ${own ? '' : `<label class="f" for="rCode">${esc(t('joinCode'))}</label><input class="in code-in" id="rCode" value="${esc(code0)}" autocomplete="off" autocapitalize="characters" maxlength="12" placeholder="ABCD2345">
@@ -183,7 +212,8 @@ async function viewProfileForm(signOut){
     if(!cities.length){ $('#rErr').textContent = t('e_city_required'); return; }
     const offers = await askOffers(); if(offers === null) return;   // own decision, nothing pre-selected (valid consent)
     $('#rGo').disabled = true;
-    const { data:tok, error } = await sb.rpc('register_worker_v4', { p_name:name, p_cities:cities, p_code:code, p_offers:offers });
+    const { data:tok, error } = waNonce ? await sb.rpc('wa_register', { p_nonce:waNonce, p_name:name, p_cities:cities, p_code:code, p_offers:offers })
+      : await sb.rpc('register_worker_v4', { p_name:name, p_cities:cities, p_code:code, p_offers:offers });
     if(error){ $('#rErr').textContent = errText(error); $('#rGo').disabled = false; return; }
     await store.del('joinCode'); finishWorker(tok, signOut);
   };

@@ -1,0 +1,11 @@
+-- WhatsApp number confirmation without Twilio (04.11.2026): the person sends "FlyerMap Code ABC123" from the own
+-- WhatsApp to the firm number; the webhook (functions/wa-webhook) gets the sender's number from Meta and calls wa_confirm.
+-- Turned on by setting wa_settings.number (the firm's WhatsApp Business number); until then the buttons stay hidden.
+-- Tables: wa_verify(nonce, code, worker_id, phone, verified_at, used_at, created_at), wa_settings(id=1, number) – RLS on, no policies.
+-- Functions (security definer): wa_enabled(), wa_start(p_token default null) → {enabled, nonce, code, number},
+--   wa_confirm(p_from, p_text) [service role only], wa_check(p_nonce) → {state: wait|login|new|phone},
+--   wa_register(p_nonce, p_name, p_cities, p_code, p_offers) → token.
+-- The full definitions are in the database (pg_get_functiondef); created via execute_sql on 04.11.2026.
+-- Turn on:  update wa_settings set number = '+49…' where id = 1;
+-- Secrets of the edge function: WA_VERIFY_TOKEN, WA_APP_SECRET, optional WA_TOKEN (reply "bestätigt").
+-- Webhook URL for Meta: https://<project>.supabase.co/functions/v1/wa-webhook

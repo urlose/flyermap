@@ -8,7 +8,8 @@ import { openMapView } from './routeview.js';
 import { locationNote, legalLinks, bindLegal } from './legalview.js';
 import { setLegalFirm } from './legal.js';
 import { t, I } from './i18n.js';
-import { NATIVE, PRIVACY_URL, store, rpc, errText, deMobile, $, esc, css, hav, fmtDist, fmtHm, fmtN, fmtTime, fmtDay, loopPath } from './core.js';
+import { NATIVE, PRIVACY_URL, sb, store, rpc, errText, deMobile, $, esc, css, hav, fmtDist, fmtHm, fmtN, fmtTime, fmtDay, loopPath } from './core.js';
+import { waVerify } from './auth.js';
 import { UI, ICONS, shell, setLoc, getLoc, plain, topbar, bindBack, makeMap, dot, fit, drawJumps, modal, confirmBox, reasonBox, toast, cityPicker, langSwitch, themeSwitch, statusPill, emptyState, avatar, every } from './ui.js';
 
 const BackgroundGeolocation = registerPlugin('BackgroundGeolocation');
@@ -760,6 +761,7 @@ function viewProfile(){
       ${hand ? `<div class="hint">${esc(t('handoverHint'))}</div>` : ''}
       <div class="card" style="display:block;margin-top:16px">
         <label class="f" for="pName" style="margin-top:0">${esc(t('name'))}</label><input class="in" id="pName" value="${esc(nameVal)}" autocomplete="name">
+        <button class="btn ghost small hidden" id="pWa" style="margin:0 0 10px">${ICONS.chat}${esc(t('waConfirm'))}</button>
         ${hand ? `<label class="f" for="pPhone">${esc(t('handoverPhone'))}</label><input class="in" id="pPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+49 170 1234567">` : ''}
         <label class="f">${esc(t('cities'))}</label>${cp.html}
         <button class="btn primary" id="pSave" style="margin-top:16px">${esc(t('save'))}</button><div class="err" id="pErr" role="alert"></div>
@@ -776,6 +778,7 @@ function viewProfile(){
   cp.bind(); bindLegal(viewProfile);
   $('#pOffers').onchange = async e => { const on = e.target.checked; try{ await rpc('set_offers', { p_token:W.token, p_on:on }); if(W.me) W.me.offers_ok = on; await store.set('me', W.me); toast(t('saved')); }catch(err){ e.target.checked = !on; toast(errText(err)); } };
   store.get('theme').then(v => { W.theme = v; document.querySelectorAll('[data-theme-set]').forEach(b => { const on = b.dataset.themeSet === (v || 'system'); b.classList.toggle('on', on); b.setAttribute('aria-checked', on); }); });
+  sb.rpc('wa_enabled').then(({ data }) => { const b = $('#pWa'); if(data && b){ b.classList.remove('hidden'); b.onclick = async () => { const r = await waVerify(W.token, () => workerTab('people')); if(r && r.state === 'phone'){ await loadMe(); toast(t('waPhoneOk', { p:r.phone })); workerTab('people'); } }; } }).catch(() => {});
   $('#pSave').onclick = async () => {
     if($('#pName').value.trim().length < 2){ $('#pErr').textContent = t('e_name_required'); return; }
     let ph = null; if($('#pPhone')){ ph = deMobile($('#pPhone').value); if(!ph){ $('#pErr').textContent = t('badPhone'); return; } }
