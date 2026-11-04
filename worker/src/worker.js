@@ -372,7 +372,7 @@ function drawTaskBase(m, task, dayIdx, dim){
 
 function viewTaskDetail(task){
   const me = W.me || {}, plan = task.plan, hrs = task.work_hours || 7;
-  const need = plan ? (plan.days && plan.days.length > 1 ? plan.days.length : Math.max(1, Math.ceil((plan.minutes || 0) / 60 / hrs))) : 1;   // the planned days decide (7,3 h days must not ask for a third date)
+  const need = plan ? (plan.days_left > 0 ? plan.days_left : plan.days && plan.days.length > 1 ? plan.days.length : Math.max(1, Math.ceil((plan.minutes || 0) / 60 / hrs))) : 1;   // the planned days decide (7,3 h days must not ask for a third date)
   const today = new Date().toISOString().slice(0, 10), addDays = (d, n) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
   const first = (task.work_date && String(task.work_date).slice(0, 10) >= today) ? String(task.work_date).slice(0, 10) : addDays(today, 1);
   const st = plan ? plan.status : null;

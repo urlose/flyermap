@@ -6,7 +6,7 @@ import { UI, ICONS, shell, setLoc, getLoc, plain, topbar, bindBack, makeMap, dot
 import { legalLinks, bindLegal } from './legalview.js';
 import { makePlanEngine } from './planengine.js';
 import { openMapView } from './routeview.js';
-import { checkpoints, addSkips } from './nav.js';
+import { checkpoints, addSkips, dayProgress } from './nav.js';
 import { loadFirm, firmCardHtml, bindFirmCard, firmComplete, avvOk } from './firm.js';
 import { viewMaster, poolHtml } from './master.js';
 
@@ -1101,6 +1101,13 @@ const dayLines = (days, col) => (days && days.length > 1) ? days.map((x, k) => `
 const stText = p => p.status === 'accepted' ? t('stAccepted') : p.status === 'declined' ? t('stDeclined') : p.status === 'done' ? t('stDone') : t('stOffered');
 const stCls = p => p.status === 'done' ? 'ok' : p.status === 'accepted' ? '' : p.status === 'declined' ? 'bad' : 'neutral';   // angeboten = neutral, angenommen = blau, erledigt = grün, abgelehnt = rot
 // walked so far on one route (all sessions, also the running one; a session lying inside another one counts once)
+const PLAN_TR = {};   // tracker of each route of the open order (all tracks): how many days are left for a successor
+// earlier workers of this route: their km and hours stay theirs (shown under the route)
+function prevWorkers(p, routes){
+  const by = new Map(); for(const r of routes || []) if(r.plan_id === p.id && r.worker_id && r.worker_id !== p.worker_id){ if(!by.has(r.worker_id)) by.set(r.worker_id, []); by.get(r.worker_id).push(r); }
+  return [...by].map(([wid, rs]) => { const w = wById(wid), dd = mergeDays(rs), m = rs.reduce((a, r) => a + (r.distance_m || 0), 0), min = dd.reduce((a, r) => a + workMin(r), 0);
+    return `<span class="small muted">${esc(t('prevWorker', { n:w ? w.name : '?', km:fmtDist(m), h:fmtHm(min) }))}</span>`; }).join('');
+}
 function planWalked(p, routes){
   const rs = (routes || []).filter(r => r.plan_id === p.id || (!r.plan_id && r.worker_id && r.worker_id === p.worker_id));
   const end = r => r.ended_at ? +new Date(r.ended_at) : Date.now();
@@ -1158,7 +1165,7 @@ async function viewTask(id){
         <div class="grow"><b>${esc(t('planRoute', { n:p.idx + 1 }))} <span class="muted" id="pp${p.idx}"></span></b>
         <span>${esc(t('routeLine', { km:fmtDist(p.length_m), h:fmtHm(p.minutes || 0), mb:fmtN(p.mailboxes || 0) }))}</span>
         ${dayLines(p.days, p.color)}
-        <div class="bar"><i id="pb${p.idx}"></i></div><span id="pf${p.idx}" style="margin-top:4px"></span><span class="small" id="pw${p.idx}">${planWalked(p, routes)}</span>
+        <div class="bar"><i id="pb${p.idx}"></i></div><span id="pf${p.idx}" style="margin-top:4px"></span><span class="small" id="pw${p.idx}">${planWalked(p, routes)}</span>${prevWorkers(p, routes)}
         ${p.worker_id ? `<div class="rr-status"><span class="pill ${(A.live || []).some(r => r.plan_id === p.id && !r.paused_at) ? 'live' : stCls(p)}">${(A.live || []).some(r => r.plan_id === p.id && !r.paused_at) ? esc(t('stLive')) + ' · ' : ''}${esc(stText(p))}${p.status === 'accepted' && (p.work_dates || []).length ? ' · ' + esc(p.work_dates.map(fmtDay).join(', ')) : ''}</span>${p.status === 'accepted' ? `<button class="link small" data-dates="${p.id}">${ICONS.edit}${esc(t('chgDates'))}</button>` : ''}</div>` : ''}
         ${w ? `<button class="rr-worker" data-wk="${w.id}">${avatar()}<span class="grow"><b>${esc(w.name)}</b><small>${esc(t('openWorker'))}</small></span><span class="rr-chev">›</span></button>
         <div class="rr-btns"><a class="btn ghost small" target="_blank" rel="noopener" href="${waLink(w.phone, invite(w))}">${ICONS.chat}${esc(t('write'))}</a><button class="btn ghost small" data-swap="${p.id}">${ICONS.users}${esc(t('swapWorker'))}</button></div>` : ''}
@@ -1183,8 +1190,13 @@ async function viewTask(id){
   document.querySelectorAll('[data-plan]').forEach(sel => sel.onchange = async () => {
     const wid = sel.value || null, p = plans.find(x => x.id === sel.dataset.plan);
     // a new worker takes over the rest of the route: progress stays with the plan
-    const { error } = await sb.from('task_plans').update({ worker_id:wid, status:'offered', work_dates:[], accepted_at:null }).eq('id', p.id);
+    // the successor only picks dates for the days that are not done yet
+    let left = null; const tr = PLAN_TR[p.id];
+    if(tr && p.days && p.days.length > 1){ try{ left = Math.max(1, dayProgress(p, tr).filter(x => x < 95).length); }catch{} }
+    const { error } = await sb.from('task_plans').update({ worker_id:wid, status:'offered', work_dates:[], accepted_at:null, days_left:left }).eq('id', p.id);
     if(error){ toast(error.message); return; }
+    // the previous worker no longer sees the order (his km, hours and tracks stay saved with the route)
+    if(p.worker_id && p.worker_id !== wid && !plans.some(x => x.id !== p.id && x.worker_id === p.worker_id)) await sb.from('task_workers').delete().eq('task_id', id).eq('worker_id', p.worker_id);
     if(wid){
       await sb.from('task_workers').upsert({ task_id:id, worker_id:wid }, { onConflict:'task_id,worker_id', ignoreDuplicates:true });
       await notifyAssigned(tk, { ...p, worker_id:wid });
@@ -1231,7 +1243,8 @@ async function viewTask(id){
     if((!allTracks.length && !(p.skipped || []).length) || !p.path?.length) continue;
     byPlan[p.id] = byPlan[p.id] || [];
     const tr = addSkips(Planner.makeTracker(p.path), p), ct = p.boxes && p.boxes.length ? Planner.makeBoxCounter(p.boxes) : null;
-    allTracks.forEach(pts => { tr.addTrack(pts); if(ct) ct.visitAll(pts); });   // also streets of this route walked by somebody else
+    allTracks.forEach(pts => { tr.addTrack(pts); if(ct) ct.visitAll(pts); });
+    PLAN_TR[p.id] = tr;   // also streets of this route walked by somebody else
     tr.runs().forEach(run => L.polyline(run, { color:GREEN, weight:6, opacity:.95 }).addTo(doneLayer));
     const pct = tr.pct(); const el = $('#pp' + p.idx); if(el) el.textContent = '· ' + t('done', { p:pct }); const bar = $('#pb' + p.idx); if(bar) bar.style.width = pct + '%';
     const pf = $('#pf' + p.idx); if(pf && ct) pf.textContent = t('flyersDone', { a:fmtN(ct.count()), b:fmtN(ct.total) }) + (ct.total ? ' · ' + Math.round(ct.count() / ct.total * 100) + ' %' : '');

@@ -181,3 +181,4 @@ Object.assign(T.en, { takenT:'Shift on another phone', takenQ:'Your shift contin
 Object.assign(T.en, { progLbl:'Progress' });
 Object.assign(T.en, { invSection:'Invite workers & login links' });
 Object.assign(T.en, { waLogin:'Sign in with WhatsApp', waConfirm:'Confirm number via WhatsApp', waTitle:'Confirm via WhatsApp', waHint:'Tap "Open WhatsApp" and send the prepared message. Then it continues here by itself.', waOpen:'Open WhatsApp', waWait:'Waiting for your message …', waTimeout:'Time is up. Please try again.', waOff:'WhatsApp confirmation is not set up yet.', waPhoneOk:'Number confirmed: {p}', e_wa_expired:'Code expired. Please try again.' });
+Object.assign(T.en, { prevWorker:'Before: {n} · {km} · {h} h' });
