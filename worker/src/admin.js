@@ -658,6 +658,9 @@ function viewCreate(edit){
   if(tkE && Array.isArray(tkE.must_areas)) d.must = tkE.must_areas.map(mArea).filter(a => a.p.length > 2);
   if(tkE && Array.isArray(tkE.work_area) && tkE.work_area.length > 2) d.zone = tkE.work_area;
   if(tkE) Object.assign(d, { flyers:tkE.flyers || 5000, hours:+tkE.work_hours || 7, quota:tkE.quota_m30 || 1500, days:tkE.work_days || 2, n:Math.max(1, edit.plans.length), nAuto:false });
+  const pre = edit && edit.pre;   // a far town of the order before: its own order with its own start point (e.g. day 2)
+  d.side = []; d.queue = (pre && pre.queue) || [];
+  if(pre) Object.assign(d, { flyers:pre.flyers || 2000, hours:pre.hours || 7, quota:pre.quota || 1500, days:1, n:Math.max(1, pre.n || 1), nAuto:false, prefAssign:pre.assign || null });
   const sf = searchField('cSearch', t('searchAddr'), (c, q) => { d.place = c; if(q) q.value = c.name + (c.sub ? ', ' + c.sub : ''); setStart(c.lat, c.lng); }, { near:() => d.start ? [d.start.lat, d.start.lng] : null });
   shell('tasks', `<div id="fullMap" class="fullmap"></div>
     <div class="map-top"><button class="icon-btn" id="cBack" aria-label="${esc(t('back'))}">${ICONS.back}</button><div class="grow">${sf.html}</div></div>
@@ -716,11 +719,18 @@ function viewCreate(edit){
     if(n === null){ d.must.pop(); drawMust(); return; }
     d.must[d.must.length - 1].n = n; drawMust(); recompute();
   };
+  const SIDE_R = 3000;   // a place further away than this gets its own order with its own start point (planning stays fast, no walking between towns)
   // a town / village / district typed by name becomes a mandatory area with its real outline
   const addPlaceArea = async c => {
     if(!d.start){ toast(t('tapMap')); return; }
     saved = keep(); toast(t('placeLoading'));
     const { p:pts, exact } = await placeArea(c); if(!alive()) return;
+    const ctr = pts.reduce((a, q) => [a[0] + q[0] / pts.length, a[1] + q[1] / pts.length], [0, 0]), dist = hav(d.start.lat, d.start.lng, ctr[0], ctr[1]);
+    if(dist > SIDE_R){
+      const n = await askMustN(null, 0); if(n === null || !alive()) return;
+      d.side.push({ name:c.name, lat:c.lat, lng:c.lng, sub:c.sub || '', city:c.city || c.name, district:c.district || '', flyers:n || 1000, km:Math.round(dist / 100) / 10 });
+      toast(t('sideAdded', { name:c.name })); renderSheet(); return;
+    }
     const far = Math.max(...pts.map(q => hav(d.start.lat, d.start.lng, q[0], q[1])));
     if(far > Planner.MUST_MAX_R){ toast(t('placeTooFar', { km:Math.round(Planner.MUST_MAX_R / 1000) })); return; }
     d.must.push({ p:pts, n:0, name:c.name }); drawMust();
@@ -771,7 +781,7 @@ function viewCreate(edit){
   async function setStart(lat, lng, fromClick){
     const tok = ++d.token; d.start = { lat, lng }; d.keepView = !!fromClick;   // a tap on the map keeps the zoom the admin chose
     d.pick = false; updPick();
-    d.loaded = false; d.plan = null; d.err = null; d.assign = {};
+    d.loaded = false; d.plan = null; d.err = null; d.assign = d.prefAssign ? { ...d.prefAssign } : {};
     zoneLayer.clearLayers(); planLayer.clearLayers();
     L.marker([lat, lng], { icon:dot('pin-start', 26) }).addTo(zoneLayer); if(!fromClick) m.setView([lat, lng], 15, { animate:false });
     let pr = progress(tok, true); pr.stage('loadingArea');
@@ -816,6 +826,7 @@ function viewCreate(edit){
   }
   function restore(k){ if($('#cTitle')) $('#cTitle').value = k.title || ''; if($('#cDate')) $('#cDate').value = k.date || ''; if($('#cNotes')) $('#cNotes').value = k.notes || ''; if($('#cQuota')) $('#cQuota').value = k.quota; }
   let saved = tkE ? { title:tkE.title, date:tkE.work_date ? String(tkE.work_date).slice(0, 10) : '', notes:tkE.notes || '', quota:tkE.quota_m30 || 1500 } : { title:'', date:'', notes:'', quota:1500 };
+  if(pre) saved = { title:pre.title, date:pre.date || '', notes:pre.notes || '', quota:pre.quota || 1500 };
   // five steps on top of the live map: 1 start · 2 route · 3 time · 4 workers · 5 review. Planning keeps running underneath.
   const STEPS = ['wzStart', 'wzRoute', 'wzTime', 'wzTeam', 'wzReview'];
   d.step = tkE ? 2 : 1;
@@ -846,6 +857,7 @@ function viewCreate(edit){
       <label class="f">${esc(t('mainCity'))}</label><div class="note" style="margin:0">${esc((d.place && d.place.city) || (tkE && tkE.city_name) || '—')}</div>
       <label class="f">${esc(t('sideTowns'))}</label><p class="small muted" style="margin:-2px 0 6px">${esc(t('sideTownsHint'))}</p>
       ${d.must.some(a => a.name) ? `<div class="chips" style="margin:0 0 8px">${d.must.map((a, k) => a.name ? `<span class="chip">${esc(a.name)}${a.n ? ' · ' + esc(fmtN(a.n)) : ''}<button class="link" data-mrm="${k}" aria-label="${esc(t('del'))}">✕</button></span>` : '').join('')}</div>` : ''}
+      ${d.side.length ? `<div class="chips" style="margin:0 0 8px">${d.side.map((x, k) => `<span class="chip">${esc(x.name)} · ${esc(t('sideOwn', { km:String(x.km).replace('.', ','), n:fmtN(x.flyers) }))}<button class="link" data-srm="${k}" aria-label="${esc(t('del'))}">✕</button></span>`).join('')}</div><p class="small muted" style="margin:-4px 0 8px">${esc(t('sideOwnHint'))}</p>` : ''}
       ${d.start ? sfTown('cTown1').html : ''}`;
     else if(d.step === 2) body = `
       <div class="steppers">
@@ -919,6 +931,7 @@ function viewCreate(edit){
     if($('#cSave')) $('#cSave').onclick = save;
     if($('#cMustAdd')) $('#cMustAdd').onclick = () => drawMode(true, 'must');
     Object.values(towns).forEach(x => x.bind());
+    document.querySelectorAll('[data-srm]').forEach(b => b.onclick = () => { saved = keep(); d.side.splice(+b.dataset.srm, 1); renderSheet(); });
     if($('#cZoneDraw')) $('#cZoneDraw').onclick = () => { saved = keep(); drawMode(true, 'zone'); };
     if($('#cZoneAuto')) $('#cZoneAuto').onclick = () => { saved = keep(); d.zone = null; drawMust(); recompute(); };
     if($('#cZoneFit')) $('#cZoneFit').onclick = () => { saved = keep(); d.flyers = Math.max(100, Math.floor(p.zone_mb / 50) * 50); d.nAuto = true; recompute(); };
@@ -948,11 +961,21 @@ function viewCreate(edit){
         const ins = await sb.from('tasks').insert({ ...row, created_by:A.user.id }).select().single(); if(ins.error) throw ins.error; tk = ins.data;
       }
       await savePlans(tk, pl.routes.map((r, i) => ({ task_id:tk.id, idx:i, worker_id:d.assign[i] || null, color:Planner.COLORS[i % 10], path:r.path, length_m:r.length_m, street_m:r.street_m, mailboxes:r.mailboxes, boxes:r.boxes, minutes:r.minutes, days:r.days, steps:r.steps })));
-      await loadTasks(); viewTask(tk.id);
+      await loadTasks();
+      const queue = [...d.side.map(x => ({ x, from:tk })), ...d.queue];
+      if(queue.length){
+        const { x, from } = queue[0], dd = from.work_date ? new Date(String(from.work_date).slice(0, 10) + 'T12:00:00') : null;
+        if(dd) dd.setDate(dd.getDate() + Math.max(1, +from.work_days || 1));
+        const assign = {}; pl.routes.forEach((_, i) => { if(d.assign[i]) assign[i] = d.assign[i]; });
+        toast(t('sideNext', { name:x.name }));
+        return viewCreate({ pre:{ title:withCity(x.name, x.city), place:x, flyers:x.flyers, date:dd ? dd.toISOString().slice(0, 10) : '', hours:d.hours, quota, n:Math.max(1, Object.keys(assign).length || 1), assign, notes:'', queue:queue.slice(1) } });
+      }
+      viewTask(tk.id);
     }catch(e){ if($('#cErr')) $('#cErr').textContent = e.message; else toast(e.message); const sv = $('#cSave'); if(sv){ sv.disabled = false; sv.classList.remove('loading'); } }
   }
   renderSheet();
   if(tkE) setStart(tkE.start_lat, tkE.start_lng);
+  else if(pre && pre.place){ d.place = pre.place; const qi = $('#cSearch'); if(qi) qi.value = pre.place.name + (pre.place.sub ? ', ' + pre.place.sub : ''); setStart(pre.place.lat, pre.place.lng); }
 }
 // saves plans, links workers and sends each assigned worker a notification
 async function savePlans(tk, rows){
