@@ -1,7 +1,7 @@
 import L from 'leaflet';
 import Planner from '../../admin/planner.js';
 import { t, I } from './i18n.js';
-import { sb, store, $, esc, css, hav, fmtDist, fmtH, fmtHm, fmtN, fmtDay, fmtDT, ago, waLink, telLink, loopPath, deMobile, loc, reversePlace } from './core.js';
+import { sb, store, $, esc, css, hav, fmtDist, fmtH, fmtHm, fmtN, fmtDay, fmtDT, ago, waLink, telLink, loopPath, deMobile, loc, reversePlace, placeArea } from './core.js';
 import { UI, ICONS, shell, plain, topbar, bindBack, makeMap, dot, labelIcon, fit, modal, confirmBox, toast, searchField, langSwitch, themeSwitch, statusPill, emptyState, avatar, every, personIcon } from './ui.js';
 import { legalLinks, bindLegal } from './legalview.js';
 import { makePlanEngine } from './planengine.js';
@@ -30,7 +30,8 @@ const osmCache = {
 };
 const KM_PER_MIN_TRANSIT = 0.75;
 // priority area: [[lat,lng]…] (old orders: all streets inside) or { p:[[lat,lng]…], n:flyers }
-const mArea = a => Array.isArray(a) ? { p:a, n:0 } : { p:(a && a.p) || [], n:+(a && a.n) || 0 };
+const mArea = a => Array.isArray(a) ? { p:a, n:0, name:'' } : { p:(a && a.p) || [], n:+(a && a.n) || 0, name:(a && a.name) || '' };
+const mName = (a, k) => (a && a.name) || t('mustN', { n:k + 1 });
 // route planning runs in a background worker (the screen never freezes); one engine for the session keeps the loaded map
 let engine = null;
 const planEngine = () => engine || (engine = makePlanEngine(osmCache));
@@ -659,7 +660,7 @@ function viewCreate(edit){
   const drawMust = () => {
     mustLayer.clearLayers();
     if(d.zone) tip(L.polygon(d.zone, { color:ZONE_COLOR, weight:3, dashArray:'10 6', fillOpacity:.04, interactive:false }).addTo(mustLayer), t('zoneTitle'), 'zone-tip');
-    d.must.forEach((a, k) => tip(L.polygon(a.p, { color:MUST_COLOR, weight:3, dashArray:'8 6', fillOpacity:.12, interactive:false }).addTo(mustLayer), t('mustN', { n:k + 1 }) + (a.n ? ' · ' + fmtN(a.n) : '')));
+    d.must.forEach((a, k) => tip(L.polygon(a.p, { color:MUST_COLOR, weight:3, dashArray:'8 6', fillOpacity:.12, interactive:false }).addTo(mustLayer), mName(a, k) + (a.n ? ' · ' + fmtN(a.n) : '')));
     if(d.drawing){
       const col = d.drawFor === 'zone' ? ZONE_COLOR : MUST_COLOR;
       if(d.drawing.length > 1) L.polygon(d.drawing, { color:col, weight:2, dashArray:'4 4', fillOpacity:.08, interactive:false }).addTo(mustLayer);
@@ -698,6 +699,20 @@ function viewCreate(edit){
     d.must.push({ p:pts, n:0 }); drawMust();
     const n = await askMustN(null, 0);
     if(n === null){ d.must.pop(); drawMust(); return; }
+    d.must[d.must.length - 1].n = n; drawMust(); recompute();
+  };
+  // a town / village / district typed by name becomes a mandatory area with its real outline
+  const addPlaceArea = async c => {
+    if(!d.start){ toast(t('tapMap')); return; }
+    saved = keep(); toast(t('placeLoading'));
+    const { p:pts, exact } = await placeArea(c); if(!alive()) return;
+    const far = Math.max(...pts.map(q => hav(d.start.lat, d.start.lng, q[0], q[1])));
+    if(far > Planner.MUST_MAX_R){ toast(t('placeTooFar', { km:Math.round(Planner.MUST_MAX_R / 1000) })); return; }
+    d.must.push({ p:pts, n:0, name:c.name }); drawMust();
+    try{ m.fitBounds(L.latLngBounds([[d.start.lat, d.start.lng], ...pts]), { padding:[40, 40] }); }catch{}
+    if(!exact) toast(t('placeCircle'));
+    const n = await askMustN(null, 0);
+    if(n === null){ d.must.pop(); drawMust(); renderSheet(); return; }
     d.must[d.must.length - 1].n = n; drawMust(); recompute();
   };
   drawMust();
@@ -807,11 +822,16 @@ function viewCreate(edit){
         ${p.mailboxes < d.flyers * 0.95 ? `<p class="small err">${esc(t('areaSmall', { mb:fmtN(p.mailboxes) }))}</p>` : ''}
         <div class="${cap.ok ? 'hint' : 'warnbox'}">${cap.ok ? esc(t('fitsOk', { d:d.days })) : `${esc(t('tooBig', { h:cap.slowest.toFixed(1).replace('.', ','), lim:cap.limit, d:d.days }))} <button class="link" id="cReduce">${esc(t('reduceTo', { f:fmtN(cap.suggestedFlyers) }))}</button> ${esc(t('moreWorkers'))}`}</div>`
       : d.err ? `<p class="small err">${esc(t('streetsFail', { e:d.err }))}</p><button class="btn ghost small" id="cRetry">${ICONS.refresh}${esc(t('retryBtn'))}</button>` : `<p class="small muted" style="margin:10px 0 0">${esc(t('calculating'))}</p>`;
+    const towns = {}, sfTown = id => (towns[id] = towns[id] || searchField(id, t('townSearch'), c => addPlaceArea(c), { citiesOnly:true, near:() => d.start ? [d.start.lat, d.start.lng] : null }));
     let body = '';
     if(d.step === 1) body = `
       <label class="f" for="cTitle">${esc(t('title'))}</label><input class="in" id="cTitle" value="${esc(title)}" autocomplete="off">
       <label class="f">${esc(t('startPoint'))}</label>
-      <div class="note" style="margin:0;display:flex;gap:10px;align-items:flex-start">${ICONS.pin.replace('<svg', '<svg width="20" height="20" style="fill:none;stroke:currentColor;stroke-width:2;flex:none;margin-top:1px"')}<span>${d.start ? esc(d.place ? [d.place.name, d.place.sub].filter(Boolean).join(', ') : d.start.lat.toFixed(5) + ', ' + d.start.lng.toFixed(5)) : esc(t('tapMap'))}</span></div>`;
+      <div class="note" style="margin:0;display:flex;gap:10px;align-items:flex-start">${ICONS.pin.replace('<svg', '<svg width="20" height="20" style="fill:none;stroke:currentColor;stroke-width:2;flex:none;margin-top:1px"')}<span>${d.start ? esc(d.place ? [d.place.name, d.place.sub].filter(Boolean).join(', ') : d.start.lat.toFixed(5) + ', ' + d.start.lng.toFixed(5)) : esc(t('tapMap'))}</span></div>
+      <label class="f">${esc(t('mainCity'))}</label><div class="note" style="margin:0">${esc((d.place && d.place.city) || (tkE && tkE.city_name) || '—')}</div>
+      <label class="f">${esc(t('sideTowns'))}</label><p class="small muted" style="margin:-2px 0 6px">${esc(t('sideTownsHint'))}</p>
+      ${d.must.some(a => a.name) ? `<div class="chips" style="margin:0 0 8px">${d.must.map((a, k) => a.name ? `<span class="chip">${esc(a.name)}${a.n ? ' · ' + esc(fmtN(a.n)) : ''}<button class="link" data-mrm="${k}" aria-label="${esc(t('del'))}">✕</button></span>` : '').join('')}</div>` : ''}
+      ${d.start ? sfTown('cTown1').html : ''}`;
     else if(d.step === 2) body = `
       <div class="steppers">
         <div><label class="f">${esc(t('flyersCount'))}</label><div class="stepper"><button data-s="f:-500" aria-label="−500">−</button><input id="cFly" type="number" inputmode="numeric" min="100" step="100" value="${d.flyers}"><button data-s="f:500" aria-label="+500">+</button></div></div>
@@ -827,9 +847,10 @@ function viewCreate(edit){
         <p class="small muted" style="margin:2px 0 8px">${esc(t('mustHint'))}</p>
         ${p && p.must_mb > d.flyers ? `<div class="warnbox" style="margin:0 0 8px">${esc(t('mustTooMany', { mb:fmtN(p.must_mb), f:fmtN(d.flyers) }))}</div>` : ''}
         ${d.must.map((a, k) => { const inf = p && p.must_info && p.must_info[k];
-          return `<div class="sec-row" style="margin:4px 0;align-items:flex-start"><span><i class="must-dot"></i>${esc(t('mustN', { n:k + 1 }))} · <b>${esc(a.n ? t('mustNFly', { n:fmtN(a.n) }) : t('mustAllShort'))}</b>
+          return `<div class="sec-row" style="margin:4px 0;align-items:flex-start"><span><i class="must-dot"></i>${esc(mName(a, k))} · <b>${esc(a.n ? t('mustNFly', { n:fmtN(a.n) }) : t('mustAllShort'))}</b>
             ${inf ? `<br><span class="small muted">${esc(t('mustAvail', { mb:fmtN(inf.avail) }))}${a.n && inf.avail < a.n ? ' – ' + esc(t('mustFewer')) : ''}</span>` : ''}</span>
             <span style="white-space:nowrap"><button class="link" data-med="${k}">${esc(t('change'))}</button> · <button class="link danger-text" data-mrm="${k}">${esc(t('del'))}</button></span></div>`; }).join('')}
+        ${d.start ? `<div style="margin:0 0 8px">${sfTown('cTown2').html}</div>` : ''}
         <button class="btn ghost small" id="cMustAdd" ${d.start ? '' : 'disabled'}>${ICONS.plus}${esc(t('mustAdd'))}</button></div>
       ${p ? p.routes.map((r, i) => routeRow(r, i, false)).join('') : ''}`;
     else if(d.step === 3) body = `
@@ -849,7 +870,7 @@ function viewCreate(edit){
         <div><span>${esc(t('startDate'))}</span><b>${esc(saved.date ? fmtDay(saved.date) : t('noDate'))} · ${esc(String(d.hours).replace('.', ','))} ${esc(t('h'))}/${esc(t('dayShort'))}</b></div>
         <div><span>${esc(t('quota'))}</span><b>${esc(fmtN(+saved.quota || 1500))} m / 30 ${esc(t('min'))}</b></div>
         <div><span>${esc(t('zoneTitle'))}</span><b>${esc(d.zone ? t('zoneOwn') : t('zoneAuto'))}</b></div>
-        ${d.must.length ? `<div><span>${esc(t('mustTitle'))}</span><b>${esc(t('mustSum', { n:d.must.length, mb:fmtN((p && p.must_mb) || 0) }))}</b></div>` : ''}
+        ${d.must.length ? `<div><span>${esc(t('mustTitle'))}</span><b>${esc((d.must.some(a => a.name) ? d.must.map((a, k) => mName(a, k)).join(', ') + ' · ' : '') + t('mustSum', { n:d.must.length, mb:fmtN((p && p.must_mb) || 0) }))}</b></div>` : ''}
         ${saved.notes ? `<div><span>${esc(t('note'))}</span><b>${esc(saved.notes)}</b></div>` : ''}
       </div>
       ${p && !cap.ok ? `<div class="warnbox">${esc(t('tooBig', { h:cap.slowest.toFixed(1).replace('.', ','), lim:cap.limit, d:d.days }))}</div>` : ''}<div class="err" id="cErr"></div>`;
@@ -882,6 +903,7 @@ function viewCreate(edit){
     document.querySelectorAll('[data-r]').forEach(s => s.onchange = () => { d.assign[+s.dataset.r] = s.value || null; });
     if($('#cSave')) $('#cSave').onclick = save;
     if($('#cMustAdd')) $('#cMustAdd').onclick = () => drawMode(true, 'must');
+    Object.values(towns).forEach(x => x.bind());
     if($('#cZoneDraw')) $('#cZoneDraw').onclick = () => { saved = keep(); drawMode(true, 'zone'); };
     if($('#cZoneAuto')) $('#cZoneAuto').onclick = () => { saved = keep(); d.zone = null; drawMust(); recompute(); };
     if($('#cZoneFit')) $('#cZoneFit').onclick = () => { saved = keep(); d.flyers = Math.max(100, Math.floor(p.zone_mb / 50) * 50); d.nAuto = true; recompute(); };
@@ -900,7 +922,7 @@ function viewCreate(edit){
       const pl = d.plan, quota = Math.max(200, Math.round(+saved.quota || 1500)), date = saved.date || null;
       const cityN = (d.place && d.place.city) || (tkE && tkE.city_name) || null;
       const row = { title:withCity(title, cityN), city_name:(d.place && d.place.city) || (tkE && tkE.city_name) || null, district:(d.place && d.place.district) || (tkE && tkE.district) || null, start_lat:d.start.lat, start_lng:d.start.lng,
-        walk_minutes:15, zone_polygon:pl.zone, must_areas:d.must.length ? d.must.map(a => ({ p:a.p, n:a.n })) : null, work_area:d.zone || null, work_date:date, notes:(saved.notes || '').trim() || null, street_m:d.streetM || null,
+        walk_minutes:15, zone_polygon:pl.zone, must_areas:d.must.length ? d.must.map(a => ({ p:a.p, n:a.n, name:a.name || undefined })) : null, work_area:d.zone || null, work_date:date, notes:(saved.notes || '').trim() || null, street_m:d.streetM || null,
         flyers:d.flyers, quota_m30:quota, work_days:d.days, work_hours:d.hours, est_mailboxes:pl.mailboxes, route_m:pl.routes.reduce((s, r) => s + r.length_m, 0) };
       let tk;
       if(tkE){
@@ -990,6 +1012,7 @@ async function viewTask(id){
         ${tk.flyers ? `<div><span>${esc(t('flyers'))}</span><b>${esc(fmtN(tk.flyers))} · ${esc(t('mbApprox', { n:fmtN(tk.est_mailboxes || 0) }))}</b></div>` : ''}
         ${tk.route_m ? `<div><span>${esc(t('dist2'))}</span><b>${esc(fmtDist(tk.route_m))}</b></div>` : ''}
         ${tk.quota_m30 ? `<div><span>${esc(t('quotaInfo'))}</span><b>${fmtN(tk.quota_m30)} m / 30 ${esc(t('min'))}</b></div>` : ''}
+        ${(tk.must_areas || []).length ? `<div><span>${esc(t('mustTitle'))}</span><b>${esc(tk.must_areas.map((a, k) => mName(mArea(a), k) + (mArea(a).n ? ' (' + fmtN(mArea(a).n) + ')' : '')).join(', '))}</b></div>` : ''}
         <div><span>${esc(t('walkedLbl'))}</span><b>${esc(fmtDist(walked))}</b></div>
         <div><span>${esc(t('hoursLbl'))}</span><b id="tHrs">${taskHours(plans, routes)}</b></div>
         <div id="tFlRow" style="display:none"><span>${esc(t('handedLbl'))}</span><b id="tFl"></b></div>

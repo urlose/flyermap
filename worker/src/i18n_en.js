@@ -156,3 +156,4 @@ Object.assign(T.en, { chgDates:'Change days', datesChangedTitle:'New working day
 Object.assign(T.en, { allLinks:'Login links of all workers' });
 T.en.pauseLbl = 'Break';
 Object.assign(T.en, { openWorker:'Open worker page', swapWorker:'Change' });
+Object.assign(T.en, { mainCity:'Main town', sideTowns:'More places (optional)', sideTownsHint:'Where the customer also wants flyers – type the name, the place is taken over with its borders as a mandatory area.', townSearch:'Town / district / village', placeLoading:'Loading borders …', placeTooFar:'This place is more than {km} km from the start – better create a separate order for it.', placeCircle:'No borders found – a circle around the centre was used. Draw it yourself if needed.' });

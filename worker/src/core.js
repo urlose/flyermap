@@ -64,8 +64,28 @@ export async function searchPlaces(q, citiesOnly, near){
     const p = f.properties, street = p.street ? p.street + (p.housenumber ? ' ' + p.housenumber : '') : '';
     const title = p.name || street || p.city || '';
     const sub = [p.name && street ? street : '', p.district || p.locality, p.city && p.city !== title ? p.city : '', !citiesOnly ? '' : p.state].filter(Boolean).join(', ');
-    return { name:title, city:p.city || (p.osm_key === 'place' ? p.name : '') || '', district:p.district || p.locality || (p.osm_value === 'suburb' || p.osm_value === 'quarter' ? p.name : '') || '', sub, lat:+f.geometry.coordinates[1].toFixed(6), lng:+f.geometry.coordinates[0].toFixed(6) };
+    return { name:title, city:p.city || (p.osm_key === 'place' ? p.name : '') || '', district:p.district || p.locality || (p.osm_value === 'suburb' || p.osm_value === 'quarter' ? p.name : '') || '', sub, lat:+f.geometry.coordinates[1].toFixed(6), lng:+f.geometry.coordinates[0].toFixed(6), osm_type:p.osm_type || '', osm_id:p.osm_id || null, kind:p.osm_value || '' };
   });
+}
+
+// outline of a town / village / district (OSM boundary via Nominatim) as [[lat,lng]…]; exact = false → only a circle around the centre
+export async function placeArea(c){
+  const ring = gj => {
+    if(!gj) return null; const rs = gj.type === 'Polygon' ? [gj.coordinates[0]] : gj.type === 'MultiPolygon' ? gj.coordinates.map(x => x[0]) : [];
+    const area = r => Math.abs(r.reduce((s, q, i) => { const n = r[(i + 1) % r.length]; return s + q[0] * n[1] - n[0] * q[1]; }, 0));
+    let r = rs.sort((a, b) => area(b) - area(a))[0]; if(!r || r.length < 4) return null;
+    const k = Math.ceil(r.length / 300); r = r.filter((_, i) => i % k === 0);
+    return r.map(q => [+q[1].toFixed(5), +q[0].toFixed(5)]);
+  };
+  const base = 'https://nominatim.openstreetmap.org/', opt = '&format=jsonv2&polygon_geojson=1&polygon_threshold=0.0002&accept-language=de';
+  try{
+    if(c.osm_type === 'R' && c.osm_id){ const j = await (await fetch(`${base}lookup?osm_ids=R${c.osm_id}${opt}`)).json(); const p = ring(j[0] && j[0].geojson); if(p) return { p, exact:true }; }
+    const vb = [c.lng - 0.15, c.lat + 0.1, c.lng + 0.15, c.lat - 0.1].join(',');
+    const j = await (await fetch(`${base}search?q=${encodeURIComponent(c.name)}&viewbox=${vb}&bounded=1&limit=6${opt}`)).json();
+    for(const x of j || []){ const p = ring(x.geojson); if(p) return { p, exact:true }; }
+  }catch{}
+  const r = c.kind === 'city' ? 2500 : c.kind === 'town' ? 1500 : c.kind === 'village' || c.kind === 'hamlet' ? 600 : 900;
+  return { p:circlePoly(c.lat, c.lng, r, 32).map(q => [+q[0].toFixed(5), +q[1].toFixed(5)]), exact:false };
 }
 
 // place name for a point: "district, town" (Photon reverse geocoding)
