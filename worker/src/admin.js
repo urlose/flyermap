@@ -237,7 +237,8 @@ function viewLive(){
 const dayKey = r => new Date(r.started_at).toLocaleDateString('sv-SE');   // local YYYY-MM-DD
 // net working time: start to end minus breaks, plus a correction by the admin (adj_s; the GPS times stay as recorded)
 // a pause counts in full hours only (1:15 → 1 h, 0:40 → 0): the rest is working time
-const pauseFull = sec => Math.floor((sec || 0) / 3600) * 60;   // minutes
+// pause of a day: under an hour it counts exactly, from an hour on in full hours (1:15 → 1 h)
+const pauseFull = sec => (sec || 0) < 3600 ? Math.round((sec || 0) / 60) : Math.floor(sec / 3600) * 60;   // minutes
 const rawMin = r => ((r.ended_at ? new Date(r.ended_at) : Date.now()) - new Date(r.started_at)) / 60000 + (r.adj_s || 0) / 60;
 const workMin = r => r._min != null ? r._min : Math.max(0, rawMin(r) - pauseFull(r.break_s));
 // several sessions of one person on one day (Feierabend + start again, app restarted …) are one working day:
