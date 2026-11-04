@@ -1115,9 +1115,17 @@ function taskHours(plans, routes){
   const mine = []; (plans || []).forEach(p => ownR(p).forEach(r => { if(!seen.has(r.id)){ seen.add(r.id); mine.push(r); } }));
   mergeDays(mine).forEach(r => { done += workMin(r); brk += brkMin(r); });
   const plan = (plans || []).reduce((s, p) => s + (p.minutes || 0), 0);
-  return esc(fmtHm(done)) + ' / ' + esc(fmtHm(plan)) + ' ' + esc(t('h')) + (plan ? ' (' + Math.round(100 * done / plan) + ' %)' : '') + esc(brkTxt(brk));
+  PROG.h = plan ? Math.min(100, 100 * done / plan) : null; setTimeout(showProg);
+  return esc(fmtHm(done)) + ' / ' + esc(fmtHm(plan)) + ' ' + esc(t('h')) + esc(brkTxt(brk));
+}
+// one progress figure of an order: the mean of working time (done / plan) and flyers handed out (if known)
+const PROG = { h:null, f:null };
+function showProg(){
+  const el = $('#tProg'); if(!el) return;
+  const v = [PROG.h, PROG.f].filter(x => x != null); el.textContent = v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) + ' %' : '—';
 }
 async function viewTask(id){
+  PROG.h = PROG.f = null;
   const tk = A.tasks.find(x => x.id === id); if(!tk) return viewTasks();
   A.curTask = id;
   const [{ data:plans }, { data:routes }] = await Promise.all([sb.from('task_plans').select('*').eq('task_id', id).order('idx'), sb.from('routes').select('*').eq('task_id', id)]);
@@ -1136,6 +1144,7 @@ async function viewTask(id){
         ${(tk.side_towns || []).length ? `<div><span>${esc(t('sideTitle'))}</span><b>${esc(tk.side_towns.map(x => x.name + ' (' + fmtN(x.flyers) + ')').join(', '))}</b></div>` : ''}
         ${(tk.must_areas || []).length ? `<div><span>${esc(t('mustTitle'))}</span><b>${esc(tk.must_areas.map((a, k) => mName(mArea(a), k) + (mArea(a).n ? ' (' + fmtN(mArea(a).n) + ')' : '')).join(', '))}</b></div>` : ''}
         <div><span>${esc(t('walkedLbl'))}</span><b>${esc(fmtDist(walked))}</b></div>
+        <div><span>${esc(t('progLbl'))}</span><b id="tProg">—</b></div>
         <div><span>${esc(t('hoursLbl'))}</span><b id="tHrs">${taskHours(plans, routes)}</b></div>
         <div id="tFlRow" style="display:none"><span>${esc(t('handedLbl'))}</span><b id="tFl"></b></div>
         ${tk.notes ? `<div><span>${esc(t('note'))}</span><b>${esc(tk.notes)}</b></div>` : ''}
@@ -1227,7 +1236,7 @@ async function viewTask(id){
     if(ct){ flSum += ct.count(); flHas = true; }
   }
   const fr = $('#tFlRow'), fe = $('#tFl');
-  if(fr && fe && flHas){ const tot = tk.flyers || 0; fe.textContent = '≈ ' + fmtN(flSum) + (tot ? ' / ' + fmtN(tot) + ' (' + Math.min(100, Math.round(100 * flSum / tot)) + ' %)' : ''); fr.style.display = ''; }
+  if(fr && fe && flHas){ const tot = tk.flyers || 0; fe.textContent = '≈ ' + fmtN(flSum) + (tot ? ' / ' + fmtN(tot) : ''); fr.style.display = ''; PROG.f = tot ? Math.min(100, 100 * flSum / tot) : null; showProg(); }
 }
 
 /* ---------- worker view for the admin (no SMS needed): own number, or a test worker ---------- */
