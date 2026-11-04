@@ -194,4 +194,3 @@ Object.assign(T.de, { prevWorker:'Vorher: {n} · {km} · {h} h' });
 Object.assign(T.ru, { prevWorker:'Раньше: {n} · {km} · {h} ч' });
 Object.assign(T.de, { oneDayHint:'Alles zusammen ≈ {h} – das schafft 1 Mitarbeiter an 1 Tag.', fitsOne:'Passt in 1 Tag.' });
 Object.assign(T.ru, { oneDayHint:'Всего ≈ {h} – это сделает 1 работник за 1 день.', fitsOne:'Укладывается в 1 день.' });
-Object.assign(T.en, { oneDayHint:'All together ≈ {h} – 1 person can do it in 1 day.', fitsOne:'Fits into 1 day.' });

@@ -4,7 +4,7 @@ import { t, I } from './i18n.js';
 import { sb, store, $, esc, css, hav, fmtDist, fmtH, fmtHm, fmtN, fmtDay, fmtDT, ago, waLink, telLink, loopPath, deMobile, loc, reversePlace, placeArea } from './core.js';
 import { UI, ICONS, shell, setLoc, getLoc, plain, topbar, bindBack, makeMap, dot, labelIcon, fit, drawJumps, modal, confirmBox, toast, searchField, langSwitch, themeSwitch, statusPill, emptyState, avatar, every, personIcon } from './ui.js';
 import { legalLinks, bindLegal } from './legalview.js';
-import { makePlanEngine } from './planengine.js';
+import { makePlanEngine, setStampClient, tileStamp } from './planengine.js';
 import { openMapView } from './routeview.js';
 import { checkpoints, addSkips, dayProgress } from './nav.js';
 import { loadFirm, firmCardHtml, bindFirmCard, firmComplete, avvOk } from './firm.js';
@@ -78,7 +78,7 @@ function drawTowns(g, tk, w){
 const mName = (a, k) => (a && a.name) || t('mustN', { n:k + 1 });
 // route planning runs in a background worker (the screen never freezes); one engine for the session keeps the loaded map
 let engine = null;
-const planEngine = () => engine || (engine = makePlanEngine(osmCache));
+const planEngine = () => engine || (setStampClient(sb), tileStamp(), engine = makePlanEngine(osmCache));
 export const A = { user:null, workers:[], tasks:[], live:[], demo:null, hooks:{}, filter:{ status:'open', from:'', to:'', city:'', district:'' } };
 
 /* ---------- data ---------- */
@@ -476,6 +476,7 @@ async function boxesAlong(tracks, exclude){
   tracks = (tracks || []).filter(x => x && x.length > 1); if(!tracks.length || typeof fetch === 'undefined') return null;
   const keys = new Set(); for(const ll of tracks) for(let i = 0; i < ll.length; i += 5) for(const k of Planner.tilesFor(ll[i], 60)) keys.add(k);
   if(keys.size > 120) return null;
+  setStampClient(sb); await tileStamp();
   const tiles = await Promise.all([...keys].map(k => Planner.fetchOwnTile(Planner.TILES_URL, k, fetch).catch(() => null)));
   if(tiles.some(x => !x)) return null;   // a square missing (outside Germany / offline): no number rather than a wrong one
   // exclude = mailboxes of the planned routes (they are counted there already); a house matches within ~8 m
