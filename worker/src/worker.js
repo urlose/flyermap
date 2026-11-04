@@ -8,7 +8,7 @@ import { openMapView } from './routeview.js';
 import { locationNote, legalLinks, bindLegal } from './legalview.js';
 import { setLegalFirm } from './legal.js';
 import { t, I } from './i18n.js';
-import { NATIVE, PRIVACY_URL, store, rpc, errText, deMobile, $, esc, css, hav, fmtDist, fmtHm, fmtN, fmtTime, fmtDay, loopPath } from './core.js';
+import { NATIVE, PRIVACY_URL, APP_LINK, store, rpc, errText, deMobile, $, esc, css, hav, fmtDist, fmtHm, fmtN, fmtTime, fmtDay, loopPath } from './core.js';
 import { UI, ICONS, shell, setLoc, getLoc, plain, topbar, bindBack, makeMap, dot, fit, drawJumps, modal, confirmBox, reasonBox, toast, cityPicker, langSwitch, themeSwitch, statusPill, emptyState, avatar, every } from './ui.js';
 
 const BackgroundGeolocation = registerPlugin('BackgroundGeolocation');
@@ -764,6 +764,7 @@ function viewProfile(){
         <label class="f">${esc(t('cities'))}</label>${cp.html}
         <button class="btn primary" id="pSave" style="margin-top:16px">${esc(t('save'))}</button><div class="err" id="pErr" role="alert"></div>
       </div>
+      <div id="refBox"></div>
       <h2 class="sec">${esc(t('settings'))}</h2>
       <div class="card" style="display:block">${themeSwitch(W.theme)}${langSwitch(I.lang, true)}
         <label class="check"><input type="checkbox" id="pOffers" ${me.offers_ok ? 'checked' : ''}><span>${esc(t('offersOptIn'))}<br><small class="muted">${esc(t('offersOptInSub'))}</small></span></label></div>
@@ -774,6 +775,7 @@ function viewProfile(){
       ${legalLinks()}
     </div>`);
   cp.bind(); bindLegal(viewProfile);
+  refCard();
   $('#pOffers').onchange = async e => { const on = e.target.checked; try{ await rpc('set_offers', { p_token:W.token, p_on:on }); if(W.me) W.me.offers_ok = on; await store.set('me', W.me); toast(t('saved')); }catch(err){ e.target.checked = !on; toast(errText(err)); } };
   store.get('theme').then(v => { W.theme = v; document.querySelectorAll('[data-theme-set]').forEach(b => { const on = b.dataset.themeSet === (v || 'system'); b.classList.toggle('on', on); b.setAttribute('aria-checked', on); }); });
   $('#pSave').onclick = async () => {
@@ -788,6 +790,25 @@ function viewProfile(){
   if($('#pAdmin')) $('#pAdmin').onclick = () => W.hooks.switchRole && W.hooks.switchRole('admin');
   $('#pOut').onclick = async () => { if(await confirmBox(t('logout'), t('logoutQ'), t('logout'))) forceLogout(); };
   $('#pDel').onclick = async () => { if(!await confirmBox(t('delAcc'), t('delAccQ'), t('delAccYes'), true)) return; try{ await rpc('delete_my_account', { p_token:W.token }); await forceLogout(); }catch(e){ $('#pErr').textContent = errText(e); } };
+}
+
+/* ================= «Freund einladen»: own link, bonus and the invited friends ================= */
+const refStatus = r => r.deleted && r.status === 'pending' ? ['neutral', t('refDeleted')] : r.status === 'paid' ? ['ok', t('refPaid')] : r.status === 'qualified' ? ['ok', t('refQualified')] : r.status === 'rejected' ? ['bad', t('refRejected')] : ['warn', t('refPending')];
+async function refCard(){
+  let d = null; try{ d = await rpc('my_referrals', { p_token:W.token }); }catch{ return; }
+  const box = $('#refBox'); if(!box || !d) return;
+  if(!(d.bonus > 0) && !(d.list || []).length) return;   // the company has not switched the bonus on
+  const link = d.code ? APP_LINK + '?ref=' + d.code : null, firm = (W.me && W.me.company && W.me.company.name) || 'FlyerMap';
+  const earned = (d.list || []).filter(r => r.status === 'qualified' || r.status === 'paid').reduce((s, r) => s + (r.bonus || 0), 0);
+  box.innerHTML = `<h2 class="sec">${esc(t('refTitle'))}</h2><div class="card" style="display:block">
+    ${d.bonus > 0 && link ? `<p class="small" style="margin:0 0 10px">${esc(t('refHint', { eur:d.bonus }))}</p>
+      <div class="code-row"><input class="in small" readonly id="refLink" value="${esc(link)}" style="flex:1;min-width:0"><button class="btn ghost small" id="refCp">${esc(t('copy'))}</button></div>
+      <a class="btn primary small" style="margin-top:8px" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(t('refMsg', { firm, link }))}">${ICONS.chat}WhatsApp</a>` : `<p class="small muted" style="margin:0">${esc(t('refOff'))}</p>`}
+    ${(d.list || []).length ? `<div class="small muted" style="margin-top:14px">${esc(t('refSum', { n:d.list.length, eur:earned }))}</div>
+      ${d.list.map(r => { const [c, l] = refStatus(r); return `<div class="person-row">${avatar(r.name)}<div class="grow"><b>${esc(r.name)}</b><span>${esc(fmtDay(String(r.created_at).slice(0, 10)))}</span></div>${statusPill(c, l + (r.status === 'qualified' || r.status === 'paid' ? ' · ' + r.bonus + ' €' : ''))}</div>`; }).join('')}`
+      : d.bonus > 0 ? `<p class="small muted" style="margin:12px 0 0">${esc(t('refNone'))}</p>` : ''}
+  </div>`;
+  const cp = $('#refCp'); if(cp) cp.onclick = async () => { try{ await navigator.clipboard.writeText(link); toast(t('copied')); }catch{ toast(link); } };
 }
 
 /* ================= login result (phone verified in auth.js) ================= */

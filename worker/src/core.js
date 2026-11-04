@@ -6,6 +6,7 @@ import { t, I } from './i18n.js';
 export const NATIVE = Capacitor.isNativePlatform();
 export const SB_URL = 'https://xobrvfkwqessbkdwiavu.supabase.co';
 export const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhvYnJ2Zmt3cWVzc2JrZHdpYXZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI2NzA4NTQsImV4cCI6MjEwODI0Njg1NH0.5AvLRyZaiqpYQV_O47o7MNO8kg7BEZdiU4-WYSPuNBM';
+export const APP_LINK = 'https://urlose.github.io/flyermap/app/';   // public web app (invitation links)
 export const PRIVACY_URL = 'https://urlose.github.io/flyermap/privacy.html';
 export const sb = createClient(SB_URL, SB_KEY, { auth:{ persistSession:true, storageKey:'fm-admin-auth' } });
 

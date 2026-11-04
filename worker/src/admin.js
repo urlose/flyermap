@@ -1,7 +1,7 @@
 import L from 'leaflet';
 import Planner from '../../admin/planner.js';
 import { t, I } from './i18n.js';
-import { sb, store, $, esc, css, hav, fmtDist, fmtH, fmtHm, fmtN, fmtDay, fmtDT, ago, waLink, telLink, loopPath, deMobile, loc, reversePlace, placeArea } from './core.js';
+import { sb, store, APP_LINK, errText, $, esc, css, hav, fmtDist, fmtH, fmtHm, fmtN, fmtDay, fmtDT, ago, waLink, telLink, loopPath, deMobile, loc, reversePlace, placeArea } from './core.js';
 import { UI, ICONS, shell, setLoc, getLoc, plain, topbar, bindBack, makeMap, dot, labelIcon, fit, drawJumps, modal, confirmBox, toast, searchField, langSwitch, themeSwitch, statusPill, emptyState, avatar, every, personIcon } from './ui.js';
 import { legalLinks, bindLegal } from './legalview.js';
 import { makePlanEngine } from './planengine.js';
@@ -11,7 +11,6 @@ import { loadFirm, firmCardHtml, bindFirmCard, firmComplete, avvOk } from './fir
 import { viewMaster, poolHtml } from './master.js';
 
 const GREEN = '#16A34A';
-const APP_LINK = 'https://urlose.github.io/flyermap/app/';
 // e-mail admins: change the password (e.g. the first one they got from the master admin)
 document.addEventListener('click', e => {
   if(!e.target.closest || !e.target.closest('#aPw')) return;
@@ -320,9 +319,11 @@ async function viewPeople(){
         <a class="btn ghost small" style="margin-top:8px" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(t('inviteMsg', { link:APP_LINK + '?neu=' + A.company.join_code }))}">${ICONS.chat}WhatsApp</a></div>` : ''}
       <button class="btn ghost" id="wNewLink" style="margin-top:12px">${ICONS.plus}${esc(t('newLinkAcc'))}</button>
       <details class="filters" id="linkBox"><summary>${ICONS.users}${esc(t('allLinks'))}</summary><div class="f-body" id="linkList"><p class="muted small">${esc(t('loadingShort'))}</p></div></details>
+      ${A.company && A.company.id ? `<details class="filters" id="refAdm"><summary>${ICONS.gift}${esc(t('refAdminTitle'))}</summary><div class="f-body" id="refAdmBody"><p class="muted small">${esc(t('loadingShort'))}</p></div></details>` : ''}
       ${A.company && A.company.id ? `<details class="filters" id="poolBox"><summary>${ICONS.users}${esc(t('poolTitle'))}</summary><div class="f-body" id="poolList"><p class="muted small">${esc(t('loadingShort'))}</p></div></details>` : ''}
     </div>`);
   sf.bind();
+  if($('#refAdm')) $('#refAdm').addEventListener('toggle', () => { if($('#refAdm').open) refAdmin(); });
   if($('#poolBox')) $('#poolBox').addEventListener('toggle', async () => { if($('#poolBox').open && !$('#poolBox').dataset.done){ $('#poolBox').dataset.done = 1; $('#poolList').innerHTML = await poolHtml(); } });
   let days = [];   // all working days (newest first), loaded below
   const render = () => {
@@ -350,6 +351,38 @@ async function viewPeople(){
   $('#wQ').oninput = render; render();
   sb.from('routes').select('id,worker_id,task_id,plan_id,started_at,ended_at,distance_m,break_s,adj_s,place,task_title').order('started_at', { ascending:false }).limit(2000)
     .then(({ data }) => { if(!document.getElementById('dFilter')) return; days = mergeDays(data || []); render(); fillPlaces(days, () => { if(document.getElementById('dFilter')) render(); }); });
+}
+
+/* ---------- Freunde-Bonus: amount per company, invitations, approve / paid ---------- */
+async function refAdmin(){
+  const body = $('#refAdmBody'); if(!body) return;
+  const { data:d, error } = await sb.rpc('admin_referrals');
+  if(error || !d){ body.innerHTML = `<p class="err">${esc(error ? errText(error) : t('e_net'))}</p>`; return; }
+  const list = d.list || [], open = list.filter(r => r.status === 'qualified');
+  const st = r => r.deleted && r.status === 'pending' ? ['neutral', t('refDeleted')] : r.status === 'paid' ? ['ok', t('refPaid')] : r.status === 'qualified' ? ['warn', t('refQualified')] : r.status === 'rejected' ? ['bad', t('refRejected')] : ['neutral', t('refPending')];
+  const act = (r, k, l, cls = 'ghost') => `<button class="btn ${cls} small" data-ref="${r.id}" data-st="${k}">${esc(l)}</button>`;
+  body.innerHTML = `<p class="small muted" style="margin:0 0 10px">${esc(t('refAdminHint'))}</p>
+    <label class="f" for="refEur" style="margin-top:0">${esc(t('refAmount'))}</label>
+    <div class="code-row"><input class="in small" id="refEur" type="number" inputmode="numeric" min="0" max="1000" step="5" value="${d.bonus || 0}" placeholder="50" style="flex:1;min-width:0"><button class="btn primary small" id="refEurOk">${esc(t('save'))}</button></div>
+    <div class="err" id="refErr" role="alert"></div>
+    ${open.length ? `<div class="hint">${esc(t('refOpenSum', { n:open.length, eur:open.reduce((s, r) => s + (r.bonus || 0), 0) }))}</div>` : ''}
+    ${list.length ? list.map(r => { const [c, l] = st(r); return `<div class="card" style="display:block;margin-top:8px">
+        <div class="person-row" style="padding:0">${avatar(r.invitee)}<div class="grow"><b>${esc(r.invitee)}</b><span>${esc(t('refBy', { name:r.inviter }))} · ${esc(fmtDay(String(r.created_at).slice(0, 10)))}${r.task ? ' · ' + esc(r.task) : ''}</span></div></div>
+        <div style="margin-top:8px">${statusPill(c, l + ' · ' + r.bonus + ' €')}</div>
+        <div class="tool-row" style="margin-top:8px">${r.status === 'pending' ? act(r, 'qualified', t('refApprove')) + act(r, 'rejected', t('refReject')) : ''}${r.status === 'qualified' ? act(r, 'paid', t('refMarkPaid'), 'primary') + act(r, 'rejected', t('refReject')) : ''}${r.status === 'paid' || r.status === 'rejected' ? act(r, 'pending', t('refUndo')) : ''}
+          ${/^\+490000/.test(r.inviter_phone || '') ? '' : `<a class="btn ghost small" target="_blank" rel="noopener" href="${waLink(r.inviter_phone)}">${ICONS.chat}${esc(r.inviter)}</a>`}</div></div>`; }).join('')
+      : `<p class="small muted">${esc(d.bonus > 0 ? t('refAdminNone') : t('refOff'))}</p>`}`;
+  $('#refEurOk').onclick = async () => {
+    const v = Math.round(Number($('#refEur').value)); if(!Number.isFinite(v) || v < 0 || v > 1000){ $('#refErr').textContent = t('e_bad_amount'); return; }
+    $('#refEurOk').disabled = true; const { error:e } = await sb.rpc('set_referral_bonus', { p_eur:v });
+    if(e){ $('#refErr').textContent = errText(e); $('#refEurOk').disabled = false; return; }
+    toast(t('saved')); refAdmin();
+  };
+  body.querySelectorAll('[data-ref]').forEach(b => b.onclick = async () => {
+    if(b.dataset.st === 'rejected' && !await confirmBox(t('refReject'), t('refReject') + '?', t('refReject'), true)) return;
+    b.disabled = true; const { error:e } = await sb.rpc('set_referral_status', { p_id:b.dataset.ref, p_status:b.dataset.st });
+    if(e){ toast(errText(e)); b.disabled = false; return; } refAdmin();
+  });
 }
 
 /* ---------- EINSTELLUNGEN: firm, own account, language, legal ---------- */
