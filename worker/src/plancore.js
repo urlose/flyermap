@@ -84,7 +84,7 @@ export function createPlanService(cache){
         for(const a of must){
           const gap = a && a.name && a.p && a.p.length > 2 ? Planner.emptyGap(G, start, a.p) : 0;
           if(gap > EMPTY_GAP){
-            const ctr = a.p.reduce((x, q) => [x[0] + q[0] / a.p.length, x[1] + q[1] / a.p.length], [0, 0]);
+            const ctr = a.c || a.p.reduce((x, q) => [x[0] + q[0] / a.p.length, x[1] + q[1] / a.p.length], [0, 0]);   // town centre when known
             side.push({ name:a.name, lat:ctr[0], lng:ctr[1], flyers:a.n || 1000, zone:a.p }); bus.push({ name:a.name, gap });
           }else keepMust.push(a);
         }

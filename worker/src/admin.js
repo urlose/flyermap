@@ -68,7 +68,7 @@ const osmCache = {
 };
 const KM_PER_MIN_TRANSIT = 0.75;
 // priority area: [[lat,lng]…] (old orders: all streets inside) or { p:[[lat,lng]…], n:flyers }
-const mArea = a => Array.isArray(a) ? { p:a, n:0, name:'' } : { p:(a && a.p) || [], n:+(a && a.n) || 0, name:(a && a.name) || '' };
+const mArea = a => Array.isArray(a) ? { p:a, n:0, name:'' } : { p:(a && a.p) || [], n:+(a && a.n) || 0, name:(a && a.name) || '', c:(a && a.c) || undefined };
 const mName = (a, k) => (a && a.name) || t('mustN', { n:k + 1 });
 // route planning runs in a background worker (the screen never freezes); one engine for the session keeps the loaded map
 let engine = null;
@@ -745,7 +745,7 @@ function viewCreate(edit){
     drawMode(false);
     if(kind === 'zone'){ d.zone = pts; drawMust(); return recompute(); }
     const nm = t('areaN', { n:d.must.length + d.side.length + 1 });
-    return addArea({ name:nm, lat:pts.reduce((a, q) => a + q[0], 0) / pts.length, lng:pts.reduce((a, q) => a + q[1], 0) / pts.length }, pts, true);
+    return addArea({ name:nm, drawn:true }, pts, true);
   };
   const SIDE_R = 3000;   // a place further away than this gets its own order with its own start point (planning stays fast, no walking between towns)
   // a Nebenstadt typed by name (its OSM borders) or drawn on the map: near the start it is part of the main plan,
@@ -757,12 +757,14 @@ function viewCreate(edit){
     try{ m.fitBounds(L.latLngBounds([[d.start.lat, d.start.lng], ...pts]), { padding:[40, 40] }); }catch{}
     const n = await askMustN(null, 0); if(n === null || !alive()) return renderSheet();
     if(dist > SIDE_R){
-      d.side.push({ name:c.name, lat:+ctr[0].toFixed(6), lng:+ctr[1].toFixed(6), p:pts, flyers:n || 1000, km:Math.round(dist / 100) / 10 });
+      // start in the town centre (search point) – the middle of a municipality's border is often fields and hamlets; drawn areas: their middle
+      const st0 = c.lat != null && !c.drawn ? [c.lat, c.lng] : ctr;
+      d.side.push({ name:c.name, lat:+(+st0[0]).toFixed(6), lng:+(+st0[1]).toFixed(6), p:pts, flyers:n || 1000, km:Math.round(dist / 100) / 10 });
       toast(t('sideAdded', { name:c.name }));
     }else{
       const far = Math.max(...pts.map(q => hav(d.start.lat, d.start.lng, q[0], q[1])));
       if(far > Planner.MUST_MAX_R){ toast(t('placeTooFar', { km:Math.round(Planner.MUST_MAX_R / 1000) })); return renderSheet(); }
-      d.must.push({ p:pts, n, name:c.name });
+      d.must.push({ p:pts, n, name:c.name, c:c.lat != null && !c.drawn ? [+(+c.lat).toFixed(6), +(+c.lng).toFixed(6)] : undefined });
     }
     drawMust(); d.dirty = true; recompute();
   };
@@ -989,7 +991,7 @@ function viewCreate(edit){
       const pl = d.plan, quota = Math.max(200, Math.round(+saved.quota || 1500)), date = saved.date || null;
       const cityN = mainCity() || null;
       const row = { title:withCity(title, cityN), city_name:cityN, district:(d.place && d.place.district) || (tkE && tkE.district) || null, start_lat:d.start.lat, start_lng:d.start.lng,
-        walk_minutes:15, zone_polygon:pl.zone, must_areas:d.must.length ? d.must.map(a => ({ p:a.p, n:a.n, name:a.name || undefined })) : null, side_towns:d.side.length ? d.side : null, work_area:d.zone || null, work_date:date, notes:(saved.notes || '').trim() || null, street_m:d.streetM || null,
+        walk_minutes:15, zone_polygon:pl.zone, must_areas:d.must.length ? d.must.map(a => ({ p:a.p, n:a.n, name:a.name || undefined, c:a.c })) : null, side_towns:d.side.length ? d.side : null, work_area:d.zone || null, work_date:date, notes:(saved.notes || '').trim() || null, street_m:d.streetM || null,
         flyers:d.flyers, quota_m30:quota, work_days:d.days, work_hours:d.hours, est_mailboxes:pl.mailboxes, route_m:pl.routes.reduce((s, r) => s + r.length_m, 0) };
       let tk;
       if(tkE){
