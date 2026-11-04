@@ -140,13 +140,13 @@ export async function loopPath(lat, lng, rot = Math.random() * 6.28, R = 380){
   return densify(loop, 5);
 }
 
-// the road between two places of an order for the bike (Valhalla, bicycle) – [[lat,lng]…]; null when not available
+// the road between two places of an order (Valhalla; any vehicle – car, bike or bus use the roads) – [[lat,lng]…]; null when not available
 const rideCache = new Map();
-export async function bikeRoute(a, b){
-  const k = a.map(x => (+x).toFixed(5)).join(',') + '>' + b.map(x => (+x).toFixed(5)).join(','); if(rideCache.has(k)) return rideCache.get(k);
+export async function bikeRoute(a, b, costing = 'auto'){
+  const k = costing + ':' + a.map(x => (+x).toFixed(5)).join(',') + '>' + b.map(x => (+x).toFixed(5)).join(','); if(rideCache.has(k)) return rideCache.get(k);
   let out = null;
   try{
-    const q = { locations:[{ lat:a[0], lon:a[1] }, { lat:b[0], lon:b[1] }], costing:'bicycle' };
+    const q = { locations:[{ lat:a[0], lon:a[1] }, { lat:b[0], lon:b[1] }], costing };
     const ctrl = new AbortController(); setTimeout(() => ctrl.abort(), 10000);
     const r = await fetch('https://valhalla1.openstreetmap.de/route?json=' + encodeURIComponent(JSON.stringify(q)), { signal:ctrl.signal });
     if(r.ok){ const pts = (await r.json()).trip.legs.flatMap(l => decodePolyline6(l.shape)); if(pts.length > 1) out = pts; }
