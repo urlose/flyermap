@@ -154,7 +154,10 @@ export function searchField(id, placeholder, onPick, { citiesOnly = false, near 
         try{
           const res = await searchPlaces(v, citiesOnly, typeof near === 'function' ? near() : near);
           r.classList.remove('hidden');
-          r.innerHTML = res.length ? res.map((c, i) => `<button class="res" data-i="${i}"><b>${esc(c.name)}</b><span>${esc(c.sub)}</span></button>`).join('') : `<div class="res muted">${esc(t('notFound'))}</div>`;
+          // towns with the same name (whole municipality / one district): the size tells them apart
+          const big = {}; if(citiesOnly) res.forEach(c => { if(c.km2 != null) big[c.name] = Math.max(big[c.name] || 0, c.km2); });
+          const same = n => res.filter(x => x.name === n).length > 1;
+          r.innerHTML = res.length ? res.map((c, i) => `<button class="res" data-i="${i}"><b>${esc(c.name)}${citiesOnly && c.km2 != null && same(c.name) ? ' · ' + esc(t(c.km2 >= big[c.name] ? 'areaWhole' : 'areaPart', { km2:c.km2 })) : ''}</b><span>${esc(c.sub)}</span></button>`).join('') : `<div class="res muted">${esc(t('notFound'))}</div>`;
           r.querySelectorAll('[data-i]').forEach(d => d.onclick = () => { r.classList.add('hidden'); q.blur(); onPick(res[+d.dataset.i], q); });
         }catch{ r.classList.remove('hidden'); r.innerHTML = `<div class="res muted">${esc(t('searchDown'))}</div>`; }
       }, 350);

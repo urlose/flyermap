@@ -164,3 +164,5 @@ Object.assign(T.de, { quotaHours:'Danach werden die Stunden berechnet: Strecke �
 Object.assign(T.ru, { quotaHours:'По ней считаются часы: длина маршрута ÷ квота × 30 мин. плюс 5 сек. на каждый ящик.' });
 Object.assign(T.de, { sideTownsShort:'Nebenstädte' });
 Object.assign(T.ru, { sideTownsShort:'Доп. города' });
+Object.assign(T.de, { areaWhole:'ganze Gemeinde, ≈ {km2} km²', areaPart:'nur Ortsteil, ≈ {km2} km²' });
+Object.assign(T.ru, { areaWhole:'вся община, ≈ {km2} км²', areaPart:'только район, ≈ {km2} км²' });

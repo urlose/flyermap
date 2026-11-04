@@ -168,3 +168,4 @@ T.en.noPhoneYet = 'Phone number not entered yet';
 Object.assign(T.en, { addrMain:'Start address in the main town', mainCityAuto:'taken from the address', startOnMap:'Start point set on the map.' });
 T.en.quotaHours = 'Hours are calculated from it: route length ÷ quota × 30 min plus 5 s per mailbox.';
 T.en.sideTownsShort = 'More towns';
+Object.assign(T.en, { areaWhole:'whole municipality, ≈ {km2} km²', areaPart:'district only, ≈ {km2} km²' });

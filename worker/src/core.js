@@ -64,7 +64,7 @@ export async function searchPlaces(q, citiesOnly, near){
     const p = f.properties, street = p.street ? p.street + (p.housenumber ? ' ' + p.housenumber : '') : '';
     const title = p.name || street || p.city || '';
     const sub = [p.name && street ? street : '', p.district || p.locality, p.city && p.city !== title ? p.city : '', !citiesOnly ? '' : p.state].filter(Boolean).join(', ');
-    return { name:title, city:p.city || (p.osm_key === 'place' ? p.name : '') || '', district:p.district || p.locality || (p.osm_value === 'suburb' || p.osm_value === 'quarter' ? p.name : '') || '', sub, lat:+f.geometry.coordinates[1].toFixed(6), lng:+f.geometry.coordinates[0].toFixed(6), osm_type:p.osm_type || '', osm_id:p.osm_id || null, kind:p.osm_value || '' };
+    return { name:title, city:p.city || (p.osm_key === 'place' ? p.name : '') || '', district:p.district || p.locality || (p.osm_value === 'suburb' || p.osm_value === 'quarter' ? p.name : '') || '', sub, lat:+f.geometry.coordinates[1].toFixed(6), lng:+f.geometry.coordinates[0].toFixed(6), osm_type:p.osm_type || '', osm_id:p.osm_id || null, kind:p.osm_value || '', km2:p.extent ? Math.round(Math.abs(p.extent[2] - p.extent[0]) * 111.32 * Math.cos(f.geometry.coordinates[1] * Math.PI / 180) * Math.abs(p.extent[1] - p.extent[3]) * 111.32) : null };
   });
 }
 
