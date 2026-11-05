@@ -7,13 +7,13 @@ const L = () => (['ru', 'en'].includes(I.lang) ? I.lang : 'de');
 const TX = {
   de:{ tab:'Statistik', ok:'Geprüft', orders:'Aufträge', done:'erledigt', days:'Arbeitstage', hours:'Std.', km:'km', pace:'Tempo zur Quote', cancels:'Absagen', late:'zu spät', skips:'„Nicht nötig“',
     rating:'Bewertung', auto:'Automatisch', yes:'Geprüft', no:'Nicht geprüft', autoHint:'Automatisch geprüft: ≥ 3 erledigte Aufträge, Tempo ≥ 80 % der Quote, keine späte Absage in 60 Tagen.',
-    month:'Top 5 diesen Monat', tasks:'Aufträge', flyers:'Flyer', per1000:'Std. / 1.000 Flyer', people:'Pers.', none:'Noch keine Daten.', total:'Gesamt', h1000Hint:'Weniger Stunden pro 1.000 Flyer = wirtschaftlicher. ● ≤ 3 gut · ▲ 3–5 mittel · ■ > 5 teuer.', perDay:'pro Tag', last30:'letzte 30 Tage', kmh:'km pro Std.', activeDays:'Arbeitstage (30 T.)', peopleMax:'Max. Personen/Tag', weekdays:'Wochentage (Std.)', daysShort:'Tage', running:'läuft' },
+    month:'Top 5 diesen Monat', tasks:'Aufträge', flyers:'Flyer', per1000:'Std. / 1.000 Flyer', people:'Pers.', none:'Noch keine Daten.', total:'Gesamt', h1000Hint:'Weniger Stunden pro 1.000 Flyer = wirtschaftlicher. ● ≤ 3 gut · ▲ 3–5 mittel · ■ > 5 teuer.', perDay:'pro Tag', lastN:'letzte {n} Tage', kmh:'km pro Std.', activeDays:'Arbeitstage', peopleMax:'Max. Personen/Tag', weekdays:'Wochentage (Std.)', daysShort:'Tage', running:'läuft' },
   ru:{ tab:'Статистика', ok:'Проверен', orders:'Заказы', done:'выполнено', days:'Рабочие дни', hours:'ч', km:'км', pace:'Темп к квоте', cancels:'Отказы', late:'поздно', skips:'«Не нужно»',
     rating:'Оценка', auto:'Автоматически', yes:'Проверен', no:'Не проверен', autoHint:'Автоматически «проверен»: ≥ 3 выполненных заказа, темп ≥ 80 % квоты, нет поздних отказов за 60 дней.',
-    month:'Топ-5 за этот месяц', tasks:'Заказы', flyers:'Флаеры', per1000:'ч / 1 000 флаеров', people:'чел.', none:'Пока нет данных.', total:'Всего', h1000Hint:'Меньше часов на 1 000 флаеров = выгоднее. ● ≤ 3 хорошо · ▲ 3–5 средне · ■ > 5 дорого.', perDay:'в день', last30:'последние 30 дней', kmh:'км в час', activeDays:'Рабочих дней (30 дн.)', peopleMax:'Макс. людей в день', weekdays:'Дни недели (ч)', daysShort:'дн.', running:'идёт' },
+    month:'Топ-5 за этот месяц', tasks:'Заказы', flyers:'Флаеры', per1000:'ч / 1 000 флаеров', people:'чел.', none:'Пока нет данных.', total:'Всего', h1000Hint:'Меньше часов на 1 000 флаеров = выгоднее. ● ≤ 3 хорошо · ▲ 3–5 средне · ■ > 5 дорого.', perDay:'в день', lastN:'последние {n} дн.', kmh:'км в час', activeDays:'Рабочих дней', peopleMax:'Макс. людей в день', weekdays:'Дни недели (ч)', daysShort:'дн.', running:'идёт' },
   en:{ tab:'Statistics', ok:'Verified', orders:'Orders', done:'finished', days:'Working days', hours:'h', km:'km', pace:'Pace vs quota', cancels:'Cancellations', late:'late', skips:'“Not needed”',
     rating:'Rating', auto:'Automatic', yes:'Verified', no:'Not verified', autoHint:'Verified automatically: ≥ 3 finished orders, pace ≥ 80 % of quota, no late cancellation in 60 days.',
-    month:'Top 5 this month', tasks:'Orders', flyers:'Flyers', per1000:'h / 1,000 flyers', people:'pers.', none:'No data yet.', total:'Total', h1000Hint:'Fewer hours per 1,000 flyers = more economical. ● ≤ 3 good · ▲ 3–5 medium · ■ > 5 costly.', perDay:'per day', last30:'last 30 days', kmh:'km per hour', activeDays:'Working days (30 d)', peopleMax:'Max. people/day', weekdays:'Weekdays (h)', daysShort:'days', running:'running' },
+    month:'Top 5 this month', tasks:'Orders', flyers:'Flyers', per1000:'h / 1,000 flyers', people:'pers.', none:'No data yet.', total:'Total', h1000Hint:'Fewer hours per 1,000 flyers = more economical. ● ≤ 3 good · ▲ 3–5 medium · ■ > 5 costly.', perDay:'per day', lastN:'last {n} days', kmh:'km per hour', activeDays:'Working days', peopleMax:'Max. people/day', weekdays:'Weekdays (h)', daysShort:'days', running:'running' },
 };
 export const S = k => TX[L()][k];
 const n1 = x => (+x || 0).toLocaleString(I.lang === 'en' ? 'en' : 'de-DE', { maximumFractionDigits:1 });
@@ -65,14 +65,14 @@ function areaChart(pts, unit){
   const worked = pts.filter(p => p.v > 0), avg = worked.length ? worked.reduce((a, p) => a + p.v, 0) / worked.length : 0;
   const ticks = [0, .5, 1].map(f => Math.round(max / 1.15 * f));
   const fmtD = d => new Date(d + 'T12:00:00').toLocaleDateString(locale(), { day:'2-digit', month:'2-digit' });
-  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block" role="img" aria-label="${esc(unit)}">
-    ${ticks.map(v => `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" stroke="var(--color-border)" stroke-width="1"/><text x="${pl - 8}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--color-text-secondary)">${v}</text>`).join('')}
-    ${pts.map((p, i) => i % Math.ceil(n / 7) === 0 ? `<text x="${x(i)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="var(--color-text-secondary)">${fmtD(p.d)}</text>` : '').join('')}
+  return `<div><svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block;fill:none;stroke:none" role="img" aria-label="${esc(unit)}">
+    ${ticks.map(v => `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" stroke="var(--color-border)" stroke-width="1"/><text x="${pl - 8}" y="${y(v) + 4}" text-anchor="end" font-size="12" fill="var(--color-text-secondary)" stroke="none">${v}</text>`).join('')}
+    ${pts.map((p, i) => i % Math.ceil(n / 7) === 0 ? `<text x="${x(i)}" y="${H - 8}" text-anchor="middle" font-size="12" fill="var(--color-text-secondary)" stroke="none">${fmtD(p.d)}</text>` : '').join('')}
     <path d="${line}L${x(n - 1)},${y(0)}L${x(0)},${y(0)}Z" fill="var(--color-primary)" opacity=".16"/>
     <path class="fm-draw" pathLength="2000" d="${line}" fill="none" stroke="var(--color-primary)" stroke-width="2" stroke-linejoin="round"/>
-    ${avg ? `<line x1="${pl}" x2="${W - pr}" y1="${y(avg)}" y2="${y(avg)}" stroke="var(--color-text-secondary)" stroke-width="1.5" stroke-dasharray="6 5"/><text x="${W - pr}" y="${y(avg) - 6}" text-anchor="end" font-size="11" fill="var(--color-text-secondary)">Ø ${n1(avg)} ${esc(unit)}</text>` : ''}
-    ${pts.map((p, i) => `${p.v ? `<circle cx="${x(i)}" cy="${y(p.v)}" r="4" fill="var(--color-primary)" stroke="var(--color-surface)" stroke-width="2"/>` : ''}<rect x="${x(i) - (W - pl - pr) / n / 2}" y="${pt}" width="${(W - pl - pr) / n}" height="${H - pt - pb}" fill="transparent"><title>${fmtD(p.d)}: ${n1(p.v)} ${esc(unit)}</title></rect>`).join('')}
-  </svg>`;
+    ${avg ? `<line x1="${pl}" x2="${W - pr}" y1="${y(avg)}" y2="${y(avg)}" stroke="var(--color-text-secondary)" stroke-width="1.5" stroke-dasharray="6 5"/><text x="${W - pr}" y="${y(avg) - 6}" text-anchor="end" font-size="12" fill="var(--color-text-secondary)" stroke="none">Ø ${n1(avg)} ${esc(unit)}</text>` : ''}
+    ${pts.map((p, i) => `${p.v ? `<circle cx="${x(i)}" cy="${y(p.v)}" r="4" fill="var(--color-primary)" stroke="var(--color-surface)" stroke-width="2"/>` : ''}<rect x="${x(i) - (W - pl - pr) / n / 2}" y="${pt}" width="${(W - pl - pr) / n}" height="${H - pt - pb}" fill="transparent" stroke="none"><title>${fmtD(p.d)}: ${n1(p.v)} ${esc(unit)}</title></rect>`).join('')}
+  </svg></div>`;
 }
 const bar = (pct, label, value) => `<div style="margin:10px 0"><div style="display:flex;justify-content:space-between;gap:8px;font-size:14px"><span>${label}</span><b>${value}</b></div>
   <div style="height:6px;border-radius:99px;background:var(--color-surface-subtle);margin-top:6px;overflow:hidden"><i class="fm-grow" style="display:block;height:100%;width:${Math.max(2, Math.min(100, pct))}%;background:var(--color-primary);border-radius:99px"></i></div></div>`;
@@ -86,22 +86,22 @@ export async function viewStats(){
   if(!tasks.length){ box.innerHTML = `<p class="muted">${esc(S('none'))}</p>`; return; }
   const tot = tasks.reduce((a, x) => ({ orders:a.orders + 1, flyers:a.flyers + (+x.flyers || 0), hours:a.hours + (+x.hours || 0), km:a.km + (+x.km || 0) }), { orders:0, flyers:0, hours:0, km:0 });
   const flyDaily = tasks.map(x => ({ d:String(x.first).slice(0, 10), flyers:+x.flyers || 0 })).reduce((m, x) => { m[x.d] = (m[x.d] || 0) + x.flyers; return m; }, {});
-  const n = 30, sH = series(daily, 'hours', n), sK = series(daily, 'km', n), sO = series(daily, 'orders', n), sP = series(daily, 'people', n);
+  const first = daily.length ? Math.ceil((Date.now() - new Date(String(daily[0].d).slice(0, 10) + 'T00:00:00')) / DAY) + 1 : 14, n = Math.max(14, Math.min(30, first)), sH = series(daily, 'hours', n), sK = series(daily, 'km', n), sO = series(daily, 'orders', n), sP = series(daily, 'people', n);
   const sF = series(Object.entries(flyDaily).map(([d, v]) => ({ d, f:v })), 'f', n);
-  const card = (bg, val, lbl, pts) => `<div class="kpi-card" style="border-radius:var(--radius-lg,14px);padding:16px 18px 10px;background:${bg};color:#fff;min-width:0"><b style="font-size:26px;line-height:1.1">${val}</b><div style="opacity:.92;margin-top:2px">${esc(lbl)}</div>${spark(pts)}</div>`;
+  const card = (bg, val, lbl, pts) => `<div class="kpi-card" style="border-radius:var(--radius-lg,14px);padding:16px 18px 10px;background:${bg};border:1px solid rgba(255,255,255,.08);box-shadow:var(--shadow-sm,0 1px 2px rgba(0,0,0,.2));color:#fff;min-width:0"><b style="font-size:26px;line-height:1.1">${val}</b><div style="opacity:.92;margin-top:2px">${esc(lbl)}</div>${spark(pts)}</div>`;
   // weekdays: hours worked per weekday (all days of the last 60)
   const wd = [0, 0, 0, 0, 0, 0, 0]; daily.forEach(x => { wd[(new Date(String(x.d).slice(0, 10) + 'T12:00:00').getDay() + 6) % 7] += +x.hours || 0; });
   const wdMax = Math.max(1, ...wd), wdName = i => new Date(2026, 10, 2 + i).toLocaleDateString(locale(), { weekday:'long' });
   const topMax = Math.max(1, ...top.map(x => +x.hours || 0));
   box.innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin:8px 0 18px">
-      ${card('linear-gradient(135deg,#6D5BD0,#5B4BC4)', fmtN(tot.orders), S('tasks'), sO)}
-      ${card('linear-gradient(135deg,#3B82F6,#2563EB)', fmtN(tot.flyers), S('flyers'), sF)}
-      ${card('linear-gradient(135deg,#D97706,#B45309)', n1(tot.hours), S('hours'), sH)}
-      ${card('linear-gradient(135deg,#DC4C4C,#C03838)', n1(tot.km), S('km'), sK)}
+      ${card('#5B4BC4', fmtN(tot.orders), S('tasks'), sO)}
+      ${card('#2563EB', fmtN(tot.flyers), S('flyers'), sF)}
+      ${card('#B45309', n1(tot.hours), S('hours'), sH)}
+      ${card('#C03838', n1(tot.km), S('km'), sK)}
     </div>
     <div class="card" style="display:block;padding:16px 18px">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap"><b style="font-size:17px">${esc(S('hours'))} · ${esc(S('perDay'))}</b><span class="small muted">${esc(S('last30'))}</span></div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap"><b style="font-size:17px">${esc(S('hours'))} · ${esc(S('perDay'))}</b><span class="small muted">${esc(S('lastN').replace('{n}', n))}</span></div>
       ${areaChart(sH, S('hours'))}
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;border-top:1px solid var(--color-border);margin-top:8px;padding-top:12px">
         ${[[S('per1000'), effPill(tot.flyers ? tot.hours / tot.flyers * 1000 : null)], [S('kmh'), tot.hours ? n1(tot.km / tot.hours) : '–'], [S('activeDays'), sH.filter(p => p.v).length], [S('peopleMax'), Math.max(0, ...sP.map(p => p.v))]].map(([k, v]) => `<div><div class="small muted">${esc(k)}</div><b style="font-size:18px">${v}</b></div>`).join('')}
