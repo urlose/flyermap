@@ -210,3 +210,5 @@ Object.assign(T.de, { noQuota:'Ohne Quote (keine Tempo-Warnungen, z. B. mit Auto
 Object.assign(T.ru, { noQuota:'Без квоты (без предупреждений о темпе, напр. с машиной)', driveTip:'Поездка · {km} (рабочее время, но не раздача)' });
 Object.assign(T.de, { tabStats:'Statistik' });
 Object.assign(T.ru, { tabStats:'Статистика' });
+Object.assign(T.de, { fRange:'Zeitraum', fWho:'Mitarbeiter suchen' });
+Object.assign(T.ru, { fRange:'Период', fWho:'Поиск работника' });

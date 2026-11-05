@@ -447,6 +447,31 @@ button.rbtn{width:100%;background:none;border:0;border-bottom:1px solid var(--co
   .sheet{left:16px;right:auto;width:min(520px, calc(100% - 32px));bottom:16px;border-radius:var(--radius-xl)}
 }
 .tab-out{display:none}
+/* people page: one filter card, segmented quick filters, two-column list on desktop */
+.filter-card{display:block!important;padding:16px}
+.filter-card label.f:first-child,.filter-card .fc-grid label.f{margin-top:0}
+.filter-card .searchbox{margin:0}
+.fc-grid{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:6px}
+.seg-row{display:flex;flex-wrap:wrap;gap:4px;padding:4px;border-radius:12px;background:var(--color-surface-subtle);width:max-content;max-width:100%}
+.seg-b{border:0;background:transparent;color:var(--color-text-secondary);font:inherit;font-size:14px;font-weight:600;padding:7px 14px;border-radius:9px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.seg-b svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.seg-b.on{background:var(--color-surface);color:var(--color-text);box-shadow:0 1px 3px rgba(0,0,0,.25)}
+@media (hover:hover){.seg-b:not(.on):hover{color:var(--color-text)}}
+.filter-card .dfilter{margin-top:12px}
+/* rating tiles on the worker page */
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px}
+.stat-t{padding:12px 14px;border-radius:12px;background:var(--color-surface-subtle)}
+.stat-t span{display:block;font-size:12px;color:var(--color-text-secondary);margin-bottom:4px}
+.stat-t b{font-size:20px;font-weight:700}
+.stat-t small{font-size:12px;color:var(--color-text-secondary);font-weight:500;margin-left:4px}
+@media (min-width:900px){
+  .fc-grid{grid-template-columns:1fr 1fr}
+}
+@media (min-width:1100px){
+  #wList{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start}
+  #wList>.hint,#wList>.empty{grid-column:1/-1}
+  #wList>.card{margin:0}
+}
 /* animated icons (in the style of Lucide Animated, MIT – recreated in CSS): play on hover and once when a tab is opened */
 @media (prefers-reduced-motion:no-preference){
   .ia *{transform-box:fill-box}

@@ -353,14 +353,16 @@ async function fillPlaces(list, done){
 function dayFilterHtml(f, places){
   const iso = d => d.toLocaleDateString('sv-SE'), today = new Date(), yest = new Date(Date.now() - 864e5), wk = new Date(Date.now() - 6 * 864e5);
   const quick = [['dToday', iso(today), iso(today)], ['dYesterday', iso(yest), iso(yest)], ['d7', iso(wk), iso(today)]];
-  return `<div class="chips" style="margin:0 0 8px">${quick.map(([k, a, b]) => `<button class="chip ${f.from === a && f.to === b ? 'on' : ''}" data-q="${a}|${b}" style="padding:7px 14px">${esc(t(k))}</button>`).join('')}<button class="chip ${filterOn(f) ? '' : 'on'}" data-q="|" style="padding:7px 14px">${esc(t('fAll'))}</button></div>
-    <div class="dfilter"><div><label class="f">${esc(t('fFrom'))}</label><input class="in small" type="date" id="dfFrom" value="${esc(f.from)}"></div><div><label class="f">${esc(t('fTo'))}</label><input class="in small" type="date" id="dfTo" value="${esc(f.to)}"></div><div><label class="f">${esc(t('place'))}</label><select class="in small" id="dfPlace"><option value="">${esc(t('fAll'))}</option>${places.map(p => `<option ${p === f.place ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></div></div>`;
+  const isQuick = quick.some(([, a, z]) => f.from === a && f.to === z) || !filterOn(f), open = f.custom || !isQuick || !!f.place;
+  return `<div class="seg-row" role="group">${quick.map(([k, a, z]) => `<button class="seg-b ${!f.custom && f.from === a && f.to === z && !f.place ? 'on' : ''}" data-q="${a}|${z}">${esc(t(k))}</button>`).join('')}<button class="seg-b ${!filterOn(f) && !f.custom ? 'on' : ''}" data-q="|">${esc(t('fAll'))}</button><button class="seg-b ${open ? 'on' : ''}" id="dfCustom">${ICONS.calendar}${esc(t('fRange'))}</button></div>
+    ${open ? `<div class="dfilter"><div><label class="f">${esc(t('fFrom'))}</label><input class="in small" type="date" id="dfFrom" value="${esc(f.from)}"></div><div><label class="f">${esc(t('fTo'))}</label><input class="in small" type="date" id="dfTo" value="${esc(f.to)}"></div><div><label class="f">${esc(t('place'))}</label><select class="in small" id="dfPlace"><option value="">${esc(t('fAll'))}</option>${places.map(p => `<option ${p === f.place ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select></div></div>` : ''}`;
 }
 function bindDayFilter(f, again){
-  document.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { const [a, z] = b.dataset.q.split('|'); f.from = a; f.to = z; if(!a) f.place = ''; again(); });
-  $('#dfFrom').onchange = e => { f.from = e.target.value; again(); };
-  $('#dfTo').onchange = e => { f.to = e.target.value; again(); };
-  $('#dfPlace').onchange = e => { f.place = e.target.value; again(); };
+  document.querySelectorAll('[data-q]').forEach(b => b.onclick = () => { const [a, z] = b.dataset.q.split('|'); f.from = a; f.to = z; f.place = ''; f.custom = false; again(); });
+  $('#dfCustom').onclick = () => { f.custom = !f.custom; if(!f.custom){ f.from = f.to = f.place = ''; } again(); };
+  if($('#dfFrom')) $('#dfFrom').onchange = e => { f.from = e.target.value; f.custom = true; again(); };
+  if($('#dfTo')) $('#dfTo').onchange = e => { f.to = e.target.value; f.custom = true; again(); };
+  if($('#dfPlace')) $('#dfPlace').onchange = e => { f.place = e.target.value; f.custom = true; again(); };
 }
 
 async function viewPeople(){
@@ -372,10 +374,14 @@ async function viewPeople(){
   shell('people', `${topbar(t('tabPeople'))}
     <div class="pad">
       <div class="kpis two"><div class="kpi k-info"><b>${A.workers.length}</b><span>${esc(t('kTotal'))}</span></div><div class="kpi k-ok"><b>${nLive}</b><span>${esc(t('stLive'))}</span></div></div>
-      <div class="searchbox"><span class="sb-ic">${ICONS.search}</span><input id="wQ" class="sb-in" placeholder="${esc(t('searchNamePhone'))}" aria-label="${esc(t('searchNamePhone'))}"></div>
-      <label class="f">${esc(t('whoCanGo'))}</label>${sf.html}
-      <label class="f">${esc(t('workedWhen'))}</label>
-      <div id="dFilter"></div>
+      <div class="card filter-card">
+        <div class="fc-grid">
+          <div><label class="f" for="wQ">${esc(t('fWho'))}</label><div class="searchbox"><span class="sb-ic">${ICONS.search}</span><input id="wQ" class="sb-in" placeholder="${esc(t('searchNamePhone'))}"></div></div>
+          <div><label class="f">${esc(t('whoCanGo'))}</label>${sf.html}</div>
+        </div>
+        <label class="f">${esc(t('workedWhen'))}</label>
+        <div id="dFilter"></div>
+      </div>
       <details class="filters" id="invBox" style="margin-top:16px"><summary>${ICONS.plus}${esc(t('invSection'))}</summary><div class="f-body">
       ${A.company && A.company.join_code ? `<div class="card" style="display:block;margin:0 0 4px"><b>${esc(t('inviteTitle'))}</b><p class="small muted" style="margin:4px 0 8px">${esc(t('inviteHint'))}</p>
         <div class="code-row"><input class="in small" readonly id="invLink" value="${esc(APP_LINK + '?neu=' + A.company.join_code)}" style="flex:1;min-width:0"><button class="btn ghost small" id="invCp">${esc(t('copy'))}</button></div>

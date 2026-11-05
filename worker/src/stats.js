@@ -7,13 +7,13 @@ const L = () => (['ru', 'en'].includes(I.lang) ? I.lang : 'de');
 const TX = {
   de:{ tab:'Statistik', ok:'Geprüft', orders:'Aufträge', done:'erledigt', days:'Arbeitstage', hours:'Std.', km:'km', pace:'Tempo zur Quote', cancels:'Absagen', late:'zu spät', skips:'„Nicht nötig“',
     rating:'Bewertung', auto:'Automatisch', yes:'Geprüft', no:'Nicht geprüft', autoHint:'Automatisch geprüft: ≥ 3 erledigte Aufträge, Tempo ≥ 80 % der Quote, keine späte Absage in 60 Tagen.',
-    month:'Top 5 diesen Monat', tasks:'Aufträge', flyers:'Flyer', per1000:'Std. / 1.000 Flyer', people:'Pers.', none:'Noch keine Daten.', total:'Gesamt', h1000Hint:'Weniger Stunden pro 1.000 Flyer = wirtschaftlicher. ● ≤ 3 gut · ▲ 3–5 mittel · ■ > 5 teuer.', perDay:'pro Tag', lastN:'letzte {n} Tage', kmh:'km pro Std.', activeDays:'Arbeitstage', peopleMax:'Max. Personen/Tag', weekdays:'Wochentage (Std.)', daysShort:'Tage', running:'läuft', table:'Tabelle', sum:'Summe', avgDay:'Ø pro Arbeitstag', peopleL:'Personen', noWork:'Kein Arbeitstag', perDayT:'Verlauf pro Tag' },
+    month:'Top 5 diesen Monat', tasks:'Aufträge', flyers:'Flyer', per1000:'Std. / 1.000 Flyer', people:'Pers.', none:'Noch keine Daten.', total:'Gesamt', h1000Hint:'Weniger Stunden pro 1.000 Flyer = wirtschaftlicher. ● ≤ 3 gut · ▲ 3–5 mittel · ■ > 5 teuer.', perDay:'pro Tag', lastN:'letzte {n} Tage', kmh:'km pro Std.', activeDays:'Arbeitstage', peopleMax:'Max. Personen/Tag', weekdays:'Wochentage (Std.)', daysShort:'Tage', running:'läuft', status:'Status', table:'Tabelle', sum:'Summe', avgDay:'Ø pro Arbeitstag', peopleL:'Personen', noWork:'Kein Arbeitstag', perDayT:'Verlauf pro Tag' },
   ru:{ tab:'Статистика', ok:'Проверен', orders:'Заказы', done:'выполнено', days:'Рабочие дни', hours:'ч', km:'км', pace:'Темп к квоте', cancels:'Отказы', late:'поздно', skips:'«Не нужно»',
     rating:'Оценка', auto:'Автоматически', yes:'Проверен', no:'Не проверен', autoHint:'Автоматически «проверен»: ≥ 3 выполненных заказа, темп ≥ 80 % квоты, нет поздних отказов за 60 дней.',
-    month:'Топ-5 за этот месяц', tasks:'Заказы', flyers:'Флаеры', per1000:'ч / 1 000 флаеров', people:'чел.', none:'Пока нет данных.', total:'Всего', h1000Hint:'Меньше часов на 1 000 флаеров = выгоднее. ● ≤ 3 хорошо · ▲ 3–5 средне · ■ > 5 дорого.', perDay:'в день', lastN:'последние {n} дн.', kmh:'км в час', activeDays:'Рабочих дней', peopleMax:'Макс. людей в день', weekdays:'Дни недели (ч)', daysShort:'дн.', running:'идёт', table:'Таблица', sum:'Сумма', avgDay:'Ø за рабочий день', peopleL:'Люди', noWork:'Не рабочий день', perDayT:'По дням' },
+    month:'Топ-5 за этот месяц', tasks:'Заказы', flyers:'Флаеры', per1000:'ч / 1 000 флаеров', people:'чел.', none:'Пока нет данных.', total:'Всего', h1000Hint:'Меньше часов на 1 000 флаеров = выгоднее. ● ≤ 3 хорошо · ▲ 3–5 средне · ■ > 5 дорого.', perDay:'в день', lastN:'последние {n} дн.', kmh:'км в час', activeDays:'Рабочих дней', peopleMax:'Макс. людей в день', weekdays:'Дни недели (ч)', daysShort:'дн.', running:'идёт', status:'Статус', table:'Таблица', sum:'Сумма', avgDay:'Ø за рабочий день', peopleL:'Люди', noWork:'Не рабочий день', perDayT:'По дням' },
   en:{ tab:'Statistics', ok:'Verified', orders:'Orders', done:'finished', days:'Working days', hours:'h', km:'km', pace:'Pace vs quota', cancels:'Cancellations', late:'late', skips:'“Not needed”',
     rating:'Rating', auto:'Automatic', yes:'Verified', no:'Not verified', autoHint:'Verified automatically: ≥ 3 finished orders, pace ≥ 80 % of quota, no late cancellation in 60 days.',
-    month:'Top 5 this month', tasks:'Orders', flyers:'Flyers', per1000:'h / 1,000 flyers', people:'pers.', none:'No data yet.', total:'Total', h1000Hint:'Fewer hours per 1,000 flyers = more economical. ● ≤ 3 good · ▲ 3–5 medium · ■ > 5 costly.', perDay:'per day', lastN:'last {n} days', kmh:'km per hour', activeDays:'Working days', peopleMax:'Max. people/day', weekdays:'Weekdays (h)', daysShort:'days', running:'running', table:'Table', sum:'Total', avgDay:'Ø per working day', peopleL:'People', noWork:'No work', perDayT:'Per day' },
+    month:'Top 5 this month', tasks:'Orders', flyers:'Flyers', per1000:'h / 1,000 flyers', people:'pers.', none:'No data yet.', total:'Total', h1000Hint:'Fewer hours per 1,000 flyers = more economical. ● ≤ 3 good · ▲ 3–5 medium · ■ > 5 costly.', perDay:'per day', lastN:'last {n} days', kmh:'km per hour', activeDays:'Working days', peopleMax:'Max. people/day', weekdays:'Weekdays (h)', daysShort:'days', running:'running', status:'Status', table:'Table', sum:'Total', avgDay:'Ø per working day', peopleL:'People', noWork:'No work', perDayT:'Per day' },
 };
 export const S = k => TX[L()][k];
 const n1 = x => (+x || 0).toLocaleString(I.lang === 'en' ? 'en' : 'de-DE', { maximumFractionDigits:1 });
@@ -31,13 +31,18 @@ export const shortLine = id => { const s = STATS.byId.get(id); if(!s || !s.days)
 
 export function workerStatsHtml(id){
   const s = STATS.byId.get(id); if(!s) return '';
-  const row = (k, v) => `<div><span>${esc(k)}</span><b>${v}</b></div>`;
+  const tile = (k, v, sub) => `<div class="stat-t"><span>${esc(k)}</span><b>${v}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
   const mode = s.manual == null ? 'auto' : s.manual ? 'yes' : 'no';
-  return `<h2 class="sec">${esc(S('rating'))} ${okBadge(id)}</h2><div class="card kv" style="display:block">
-    ${row(S('orders'), `${s.orders} · ${s.done} ${esc(S('done'))}`)}${row(S('days'), s.days)}${row(S('hours'), n1(s.hours))}${row(S('km'), n1(s.km))}
-    ${s.pace != null ? row(S('pace'), s.pace + ' %') : ''}${row(S('cancels'), `${s.cancels}${s.late ? ' · ' + s.late + ' ' + esc(S('late')) : ''}`)}${row(S('skips'), s.skips)}
-    <div class="seg" role="radiogroup" style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap">${['auto', 'yes', 'no'].map(m => `<button class="chip ${m === mode ? 'on' : ''}" data-ver="${m}">${esc(S(m))}</button>`).join('')}</div>
-    <p class="small muted" style="margin-bottom:0">${esc(S('autoHint'))}</p></div>`;
+  return `<div class="sec-row" style="display:flex;align-items:center;gap:10px"><h2 class="sec" style="margin:0">${esc(S('rating'))}</h2>${okBadge(id)}</div>
+    <div class="card" style="display:block;padding:16px">
+      <div class="stat-grid">
+        ${tile(S('orders'), s.orders, `${s.done} ${esc(S('done'))}`)}${tile(S('days'), s.days)}${tile(S('hours'), n1(s.hours))}${tile(S('km'), n1(s.km))}
+        ${tile(S('pace'), s.pace != null ? s.pace + ' %' : '–')}${tile(S('cancels'), s.cancels, s.late ? `${s.late} ${esc(S('late'))}` : '')}${tile(S('skips'), s.skips)}
+      </div>
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:16px"><b style="font-size:14px">${esc(S('status'))}</b>
+        <div class="seg-row" role="radiogroup">${['auto', 'yes', 'no'].map(m => `<button class="seg-b ${m === mode ? 'on' : ''}" data-ver="${m}" role="radio" aria-checked="${m === mode}">${esc(S(m))}</button>`).join('')}</div></div>
+      <p class="small muted" style="margin:10px 0 0">${esc(S('autoHint'))}</p>
+    </div>`;
 }
 export function bindWorkerStats(id, reload){
   document.querySelectorAll('[data-ver]').forEach(b => b.onclick = async () => {
