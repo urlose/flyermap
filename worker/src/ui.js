@@ -251,7 +251,8 @@ export const avatar = (name, cls = '') => `<div class="avatar ${cls}">${ICONS.pe
 export const colorOf = i => css('--c' + (i % 10)) || '#2563EB';
 
 // several workers at one place (home city): one marker with the number
-export const groupIcon = (n, label, live) => L.divIcon({ className:'', iconSize:[44, 44], iconAnchor:[22, 22],
-  html:`<div class="pin-wrap"><div class="person ${live ? 'on' : 'off'}" style="position:relative"><svg viewBox="0 0 24 24" width="22" height="22" fill="#fff"><circle cx="9" cy="8" r="3.4"/><path d="M2.5 20c0-3.9 2.9-6.8 6.5-6.8s6.5 2.9 6.5 6.8z"/><circle cx="16.5" cy="8.5" r="2.8" opacity=".85"/><path d="M14.6 13.6c3.6-.5 6.9 2 6.9 6.4h-4.3" opacity=".85"/></svg><b style="position:absolute;top:-6px;right:-8px;min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:var(--color-primary);color:#fff;font:700 12px/20px system-ui;text-align:center;border:2px solid var(--color-surface)">${n}</b></div>${label ? `<span class="pin-label">${esc(label)}</span>` : ''}</div>` });
+// several workers close together on screen: one pill with the number
+export const groupIcon = (n, label, live) => L.divIcon({ className:'', iconSize:[64, 30], iconAnchor:[32, 15],
+  html:`<div class="pin-wrap"><div class="map-pill ${live ? 'live' : ''}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg>${n}</div>${label ? `<span class="pin-label">${esc(label)}</span>` : ''}</div>` });
 export const personIcon = (name, on, sub) => L.divIcon({ className:'', iconSize:[40, 40], iconAnchor:[20, 20],
   html:`<div class="pin-wrap"><div class="person ${on ? 'on' : 'off'}"><svg viewBox="0 0 24 24" width="22" height="22" fill="#fff"><circle cx="12" cy="7.5" r="4"/><path d="M4 21c0-4.6 3.6-8 8-8s8 3.4 8 8z"/></svg></div><span class="pin-label">${esc(name)}${sub ? '<br><small>' + esc(sub) + '</small>' : ''}</span></div>` });

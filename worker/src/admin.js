@@ -163,6 +163,18 @@ function viewLive(){
   };
   // finished orders: grey dashed routes + green check pin "… · erledigt"; tap → order
   const doneLayer = L.layerGroup(); if(MAPQ.done !== false) doneLayer.addTo(m);
+  const donePins = L.layerGroup().addTo(doneLayer); let doneItems = [];
+  const drawDone = () => {
+    donePins.clearLayers(); const groups = [];
+    for(const it of doneItems){ const pt = m.latLngToLayerPoint(it.p), g = groups.find(x => x.pt.distanceTo(pt) < 40); if(g) g.items.push(it); else groups.push({ pt, items:[it] }); }
+    for(const g of groups){
+      if(g.items.length === 1){ const it = g.items[0]; L.marker(it.p, { icon:labelIcon('pin-done', it.tk.title + ' · ' + DONE_TX().tag), zIndexOffset:100 }).bindTooltip(it.tip).on('click', () => viewTask(it.tk.id)).addTo(donePins); continue; }
+      const bb = L.latLngBounds(g.items.map(x => x.p));
+      L.marker(bb.getCenter(), { icon:L.divIcon({ className:'', iconSize:[60, 28], iconAnchor:[30, 14], html:`<div class="map-pill done">✓ ${g.items.length} ${esc(DONE_TX().tag)}</div>` }), zIndexOffset:150 })
+        .on('click', () => m.fitBounds(bb.pad(.5), { maxZoom:Math.min(m.getMaxZoom(), m.getZoom() + 4) })).addTo(donePins);
+    }
+  };
+  m.on('zoomend', drawDone);
   (async () => {
     const done = A.tasks.filter(x => x.status === 'done' && x.start_lat != null);
     $('#mDoneTx').textContent = DONE_TX().chip + ' (' + done.length + ')'; if(!done.length) return;
@@ -171,8 +183,9 @@ function viewLive(){
     for(const tk of done){
       const go = () => viewTask(tk.id), tip = tk.title + ' · ' + DONE_TX().tag + (tk.work_date ? ' · ' + fmtDay(tk.work_date) : '');
       (plans || []).filter(p => p.task_id === tk.id && p.path && p.path.length > 1).forEach(p => L.polyline(Planner.pathRuns(p.path), { color:'#94A3B8', weight:3, opacity:.45, dashArray:'6 6', lineJoin:'round' }).bindTooltip(tip, { sticky:true }).on('click', go).addTo(doneLayer));
-      L.marker([tk.start_lat, tk.start_lng], { icon:labelIcon('pin-done', tk.title + ' · ' + DONE_TX().tag), zIndexOffset:100 }).bindTooltip(tip).on('click', go).addTo(doneLayer);
+      doneItems.push({ tk, tip, p:[tk.start_lat, tk.start_lng] });
     }
+    drawDone();
     walked(done.map(x => x.id), doneLayer);
   })().catch(() => {});
   layer = L.layerGroup().addTo(m);
@@ -287,11 +300,13 @@ function viewLive(){
       }).filter(x => x.km <= MAPQ.km).sort((a, c) => a.km - c.km);
       $('#liveCount').textContent = near.length ? t('nearN', { n:near.length, c:pl.name }) : t('nearNone', { k:MAPQ.km, c:pl.name });
       $('#liveList').innerHTML = near.map(({ w, km, why }) => `<button class="live-chip" data-id="${w.id}"><span class="dotc ${isLive(w) ? pace(w).cls : 'pause'}"></span>${esc(w.name)} · ${Math.round(km)} km${why ? ' · ' + esc(why) : ''}</button>`).join('');
-      document.querySelectorAll('.live-chip').forEach(c => c.onclick = () => viewWorker(c.dataset.id, viewLive));
+      document.querySelectorAll('.live-chip[data-id]').forEach(c => c.onclick = () => viewWorker(c.dataset.id, viewLive));
+      if($('#chipAll')) $('#chipAll').onclick = () => { MAPQ.allChips = !MAPQ.allChips; tickFn(); };
     } else {
       const off = known.length - live.length;
       $('#liveCount').textContent = (live.length ? t('liveNow', { n:live.length }) : t('nobodyLive')) + (off ? ' · ' + t('offlineN', { n:off }) : '');
-      $('#liveList').innerHTML = known.map(w => { const c = posOf.get(w.id).city; return `<button class="live-chip" data-id="${w.id}"><span class="dotc ${isLive(w) ? pace(w).cls : 'pause'}"></span>${esc(w.name)}${isLive(w) ? (pace(w).label ? ' · ' + esc(pace(w).label) : '') : ' · ' + esc(c ? t('livesIn', { c }) : ago(w.last_seen))}</button>`; }).join('');
+      const shownW = MAPQ.allChips ? known : known.filter(isLive);
+      $('#liveList').innerHTML = (shownW.length ? '' : `<span class="small muted">${esc(t('nobodyLiveHint'))}</span>`) + (known.length > shownW.length || MAPQ.allChips ? `<button class="live-chip more" id="chipAll">${esc(MAPQ.allChips ? t('chipsLess') : t('chipsAll', { n:known.length }))}</button>` : '') + shownW.map(w => { const c = posOf.get(w.id).city; return `<button class="live-chip" data-id="${w.id}"><span class="dotc ${isLive(w) ? pace(w).cls : 'pause'}"></span>${esc(w.name)}${isLive(w) ? (pace(w).label ? ' · ' + esc(pace(w).label) : '') : ' · ' + esc(c ? t('livesIn', { c }) : ago(w.last_seen))}</button>`; }).join('');
       document.querySelectorAll('.live-chip').forEach(c => c.onclick = () => viewWorker(c.dataset.id, viewLive));
     }
     lastWB = b;
