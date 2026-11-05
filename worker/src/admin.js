@@ -475,13 +475,16 @@ async function viewWorker(id, back, focusId){
       <div class="rinfo-row"><div id="wRouteInfo" class="muted small"></div><button class="btn ghost small" id="wBig" hidden>${ICONS.expand}${esc(t('rvBig'))}</button></div>
       <div id="wDays"></div>
       <h2 class="sec">${esc(t('settings'))}</h2>
-      <label class="f">${esc(t('zoneLabel'))}</label>
-      <select class="in" id="wzm">${[30, 45, 60, 75, 90, 120].map(m => `<option value="${m}" ${m === w.zone_minutes ? 'selected' : ''}>${m < 60 ? m + ' ' + t('min') : (m/60).toString().replace('.', ',') + ' ' + t('h')} (~${Math.round(m * KM_PER_MIN_TRANSIT)} km)</option>`).join('')}</select>
-      <label class="f">${esc(t('notes'))}</label><textarea class="in" id="wnotes">${esc(w.notes || '')}</textarea>
-      <label class="check-row" style="display:flex;gap:10px;align-items:center;margin-top:12px"><input type="checkbox" id="wany" ${w.start_anywhere ? 'checked' : ''}><span>${esc(t('startAnywhere'))}</span></label>
-      <button class="btn primary" id="wsave" style="margin-top:12px">${esc(t('save'))}</button>
-      ${/^\+490000/.test(w.phone || '') && !/^\+4900000000/.test(w.phone || '') ? `<div id="wLink" class="card" style="display:block;margin-top:16px"><label class="f" style="margin-top:0">${esc(t('loginLink'))}</label><p class="small muted">${esc(t('loadingShort'))}</p></div>` : ''}
-      <button class="btn ghost danger-text" id="wdel" style="margin-top:20px">${esc(t('del'))}</button>
+      <div class="card set-card">
+        <div class="set-grid">
+          <div><label class="f" for="wzm">${esc(t('zoneLabel'))}</label><select class="in" id="wzm">${[30, 45, 60, 75, 90, 120].map(m => `<option value="${m}" ${m === w.zone_minutes ? 'selected' : ''}>${m < 60 ? m + ' ' + t('min') : (m/60).toString().replace('.', ',') + ' ' + t('h')} (~${Math.round(m * KM_PER_MIN_TRANSIT)} km)</option>`).join('')}</select></div>
+          <div><label class="f" for="wnotes">${esc(t('notes'))}</label><textarea class="in" id="wnotes" rows="2">${esc(w.notes || '')}</textarea></div>
+        </div>
+        <label class="switch-row"><input type="checkbox" id="wany" ${w.start_anywhere ? 'checked' : ''}><span class="sw" aria-hidden="true"></span><span>${esc(t('startAnywhere'))}</span></label>
+        <div class="set-actions"><button class="btn ghost danger-text" id="wdel">${esc(t('del'))}</button><button class="btn primary" id="wsave">${esc(t('save'))}</button></div>
+      </div>
+${/^\+490000/.test(w.phone || '') && !/^\+4900000000/.test(w.phone || '') ? `<div id="wLink" class="card" style="display:block;margin-top:16px"><label class="f" style="margin-top:0">${esc(t('loginLink'))}</label><p class="small muted">${esc(t('loadingShort'))}</p></div>` : ''}
+
     </div>`); setLoc('worker/' + id);
   bindBack(back); bindWorkerStats(w.id, () => viewWorker(id, back, focusId));
   const wm = makeMap($('#wMap'), (w.last_lat != null) ? [w.last_lat, w.last_lng] : null, 14), wl = L.layerGroup().addTo(wm);

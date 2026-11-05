@@ -404,7 +404,7 @@ button.kpi{cursor:pointer}button.kpi.on{border-color:var(--color-primary);backgr
 /* map markers */
 .person{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.35)}.person.on{background:var(--color-map-marker-success);box-shadow:0 0 0 8px color-mix(in srgb, var(--color-map-marker-success) 20%, transparent),0 2px 8px rgba(0,0,0,.35)}.person.off{background:#64748B}.pin-label small{font-weight:400;opacity:.8}.map-far .pin-label{display:none}.map-far .person.on+.pin-label{display:block}.map-far .person{transform:scale(.8)}.pin-wrap:has(small) .pin-label{top:-48px}
 .wmap{height:280px;border-radius:var(--radius-lg);overflow:hidden;margin:8px 0 8px;border:1px solid var(--color-border)}
-button.rbtn{width:100%;background:none;border:0;border-bottom:1px solid var(--color-border);color:inherit;font:inherit;text-align:left;cursor:pointer;min-height:var(--touch-target)}button.rbtn.sel{background:var(--color-primary-soft);border-radius:10px}button.rbtn:active{background:var(--color-surface-subtle)}
+button.rbtn{width:100%;background:none;border:0;border-bottom:1px solid var(--color-border);color:inherit;font:inherit;text-align:left;cursor:pointer;min-height:var(--touch-target)}button.rbtn.sel{background:color-mix(in srgb,var(--color-primary) 10%,transparent);border-radius:10px;box-shadow:inset 3px 0 0 var(--color-primary)}button.rbtn:active{background:var(--color-surface-subtle)}
 .wc-days{margin:2px 0 0;border-top:1px solid var(--color-border)}.wc-days .rbtn{padding:10px 4px}
 .rb-main{display:flex;flex-direction:column;gap:2px;min-width:0}.rb-main b{font-weight:600;font-size:14px}.rb-main small{color:var(--color-text-secondary);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}button.rbtn>span{white-space:nowrap;align-self:center;font-size:13px}
 .start-dot{width:16px;height:16px;border-radius:50%;background:#fff;border:4px solid var(--color-map-marker-success)}.end-dot{width:16px;height:16px;border-radius:4px;background:#0F172A;border:3px solid #fff}
@@ -446,7 +446,23 @@ button.rbtn{width:100%;background:none;border:0;border-bottom:1px solid var(--co
   .fab{right:max(var(--page-pad), calc(50% - 380px + var(--page-pad)))}
   .sheet{left:16px;right:auto;width:min(520px, calc(100% - 32px));bottom:16px;border-radius:var(--radius-xl)}
 }
-.tab-out{display:none}.sb-brand{display:none}
+.tab-out{display:none}
+/* worker settings card */
+.set-card{display:block!important;padding:16px}
+.set-grid{display:grid;grid-template-columns:1fr;gap:12px}
+.set-grid label.f{margin-top:0}
+.set-card textarea.in{min-height:46px;resize:vertical}
+.switch-row{display:flex;align-items:center;gap:12px;margin-top:14px;cursor:pointer;font-size:15px}
+.switch-row input{position:absolute;opacity:0;width:1px;height:1px}
+.switch-row .sw{flex:none;width:40px;height:24px;border-radius:12px;background:var(--color-surface-subtle);border:1px solid var(--color-border);position:relative;transition:background .15s}
+.switch-row .sw::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .15s;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+.switch-row input:checked+.sw{background:var(--color-primary);border-color:var(--color-primary)}
+.switch-row input:checked+.sw::after{transform:translateX(16px)}
+.switch-row input:focus-visible+.sw{outline:2px solid var(--color-primary);outline-offset:2px}
+.set-actions{display:flex;justify-content:space-between;gap:10px;margin-top:16px;padding-top:14px;border-top:1px solid var(--color-border)}
+.set-actions .btn{width:auto;flex:none;padding-left:20px;padding-right:20px;margin:0}
+@media (min-width:900px){.set-grid{grid-template-columns:1fr 1fr}}
+.sb-brand{display:none}
 
 /* FlyerMap wordmark: plain text; letters rise in once on load, wave on hover; "Map" in brand blue */
 .wm{display:inline-flex;font-weight:800;letter-spacing:-.03em;line-height:1;white-space:nowrap;cursor:default;text-decoration:none;color:inherit}
