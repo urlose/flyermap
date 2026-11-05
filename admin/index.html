@@ -13,10 +13,24 @@ main{max-width:460px;margin:0 auto;padding:40px 20px}img{width:64px;height:64px;
 a.b{display:block;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin:12px 0;text-decoration:none;color:var(--ink);font-weight:600}
 a.b.p{background:var(--brand);border-color:var(--brand);color:var(--on)}a.b small{display:block;font-weight:400;color:inherit;opacity:.8}
 a.b:not(.p) small{color:var(--muted);opacity:1}
+/* FlyerMap wordmark: plain text; letters rise in once on load, wave on hover; "Map" in brand blue */
+.wm{display:inline-flex;font-weight:800;letter-spacing:-.03em;line-height:1;white-space:nowrap;cursor:default;text-decoration:none;color:inherit}
+.wm i{font-style:normal;display:inline-block}
+.wm .wm-b{color:var(--brand)}
+.wm-b{position:relative}
+.wm-b::after{content:"";position:absolute;left:2%;right:2%;bottom:-.16em;height:.09em;border-radius:1em;background:currentColor;transform:scaleX(0);transform-origin:left;transition:transform .35s ease}
+@media (prefers-reduced-motion:no-preference){
+  @keyframes wm-in{from{opacity:0;transform:translateY(.45em);filter:blur(4px)}to{opacity:1;transform:none;filter:none}}
+  @keyframes wm-wave{0%,100%{transform:none}40%{transform:translateY(-.14em)}}
+  .wm.wm-in i{animation:wm-in .5s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(var(--i) * 45ms)}
+  .wm:hover i{animation:wm-wave .45s ease both;animation-delay:calc(var(--i) * 35ms)}
+  .wm:hover .wm-b::after{transform:scaleX(1)}
+}
+
 </style>
 </head>
 <body><main>
-<img src="app/icon.png" alt=""><h1>FlyerMap</h1>
+<img src="app/icon.png" alt=""><h1><span class="wm wm-in" aria-label="FlyerMap"><span aria-hidden="true"><i style="--i:0">F</i><i style="--i:1">l</i><i style="--i:2">y</i><i style="--i:3">e</i><i style="--i:4">r</i></span><span class="wm-b" aria-hidden="true"><i style="--i:5">M</i><i style="--i:6">a</i><i style="--i:7">p</i></span></span></h1>
 <p>Interne App für das Verteiler-Team · Внутреннее приложение команды</p>
 <a class="b p" href="app/">Web-App öffnen<small>Öffnen в браузере · Auf jedem Gerät</small></a>
 <a class="b" href="https://github.com/urlose/flyermap/releases">Android &amp; iPhone installieren<small>Neueste „FlyerMap Android“ (APK) bzw. iPhone-IPA · последняя версия</small></a>
