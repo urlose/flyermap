@@ -2,6 +2,7 @@ import L from 'leaflet';
 import Planner from '../../admin/planner.js';
 import { t, I } from './i18n.js';
 import { sb, store, $, esc, css, hav, fmtDist, fmtH, fmtHm, fmtN, fmtDay, fmtDT, ago, waLink, telLink, loopPath, deMobile, loc, reversePlace, placeArea } from './core.js';
+import { groupIcon } from './ui.js';
 import { UI, ICONS, shell, setLoc, getLoc, plain, topbar, bindBack, makeMap, dot, labelIcon, fit, drawJumps, modal, confirmBox, toast, searchField, langSwitch, themeSwitch, statusPill, emptyState, avatar, every, personIcon } from './ui.js';
 import { legalLinks, bindLegal } from './legalview.js';
 import { adminContractHtml, bindAdminContract } from './contractview.js';
@@ -142,6 +143,17 @@ function viewLive(){
   m = makeMap($('#fullMap'), MAPQ.place ? [MAPQ.place.lat, MAPQ.place.lng] : null, 12);
   // open orders: planned routes in their colours, walked parts green; tap → order
   const taskLayer = L.layerGroup(); if(MAPQ.tasks !== false) taskLayer.addTo(m);
+  // what was walked (not driven) in these orders: green, under the start pins
+  const walked = async (ids, lay) => {
+    if(!ids.length) return; const { data } = await sb.rpc('company_tracks', { p_tasks:ids }); if(!data || !document.getElementById('mTasks')) return;
+    for(const [tid, pts] of Object.entries(data)){
+      const runs = []; let cur = [];
+      for(const q of pts){ if(!q[0] && !q[1]){ if(cur.length > 1) runs.push(cur); cur = []; } else cur.push(q); }
+      if(cur.length > 1) runs.push(cur);
+      const tk = A.tasks.find(x => x.id === tid), go = () => viewTask(tid);
+      runs.flatMap(splitJumps).forEach(r => L.polyline(r, { color:GREEN_C(), weight:6, opacity:.75, lineJoin:'round', lineCap:'round' }).bindTooltip(tk ? tk.title : '', { sticky:true }).on('click', go).addTo(lay));
+    }
+  };
   // finished orders: grey dashed routes + green check pin "… · erledigt"; tap → order
   const doneLayer = L.layerGroup(); if(MAPQ.done !== false) doneLayer.addTo(m);
   (async () => {
@@ -151,9 +163,10 @@ function viewLive(){
     if(!document.getElementById('mDone')) return;
     for(const tk of done){
       const go = () => viewTask(tk.id), tip = tk.title + ' · ' + DONE_TX().tag + (tk.work_date ? ' · ' + fmtDay(tk.work_date) : '');
-      (plans || []).filter(p => p.task_id === tk.id && p.path && p.path.length > 1).forEach(p => L.polyline(Planner.pathRuns(p.path), { color:'#64748B', weight:3, opacity:.5, dashArray:'6 6', lineJoin:'round' }).bindTooltip(tip, { sticky:true }).on('click', go).addTo(doneLayer));
+      (plans || []).filter(p => p.task_id === tk.id && p.path && p.path.length > 1).forEach(p => L.polyline(Planner.pathRuns(p.path), { color:'#94A3B8', weight:3, opacity:.45, dashArray:'6 6', lineJoin:'round' }).bindTooltip(tip, { sticky:true }).on('click', go).addTo(doneLayer));
       L.marker([tk.start_lat, tk.start_lng], { icon:labelIcon('pin-done', tk.title + ' · ' + DONE_TX().tag), zIndexOffset:100 }).bindTooltip(tip).on('click', go).addTo(doneLayer);
     }
+    walked(done.map(x => x.id), doneLayer);
   })().catch(() => {});
   layer = L.layerGroup().addTo(m);
   let taskBounds = null, tasksLoaded = false, lastWB = null, userMoved = false;
@@ -172,10 +185,11 @@ function viewLive(){
     for(const tk of open){
       const go = () => viewTask(tk.id), tip = `${tk.title}${tk.district || tk.city_name ? ' · ' + [tk.district, tk.city_name].filter(Boolean).join(', ') : ''}`;
       (plans || []).filter(p => p.task_id === tk.id && p.path && p.path.length > 1).forEach(p => {
-        const ln = L.polyline(Planner.pathRuns(p.path), { color:p.color || '#2563EB', weight:4, opacity:.55, lineJoin:'round' }).bindTooltip(tip, { sticky:true }).on('click', go).addTo(taskLayer); b.extend(ln.getBounds());
+        const ln = L.polyline(Planner.pathRuns(p.path), { color:p.color || '#2563EB', weight:5, opacity:.85, lineJoin:'round' }).bindTooltip(tip, { sticky:true }).on('click', go).addTo(taskLayer); b.extend(ln.getBounds());
       });
       L.marker([tk.start_lat, tk.start_lng], { icon:labelIcon('pin-start', tk.title), zIndexOffset:200 }).on('click', go).addTo(taskLayer); b.extend([tk.start_lat, tk.start_lng]);
     }
+    walked(open.map(x => x.id), taskLayer);
     $('#mTasksTx').textContent = t('mapOrdersN', { n:open.length });
     taskBounds = b.isValid() ? b : null; tasksLoaded = true;
     if(!userMoved && !MAPQ.place) autoFit();
@@ -208,12 +222,12 @@ function viewLive(){
     const home = w => (w.cities || []).find(c => c && c.lat != null && c.lng != null);
     const posOf = new Map(), perCity = new Map();
     for(const w of A.workers){
-      if(isLive(w) || (w.last_lat != null && w.last_lng != null)){ posOf.set(w.id, { p:[w.last_lat, w.last_lng], city:null }); continue; }
-      const c = home(w); if(!c) continue;
-      const k = c.lat.toFixed(3) + ',' + c.lng.toFixed(3), i = perCity.get(k) || 0; perCity.set(k, i + 1);
-      // several workers from the same city: small ring around the centre so the markers do not cover each other
-      const a = i * 2.4, r = i ? 0.004 + 0.0012 * i : 0;
-      posOf.set(w.id, { p:[c.lat + r * Math.sin(a), c.lng + r * Math.cos(a) / Math.cos(c.lat * Math.PI / 180)], city:c.name });
+      // after Feierabend everybody goes back to the home city from the profile
+      if(isLive(w) && w.last_lat != null){ posOf.set(w.id, { p:[w.last_lat, w.last_lng], city:null }); continue; }
+      const c = home(w);
+      if(!c){ if(w.last_lat != null) posOf.set(w.id, { p:[w.last_lat, w.last_lng], city:null }); continue; }
+      const k = c.lat.toFixed(2) + ',' + c.lng.toFixed(2); perCity.set(k, [...(perCity.get(k) || []), w]);
+      posOf.set(w.id, { p:[c.lat, c.lng], city:c.name, key:k });
     }
     const known = A.workers.filter(w => posOf.has(w.id));
     layer.clearLayers(); const b = L.latLngBounds([]);
@@ -222,8 +236,16 @@ function viewLive(){
       L.circle([pl.lat, pl.lng], { radius:MAPQ.km * 1000, color:'#2563EB', weight:2, fillColor:'#2563EB', fillOpacity:.06, interactive:false }).addTo(layer);
       L.circleMarker([pl.lat, pl.lng], { radius:6, color:'#fff', weight:3, fillColor:'#2563EB', fillOpacity:1, interactive:false }).addTo(layer);
     }
+    // workers at home in the same city: one marker with the number, tap → list
+    for(const [k, ws] of perCity){
+      if(ws.length < 2) continue;
+      const { p, city } = posOf.get(ws[0].id); b.extend(p);
+      const html = `<b>${esc(city)}</b>` + ws.map(w => `<button class="link" data-wk="${w.id}" style="display:block;margin-top:6px;text-align:left">${esc(w.name)} · ${esc(ago(w.last_seen))}</button>`).join('');
+      L.marker(p, { icon:groupIcon(ws.length, city), zIndexOffset:300 }).bindPopup(html).on('popupopen', e => e.popup.getElement().querySelectorAll('[data-wk]').forEach(x => x.onclick = () => viewWorker(x.dataset.wk, viewLive))).addTo(layer);
+    }
     for(const w of known){
-      const on = isLive(w), { p, city } = posOf.get(w.id);
+      const on = isLive(w), { p, city, key } = posOf.get(w.id);
+      if(key && (perCity.get(key) || []).length > 1) continue;
       if(!on && !city) L.circle(p, { radius:350, color:'#94A3B8', weight:1, fillColor:'#94A3B8', fillOpacity:.15, interactive:false }).addTo(layer);
       L.marker(p, { icon:personIcon(w.name, on, on ? '' : city ? city : ago(w.last_seen)), zIndexOffset:on ? 800 : city ? 300 : 400 }).on('click', () => viewWorker(w.id, viewLive)).addTo(layer);
       b.extend(p);
