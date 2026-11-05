@@ -14,6 +14,8 @@ export async function viewJoinLink(code){
   plain(`<div class="login"><h1 class="hero">${esc(t('joinTitle'))}</h1>
     <p class="muted">${esc(firm ? t('joinFirm', { name:firm }) : t('joinCodeBad'))}</p>
     ${firm ? `<label class="f" for="jName">${esc(t('name'))}</label><input class="in" id="jName" autocomplete="name">
+    <label class="f" for="jPhone">${esc(t('joinPhone'))}</label><input class="in" id="jPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+49 170 1234567">
+    <p class="small muted" style="margin:4px 0 0">${esc(t('joinPhoneHint'))}</p>
     <button class="btn primary big" id="jGo" style="margin-top:14px">${esc(t('joinGo'))}</button>` : ''}
     <div class="err" id="jErr"></div>
     <p class="small center"><button class="link" id="jBack">${esc(t('back'))}</button></p>${legalLinks()}</div>`);
@@ -21,9 +23,11 @@ export async function viewJoinLink(code){
   $('#jBack').onclick = () => viewLogin();
   if(!firm) return;
   $('#jGo').onclick = async () => {
-    const b = $('#jGo'), name = $('#jName').value.trim(); if(name.length < 2){ $('#jErr').textContent = t('e_name_required'); return; }
+    const b = $('#jGo'), name = $('#jName').value.trim(), phone = $('#jPhone').value.trim(); if(name.length < 2){ $('#jErr').textContent = t('e_name_required'); return; }
+    if(phone.replace(/\D/g, '').length < 10){ $('#jErr').textContent = t('joinPhoneNeed'); return; }
     b.disabled = true;
-    const { data, error } = await sb.rpc('join_by_link', { p_code:code, p_name:name });
+    const { data, error } = await sb.rpc('join_by_link2', { p_code:code, p_name:name, p_phone:phone });
+    if(error && /phone_taken/.test(error.message || '')){ $('#jErr').innerHTML = `${esc(t('joinPhoneTaken'))} <button class="link" id="jLogin">${esc(t('joinToLogin'))}</button>`; $('#jLogin').onclick = () => viewLogin(); b.disabled = false; return; }
     if(error || !data){ $('#jErr').textContent = error ? errText(error) : t('joinCodeBad'); b.disabled = false; return; }
     await store.set('canAdmin', false); await acceptToken(data);
   };

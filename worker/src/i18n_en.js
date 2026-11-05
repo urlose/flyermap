@@ -192,3 +192,4 @@ Object.assign(T.en, { replanWork:'Re-plan routes (order already running)', repla
 Object.assign(T.en, { noQuota:'No quota (no pace warnings, e.g. by car)', driveTip:'Driving · {km} (working time, not distributed)' });
 Object.assign(T.en, { tabStats:'Statistics' });
 Object.assign(T.en, { fRange:'Period', fWho:'Find a worker' });
+Object.assign(T.en, { joinPhone:'Mobile number', joinPhoneHint:'So you can log back into the same account on any phone later.', joinPhoneNeed:'Please enter your mobile number.', joinPhoneTaken:'There is already an account with this number.', joinToLogin:'Log in' });

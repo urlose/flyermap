@@ -212,3 +212,5 @@ Object.assign(T.de, { tabStats:'Statistik' });
 Object.assign(T.ru, { tabStats:'Статистика' });
 Object.assign(T.de, { fRange:'Zeitraum', fWho:'Mitarbeiter suchen' });
 Object.assign(T.ru, { fRange:'Период', fWho:'Поиск работника' });
+Object.assign(T.de, { joinPhone:'Handynummer', joinPhoneHint:'Damit du dich später auf jedem Handy wieder in dasselbe Konto einloggst.', joinPhoneNeed:'Bitte deine Handynummer eingeben.', joinPhoneTaken:'Mit dieser Nummer gibt es schon ein Konto.', joinToLogin:'Anmelden' });
+Object.assign(T.ru, { joinPhone:'Номер мобильного', joinPhoneHint:'Чтобы потом на любом телефоне входить в этот же аккаунт.', joinPhoneNeed:'Введите номер мобильного.', joinPhoneTaken:'С этим номером аккаунт уже есть.', joinToLogin:'Войти' });
