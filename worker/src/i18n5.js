@@ -196,3 +196,5 @@ Object.assign(T.de, { oneDayHint:'Alles zusammen ≈ {h} Std. – das schafft 1 
 Object.assign(T.ru, { oneDayHint:'Всего ≈ {h} ч – это сделает 1 работник за 1 день.', fitsOne:'Укладывается в 1 день.' });
 Object.assign(T.de, { startAnywhere:'Darf überall starten (ohne Startpunkt-Prüfung)' });
 Object.assign(T.ru, { startAnywhere:'Может начинать где угодно (без проверки точки старта)' });
+Object.assign(T.de, { mergeHint:'{n} hat {k} Routen in diesem Auftrag.', mergeBtn:'Zu einer Route zusammenlegen', mergeQ:'Die {k} Routen von {n} werden eine Route: die Tage folgen nacheinander, Erledigtes und alle Schichten bleiben. {n} wählt danach die Tage neu.' });
+Object.assign(T.ru, { mergeHint:'У {n} {k} маршрута в этом заказе.', mergeBtn:'Объединить в один маршрут', mergeQ:'{k} маршрута {n} станут одним: дни идут друг за другом, сделанное и все смены сохраняются. Потом {n} заново выбирает дни.' });

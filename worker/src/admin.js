@@ -1166,6 +1166,9 @@ async function viewTask(id){
       <div class="mapbox" id="tMap"></div>
       <div class="rinfo-row"><span>${statusPill(...taskState(tk))}</span><button class="btn ghost small" id="tBig">${ICONS.expand}${esc(t('rvBig'))}</button></div>
       <h2 class="sec">${esc(t('routesOf'))}</h2>
+      ${(() => { const by = {}; (plans || []).forEach(p => { if(p.worker_id) (by[p.worker_id] = by[p.worker_id] || []).push(p); });
+        return Object.entries(by).filter(([, ps]) => ps.length > 1).map(([wid, ps]) => { const w = wById(wid);
+          return `<div class="hint" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="grow">${esc(t('mergeHint', { n:w ? w.name : '?', k:ps.length }))}</span><button class="btn primary small" data-merge="${wid}">${ICONS.route}${esc(t('mergeBtn'))}</button></div>`; }).join(''); })()}
       ${(plans || []).length ? plans.map(p => { const w = wById(p.worker_id); return `<div class="route-row"><span class="swatch" style="background:${esc(p.color || '#2563EB')}"></span>
         <div class="grow"><b>${esc(t('planRoute', { n:p.idx + 1 }))} <span class="muted" id="pp${p.idx}"></span></b>
         <span>${esc(t('routeLine', { km:fmtDist(p.length_m), h:fmtHm(p.minutes || 0), mb:fmtN(p.mailboxes || 0) }))}</span>
@@ -1205,6 +1208,19 @@ async function viewTask(id){
     if(wid){
       await sb.from('task_workers').upsert({ task_id:id, worker_id:wid }, { onConflict:'task_id,worker_id', ignoreDuplicates:true });
       await notifyAssigned(tk, { ...p, worker_id:wid });
+    }
+    await loadTasks(); toast(t('saved')); viewTask(id);
+  });
+  // one worker on several routes of the order: the routes become one (days after each other, progress and sessions stay)
+  document.querySelectorAll('[data-merge]').forEach(bt => bt.onclick = async () => {
+    const ps = (plans || []).filter(p => p.worker_id === bt.dataset.merge).sort((a, b) => a.idx - b.idx), w = wById(bt.dataset.merge);
+    if(ps.length < 2 || !await confirmBox(t('mergeBtn'), t('mergeQ', { n:w ? w.name : '?', k:ps.length }), t('mergeBtn'))) return;
+    bt.disabled = true;
+    let left = 0, known = true;
+    for(const p of ps){ const tr = PLAN_TR[p.id]; if(!tr){ known = false; break; } try{ left += p.days && p.days.length > 1 ? dayProgress(p, tr).filter(x => x < 95).length : (tr.pct() < 95 ? 1 : 0); }catch{ known = false; } }
+    for(let i = 1; i < ps.length; i++){
+      const { error } = await sb.rpc('merge_plans', { p_keep:ps[0].id, p_other:ps[i].id, p_days_left:i === ps.length - 1 && known ? Math.max(1, left) : null });
+      if(error){ toast(error.message); bt.disabled = false; return; }
     }
     await loadTasks(); toast(t('saved')); viewTask(id);
   });
