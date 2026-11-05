@@ -540,12 +540,11 @@ async function viewDayMap(routeId, back){
     if(pl.boxes && pl.boxes.length && ll.length > 1){ const ct = Planner.makeBoxCounter(pl.boxes); ct.visitAll(ll); fl = ct.count(); }
   }
   // every house along the track counts (also outside the route); the planned boxes only when the map squares are not available
-  try{ const n = await Promise.race([boxesAlong([ll]), new Promise(r => setTimeout(() => r(null), 8000))]); if(n != null) fl = n; }catch{}
   const d0 = new Date(r.started_at);
-  openMapView({
+  const dm = openMapView({
     title:nameOf(r.worker_id), anonTitle:t('rvDistributor'), hasNames:true,
     lines:[d0.toLocaleDateString(loc(), { weekday:'long', day:'2-digit', month:'2-digit', year:'numeric' }) + ' · ' + hhmm(r.started_at) + '–' + (r.ended_at ? hhmm(r.ended_at) : t('active')), placeTxt(r)],
-    stats:[[t('rvDist'), fmtDist(r.distance_m || 0)], [t('rvWork'), fmtHm(workMin(r)) + ' ' + t('h')], brkMin(r) >= 1 ? [t('pauseLbl'), fmtHm(brkMin(r)) + ' ' + t('h')] : null, fl != null ? [t('rvFlyers'), '≈ ' + fmtN(fl)] : null, pct != null ? [t('rvDayShare'), pct + ' %'] : null, pctAll != null ? [t('rvDayShare2'), pctAll + ' %'] : null],
+    get stats(){ return [[t('rvDist'), fmtDist(r.distance_m || 0)], [t('rvWork'), fmtHm(workMin(r)) + ' ' + t('h')], brkMin(r) >= 1 ? [t('pauseLbl'), fmtHm(brkMin(r)) + ' ' + t('h')] : null, fl != null ? [t('rvFlyers'), '≈ ' + fmtN(fl)] : null, pct != null ? [t('rvDayShare'), pct + ' %'] : null, pctAll != null ? [t('rvDayShare2'), pctAll + ' %'] : null]; },
     note:r.track_deleted_at ? t('trackDeleted') : (ll.length < 2 ? t('rvNoTrack') : ''),
     layers:[
       { key:'plan', label:pl ? t('rvPlan') : '', on:!!pl, add:g => { if(!pl || !pl.path || pl.path.length < 2) return;
@@ -563,6 +562,7 @@ async function viewDayMap(routeId, back){
     ],
     back,
   });
+  boxesAlong([ll]).then(n => { if(n != null){ fl = n; if(dm.rvRefresh) dm.rvRefresh(); } }).catch(() => {});
 }
 // where the guidance of a walker leads right now: dashed line from the walker to a target ring (fresh = the last 15 min)
 function navTarget(g, w, color, label){
@@ -616,18 +616,14 @@ async function viewTaskMap(id, back){
   });
   // houses along a route's tracks outside every planned route count for that route like planned ones
   const allBoxes = (plans || []).flatMap(p => p.boxes || []);
-  try{
-    const extra = await Promise.race([Promise.all(res.map(x => boxesAlong(byPlan[x.p.id] || [], allBoxes).catch(() => null))), new Promise(r => setTimeout(() => r(null), 9000))]);
-    (extra || []).forEach((n, k) => { if(n){ res[k].fl = (res[k].fl || 0) + n; flAll += n; hasFl = true; } });
-  }catch{}
   const offRuns = offRoute(tracks, plans);
   const walked = (routes || []).reduce((a, r) => a + (r.distance_m || 0), 0), days = new Set((routes || []).map(dayKey)).size;
   let names = true, redrawLive = null;
-  openMapView({
+  const opts = {
     title:tk.title, hasNames:true, onNames:v => { names = v; if(redrawLive) redrawLive(); },
     lines:[[tk.district, tk.city_name].filter(Boolean).join(', '), tk.work_date ? fmtDay(tk.work_date) : ''],
-    stats:[tk.flyers ? [t('flyers'), fmtN(tk.flyers)] : null, hasFl ? [t('rvFlyers'), '≈ ' + fmtN(flAll)] : null, [t('rvDist'), fmtDist(walked)], allM ? [t('rvDayShare2'), Math.round(100 * doneM / allM) + ' %'] : null, days ? [t('rvDays'), String(days)] : null],
-    legend:res.map(({ p, pct, fl }) => ({ color:p.color || '#2563EB', label:(p.worker_id ? nameOf(p.worker_id) : t('planRoute', { n:p.idx + 1 })), anonLabel:t('planRoute', { n:p.idx + 1 }), sub:pct + ' %' + (fl != null ? ' · ≈ ' + fmtN(fl) + ' ' + t('flyers') : '') })),
+    get stats(){ return [tk.flyers ? [t('flyers'), fmtN(tk.flyers)] : null, hasFl ? [t('rvFlyers'), '≈ ' + fmtN(flAll)] : null, [t('rvDist'), fmtDist(walked)], allM ? [t('rvDayShare2'), Math.round(100 * doneM / allM) + ' %'] : null, days ? [t('rvDays'), String(days)] : null]; },
+    get legend(){ return res.map(({ p, pct, fl }) => ({ color:p.color || '#2563EB', label:(p.worker_id ? nameOf(p.worker_id) : t('planRoute', { n:p.idx + 1 })), anonLabel:t('planRoute', { n:p.idx + 1 }), sub:pct + ' %' + (fl != null ? ' · ≈ ' + fmtN(fl) + ' ' + t('flyers') : '') })); },
     layers:[
       { key:'zone', on:false, add:g => { if(tk.zone_polygon) L.polygon(tk.zone_polygon, { color:css('--brand'), weight:2, fillOpacity:.05, interactive:false }).addTo(g); } },
       ...((tk.must_areas || []).length || (tk.side_towns || []).length ? [{ key:'must', label:t('sideTownsShort'), add:g => drawTowns(g, tk, 3) }] : []),
@@ -649,7 +645,13 @@ async function viewTaskMap(id, back){
       { key:'live', label:t('rvLive'), add:g => { redrawLive = liveWorkers(g, tk, plans, () => names); } },
     ],
     back,
-  });
+  };
+  const m = openMapView(opts);
+  // houses along tracks outside the planned routes: counted in the background, the map is already open
+  Promise.all(res.map(x => boxesAlong(byPlan[x.p.id] || [], allBoxes).catch(() => null))).then(extra => {
+    let ch = false; (extra || []).forEach((n, k) => { if(n){ res[k].fl = (res[k].fl || 0) + n; flAll += n; hasFl = true; ch = true; } });
+    if(ch && m.rvRefresh) m.rvRefresh();
+  }).catch(() => {});
 }
 
 /* ---------- AUFTRÄGE ---------- */

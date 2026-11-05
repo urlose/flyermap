@@ -48,6 +48,7 @@ export function openMapView(opts){
     $('#rvClean').onclick = () => { const r = $('#rv'); r.classList.toggle('clean'); $('#rvClean').textContent = r.classList.contains('clean') ? t('rvShowInfo') : t('rvOnlyMap'); setTimeout(() => m.invalidateSize(), 50); };
   };
   card(); tools(); opts.onNames && opts.onNames(VS.names);
+  m.rvRefresh = () => { if($('#rvCard')) card(); };   // values computed later (in the background) refresh the info card
   $('#rvBack').onclick = opts.back;
   setTimeout(fitAll, 80);
   return m;

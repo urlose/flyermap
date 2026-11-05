@@ -139,7 +139,7 @@ begin
   return jsonb_build_object('text', c.contract_text, 'version', coalesce(c.contract_version, contract_std_version()), 'custom', c.contract_text is not null,
     'cancel_hours', c.cancel_hours, 'penalty_eur', c.penalty_eur,
     'cancellations', coalesce((select jsonb_agg(jsonb_build_object('id', x.id, 'at', x.at, 'first_date', x.first_date, 'hours_before', x.hours_before, 'late', x.late,
-        'reason', x.reason, 'penalty_eur', x.penalty_eur, 'waived', x.waived, 'worker', wk.name, 'task', tk.name) order by x.at desc)
+        'reason', x.reason, 'penalty_eur', x.penalty_eur, 'waived', x.waived, 'worker', wk.name, 'task', tk.title) order by x.at desc)
       from (select * from plan_cancellations where company_id = c.id order by at desc limit 100) x
       left join workers wk on wk.id = x.worker_id left join tasks tk on tk.id = x.task_id), '[]'::jsonb));
 end $$;
