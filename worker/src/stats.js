@@ -36,9 +36,9 @@ export function workerStatsHtml(id){
   return `<div class="sec-row" style="display:flex;align-items:center;gap:10px"><h2 class="sec" style="margin:0">${esc(S('rating'))}</h2>${okBadge(id)}</div>
     <div class="card" style="display:block;padding:16px">
       <div class="stat-grid">
-        ${tile(S('orders'), s.orders, `${s.done} ${esc(S('done'))}`)}${tile(S('days'), s.days)}${tile(S('hours'), n1(s.hours))}${tile(S('km'), n1(s.km))}
-        ${tile(S('pace'), s.pace != null ? s.pace + ' %' : '–')}${tile(S('cancels'), s.cancels, s.late ? `${s.late} ${esc(S('late'))}` : '')}${tile(S('skips'), s.skips)}
+        ${tile(S('orders'), s.orders, `${s.done} ${esc(S('done'))}`)}${tile(S('hours'), n1(s.hours), `${s.days} ${esc(S('daysShort'))}`)}${tile(S('km'), n1(s.km))}${tile(S('pace'), s.pace != null ? s.pace + ' %' : '–')}
       </div>
+      <p class="small muted" style="margin:10px 2px 0">${esc(S('cancels'))}: <b style="color:var(--color-text)">${s.cancels}</b>${s.late ? ` (${s.late} ${esc(S('late'))})` : ''} · ${esc(S('skips'))}: <b style="color:var(--color-text)">${s.skips}</b></p>
       <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:16px"><b style="font-size:14px">${esc(S('status'))}</b>
         <div class="seg-row" role="radiogroup">${['auto', 'yes', 'no'].map(m => `<button class="seg-b ${m === mode ? 'on' : ''}" data-ver="${m}" role="radio" aria-checked="${m === mode}">${esc(S(m))}</button>`).join('')}</div></div>
       <p class="small muted" style="margin:10px 0 0">${esc(S('autoHint'))}</p>
