@@ -663,22 +663,22 @@ function taskMatches(tk){
 }
 // an order is "unterwegs" while one of its workers records a route right now (GPS alone is not enough: the route must be running)
 const taskLive = tk => tk.status === 'open' && (A.live || []).some(r => r.task_id === tk.id && !r.paused_at);
-const taskState = tk => tk.status !== 'open' ? ['ok', t('stDoneTask')] : taskLive(tk) ? ['live', t('stLive')] : (tk.task_workers || []).length ? ['info', t('stPlanned')] : ['neutral', t('stNoWorkers')];
-const accOf = k => ({ ok:'acc-ok', live:'acc-ok', info:'acc-info', warn:'acc-warn', bad:'acc-bad', neutral:'acc-neutral' }[k]);
+const taskState = tk => tk.status !== 'open' ? ['done', t('stDoneTask')] : taskLive(tk) ? ['live', t('stLive')] : (tk.task_workers || []).length ? ['info', t('stPlanned')] : ['neutral', t('stNoWorkers')];
+const accOf = k => ({ done:'acc-neutral', ok:'acc-ok', live:'acc-ok', info:'acc-info', warn:'acc-warn', bad:'acc-bad', neutral:'acc-neutral' }[k]);
 function viewTasks(){
   const opts = k => [...new Set(A.tasks.map(x => x[k]).filter(Boolean))].sort();
   const sel = (id, label, list, cur) => `<div><label class="f" for="${id}">${esc(label)}</label><select class="in small" id="${id}"><option value="">${esc(t('fAll'))}</option>${list.map(v => `<option ${v === cur ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></div>`;
   const card = tk => { const [k, txt] = taskState(tk); return `<button class="card acc ${accOf(k)} task-card" data-id="${tk.id}"><div class="tc-main"><b>${esc(tk.title)}</b>
     <div class="tc-meta">${coName(tk.company_id) ? `<i>${ICONS.users}${esc(coName(tk.company_id))}</i>` : ''}<i>${ICONS.calendar}${esc(fmtDay(tk.work_date))}</i>${tk.district || tk.city_name ? `<i>${ICONS.pin}${esc([tk.district, tk.city_name].filter(Boolean).join(', '))}</i>` : ''}${tk.flyers ? `<i>${ICONS.mail}${esc(fmtN(tk.flyers))}</i>` : ''}<i>${ICONS.users}${(tk.task_workers || []).length}</i></div>
     ${statusPill(k, txt)}</div>${ICONS.chevron}</button>`; };
-  const f = A.filter, list = A.tasks.filter(taskMatches);
+  const f = A.filter, list = A.tasks.filter(taskMatches).sort((a, b) => (a.status !== 'open') - (b.status !== 'open'));
   const nOpen = A.tasks.filter(x => x.status === 'open').length, nLive = A.tasks.filter(taskLive).length, nDone = A.tasks.length - nOpen;
   const nf = ['city', 'district', 'from', 'to'].filter(k => f[k]).length;
   const firmTodo = A.company && A.company.id && !A.company.master && (!firmComplete(A.company) || !avvOk(A.company));
   shell('tasks', `${topbar(t('tasks'))}
     <div class="pad">
       ${firmTodo ? `<button class="warnbox firm-todo" id="firmTodo">${esc(!firmComplete(A.company) ? t('firmMissing') : t('firmAvvMissing'))} ›</button>` : ''}
-      <div class="kpis">${[['open', 'k-info', nOpen, t('fOpen')], ['live', 'k-ok', nLive, t('stLive')], ['done', 'k-neutral', nDone, t('fDone')]].map(([k, c, n, l]) => `<button class="kpi ${c} ${f.status === k ? 'on' : ''}" data-st="${f.status === k ? 'all' : k}" aria-pressed="${f.status === k}"><b>${n}</b><span>${esc(l)}</span></button>`).join('')}</div>
+      <div class="kpis">${[['open', 'k-info', nOpen, t('fOpen')], ['live', 'k-ok', nLive, t('stLive')], ['done', 'k-neutral', nDone, t('fDone')]].map(([k, c, n, l]) => `<button class="kpi ${c} ${f.status === k ? 'on' : ''}" data-st="${f.status === k && k !== 'open' ? 'open' : k}" aria-pressed="${f.status === k}"><b>${n}</b><span>${esc(l)}</span></button>`).join('')}</div>
       <div class="chips" style="margin:0 0 10px">${[['open', t('fOpen')], ['live', t('stLive')], ['done', t('fDone')], ['all', t('fAll')]].map(([k, l]) => `<button class="chip ${f.status === k ? 'on' : ''}" data-st="${k}" aria-pressed="${f.status === k}">${esc(l)}</button>`).join('')}</div>
       <details class="filters" ${nf ? 'open' : ''}><summary>${ICONS.search}${esc(t('filter'))}${nf ? `<span class="cnt">${nf}</span>` : ''}</summary><div class="f-body">
         <div class="steppers">${sel('fCity', t('fCity'), opts('city_name'), f.city)}${sel('fDist', t('fDistrict'), opts('district'), f.district)}</div>
