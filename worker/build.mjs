@@ -10,7 +10,7 @@ await build({ entryPoints: ['src/app.js'], bundle: true, minify: true, format: '
   writeFileSync('www/index.html', readFileSync('src/index.html', 'utf8').replace('src="app.js"', `src="app.js?v=${v}"`)); }
 copyFileSync('node_modules/leaflet/dist/leaflet.css', 'www/leaflet.css');
 cpSync('node_modules/leaflet/dist/images', 'www/images', { recursive: true });
-copyFileSync('assets/icon-only.png', 'www/icon.png');
+copyFileSync('assets/icon-only.png', 'www/icon.png'); copyFileSync('assets/favicon.png', 'www/favicon.png');
 // Inter is shipped with the app (latin + cyrillic): no request to a font server (privacy, works offline)
 mkdirSync('www/fonts', { recursive: true });
 // Onest (main font since 06.11.2026, SIL OFL) + Inter as fallback
