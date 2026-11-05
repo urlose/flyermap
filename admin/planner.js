@@ -906,13 +906,15 @@
     tol = tol || 30;
     const done = new Uint8Array(boxes.length); let count = 0;
     const total = boxes.reduce((s, b) => s + b[2], 0);
+    // a box point is the centre of its building: the bigger the building (more boxes), the farther its walls/doors are from that centre
+    const reach = boxes.map(b => tol + Math.min(25, 4 * Math.sqrt(Math.max(1, b[2] || 1))));
     const cell = 0.0004, grid = new Map(), key = (la, lo) => Math.floor(la / cell) + ':' + Math.floor(lo / cell);
     boxes.forEach((b, i) => { const k = key(b[0], b[1]); if(!grid.has(k)) grid.set(k, []); grid.get(k).push(i); });
     function visit(lat, lng){
       const cy = Math.floor(lat / cell), cx = Math.floor(lng / cell);
-      for(let dy = -1; dy <= 1; dy++) for(let dx = -1; dx <= 1; dx++){
+      for(let dy = -2; dy <= 2; dy++) for(let dx = -3; dx <= 3; dx++){   // cells are ~44 m × ~26 m, reach is up to tol + 25 m
         const list = grid.get((cy + dy) + ':' + (cx + dx)); if(!list) continue;
-        for(const i of list) if(!done[i] && dist([lat, lng], boxes[i]) <= tol){ done[i] = 1; count += boxes[i][2]; }
+        for(const i of list) if(!done[i] && dist([lat, lng], boxes[i]) <= reach[i]){ done[i] = 1; count += boxes[i][2]; }
       }
       return count;
     }
