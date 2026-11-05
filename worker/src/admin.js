@@ -120,6 +120,7 @@ function workerOptions(lat, lng, sel){
 }
 
 /* ---------- tabs ---------- */
+async function adminLogout(){ if(await confirmBox(t('logout'), t('logoutQ'), t('logout'))){ await sb.auth.signOut(); for(const k of ['role', 'token', 'me', 'canAdmin']) await store.del(k); A.hooks.loggedOut && A.hooks.loggedOut(); } }
 export function adminTab(tab){
   if(tab === 'map') return viewLive();
   if(tab === 'people') return viewPeople();
@@ -402,7 +403,7 @@ function viewSettings(){
   if(A.company && A.company.id) bindFirmCard(A.company, c => { A.company = { ...c, master:A.company.master }; viewSettings(); });
   if($('#tMaster')) $('#tMaster').onclick = () => viewMaster(viewSettings);
   if(A.focusFirm){ A.focusFirm = false; const fc = $('#firmCard'); if(fc) fc.scrollIntoView({ block:'center' }); }
-  $('#tOut').onclick = async () => { if(await confirmBox(t('logout'), t('logoutQ'), t('logout'))){ await sb.auth.signOut(); for(const k of ['role', 'token', 'me', 'canAdmin']) await store.del(k); A.hooks.loggedOut && A.hooks.loggedOut(); } };
+  $('#tOut').onclick = adminLogout;
   $('#tWork').onclick = openAsWorker;
   $('#tInv').onclick = () => {
     const mo = modal(`<h2>${esc(t('inviteAdmin'))}</h2><label class="f">${esc(t('invitePhone'))}</label><input class="in" id="invE" type="tel" placeholder="+49 170 1234567"><button class="btn primary" id="invB" style="margin-top:12px">${esc(t('inviteAdmin'))}</button><div class="err" id="invErr"></div>`);
@@ -1489,7 +1490,7 @@ export async function bootAdmin(){
   if(!session) return false;
   const { data:ok, error } = await sb.rpc('become_admin');
   if(error || !ok) return false;
-  A.user = session.user; UI.role = 'admin'; UI.onTab = adminTab; loadWorkerStats().catch(() => {});
+  A.user = session.user; UI.role = 'admin'; UI.onTab = adminTab; UI.onLogout = adminLogout; loadWorkerStats().catch(() => {});
   await store.set('role', 'admin');
   try{ await loadAll(); }catch{}
   if(A.company && A.company.master && !A.company.id){ adminTab('people'); viewMaster(() => adminTab('people')); }
