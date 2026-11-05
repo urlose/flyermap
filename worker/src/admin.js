@@ -1066,15 +1066,30 @@ function viewCreate(edit){
       const row = { title:withCity(title, cityN), city_name:cityN, district:(d.place && d.place.district) || (tkE && tkE.district) || null, start_lat:d.start.lat, start_lng:d.start.lng,
         walk_minutes:15, zone_polygon:pl.zone, must_areas:d.must.length ? d.must.map(a => ({ p:a.p, n:a.n, name:a.name || undefined, c:a.c })) : null, side_towns:d.side.length ? d.side : null, bike:d.travel !== 'bus', travel:d.travel, split:d.split, work_area:d.zone || null, work_date:date, notes:(saved.notes || '').trim() || null, street_m:d.streetM || null,
         flyers:d.flyers, quota_m30:quota, work_days:d.days, work_hours:d.hours, est_mailboxes:pl.mailboxes, route_m:pl.routes.reduce((s, r) => s + r.length_m, 0) };
-      let tk;
+      let tk, old = null;
       if(tkE){
+        await loadLive(); if(A.live.some(r => r.task_id === tkE.id)) throw new Error(t('replanLive'));
+        // order already running: keep acceptance, days, skips and the link of walked sessions to each worker's route
+        const { data:oldP } = await sb.from('task_plans').select('id,worker_id,status,work_dates,accepted_at,committed_terms,skipped').eq('task_id', tkE.id);
+        const { data:oldR } = await sb.from('routes').select('id,worker_id').eq('task_id', tkE.id).limit(1);
+        old = oldR && oldR.length ? (oldP || []) : null;
         const u = await sb.from('tasks').update(row).eq('id', tkE.id).select().single(); if(u.error) throw u.error; tk = u.data;
         const x1 = await sb.from('task_plans').delete().eq('task_id', tkE.id); if(x1.error) throw x1.error;
         await sb.from('task_workers').delete().eq('task_id', tkE.id);
       }else{
         const ins = await sb.from('tasks').insert({ ...row, created_by:A.user.id }).select().single(); if(ins.error) throw ins.error; tk = ins.data;
       }
-      await savePlans(tk, pl.routes.map((r, i) => ({ task_id:tk.id, idx:i, worker_id:d.assign[i] || null, color:Planner.COLORS[i % 10], path:r.path, length_m:r.length_m, street_m:r.street_m, mailboxes:r.mailboxes, boxes:r.boxes, minutes:r.minutes, days:r.days, steps:r.steps })));
+      const rows = pl.routes.map((r, i) => ({ task_id:tk.id, idx:i, worker_id:d.assign[i] || null, color:Planner.COLORS[i % 10], path:r.path, length_m:r.length_m, street_m:r.street_m, mailboxes:r.mailboxes, boxes:r.boxes, minutes:r.minutes, days:r.days, steps:r.steps }));
+      if(old){
+        const skips = old.flatMap(p => p.skipped || []);
+        rows.forEach(r => {
+          if(skips.length) r.skipped = skips;
+          const o = old.find(p => p.worker_id && p.worker_id === r.worker_id && p.status === 'accepted'); if(!o) return;
+          const need = (r.days || []).length || 1, dates = (o.work_dates || []).slice(0, need);
+          if(dates.length >= need) Object.assign(r, { status:'accepted', work_dates:dates, accepted_at:o.accepted_at, committed_terms:o.committed_terms });
+        });
+      }
+      await savePlans(tk, rows, !!old);
       await loadTasks();
       clearDraft(); viewTask(tk.id);
     }catch(e){ if($('#cErr')) $('#cErr').textContent = e.message; else toast(e.message); const sv = $('#cSave'); if(sv){ sv.disabled = false; sv.classList.remove('loading'); } }
@@ -1084,12 +1099,23 @@ function viewCreate(edit){
   else restoreDraft();
 }
 // saves plans, links workers and sends each assigned worker a notification
-async function savePlans(tk, rows){
+async function savePlans(tk, rows, replanned){
   let ins = [];
   if(rows.length){ const r = await sb.from('task_plans').insert(rows).select(); if(r.error) throw r.error; ins = r.data || []; }
   const ws = [...new Set(rows.map(r => r.worker_id).filter(Boolean))];
   if(ws.length) await sb.from('task_workers').upsert(ws.map(w => ({ task_id:tk.id, worker_id:w })), { onConflict:'task_id,worker_id', ignoreDuplicates:true });
+  if(replanned){
+    // walked sessions follow their worker to the new route (day maps, "Gelaufen", flyers along the plan)
+    for(const p of ins) if(p.worker_id) await sb.from('routes').update({ plan_id:p.id }).eq('task_id', tk.id).eq('worker_id', p.worker_id);
+    for(const p of ins) if(p.worker_id) await notifyReplanned(tk, p);
+    return;
+  }
   for(const p of ins) if(p.worker_id) await notifyAssigned(tk, p);
+}
+async function notifyReplanned(tk, p){
+  const date = tk.work_date ? fmtDay(tk.work_date) + ' · ' : '';
+  await sb.from('notifications').insert({ worker_id:p.worker_id, kind:'assigned', task_id:tk.id, plan_id:p.id, title:t('routeChangedTitle', { title:tk.title }),
+    body:p.status === 'accepted' ? t('routeChangedBody', { date, mb:fmtN(p.mailboxes || 0), km:fmtDist(p.length_m || 0) }) : t('routeChangedDays') });
 }
 async function notifyAssigned(tk, p){
   const date = tk.work_date ? fmtDay(tk.work_date) + ' · ' : '';
@@ -1108,7 +1134,7 @@ function editTaskSheet(tk, plans, routes){
     <label class="f" for="eTravel">${esc(t('travelLbl'))}</label><select class="in" id="eTravel">${['bus', 'bike', 'car'].map(v => `<option value="${v}" ${(tk.travel || (tk.bike ? 'bike' : 'bus')) === v ? 'selected' : ''}>${esc(t('travel_' + v))}</option>`).join('')}</select>
     <label class="f">${esc(t('note'))}</label><textarea class="in" id="eNotes">${esc(tk.notes || '')}</textarea>
     <button class="btn primary" id="eSave" style="margin-top:12px">${esc(t('save'))}</button>
-    ${routes.length ? `<p class="small muted">${esc(t('editNoReplan'))}</p>` : `<button class="btn ghost" id="eReplan">${esc(t('replan'))}</button>`}
+    ${!routes.length ? `<button class="btn ghost" id="eReplan">${esc(t('replan'))}</button>` : A.live.some(r => r.task_id === tk.id) ? `<p class="small muted">${esc(t('replanLive'))}</p>` : `<button class="btn ghost" id="eReplan">${esc(t('replanWork'))}</button><p class="small muted">${esc(t('replanWorkHint'))}</p>`}
     <button class="btn ghost" id="eClose">${esc(t('close'))}</button><div class="err" id="eErr"></div>`);
   mo.querySelector('#eClose').onclick = () => mo.remove();
   mo.querySelector('#eSave').onclick = async () => {
