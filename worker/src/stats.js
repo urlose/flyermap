@@ -26,7 +26,7 @@ export async function loadWorkerStats(force){
   STATS.byId = new Map((data || []).map(x => [x.id, x])); STATS.at = Date.now(); return STATS.byId;
 }
 export const isVerified = id => !!(STATS.byId.get(id) || {}).verified;
-export const okBadge = id => isVerified(id) ? `<span class="pill ok-badge" title="${esc(S('ok'))}" style="display:inline-flex;align-items:center;gap:3px;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:600;background:color-mix(in srgb, var(--color-success,#16A34A) 18%, transparent);color:var(--color-success,#16A34A)">✓ ${esc(S('ok'))}</span>` : '';
+export const okBadge = id => isVerified(id) ? `<span class="ok-badge" title="${esc(S('ok'))}">✓ ${esc(S('ok'))}</span>` : '';
 export const shortLine = id => { const s = STATS.byId.get(id); if(!s || !s.days) return ''; return `${s.done} ${S('orders').toLowerCase()} ${S('done')} · ${n1(s.hours)} ${S('hours')}${s.pace != null ? ' · ' + s.pace + ' %' : ''}`; };
 
 export function workerStatsHtml(id){
@@ -96,7 +96,7 @@ function mountChart(el, daily){
           <line class="fm-x" x1="0" x2="0" y1="${pt}" y2="${H - pb}" stroke="var(--color-text-secondary)" stroke-width="1" opacity="0"/>
           <rect class="fm-hit" x="${pl}" y="${pt}" width="${W - pl - pr}" height="${H - pt - pb}" fill="transparent"/>
         </svg>
-        <div class="fm-tip" style="position:absolute;pointer-events:none;opacity:0;transition:opacity .1s;background:var(--color-surface);border:1px solid var(--color-border);border-radius:10px;padding:8px 10px;font-size:13px;box-shadow:0 6px 18px rgba(0,0,0,.25);min-width:150px;z-index:2"></div>
+        <div class="fm-tip" style="position:absolute;pointer-events:none;opacity:0;transition:opacity .1s;font-size:13px;min-width:150px;z-index:2"></div>
       </div>`}`;
     el.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { st.m = b.dataset.m; draw(); });
     el.querySelectorAll('[data-n]').forEach(b => b.onclick = () => { st.n = +b.dataset.n; draw(); });
@@ -118,9 +118,9 @@ function mountChart(el, daily){
   };
   draw();
 }
-const bar = (pct, label, value) => `<div style="margin:10px 0"><div style="display:flex;justify-content:space-between;gap:8px;font-size:14px"><span>${label}</span><b>${value}</b></div>
-  <div style="height:6px;border-radius:99px;background:var(--color-surface-subtle);margin-top:6px;overflow:hidden"><i class="fm-grow" style="display:block;height:100%;width:${Math.max(2, Math.min(100, pct))}%;background:var(--color-primary);border-radius:99px"></i></div></div>`;
-const effPill = v => { if(v == null || !isFinite(v)) return '–'; const [c, k] = v <= 3 ? ['#16A34A', '●'] : v <= 5 ? ['#D97706', '▲'] : ['#DC2626', '■']; return `<span style="white-space:nowrap"><span style="color:${c}" aria-hidden="true">${k}</span> ${n1(v)}</span>`; };
+const bar = (pct, label, value) => `<div style="margin:var(--space-3) 0"><div style="display:flex;justify-content:space-between;gap:var(--space-2);font-size:14px"><span>${label}</span><b>${value}</b></div>
+  <div class="st-bar"><i class="fm-grow" style="width:${Math.max(2, Math.min(100, pct))}%"></i></div></div>`;
+const effPill = v => { if(v == null || !isFinite(v)) return '–'; const [c, k] = v <= 3 ? ['eff-good', '●'] : v <= 5 ? ['eff-mid', '▲'] : ['eff-bad', '■']; return `<span style="white-space:nowrap"><span class="${c}" aria-hidden="true">${k}</span> ${n1(v)}</span>`; };
 
 export async function viewStats(){
   shell('stats', `${topbar(S('tab'))}<div id="stBody"><p class="muted">…</p></div>`);
@@ -132,29 +132,29 @@ export async function viewStats(){
   const flyDaily = tasks.map(x => ({ d:String(x.first).slice(0, 10), flyers:+x.flyers || 0 })).reduce((m, x) => { m[x.d] = (m[x.d] || 0) + x.flyers; return m; }, {});
   const first = daily.length ? Math.ceil((Date.now() - new Date(String(daily[0].d).slice(0, 10) + 'T00:00:00')) / DAY) + 1 : 14, n = Math.max(14, Math.min(30, first)), sH = series(daily, 'hours', n), sK = series(daily, 'km', n), sO = series(daily, 'orders', n), sP = series(daily, 'people', n);
   const sF = series(Object.entries(flyDaily).map(([d, v]) => ({ d, f:v })), 'f', n);
-  const card = (bg, val, lbl, pts) => `<div class="kpi-card" style="border-radius:var(--radius-lg,14px);padding:16px 18px 10px;background:${bg};border:1px solid rgba(255,255,255,.08);box-shadow:var(--shadow-sm,0 1px 2px rgba(0,0,0,.2));color:#fff;min-width:0"><b style="font-size:26px;line-height:1.1">${val}</b><div style="opacity:.92;margin-top:2px">${esc(lbl)}</div>${spark(pts)}</div>`;
+  const card = (k, val, lbl, pts) => `<div class="kpi-card kc-${k}"><b>${val}</b><div class="kpi-l">${esc(lbl)}</div>${spark(pts)}</div>`;
   // weekdays: hours worked per weekday (all days of the last 60)
   const wd = [0, 0, 0, 0, 0, 0, 0]; daily.forEach(x => { wd[(new Date(String(x.d).slice(0, 10) + 'T12:00:00').getDay() + 6) % 7] += +x.hours || 0; });
   const wdMax = Math.max(1, ...wd), wdName = i => new Date(2026, 10, 2 + i).toLocaleDateString(locale(), { weekday:'long' });
   const topMax = Math.max(1, ...top.map(x => +x.hours || 0));
   box.innerHTML = `
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin:8px 0 18px">
-      ${card('#5B4BC4', fmtN(tot.orders), S('tasks'), sO)}
-      ${card('#2563EB', fmtN(tot.flyers), S('flyers'), sF)}
-      ${card('#B45309', n1(tot.hours), S('hours'), sH)}
-      ${card('#C03838', n1(tot.km), S('km'), sK)}
+    <div class="kpi-row">
+      ${card(1, fmtN(tot.orders), S('tasks'), sO)}
+      ${card(2, fmtN(tot.flyers), S('flyers'), sF)}
+      ${card(3, n1(tot.hours), S('hours'), sH)}
+      ${card(4, n1(tot.km), S('km'), sK)}
     </div>
-    <div class="card" style="display:block;padding:16px 18px">
-      <b style="font-size:17px;display:block;margin-bottom:10px">${esc(S('perDayT'))}</b>
+    <div class="card st-card">
+      <h3>${esc(S('perDayT'))}</h3>
       <div id="stChart"></div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;border-top:1px solid var(--color-border);margin-top:8px;padding-top:12px">
         ${[[S('per1000'), effPill(tot.flyers ? tot.hours / tot.flyers * 1000 : null)], [S('kmh'), tot.hours ? n1(tot.km / tot.hours) : '–'], [S('peopleMax'), Math.max(0, ...sP.map(p => p.v))]].map(([k, v]) => `<div><div class="small muted">${esc(k)}</div><b style="font-size:18px">${v}</b></div>`).join('')}
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-top:14px">
-      <div class="card" style="display:block;padding:16px 18px"><b style="font-size:17px">${esc(S('month'))}</b>
+    <div class="st-two">
+      <div class="card st-card"><h3>${esc(S('month'))}</h3>
         ${top.length ? top.map((x, i) => bar(x.hours / topMax * 100, `${i + 1}. ${esc(x.name)} ${okBadge(x.id)}`, `${n1(x.hours)} ${esc(S('hours'))} · ${x.days} ${esc(S('daysShort'))}`)).join('') : `<p class="small muted">${esc(S('none'))}</p>`}</div>
-      <div class="card" style="display:block;padding:16px 18px"><b style="font-size:17px">${esc(S('weekdays'))}</b>
+      <div class="card st-card"><h3>${esc(S('weekdays'))}</h3>
         ${wd.map((h, i) => bar(h / wdMax * 100, esc(wdName(i)), `${n1(h)} ${esc(S('hours'))}`)).join('')}</div>
     </div>
     <h2 class="sec">${esc(S('tasks'))}</h2><p class="small muted" style="margin-top:-4px">${esc(S('h1000Hint'))}</p>

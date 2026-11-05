@@ -574,8 +574,8 @@ const drawSkips = (g, plans) => (plans || []).forEach(p => workerSkips(p).forEac
 // GPS track: its own colour (yellow with a dark edge) so it never looks like a planned route
 const GPS = '#FACC15';
 const splitJumps = ll => { const out = []; let cur = []; for(let i = 0; i < ll.length; i++){ if(i && hav(ll[i - 1][0], ll[i - 1][1], ll[i][0], ll[i][1]) > 150){ if(cur.length > 1) out.push(cur); cur = []; } cur.push(ll[i]); } if(cur.length > 1) out.push(cur); return out; };
-const DRIVE_C = '#A855F7';   // driving (> 14 km/h): violet, dashed
-const driveLine = (g, ll, w = 3) => ll.length > 1 ? L.polyline(ll, { color:DRIVE_C, weight:w, opacity:.95, dashArray:'8 6', lineJoin:'round' }).bindTooltip(t('driveTip', { km:fmtDist(ll.reduce((x, q, k) => x + (k ? hav(ll[k-1][0], ll[k-1][1], q[0], q[1]) : 0), 0)) }), { sticky:true }).addTo(g) : null;
+const DRIVE_C = () => css('--color-drive') || '#7C3AED';   // driving (> 14 km/h): violet, dashed (token)
+const driveLine = (g, ll, w = 3) => ll.length > 1 ? L.polyline(ll, { color:DRIVE_C(), weight:w, opacity:.95, dashArray:'8 6', lineJoin:'round' }).bindTooltip(t('driveTip', { km:fmtDist(ll.reduce((x, q, k) => x + (k ? hav(ll[k-1][0], ll[k-1][1], q[0], q[1]) : 0), 0)) }), { sticky:true }).addTo(g) : null;
 const gpsLine = (g, ll, w = 3) => { const parts = splitJumps(ll); if(!parts.length) return null; L.polyline(parts, { color:'#111827', weight:w + 3, opacity:.45, lineJoin:'round' }).addTo(g); return L.polyline(parts, { color:GPS, weight:w, opacity:1, lineJoin:'round' }).addTo(g); };
 // colour of a planned working day: day 1 = route colour, day 2 = a clearly different partner colour, day 3+ = hue turned further
 const DAY2 = { '#2563EB':'#06B6D4', '#C2185B':'#F97316', '#D97706':'#78350F', '#7C3AED':'#E11D48', '#059669':'#0EA5E9', '#0891B2':'#9333EA', '#DC2626':'#0D9488', '#4D7C0F':'#6D28D9', '#DB2777':'#0284C7', '#EA580C':'#4F46E5' };
