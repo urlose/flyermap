@@ -1292,8 +1292,8 @@ async function viewTask(id){
   });
   $('#tBig').onclick = () => viewTaskMap(id, () => viewTask(id));
   $('#tEdit').onclick = () => editTaskSheet(tk, plans || [], routes || []);
-  if($('#tCancel')) $('#tCancel').onclick = async () => { if(!await confirmBox(t('cancelTask'), t('cancelTaskQ'), t('cancelTask'), true)) return; await sb.from('tasks').update({ status:'cancelled' }).eq('id', id); await loadTasks(); viewTask(id); };
-  $('#tDone').onclick = async () => { await sb.from('tasks').update({ status:tk.status === 'open' ? 'done' : 'open' }).eq('id', id); await loadTasks(); viewTask(id); };
+  if($('#tCancel')) $('#tCancel').onclick = async () => { if(!await confirmBox(t('cancelTask'), t('cancelTaskQ'), t('cancelTask'), true)) return; const { error } = await sb.from('tasks').update({ status:'cancelled' }).eq('id', id); if(error) return toast(error.message); await loadTasks(); viewTask(id); };
+  $('#tDone').onclick = async () => { const { error } = await sb.from('tasks').update({ status:tk.status === 'open' ? 'done' : 'open' }).eq('id', id); if(error) return toast(error.message); await loadTasks(); viewTask(id); };
   $('#tDel').onclick = async () => { if(!await confirmBox(t('del'), t('delTaskQ'), t('del'), true)) return; await sb.from('tasks').delete().eq('id', id); await loadTasks(); viewTasks(); };
   if((routes || []).some(r => !r.ended_at)){
     const iv = setInterval(async () => {
