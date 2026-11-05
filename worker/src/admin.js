@@ -678,7 +678,7 @@ function viewTasks(){
   shell('tasks', `${topbar(t('tasks'))}
     <div class="pad">
       ${firmTodo ? `<button class="warnbox firm-todo" id="firmTodo">${esc(!firmComplete(A.company) ? t('firmMissing') : t('firmAvvMissing'))} ›</button>` : ''}
-      <div class="kpis"><div class="kpi k-info"><b>${nOpen}</b><span>${esc(t('fOpen'))}</span></div><div class="kpi k-ok"><b>${nLive}</b><span>${esc(t('stLive'))}</span></div><div class="kpi k-neutral"><b>${nDone}</b><span>${esc(t('fDone'))}</span></div></div>
+      <div class="kpis">${[['open', 'k-info', nOpen, t('fOpen')], ['live', 'k-ok', nLive, t('stLive')], ['done', 'k-neutral', nDone, t('fDone')]].map(([k, c, n, l]) => `<button class="kpi ${c} ${f.status === k ? 'on' : ''}" data-st="${f.status === k ? 'all' : k}" aria-pressed="${f.status === k}"><b>${n}</b><span>${esc(l)}</span></button>`).join('')}</div>
       <div class="chips" style="margin:0 0 10px">${[['open', t('fOpen')], ['live', t('stLive')], ['done', t('fDone')], ['all', t('fAll')]].map(([k, l]) => `<button class="chip ${f.status === k ? 'on' : ''}" data-st="${k}" aria-pressed="${f.status === k}">${esc(l)}</button>`).join('')}</div>
       <details class="filters" ${nf ? 'open' : ''}><summary>${ICONS.search}${esc(t('filter'))}${nf ? `<span class="cnt">${nf}</span>` : ''}</summary><div class="f-body">
         <div class="steppers">${sel('fCity', t('fCity'), opts('city_name'), f.city)}${sel('fDist', t('fDistrict'), opts('district'), f.district)}</div>
