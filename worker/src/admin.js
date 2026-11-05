@@ -4,6 +4,7 @@ import { t, I } from './i18n.js';
 import { sb, store, $, esc, css, hav, fmtDist, fmtH, fmtHm, fmtN, fmtDay, fmtDT, ago, waLink, telLink, loopPath, deMobile, loc, reversePlace, placeArea } from './core.js';
 import { UI, ICONS, shell, setLoc, getLoc, plain, topbar, bindBack, makeMap, dot, labelIcon, fit, drawJumps, modal, confirmBox, toast, searchField, langSwitch, themeSwitch, statusPill, emptyState, avatar, every, personIcon } from './ui.js';
 import { legalLinks, bindLegal } from './legalview.js';
+import { adminContractHtml, bindAdminContract } from './contractview.js';
 import { makePlanEngine, setStampClient, tileStamp } from './planengine.js';
 import { openMapView } from './routeview.js';
 import { checkpoints, addSkips, dayProgress, makeNav } from './nav.js';
@@ -360,6 +361,7 @@ function viewSettings(){
     <div class="pad">
       ${A.company && A.company.master ? `<button class="btn primary" id="tMaster" style="margin-top:16px">${ICONS.users}${esc(t('master'))}</button>` : ''}
       ${A.company && A.company.id ? firmCardHtml(A.company) : ''}
+      ${A.company && A.company.id ? adminContractHtml() : ''}
       <h2 class="sec">${esc(t('accountSettings'))}</h2>
       <div class="card" style="display:block">
         <div class="person-row" style="padding-top:0">${avatar()}<div><b>${esc(A.user?.phone ? '+' + A.user.phone.replace(/^\+/, '') : (A.user?.email || ''))}</b><span>${esc(t('admin'))}</span></div></div>
@@ -373,6 +375,7 @@ function viewSettings(){
     </div>`);
   store.get('theme').then(v => { A.theme = v; document.querySelectorAll('[data-theme-set]').forEach(b => { const on = b.dataset.themeSet === (v || 'system'); b.classList.toggle('on', on); b.setAttribute('aria-checked', on); }); });
   bindLegal(viewSettings);
+  if(A.company && A.company.id) bindAdminContract();
   if(A.company && A.company.id) bindFirmCard(A.company, c => { A.company = { ...c, master:A.company.master }; viewSettings(); });
   if($('#tMaster')) $('#tMaster').onclick = () => viewMaster(viewSettings);
   if(A.focusFirm){ A.focusFirm = false; const fc = $('#firmCard'); if(fc) fc.scrollIntoView({ block:'center' }); }

@@ -25,7 +25,7 @@ export function legalModal(kind){
   m.querySelector('[data-ok]').onclick = () => m.remove();
 }
 // small links "Datenschutz · Impressum" for any screen
-export const legalLinks = () => `<p class="small center legal-links"><button class="link muted" data-legal="privacy">${esc(t('privacy'))}</button>${IMPRINT_READY ? ` · <button class="link muted" data-legal="imprint">${esc(t('imprint'))}</button>` : ''}</p>`;
+export const legalLinks = () => `<p class="small center legal-links">${['privacy', 'imprint', 'terms', 'contract', 'agb'].map(k => `<button class="link muted" data-legal="${k}">${esc(LEGAL_TITLES[k][lang()])}</button>`).join(' · ')}</p>`;
 export function bindLegal(back){ document.querySelectorAll('[data-legal]').forEach(b => b.onclick = () => viewLegal(b.dataset.legal, back)); }
 
 // before the first working day (and after a substantial change of the policy): what is recorded, who sees it, how long

@@ -22,7 +22,7 @@ export const LEGAL_CTX = { firm:null };
 export const setLegalFirm = f => { LEGAL_CTX.firm = f && isSet(f.name) ? f : null; };
 // closed beta: no public offer, so no Impressum yet. It appears (in the app and as impressum.html) once the provider address is filled in.
 const isSet = v => !!v && !/^\[/.test(String(v).trim());
-export const IMPRINT_READY = isSet(PROVIDER.street) && isSet(PROVIDER.city);
+export const IMPRINT_READY = true;   // shown with [placeholders] until PROVIDER is filled in
 export const PRIVACY_VERSION = '2026-10-30c';      // bump when the text changes in substance: workers then see the location note again
 export const PRIVACY_DATE = { de:'30. Oktober 2026', ru:'30 октября 2026', en:'30 October 2026' };
 export const RETENTION = { trackMonths:6, positionHours:12, inboxMonths:6 };
@@ -211,9 +211,14 @@ ${o.register ? `<p>Registereintrag: ${e(o.register)}</p>` : ''}${o.vatId ? `<p>U
 export const LEGAL_TITLES = {
   privacy:{ de:'Datenschutzerklärung', ru:'Политика конфиденциальности', en:'Privacy policy' },
   imprint:{ de:'Impressum', ru:'Impressum (выходные данные)', en:'Imprint' },
+  terms:{ de:'Nutzungsbedingungen', ru:'Условия использования', en:'Terms of use' },
+  agb:{ de:'AGB für Unternehmen', ru:'AGB для фирм', en:'Terms for companies' },
+  contract:{ de:'Rahmenvertrag für Verteiler', ru:'Рамочный договор раздатчика', en:'Framework contract for distributors' },
 };
 export function legalHtml(kind, lang){
-  const l = ['de', 'ru', 'en'].includes(lang) ? lang : 'de', src = kind === 'imprint' ? IMPRINT : PRIVACY;
+  const l = ['de', 'ru', 'en'].includes(lang) ? lang : 'de';
+  if(kind === 'contract') return contractHtml(LEGAL_CTX.firm, null, l);
+  const src = { imprint:IMPRINT, terms:TERMS, agb:AGB }[kind] || PRIVACY;
   return src[l]();
 }
 
@@ -254,7 +259,7 @@ footer{margin-top:40px;border-top:1px solid var(--line);padding-top:12px}
 <h1>FlyerMap</h1>
 <nav>${langs.map(l => `<a href="#${l}" data-l="${l}">${{ de:'Deutsch', ru:'Русский', en:'English' }[l]}</a>`).join('')}</nav>
 ${langs.map(l => `<section id="s-${l}"><h1 style="font-size:22px;margin-top:18px">${e(T[l])}</h1><div class="muted">${e(sub(l))}</div>${legalHtml(kind, l)}</section>`).join('\n')}
-<footer class="muted"><a href="privacy.html">${e(LEGAL_TITLES.privacy.de)}</a>${IMPRINT_READY ? ` · <a href="impressum.html">${e(LEGAL_TITLES.imprint.de)}</a>` : ''}</footer>
+<footer class="muted">${PAGES.map(([k, f]) => `<a href="${f}">${e(LEGAL_TITLES[k].de)}</a>`).join(' · ')}</footer>
 </main>
 <script>
 function sel(l){ ${JSON.stringify(langs)}.forEach(function(x){ document.getElementById('s-'+x).classList.toggle('on',x===l); document.querySelector('[data-l='+x+']').classList.toggle('on',x===l); }); document.documentElement.lang=l; }
@@ -280,4 +285,67 @@ export function avvHtml(firm){
 <h3>§ 10 Löschung und Rückgabe</h3><p>GPS-Punkte werden nach ${RETENTION.trackMonths} Monaten gelöscht, die letzte Position ${RETENTION.positionHours} Stunden nach Arbeitsende, Benachrichtigungen nach ${RETENTION.inboxMonths} Monaten. Nach Vertragsende gibt der Auftragsverarbeiter die Daten auf Wunsch als Export heraus und löscht sie binnen 30 Tagen, soweit keine Aufbewahrungspflicht besteht.</p>
 <h3>§ 11 Nachweise und Kontrollen</h3><p>Der Auftragsverarbeiter stellt die nötigen Informationen bereit und ermöglicht Überprüfungen nach Absprache.</p>
 <h3>§ 12 Schluss</h3><p>Es gilt deutsches Recht. Der Vertrag wird elektronisch geschlossen (Art. 28 Abs. 9 DSGVO), indem ein Administrator des Verantwortlichen ihn in der App annimmt; Datum und Version werden gespeichert.</p>`;
+}
+
+/* ---------------- hosted pages ---------------- */
+export const PAGES = [['imprint', 'impressum.html'], ['privacy', 'privacy.html'], ['terms', 'nutzungsbedingungen.html'], ['agb', 'agb.html'], ['contract', 'rahmenvertrag.html']];
+
+const RU_DE = '<p class="muted">Юридически действует немецкий текст. Краткое содержание по-русски:</p>';
+const EN_DE = '<p class="muted">The German text is legally binding. Short summary in English:</p>';
+const ul = a => '<ul>' + a.map(x => `<li>${x}</li>`).join('') + '</ul>';
+
+/* ---------------- Nutzungsbedingungen (for everyone using the app; the provider's own terms) ---------------- */
+const TERMS = {
+  de:() => `<p>Diese Bedingungen gelten für die Nutzung der App FlyerMap, bereitgestellt von ${provLine()} („Anbieter“).</p>
+<h2>1. Leistung</h2><p>FlyerMap ist eine Software zur Planung und Dokumentation von Flyerverteilungen. Der Anbieter stellt nur die Software bereit. Er ist nicht Vertragspartner der Verteilaufträge; diese schließen Verteiler und das jeweilige Unternehmen direkt miteinander.</p>
+<h2>2. Konto</h2><p>Jede Person nutzt nur ihr eigenes Konto und gibt Zugangsdaten und Login-Links nicht weiter. Angaben (Name, Telefonnummer) müssen zutreffen. Ein Konto darf nur auf einem Gerät gleichzeitig arbeiten.</p>
+<h2>3. Pflichten bei der Nutzung</h2><p>Verboten sind insbesondere: falsche Standortdaten (z. B. GPS-Fälschung), automatisierte Zugriffe, Eingriffe in die Sicherheit der App, Nutzung für fremde oder rechtswidrige Zwecke.</p>
+<h2>4. Verfügbarkeit</h2><p>Der Anbieter bemüht sich um eine hohe Verfügbarkeit, schuldet aber keine ununterbrochene Erreichbarkeit. Routen, Zeiten und Briefkastenzahlen sind Schätzungen aus Kartendaten (© OpenStreetMap-Mitwirkende) und können abweichen.</p>
+<h2>5. Haftung</h2><p>Der Anbieter haftet unbeschränkt bei Vorsatz, grober Fahrlässigkeit und für Schäden aus der Verletzung von Leben, Körper oder Gesundheit. Bei leichter Fahrlässigkeit haftet er nur für die Verletzung wesentlicher Pflichten und begrenzt auf den vorhersehbaren, typischen Schaden. Die Nutzung der Navigation im Straßenverkehr erfolgt auf eigene Verantwortung; Verkehrsregeln gehen immer vor.</p>
+<h2>6. Sperrung und Ende</h2><p>Bei Verstößen kann ein Konto gesperrt werden. Das Konto kann jederzeit in der App gelöscht werden.</p>
+<h2>7. Änderungen</h2><p>Änderungen dieser Bedingungen werden in der App angekündigt.</p>
+<h2>8. Schluss</h2><p>Es gilt deutsches Recht. Datenschutz: siehe Datenschutzerklärung.</p>`,
+  ru:() => RU_DE + ul(['Поставщик даёт только программу; договор на раздачу заключают раздатчик и фирма напрямую.', 'Один аккаунт — один человек и один телефон; ссылки входа не передавать.', 'Запрещено подделывать GPS и вмешиваться в работу приложения.', 'Маршруты и число ящиков — оценки, возможны расхождения.', 'Ответственность ограничена (кроме умысла, грубой небрежности и вреда здоровью). На дороге правила движения важнее навигации.', 'За нарушения аккаунт может быть заблокирован; удалить аккаунт можно в приложении.']) + TERMS.de(),
+  en:() => EN_DE + ul(['The provider only supplies the software; distribution contracts are made between the distributor and the company directly.', 'One account per person and per phone; do not share login links.', 'GPS spoofing and interfering with the app are prohibited.', 'Routes and mailbox counts are estimates.', 'Liability is limited (except intent, gross negligence and injury). Traffic rules always come first.', 'Accounts may be blocked for violations and can be deleted in the app.']) + TERMS.de(),
+};
+
+/* ---------------- AGB for companies (B2B, software as a service) – draft with placeholders ---------------- */
+const AGB = {
+  de:() => `<p class="muted">Entwurf – vor dem offiziellen Start rechtlich prüfen lassen.</p>
+<h2>§ 1 Geltung</h2><p>Diese AGB gelten für alle Verträge zwischen ${provLine()} („Anbieter“) und Unternehmen („Kunde“) über die Nutzung von FlyerMap. Sie gelten nur gegenüber Unternehmern (§ 14 BGB). Abweichende Bedingungen des Kunden gelten nicht.</p>
+<h2>§ 2 Leistung</h2><p>Der Anbieter stellt die Software FlyerMap (App und Web-Verwaltung) als Online-Dienst bereit: Routenplanung, Zuteilung an Verteiler, GPS-Nachweis, Auswertungen. Der Kunde schließt die Verträge mit seinen Verteilern selbst; der Anbieter ist daran nicht beteiligt. Der in der App angebotene Muster-Rahmenvertrag ist ein unverbindlicher Vorschlag ohne Rechtsberatung; der Kunde prüft und verantwortet seine Verträge selbst.</p>
+<h2>§ 3 Vertragsschluss und Laufzeit</h2><p>Der Vertrag kommt mit der Registrierung des Kunden in der App zustande. Laufzeit: [monatlich, kündbar zum Monatsende in Textform].</p>
+<h2>§ 4 Vergütung</h2><p>[Preis, z. B. … € pro aktivem Verteiler und Monat zzgl. USt.]. Zahlung binnen 14 Tagen nach Rechnung. Während der Testphase ist die Nutzung kostenlos.</p>
+<h2>§ 5 Pflichten des Kunden</h2><p>Der Kunde informiert seine Verteiler über die Standorterfassung, nutzt die Daten nur zu den vereinbarten Zwecken, beachtet das Arbeits- und Sozialversicherungsrecht (insbesondere die richtige Einordnung als Arbeitnehmer oder Selbständige) sowie Verbote der Verteilung an Briefkästen mit Werbeverbot, soweit es sich um Werbung handelt.</p>
+<h2>§ 6 Verfügbarkeit</h2><p>Angestrebte Verfügbarkeit [98 %] im Monatsmittel, ausgenommen Wartung und Störungen außerhalb des Einflussbereichs des Anbieters (z. B. Hosting, Mobilfunk, Kartendienste).</p>
+<h2>§ 7 Haftung</h2><p>Unbeschränkte Haftung bei Vorsatz, grober Fahrlässigkeit, Verletzung von Leben, Körper, Gesundheit und nach dem Produkthaftungsgesetz. Im Übrigen nur bei Verletzung wesentlicher Vertragspflichten, begrenzt auf den vertragstypischen, vorhersehbaren Schaden, höchstens [die Vergütung der letzten 12 Monate]. Keine Haftung für entgangenen Gewinn und für die Richtigkeit geschätzter Routen- und Briefkastendaten.</p>
+<h2>§ 8 Datenschutz</h2><p>Der Kunde ist Verantwortlicher für die Daten seiner Verteiler; es gilt der in der App abgeschlossene Auftragsverarbeitungsvertrag (${e(AVV_VERSION)}).</p>
+<h2>§ 9 Daten nach Vertragsende</h2><p>Export auf Wunsch, Löschung binnen 30 Tagen nach Vertragsende, soweit keine Aufbewahrungspflicht besteht.</p>
+<h2>§ 10 Schluss</h2><p>Deutsches Recht. Gerichtsstand ist [Sitz des Anbieters], soweit gesetzlich zulässig. Änderungen der AGB werden 30 Tage vorher in Textform angekündigt; widerspricht der Kunde nicht, gelten sie als angenommen.</p>`,
+  ru:() => RU_DE + ul(['AGB действуют только для фирм (B2B).', 'Поставщик даёт программу; договоры с раздатчиками фирма заключает сама и сама за них отвечает (типовой договор в приложении — только образец).', 'Цена и срок — [заполнить]; во время теста бесплатно.', 'Фирма сама отвечает за правильное оформление раздатчиков (работник или самозанятый) и за запрет рекламы на ящиках.', 'Ответственность поставщика ограничена.', 'Данные: действует AVV; после окончания — экспорт и удаление за 30 дней.']) + AGB.de(),
+  en:() => EN_DE + ul(['B2B only.', 'The provider supplies the software; companies contract their distributors themselves (the in-app contract is only a template).', 'Price and term: [to be filled in]; free during the test phase.', 'Companies are responsible for classifying distributors correctly and respecting “no advertising” mailboxes.', 'Limited liability.', 'Data processing agreement applies; export and deletion within 30 days after the end.']) + AGB.de(),
+};
+
+/* ---------------- Rahmenvertrag: company ↔ freelance distributor. Standard text; a company may replace it. ---------------- */
+export const CONTRACT_STD_VERSION = 'RV-2026-11-05';   // must match contract_std_version() in the database
+const eur = n => (Math.round((+n || 0) * 100) / 100).toLocaleString('de-DE', { minimumFractionDigits:0, maximumFractionDigits:2 }) + ' €';
+const firmParty = f => f && f.name ? [f.name, f.representative ? 'vertreten durch ' + f.representative : '', f.street, [f.zip, f.city].filter(Boolean).join(' ')].filter(Boolean).map(e).join(', ') : '[Unternehmen, Anschrift]';
+// cfg: { text, cancel_hours, penalty_eur } (from the database); custom text: plain text, blank lines = paragraphs, {firma} {stunden} {strafe} filled in
+export function contractHtml(firm, cfg, lang = 'de'){
+  const c = cfg || {}, h = c.cancel_hours != null ? c.cancel_hours : 48, pen = c.penalty_eur != null ? c.penalty_eur : 50;
+  if(c.text) return c.text.split(/\n\s*\n/).map(p => `<p>${e(p).replace(/\n/g, '<br>').replace(/\{firma\}/g, firmParty(firm)).replace(/\{stunden\}/g, h).replace(/\{strafe\}/g, eur(pen))}</p>`).join('');
+  const sum = lang === 'ru' ? RU_DE + ul([`Вы работаете как самостоятельный предприниматель (Gewerbe) и выставляете фирме счета (Rechnung).`, `Сам договор не обязывает брать заказы. Но нажав «Verbindlich zusagen» в приложении, вы <b>обязаны</b> выполнить этот заказ в выбранные дни.`, `Отменить бесплатно можно не позднее чем за <b>${h} ч</b> до начала первого дня (08:00). Позже — только по уважительной причине (болезнь, форс-мажор), сразу сообщить.`, `Неявка или поздняя отмена без уважительной причины, а также выброшенные/не разнесённые флаеры: <b>штраф ${eur(pen)}</b> за каждый день (засчитывается в возмещение ущерба, можно удержать из счёта).`, `Флаеры только в ящики по маршруту, не выбрасывать; GPS-запись во время работы — как доказательство.`, `Оплата — по часам из приложения (без пауз), налоги и страхование — сами.`, `Договор можно расторгнуть в любой момент; уже подтверждённые заказы нужно выполнить.`])
+    : lang === 'en' ? EN_DE + ul([`You work as a self-employed contractor and invoice the company.`, `The framework contract itself does not oblige you to take orders. Tapping “Verbindlich zusagen” makes that order <b>binding</b> for the chosen days.`, `Free cancellation up to <b>${h} h</b> before the first day (08:00). Later only for good cause (illness, force majeure), to be reported at once.`, `No-show or late cancellation without good cause, or dumped / undistributed flyers: <b>contractual penalty of ${eur(pen)}</b> per day (offset against damages, may be deducted from your invoice).`, `Hourly pay as recorded in the app (without breaks); you handle tax and insurance yourself.`, `Terminable at any time; confirmed orders must still be completed.`]) : '';
+  return sum + `<p>Rahmenvertrag über die selbständige Verteilung von Werbemitteln (Version ${e(CONTRACT_STD_VERSION)})</p>
+<p>zwischen ${firmParty(firm)} („Auftraggeber“) und der in FlyerMap registrierten Person („Auftragnehmer“).</p>
+<h3>§ 1 Gegenstand</h3><p>Der Auftragnehmer verteilt für den Auftraggeber Flyer und andere Werbemittel als selbständiger Unternehmer. Ein Arbeitsverhältnis wird nicht begründet. Dieser Rahmenvertrag regelt die Bedingungen der einzelnen Verteilaufträge; er verpflichtet keine Seite, Einzelaufträge anzubieten oder anzunehmen.</p>
+<h3>§ 2 Einzelauftrag und verbindliche Zusage</h3><p>Der Auftraggeber bietet Einzelaufträge in der App FlyerMap an (Gebiet, Route, Umfang, Arbeitstage). Mit der Bestätigung „Verbindlich zusagen“ (bzw. Übernahme einer freien Route) nimmt der Auftragnehmer den Einzelauftrag an. Ab diesem Zeitpunkt ist er verpflichtet, den Auftrag an den zugesagten Tagen vollständig und ordnungsgemäß auszuführen. Datum, Uhrzeit und Vertragsversion der Zusage werden gespeichert.</p>
+<h3>§ 3 Ausführung</h3><p>Der Auftragnehmer wirft die Werbemittel entlang der Route in die Briefkästen ein, nicht in Briefkästen mit Hinweis „Keine Werbung“ o. Ä., sofern der Auftraggeber nichts anderes für nicht-werbliche Inhalte bestimmt. Werbemittel dürfen nicht weggeworfen, gestapelt abgelegt oder an Dritte weitergegeben werden. Innerhalb des Auftrags bestimmt der Auftragnehmer Reihenfolge, Arbeitsbeginn und Pausen selbst. Zur Abrechnung und zum Nachweis zeichnet die App während der Arbeitszeit die gelaufene Strecke auf (siehe Datenschutzerklärung).</p>
+<h3>§ 4 Absage</h3><p>Der Auftragnehmer kann einen zugesagten Einzelauftrag bis ${h} Stunden vor Beginn des ersten zugesagten Arbeitstags (08:00 Uhr) in der App kostenfrei absagen. Danach ist eine Absage nur aus wichtigem Grund möglich, insbesondere bei Krankheit (auf Verlangen mit Nachweis) oder höherer Gewalt; sie ist unverzüglich in der App oder telefonisch mitzuteilen.</p>
+<h3>§ 5 Vertragsstrafe</h3><p>Erscheint der Auftragnehmer schuldhaft nicht zu einem zugesagten Arbeitstag, sagt er nach Ablauf der Frist aus § 4 ohne wichtigen Grund ab, oder entsorgt er Werbemittel bzw. verteilt sie entgegen § 3 nicht, zahlt er für jeden betroffenen Arbeitstag eine Vertragsstrafe von ${eur(pen)}, insgesamt höchstens das Dreifache je Einzelauftrag. Die Vertragsstrafe wird auf einen weitergehenden Schadensersatz angerechnet. Dem Auftragnehmer bleibt der Nachweis vorbehalten, dass kein oder ein geringerer Schaden entstanden ist. Der Auftraggeber kann die Vertragsstrafe mit Vergütungsansprüchen verrechnen.</p>
+<h3>§ 6 Vergütung und Rechnung</h3><p>Die Vergütung richtet sich nach dem vereinbarten Stundensatz [… € / Stunde] für die in der App erfasste Arbeitszeit ohne Pausen, soweit im Einzelauftrag nichts anderes vereinbart ist. Der Auftragnehmer stellt nach Abschluss des Einzelauftrags eine Rechnung; sie ist binnen 14 Tagen zahlbar. Steuern, Gewerbeanmeldung und Versicherungen sind Sache des Auftragnehmers.</p>
+<h3>§ 7 Mängel</h3><p>Ist ein Teil der Route nachweislich nicht verteilt, kann der Auftraggeber Nachholung verlangen oder die Vergütung für diesen Teil kürzen.</p>
+<h3>§ 8 Weitere Auftraggeber</h3><p>Der Auftragnehmer darf auch für andere Auftraggeber tätig sein.</p>
+<h3>§ 9 Laufzeit</h3><p>Der Rahmenvertrag gilt auf unbestimmte Zeit und kann von beiden Seiten jederzeit in Textform gekündigt werden. Bereits zugesagte Einzelaufträge sind noch auszuführen, es sei denn, beide Seiten heben sie auf.</p>
+<h3>§ 10 Schluss</h3><p>Der Vertrag wird elektronisch geschlossen, indem der Auftragnehmer ihn in der App bestätigt; Version und Zeitpunkt werden gespeichert. Änderungen werden in der App angezeigt und gelten für neue Einzelaufträge nach erneuter Bestätigung. Es gilt deutsches Recht. Sollte eine Bestimmung unwirksam sein, bleibt der Vertrag im Übrigen wirksam.</p>`;
 }

@@ -7,6 +7,7 @@ import { cpMarker } from './admin.js';
 import { openMapView } from './routeview.js';
 import { locationNote, legalLinks, bindLegal } from './legalview.js';
 import { setLegalFirm } from './legal.js';
+import { commitDialog, cancelDialog, cancelLabel, contractGate } from './contractview.js';
 import { t, I } from './i18n.js';
 import { NATIVE, PRIVACY_URL, sb, store, rpc, errText, deMobile, $, esc, css, hav, fmtDist, fmtHm, fmtN, fmtTime, fmtDay, loopPath } from './core.js';
 import { waVerify } from './auth.js';
@@ -74,7 +75,7 @@ export async function flush(){
 setInterval(flush, 8000);
 
 export async function loadMe(){
-  try{ W.me = await rpc('worker_me', { p_token:W.token }); await store.set('me', W.me); setLegalFirm(W.me && W.me.company); }
+  try{ W.me = await rpc('worker_me', { p_token:W.token }); await store.set('me', W.me); setLegalFirm(W.me && W.me.company); if(!W.ctAsked){ W.ctAsked = true; contractGate(rpc, W.token); } }
   catch(e){ if(e.message === 'invalid_token') return forceLogout(t('e_invalid_token')); W.me = W.me || await store.get('me'); return; }
   syncSkips();
   preloadMaps();
@@ -406,7 +407,7 @@ function viewTaskDetail(task){
       ${plan && (st === 'offered' || st === 'open') ? `<h2 class="sec">${esc(t('pickDays'))}</h2><p class="small muted" style="margin-top:-6px">${esc(t('dayHint', { h:(plan.minutes / 60).toFixed(1).replace('.', ','), n:need }))}</p>
         <div class="dates">${Array.from({ length:need }, (_, i) => `<label><span>${esc(t('dayN', { n:i + 1 }))}</span><input class="in" type="date" data-day="${i}" min="${today}" value="${addDays(first, i)}"></label>`).join('')}</div>
         ${st === 'open' ? `<button class="btn primary" id="claim">${esc(t('claim'))}</button>` : `<button class="btn primary" id="acc">${esc(t('accept'))}</button><button class="btn ghost" id="dec">${esc(t('decline'))}</button>`}<div class="err" id="accErr"></div>` : ''}
-      ${plan && st === 'accepted' ? `<p class="hint">${esc(t('yourDates'))}: <b>${esc(dayList(plan).map(fmtDay).join(', '))}</b> <button class="link" id="chgDates">${esc(t('chgDates'))}</button></p>
+      ${plan && st === 'accepted' ? `<p class="hint">${esc(t('yourDates'))}: <b>${esc(dayList(plan).map(fmtDay).join(', '))}</b> <button class="link" id="chgDates">${esc(t('chgDates'))}</button> · <button class="link danger-text" id="cnPlan">${esc(cancelLabel())}</button></p>
         <div id="chgBox" hidden><div class="dates">${Array.from({ length:need }, (_, i) => `<label><span>${esc(t('dayN', { n:i + 1 }))}</span><input class="in" type="date" data-cday="${i}" value="${esc(dayList(plan)[i] || addDays(dayList(plan)[0] || first, i))}"></label>`).join('')}</div>
         <button class="btn primary" id="chgSave">${esc(t('save'))}</button><div class="err" id="chgErr"></div></div>` : ''}
       ${plan && st === 'declined' ? `<p class="note">${esc(t('stDeclined'))}</p>` : ''}
@@ -429,6 +430,7 @@ function viewTaskDetail(task){
       if(next >= 0 && plan.days[next]){ const q = plan.path[plan.days[next].i0]; if(q){ const g = $('#dirG'), a = $('#dirA'); if(g) g.href = (task.bike ? rideLink(task) : gTransit)(q[0], q[1]); if(a) a.href = aTransit(q[0], q[1]); } } if(go && next >= 0) go.querySelector('span').textContent = t(pc[next] >= 3 ? 'contDayN' : 'startDayN', { n:next + 1 });
     }).catch(() => {});
   }
+  if($('#cnPlan')) $('#cnPlan').onclick = async () => { if(await cancelDialog(rpc, W.token, plan.id, [...dayList(plan)].sort()[0])){ await loadMe(); workerTab('tasks'); } };
   if($('#chgDates')) $('#chgDates').onclick = () => { $('#chgBox').hidden = !$('#chgBox').hidden; };
   if($('#chgSave')) $('#chgSave').onclick = async () => {
     const dates = [...document.querySelectorAll('[data-cday]')].map(i => i.value).filter(Boolean);
@@ -440,6 +442,7 @@ function viewTaskDetail(task){
   if($('#acc')) $('#acc').onclick = async () => {
     const dates = [...document.querySelectorAll('[data-day]')].map(i => i.value).filter(Boolean);
     if(dates.length < need || new Set(dates).size !== dates.length){ $('#accErr').textContent = t('e_date_required'); return; }
+    if(!await commitDialog(rpc, W.token)) return;
     $('#acc').disabled = true;
     try{ await rpc('respond_plan', { p_token:W.token, p_plan_id:plan.id, p_accept:true, p_dates:dates.sort() }); await loadMe(); toast(t('stAccepted')); viewTaskDetail(tasks().find(x => x.id === task.id) || task); }
     catch(e){ $('#accErr').textContent = errText(e); $('#acc').disabled = false; }
@@ -447,6 +450,7 @@ function viewTaskDetail(task){
   if($('#claim')) $('#claim').onclick = async () => {
     const dates = [...document.querySelectorAll('[data-day]')].map(i => i.value).filter(Boolean);
     if(dates.length < need || new Set(dates).size !== dates.length){ $('#accErr').textContent = t('e_date_required'); return; }
+    if(!await commitDialog(rpc, W.token)) return;
     $('#claim').disabled = true;
     try{
       await rpc('claim_plan', { p_token:W.token, p_plan_id:plan.id, p_dates:dates.sort() }); await loadMe(); toast(t('claimed'));
