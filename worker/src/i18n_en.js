@@ -163,7 +163,7 @@ Object.assign(T.en, { busTrain:'Bus & train (Google Maps)', appleMaps:'Apple Map
 Object.assign(T.en, { newLinkAcc:'Add worker with login link', newLinkHint:'As long as SMS login is not active: create the account and send the link to the worker. Name, phone and cities are entered by the worker in the profile.', nameOpt:'Name (optional)', cityOpt:'Town (optional)', createLink:'Create account', newWorkerName:'New worker' });
 Object.assign(T.en, { sideTowns:'More towns (optional)', sideTownsHint:'Where the customer also wants flyers: type a name (its borders are used) or draw it on the map. Places further away get their own start and one worker. The route is calculated in the next step.', drawOwn:'Draw on the map', areaN:'Area {n}', sideNeedStart:'First search the start address above (main town).' });
 Object.assign(T.en, { busHint:'By bus / train instead of walking (no mailboxes on the way): {list}' });
-Object.assign(T.en, { joinTitle:'Create account', joinFirm:'You were invited by {name}. Enter your name – phone and towns follow in your profile.', joinGo:'Create account', inviteTitle:'Invitation link for new workers', inviteHint:'Send this link to new workers (e.g. via WhatsApp). Whoever opens it creates their own account in your firm – no SMS. New link: renew the code under Settings → Firm.', inviteMsg:'Hi! Here you can create your account for the flyer distribution: {link}' });
+Object.assign(T.en, { joinTitle:'Create account', joinFirm:'You were invited by {name}. Enter your name and mobile number – your towns follow in your profile.', joinGo:'Create account', inviteTitle:'Invitation link for new workers', inviteHint:'Send this link to new workers (e.g. via WhatsApp). Whoever opens it creates their own account in your firm – no SMS. New link: renew the code under Settings → Firm.', inviteMsg:'Hi! Here you can create your account for the flyer distribution: {link}' });
 T.en.noPhoneYet = 'Phone number not entered yet';
 Object.assign(T.en, { addrMain:'Start address in the main town', mainCityAuto:'taken from the address', startOnMap:'Start point set on the map.' });
 T.en.quotaHours = 'Hours are calculated from it: route length ÷ quota × 30 min plus 5 s per mailbox.';
@@ -193,3 +193,4 @@ Object.assign(T.en, { noQuota:'No quota (no pace warnings, e.g. by car)', driveT
 Object.assign(T.en, { tabStats:'Statistics' });
 Object.assign(T.en, { fRange:'Period', fWho:'Find a worker' });
 Object.assign(T.en, { joinPhone:'Mobile number', joinPhoneHint:'So you can log back into the same account on any phone later.', joinPhoneNeed:'Please enter your mobile number.', joinPhoneTaken:'There is already an account with this number.', joinToLogin:'Log in' });
+Object.assign(T.en, { more:'More' });

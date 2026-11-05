@@ -85,7 +85,9 @@ export function every(ms, fn){ const id = setInterval(fn, ms); UI.timers.push(id
 export function plain(html){ cleanup(); $('#root').innerHTML = `<div class="plain"><div class="plain-in">${html}</div></div>`; }
 // screen inside the tab shell
 // where the person is (…#task/<id>): kept in the address, so a reload opens the same screen again
-export function setLoc(s){ try{ history.replaceState(history.state, '', location.pathname + location.search + (s ? '#' + s : '')); }catch{} }
+// admin: every screen is a history entry, so the browser's back/forward buttons work (popstate → UI.onRoute)
+export function setLoc(s){ try{ const url = location.pathname + location.search + (s ? '#' + s : ''); if(UI.role === 'admin' && UI.routed && location.hash.slice(1) !== s) history.pushState(null, '', url); else history.replaceState(history.state, '', url); UI.routed = true; }catch{} }
+window.addEventListener('popstate', () => { if(UI.role === 'admin' && UI.onRoute) UI.onRoute(); });
 export const getLoc = () => { try{ return decodeURIComponent((location.hash || '').slice(1)); }catch{ return ''; } };
 export function shell(tab, html, opts = {}){
   cleanup(); UI.tab = tab; setLoc(tab);

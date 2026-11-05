@@ -122,6 +122,13 @@ function workerOptions(lat, lng, sel){
 
 /* ---------- tabs ---------- */
 async function adminLogout(){ if(await confirmBox(t('logout'), t('logoutQ'), t('logout'))){ await sb.auth.signOut(); for(const k of ['role', 'token', 'me', 'canAdmin']) await store.del(k); A.hooks.loggedOut && A.hooks.loggedOut(); } }
+function routeFromHash(){
+  const [k, id] = getLoc().split('/');
+  if(k === 'task' && id && A.tasks.some(x => x.id === id)) return viewTask(id);
+  if(k === 'worker' && id && A.workers.some(w => w.id === id)) return viewWorker(id);
+  if(k === 'new') return viewCreate();
+  adminTab(['map', 'people', 'tasks', 'settings', 'stats'].includes(k) ? k : 'tasks');
+}
 export function adminTab(tab){
   if(tab === 'map') return viewLive();
   if(tab === 'people') return viewPeople();
@@ -427,7 +434,7 @@ async function viewPeople(){
 function viewSettings(){
   shell('settings', `${topbar(t('tabSettings'))}
     <div class="pad">
-      ${A.company && A.company.master ? `<button class="btn primary" id="tMaster" style="margin-top:16px">${ICONS.users}${esc(t('master'))}</button>` : ''}
+      ${A.company && A.company.master ? `<button class="btn ghost small" id="tMaster" style="margin-top:8px;width:auto">${ICONS.users}${esc(t('master'))}</button>` : ''}
       ${A.company && A.company.id ? firmCardHtml(A.company) : ''}
       ${A.company && A.company.id ? adminContractHtml() : ''}
       <h2 class="sec">${esc(t('accountSettings'))}</h2>
@@ -756,18 +763,17 @@ function viewTasks(){
   const nOpen = A.tasks.filter(x => x.status === 'open').length, nLive = A.tasks.filter(taskLive).length, nDone = A.tasks.length - nOpen;
   const nf = ['city', 'district', 'from', 'to'].filter(k => f[k]).length;
   const firmTodo = A.company && A.company.id && !A.company.master && (!firmComplete(A.company) || !avvOk(A.company));
-  shell('tasks', `${topbar(t('tasks'))}
+  shell('tasks', `${topbar(t('tasks'), null, `<button class="btn primary small desk-only" id="tNew">${ICONS.plus}${esc(t('createTask'))}</button>`)}
     <div class="pad">
       ${firmTodo ? `<button class="warnbox firm-todo" id="firmTodo">${esc(!firmComplete(A.company) ? t('firmMissing') : t('firmAvvMissing'))} ›</button>` : ''}
-      <div class="kpis">${[['open', 'k-info', nOpen, t('fOpen')], ['live', 'k-ok', nLive, t('stLive')], ['done', 'k-neutral', nDone, t('fDone')]].map(([k, c, n, l]) => `<button class="kpi ${c} ${f.status === k ? 'on' : ''}" data-st="${f.status === k && k !== 'open' ? 'open' : k}" aria-pressed="${f.status === k}"><b>${n}</b><span>${esc(l)}</span></button>`).join('')}</div>
-      <div class="chips" style="margin:0 0 10px">${[['open', t('fOpen')], ['live', t('stLive')], ['done', t('fDone')], ['all', t('fAll')]].map(([k, l]) => `<button class="chip ${f.status === k ? 'on' : ''}" data-st="${k}" aria-pressed="${f.status === k}">${esc(l)}</button>`).join('')}</div>
+      <div class="kpis">${[['open', 'k-info', nOpen, t('fOpen')], ['live', 'k-ok', nLive, t('stLive')], ['done', 'k-neutral', nDone, t('fDone')], ['all', 'k-neutral', A.tasks.length, t('fAll')]].map(([k, c, n, l]) => `<button class="kpi ${c} ${f.status === k ? 'on' : ''}" data-st="${f.status === k && k !== 'open' ? 'open' : k}" aria-pressed="${f.status === k}"><b>${n}</b><span>${esc(l)}</span></button>`).join('')}</div>
       <details class="filters" ${nf ? 'open' : ''}><summary>${ICONS.search}${esc(t('filter'))}${nf ? `<span class="cnt">${nf}</span>` : ''}</summary><div class="f-body">
         <div class="steppers">${sel('fCity', t('fCity'), opts('city_name'), f.city)}${sel('fDist', t('fDistrict'), opts('district'), f.district)}</div>
         <div class="dfilter"><div><label class="f" for="fFrom">${esc(t('fFrom'))}</label><input class="in small" type="date" id="fFrom" value="${esc(f.from)}"></div><div><label class="f" for="fTo">${esc(t('fTo'))}</label><input class="in small" type="date" id="fTo" value="${esc(f.to)}"></div></div>
         ${nf ? `<button class="link" id="fReset" style="margin-top:8px">${esc(t('reset'))}</button>` : ''}</div></details>
-      ${list.length ? list.map(card).join('') : A.tasks.length ? emptyState(t('noMatch'), 'search') : `${emptyState(t('noOpenTasks'), 'flag')}<button class="btn primary" id="create" style="margin-top:12px">${ICONS.plus}${esc(t('createTask'))}</button>`}
+      ${list.length ? `<div class="task-grid">${list.map(card).join('')}</div>` : A.tasks.length ? emptyState(t('noMatch'), 'search') : `${emptyState(t('noOpenTasks'), 'flag')}<button class="btn primary" id="create" style="margin-top:12px">${ICONS.plus}${esc(t('createTask'))}</button>`}
     </div>`, { fab:t('createTask') });
-  $('#fab').onclick = () => viewCreate();
+  $('#fab').onclick = () => viewCreate(); if($('#tNew')) $('#tNew').onclick = () => viewCreate();
   if($('#create')) $('#create').onclick = () => viewCreate();
   if($('#firmTodo')) $('#firmTodo').onclick = () => { A.focusFirm = true; adminTab('settings'); };
   const again = () => viewTasks();
@@ -1210,7 +1216,7 @@ function editTaskSheet(tk, plans, routes){
   const rp = mo.querySelector('#eReplan'); if(rp) rp.onclick = () => { mo.remove(); viewCreate({ tk, plans }); };
 }
 /* task detail: info + map + routes with status, worker assignment and progress */
-const dayLines = (days, col, pid) => (days && days.length > 1) ? days.map((x, k) => `<span class="small day-line"><b><i class="dsw" style="background:${esc(dayColor(col, k))}"></i>${esc(t('dayN', { n:k + 1 }) + (x.place ? ' · ' + x.place : ''))}:</b> ${esc(t('routeLine', { km:fmtDist(x.length_m), h:fmtHm(x.minutes), mb:fmtN(x.mailboxes) }))}${pid ? `<em class="day-pct" id="dp${pid}_${k}"></em>` : ''}</span>`).join('') : '';
+const dayLines = (days, col, pid) => (days && days.length > 1) ? days.map((x, k) => `<span class="small day-line"><b><i class="dsw" style="background:${esc(dayColor(col, k))}"></i>${esc(t('dayN', { n:k + 1 }) + (x.place ? ' · ' + x.place : ''))}</b> ${esc(t('routeLine', { km:fmtDist(x.length_m), h:fmtHm(x.minutes), mb:fmtN(x.mailboxes) }))}${pid ? `<em class="day-pct" id="dp${pid}_${k}"></em>` : ''}</span>`).join('') : '';
 const stText = p => p.status === 'accepted' ? t('stAccepted') : p.status === 'declined' ? t('stDeclined') : p.status === 'done' ? t('stDone') : t('stOffered');
 const stCls = p => p.status === 'done' ? 'ok' : p.status === 'accepted' ? '' : p.status === 'declined' ? 'bad' : 'neutral';   // angeboten = neutral, angenommen = blau, erledigt = grün, abgelehnt = rot
 // walked so far on one route (all sessions, also the running one; a session lying inside another one counts once)
@@ -1255,7 +1261,7 @@ async function viewTask(id){
   const invite = w => t('invite', { name:w.name, title:tk.title, date:tk.work_date ? ', ' + fmtDay(tk.work_date) : '' });
   shell('tasks', `${topbar(tk.title, true)}
     <div class="pad">
-      <h2 class="sec" style="margin-top:4px">${esc(t('taskInfo'))}:</h2>
+      <h2 class="sec" style="margin-top:4px">${esc(t('taskInfo'))}</h2>
       <div class="info">
         <div><span>${esc(t('place'))}</span><b>${esc([tk.district, tk.city_name].filter(Boolean).join(', ') || '—')}</b></div>
         <div><span>${esc(t('date'))}</span><b>${esc(fmtDay(tk.work_date))}</b></div>
@@ -1286,8 +1292,7 @@ async function viewTask(id){
         ${w ? `<button class="rr-worker" data-wk="${w.id}">${avatar()}<span class="grow"><b>${esc(w.name)}</b><small>${esc(t('openWorker'))}</small></span><span class="rr-chev">›</span></button>
         <div class="rr-btns"><a class="btn ghost small" target="_blank" rel="noopener" href="${waLink(w.phone, invite(w))}">${ICONS.chat}${esc(t('write'))}</a><button class="btn ghost small" data-swap="${p.id}">${ICONS.users}${esc(t('swapWorker'))}</button></div>` : ''}
         <div class="rr-swap" id="sw${p.id}" ${w ? 'hidden' : ''}><select class="in small" data-plan="${p.id}">${workerOptions(tk.start_lat, tk.start_lng, p.worker_id)}</select><span class="small muted">${esc(t('replaceHint'))}</span></div></div></div>`; }).join('') : `<p class="muted small">${esc(t('noPlans'))}</p>`}
-      <div class="tool-row" style="margin-top:16px"><button class="btn ghost small" id="tEdit">${ICONS.edit}${esc(t('editTask'))}</button><button class="btn ghost small" id="tDone">${ICONS.check}${esc(tk.status === 'open' ? t('finish') : t('reopen'))}</button>${tk.status === 'open' ? `<button class="btn ghost small" id="tCancel">${ICONS.close}${esc(t('cancelTask'))}</button>` : ''}<button class="btn ghost small danger-text" id="tDel">${esc(t('del'))}</button></div>
-      <p class="small muted">${esc(t('desktop'))}</p>
+      <div class="tool-row" style="margin-top:16px"><button class="btn ghost small" id="tEdit">${ICONS.edit}${esc(t('editTask'))}</button><button class="btn ghost small" id="tDone">${ICONS.check}${esc(tk.status === 'open' ? t('finish') : t('reopen'))}</button><details class="more-menu"><summary class="btn ghost small" aria-label="${esc(t('more'))}">⋯</summary><div class="mm-pop">${tk.status === 'open' ? `<button class="mm-i" id="tCancel">${ICONS.close}${esc(t('cancelTask'))}</button>` : ''}<button class="mm-i danger-text" id="tDel">${esc(t('del'))}</button></div></details></div>
     </div>`); setLoc('task/' + id);
   bindBack(viewTasks);
   const m = makeMap($('#tMap'), [tk.start_lat, tk.start_lng], 14);
@@ -1546,9 +1551,6 @@ export async function bootAdmin(){
 }
 // after a reload: the screen the admin was on (order, worker, new order …), else the orders
 function restoreAdmin(){
-  const [k, id] = getLoc().split('/');
-  if(k === 'task' && id && A.tasks.some(x => x.id === id)) return viewTask(id);
-  if(k === 'worker' && id && A.workers.some(w => w.id === id)) return viewWorker(id);
-  if(k === 'new') return viewCreate();
-  adminTab(['map', 'people', 'tasks', 'settings', 'stats'].includes(k) ? k : 'tasks');
+  UI.onRoute = routeFromHash;
+  routeFromHash();
 }

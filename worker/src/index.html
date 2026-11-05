@@ -455,6 +455,26 @@ button.rbtn{width:100%;background:none;border:0;padding:var(--space-3) var(--spa
   .sheet{left:16px;right:auto;width:min(520px, calc(100% - 32px));bottom:16px;border-radius:var(--radius-xl)}
 }
 .tab-out{display:none}
+/* order info as tiles, orders list grid, header button on desktop, ⋯ menu */
+.info{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-2);background:none;border:0;box-shadow:none;padding:0}
+.info>div{display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:2px;padding:var(--space-3);border:0!important;border-radius:var(--radius-md);background:var(--color-surface-subtle)}
+.info span{max-width:none;font-size:12px}.info b{text-align:left;font-size:15px}
+@media (min-width:900px){.info{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.kpis:has(>:nth-child(4)){grid-template-columns:repeat(4,minmax(0,1fr))}
+@media (max-width:420px){.kpis:has(>:nth-child(4)){grid-template-columns:repeat(2,minmax(0,1fr))}}
+.desk-only{display:none!important}
+.task-grid{display:grid;grid-template-columns:1fr;gap:var(--space-3)}.task-grid>*{margin:0!important}
+.more-menu{position:relative;display:inline-block}.more-menu>summary{list-style:none;cursor:pointer;width:auto;min-width:44px}.more-menu>summary::-webkit-details-marker{display:none}
+.mm-pop{position:absolute;right:0;bottom:calc(100% + 6px);min-width:200px;background:var(--color-surface-elevated,var(--color-surface));border:1px solid var(--color-border);border-radius:var(--radius-md);box-shadow:var(--shadow-md);padding:var(--space-1);z-index:30}
+.mm-i{display:flex;align-items:center;gap:8px;width:100%;border:0;background:none;color:var(--color-text);font:inherit;font-size:14px;padding:10px 12px;border-radius:var(--radius-sm);cursor:pointer;text-align:left}
+.mm-i svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+@media (hover:hover){.mm-i:hover{background:var(--color-surface-subtle)}}
+@media (min-width:1100px){
+  .desk-only{display:inline-flex!important}
+  .shell:has(.desk-only) .fab{display:none}
+  .task-grid{grid-template-columns:1fr 1fr}
+}
+
 /* worker settings card */
 .set-card{display:block!important;padding:var(--space-4)}
 .set-grid{display:grid;grid-template-columns:1fr;gap:var(--space-3)}
