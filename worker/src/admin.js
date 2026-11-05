@@ -663,12 +663,12 @@ function taskMatches(tk){
 }
 // an order is "unterwegs" while one of its workers records a route right now (GPS alone is not enough: the route must be running)
 const taskLive = tk => tk.status === 'open' && (A.live || []).some(r => r.task_id === tk.id && !r.paused_at);
-const taskState = tk => tk.status !== 'open' ? ['done', t('stDoneTask')] : taskLive(tk) ? ['live', t('stLive')] : (tk.task_workers || []).length ? ['info', t('stPlanned')] : ['neutral', t('stNoWorkers')];
-const accOf = k => ({ done:'acc-neutral', ok:'acc-ok', live:'acc-ok', info:'acc-info', warn:'acc-warn', bad:'acc-bad', neutral:'acc-neutral' }[k]);
+const taskState = tk => tk.status === 'cancelled' ? ['cancel', t('stCancelled')] : tk.status !== 'open' ? ['done', t('stDoneTask')] : taskLive(tk) ? ['live', t('stLive')] : (tk.task_workers || []).length ? ['info', t('stPlanned')] : ['neutral', t('stNoWorkers')];
+const accOf = k => ({ done:'acc-ok', cancel:'acc-bad', ok:'acc-ok', live:'acc-ok', info:'acc-info', warn:'acc-warn', bad:'acc-bad', neutral:'acc-neutral' }[k]);
 function viewTasks(){
   const opts = k => [...new Set(A.tasks.map(x => x[k]).filter(Boolean))].sort();
   const sel = (id, label, list, cur) => `<div><label class="f" for="${id}">${esc(label)}</label><select class="in small" id="${id}"><option value="">${esc(t('fAll'))}</option>${list.map(v => `<option ${v === cur ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></div>`;
-  const card = tk => { const [k, txt] = taskState(tk); return `<button class="card acc ${accOf(k)} task-card ${k === 'done' ? 'is-done' : ''}" data-id="${tk.id}"><div class="tc-main"><b>${k === 'done' ? `<span class="done-ic">${ICONS.check}</span>` : ''}${esc(tk.title)}</b>
+  const card = tk => { const [k, txt] = taskState(tk); return `<button class="card acc ${accOf(k)} task-card ${k === 'done' ? 'is-done' : k === 'cancel' ? 'is-cancel' : ''}" data-id="${tk.id}"><div class="tc-main"><b>${k === 'done' ? `<span class="done-ic">${ICONS.check}</span>` : k === 'cancel' ? `<span class="done-ic">${ICONS.close}</span>` : ''}${esc(tk.title)}</b>
     <div class="tc-meta">${coName(tk.company_id) ? `<i>${ICONS.users}${esc(coName(tk.company_id))}</i>` : ''}<i>${ICONS.calendar}${esc(fmtDay(tk.work_date))}</i>${tk.district || tk.city_name ? `<i>${ICONS.pin}${esc([tk.district, tk.city_name].filter(Boolean).join(', '))}</i>` : ''}${tk.flyers ? `<i>${ICONS.mail}${esc(fmtN(tk.flyers))}</i>` : ''}<i>${ICONS.users}${(tk.task_workers || []).length}</i></div>
     ${statusPill(k, txt)}</div>${ICONS.chevron}</button>`; };
   const f = A.filter, list = A.tasks.filter(taskMatches).sort((a, b) => (a.status !== 'open') - (b.status !== 'open'));
@@ -1178,7 +1178,7 @@ async function viewTask(id){
         ${w ? `<button class="rr-worker" data-wk="${w.id}">${avatar()}<span class="grow"><b>${esc(w.name)}</b><small>${esc(t('openWorker'))}</small></span><span class="rr-chev">›</span></button>
         <div class="rr-btns"><a class="btn ghost small" target="_blank" rel="noopener" href="${waLink(w.phone, invite(w))}">${ICONS.chat}${esc(t('write'))}</a><button class="btn ghost small" data-swap="${p.id}">${ICONS.users}${esc(t('swapWorker'))}</button></div>` : ''}
         <div class="rr-swap" id="sw${p.id}" ${w ? 'hidden' : ''}><select class="in small" data-plan="${p.id}">${workerOptions(tk.start_lat, tk.start_lng, p.worker_id)}</select><span class="small muted">${esc(t('replaceHint'))}</span></div></div></div>`; }).join('') : `<p class="muted small">${esc(t('noPlans'))}</p>`}
-      <div class="tool-row" style="margin-top:16px"><button class="btn ghost small" id="tEdit">${ICONS.edit}${esc(t('editTask'))}</button><button class="btn ghost small" id="tDone">${ICONS.check}${esc(tk.status === 'open' ? t('finish') : t('reopen'))}</button><button class="btn ghost small danger-text" id="tDel">${esc(t('del'))}</button></div>
+      <div class="tool-row" style="margin-top:16px"><button class="btn ghost small" id="tEdit">${ICONS.edit}${esc(t('editTask'))}</button><button class="btn ghost small" id="tDone">${ICONS.check}${esc(tk.status === 'open' ? t('finish') : t('reopen'))}</button>${tk.status === 'open' ? `<button class="btn ghost small" id="tCancel">${ICONS.close}${esc(t('cancelTask'))}</button>` : ''}<button class="btn ghost small danger-text" id="tDel">${esc(t('del'))}</button></div>
       <p class="small muted">${esc(t('desktop'))}</p>
     </div>`); setLoc('task/' + id);
   bindBack(viewTasks);
@@ -1268,6 +1268,7 @@ async function viewTask(id){
   });
   $('#tBig').onclick = () => viewTaskMap(id, () => viewTask(id));
   $('#tEdit').onclick = () => editTaskSheet(tk, plans || [], routes || []);
+  if($('#tCancel')) $('#tCancel').onclick = async () => { if(!await confirmBox(t('cancelTask'), t('cancelTaskQ'), t('cancelTask'), true)) return; await sb.from('tasks').update({ status:'cancelled' }).eq('id', id); await loadTasks(); viewTask(id); };
   $('#tDone').onclick = async () => { await sb.from('tasks').update({ status:tk.status === 'open' ? 'done' : 'open' }).eq('id', id); await loadTasks(); viewTask(id); };
   $('#tDel').onclick = async () => { if(!await confirmBox(t('del'), t('delTaskQ'), t('del'), true)) return; await sb.from('tasks').delete().eq('id', id); await loadTasks(); viewTasks(); };
   if((routes || []).some(r => !r.ended_at)){

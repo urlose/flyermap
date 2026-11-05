@@ -252,9 +252,10 @@ button.chip:disabled{opacity:.45}
 .pill.live,.pill.ok{background:var(--color-success-bg);color:var(--color-success)}
 .pill.warn{background:var(--color-warning-bg);color:var(--color-warning)}
 .pill.bad{background:var(--color-danger-bg);color:var(--color-danger)}
-.task-card.is-done{opacity:.55;background:var(--color-surface-subtle);box-shadow:none}.task-card.is-done b{text-decoration:line-through;text-decoration-color:var(--color-text-secondary)}.task-card.is-done:hover{opacity:.85}
-.done-ic svg{width:16px;height:16px;vertical-align:-2px;margin-right:6px;stroke:var(--color-success)}
-.pill.neutral,.pill.done{background:var(--color-surface-subtle);color:var(--color-text-secondary)}
+.task-card.is-done b,.task-card.is-cancel b{text-decoration:line-through;text-decoration-thickness:2px}.task-card.is-done b{text-decoration-color:var(--color-success)}.task-card.is-cancel b{text-decoration-color:var(--color-error);color:var(--color-text-secondary)}
+.done-ic svg{width:16px;height:16px;vertical-align:-2px;margin-right:6px;stroke:var(--color-success);stroke-width:3}.is-cancel .done-ic svg{stroke:var(--color-error)}
+.pill.done{background:var(--color-success-bg);color:var(--color-success)}.pill.cancel{background:var(--color-error-bg);color:var(--color-error)}
+.pill.neutral{background:var(--color-surface-subtle);color:var(--color-text-secondary)}
 .pill.live::before{animation:pulse 1.6s infinite}
 @keyframes pulse{50%{opacity:.35}}
 

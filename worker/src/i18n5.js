@@ -202,3 +202,5 @@ Object.assign(T.de, { dayDone:'erledigt', restLine:'Noch offen: ≈ {km} · {h} 
 Object.assign(T.ru, { dayDone:'сделано', restLine:'Осталось: ≈ {km} · {h} ч', restNone:'Всё сделано' });
 Object.assign(T.de, { redayBtn:'Rest neu auf Tage verteilen', redayHint:'Die Route bleibt gleich, Erledigtes bleibt erledigt und wird übersprungen. Die offene Arbeit wird gleichmäßig auf die Tage verteilt; der Mitarbeiter wählt die Tage neu.', redayN:'Anzahl Tage', openH:'offen ≈ {h} Std.' });
 Object.assign(T.ru, { redayBtn:'Распределить остаток по дням', redayHint:'Маршрут тот же, сделанное остаётся сделанным и пропускается. Оставшаяся работа делится поровну на дни; работник заново выбирает дни.', redayN:'Сколько дней', openH:'осталось ≈ {h} ч' });
+Object.assign(T.de, { stCancelled:'Storniert', cancelTask:'Stornieren', cancelTaskQ:'Auftrag stornieren? Er verschwindet bei den Mitarbeitern, Gelaufenes bleibt gespeichert. „Wieder öffnen“ macht es rückgängig.' });
+Object.assign(T.ru, { stCancelled:'Отменён', cancelTask:'Отменить заказ', cancelTaskQ:'Отменить заказ? Он пропадёт у работников, пройденное останется сохранённым. «Открыть снова» вернёт его.' });

@@ -187,3 +187,4 @@ Object.assign(T.en, { startAnywhere:'May start anywhere (no start point check)' 
 Object.assign(T.en, { mergeHint:'{n} has {k} routes in this order.', mergeBtn:'Merge into one route', mergeQ:'The {k} routes of {n} become one route: the days follow each other, done parts and all shifts stay. {n} then picks the days again.' });
 Object.assign(T.en, { dayDone:'done', restLine:'Still open: ≈ {km} · {h} h', restNone:'All done' });
 Object.assign(T.en, { redayBtn:'Spread the rest over days', redayHint:'The route stays the same, done parts stay done and are skipped. The open work is split evenly over the days; the worker picks the days again.', redayN:'Number of days', openH:'open ≈ {h} h' });
+Object.assign(T.en, { stCancelled:'Cancelled', cancelTask:'Cancel order', cancelTaskQ:'Cancel the order? It disappears for the workers, walked parts stay saved. "Reopen" undoes it.' });
