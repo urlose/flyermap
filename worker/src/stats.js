@@ -55,7 +55,7 @@ function series(daily, key, n){ const by = new Map(daily.map(x => [String(x.d).s
 function spark(pts, w = 220, h = 46){
   const max = Math.max(1, ...pts.map(p => p.v)), dx = w / Math.max(1, pts.length - 1), y = v => h - 4 - (v / max) * (h - 10);
   const d = pts.map((p, i) => `${i ? 'L' : 'M'}${(i * dx).toFixed(1)},${y(p.v).toFixed(1)}`).join('');
-  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:${h}px;display:block;margin-top:10px" aria-hidden="true"><path d="${d}L${w},${h}L0,${h}Z" fill="rgba(255,255,255,.18)"/><path d="${d}" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>`;
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:${h}px;display:block;margin-top:10px" aria-hidden="true"><path d="${d}L${w},${h}L0,${h}Z" fill="rgba(255,255,255,.18)"/><path class="fm-draw" pathLength="2000" d="${d}" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>`;
 }
 // one series, one axis: hours per day as an area, dashed average; hover = native tooltip per day
 function areaChart(pts, unit){
@@ -69,13 +69,13 @@ function areaChart(pts, unit){
     ${ticks.map(v => `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" stroke="var(--color-border)" stroke-width="1"/><text x="${pl - 8}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="var(--color-text-secondary)">${v}</text>`).join('')}
     ${pts.map((p, i) => i % Math.ceil(n / 7) === 0 ? `<text x="${x(i)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="var(--color-text-secondary)">${fmtD(p.d)}</text>` : '').join('')}
     <path d="${line}L${x(n - 1)},${y(0)}L${x(0)},${y(0)}Z" fill="var(--color-primary)" opacity=".16"/>
-    <path d="${line}" fill="none" stroke="var(--color-primary)" stroke-width="2" stroke-linejoin="round"/>
+    <path class="fm-draw" pathLength="2000" d="${line}" fill="none" stroke="var(--color-primary)" stroke-width="2" stroke-linejoin="round"/>
     ${avg ? `<line x1="${pl}" x2="${W - pr}" y1="${y(avg)}" y2="${y(avg)}" stroke="var(--color-text-secondary)" stroke-width="1.5" stroke-dasharray="6 5"/><text x="${W - pr}" y="${y(avg) - 6}" text-anchor="end" font-size="11" fill="var(--color-text-secondary)">Ø ${n1(avg)} ${esc(unit)}</text>` : ''}
     ${pts.map((p, i) => `${p.v ? `<circle cx="${x(i)}" cy="${y(p.v)}" r="4" fill="var(--color-primary)" stroke="var(--color-surface)" stroke-width="2"/>` : ''}<rect x="${x(i) - (W - pl - pr) / n / 2}" y="${pt}" width="${(W - pl - pr) / n}" height="${H - pt - pb}" fill="transparent"><title>${fmtD(p.d)}: ${n1(p.v)} ${esc(unit)}</title></rect>`).join('')}
   </svg>`;
 }
 const bar = (pct, label, value) => `<div style="margin:10px 0"><div style="display:flex;justify-content:space-between;gap:8px;font-size:14px"><span>${label}</span><b>${value}</b></div>
-  <div style="height:6px;border-radius:99px;background:var(--color-surface-subtle);margin-top:6px;overflow:hidden"><i style="display:block;height:100%;width:${Math.max(2, Math.min(100, pct))}%;background:var(--color-primary);border-radius:99px"></i></div></div>`;
+  <div style="height:6px;border-radius:99px;background:var(--color-surface-subtle);margin-top:6px;overflow:hidden"><i class="fm-grow" style="display:block;height:100%;width:${Math.max(2, Math.min(100, pct))}%;background:var(--color-primary);border-radius:99px"></i></div></div>`;
 const effPill = v => { if(v == null || !isFinite(v)) return '–'; const [c, k] = v <= 3 ? ['#16A34A', '●'] : v <= 5 ? ['#D97706', '▲'] : ['#DC2626', '■']; return `<span style="white-space:nowrap"><span style="color:${c}" aria-hidden="true">${k}</span> ${n1(v)}</span>`; };
 
 export async function viewStats(){
@@ -88,7 +88,7 @@ export async function viewStats(){
   const flyDaily = tasks.map(x => ({ d:String(x.first).slice(0, 10), flyers:+x.flyers || 0 })).reduce((m, x) => { m[x.d] = (m[x.d] || 0) + x.flyers; return m; }, {});
   const n = 30, sH = series(daily, 'hours', n), sK = series(daily, 'km', n), sO = series(daily, 'orders', n), sP = series(daily, 'people', n);
   const sF = series(Object.entries(flyDaily).map(([d, v]) => ({ d, f:v })), 'f', n);
-  const card = (bg, val, lbl, pts) => `<div style="border-radius:var(--radius-lg,14px);padding:16px 18px 10px;background:${bg};color:#fff;min-width:0"><b style="font-size:26px;line-height:1.1">${val}</b><div style="opacity:.92;margin-top:2px">${esc(lbl)}</div>${spark(pts)}</div>`;
+  const card = (bg, val, lbl, pts) => `<div class="kpi-card" style="border-radius:var(--radius-lg,14px);padding:16px 18px 10px;background:${bg};color:#fff;min-width:0"><b style="font-size:26px;line-height:1.1">${val}</b><div style="opacity:.92;margin-top:2px">${esc(lbl)}</div>${spark(pts)}</div>`;
   // weekdays: hours worked per weekday (all days of the last 60)
   const wd = [0, 0, 0, 0, 0, 0, 0]; daily.forEach(x => { wd[(new Date(String(x.d).slice(0, 10) + 'T12:00:00').getDay() + 6) % 7] += +x.hours || 0; });
   const wdMax = Math.max(1, ...wd), wdName = i => new Date(2026, 10, 2 + i).toLocaleDateString(locale(), { weekday:'long' });
@@ -120,4 +120,10 @@ export async function viewStats(){
         ${[fmtN(+x.flyers || 0), n1(x.hours), n1(x.km), x.people, effPill(+x.flyers ? x.hours / x.flyers * 1000 : null)].map(v => `<td style="text-align:right;padding:10px 8px;white-space:nowrap">${v}</td>`).join('')}</tr>`).join('')}
     </table></div>`;
   box.querySelectorAll('[data-task]').forEach(b => b.onclick = () => window.dispatchEvent(new CustomEvent('fm-open-task', { detail:b.dataset.task })));
+  if(!matchMedia('(prefers-reduced-motion: reduce)').matches) box.querySelectorAll('.kpi-card > b').forEach(el => {
+    const txt = el.textContent, num = parseFloat(txt.replace(/\./g, '').replace(',', '.')); if(!isFinite(num) || !num) return;
+    const dec = txt.includes(',') ? 1 : 0, t0 = performance.now();
+    const step = now => { const k = Math.min(1, (now - t0) / 700), v = num * (1 - Math.pow(1 - k, 3)); el.textContent = v.toLocaleString('de-DE', { minimumFractionDigits:dec, maximumFractionDigits:dec }); if(k < 1) requestAnimationFrame(step); else el.textContent = txt; };
+    requestAnimationFrame(step);
+  });
 }

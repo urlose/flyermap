@@ -447,6 +447,18 @@ button.rbtn{width:100%;background:none;border:0;border-bottom:1px solid var(--co
   .sheet{left:16px;right:auto;width:min(520px, calc(100% - 32px));bottom:16px;border-radius:var(--radius-xl)}
 }
 .tab-out{display:none}
+/* motion: short, calm, off for people who ask for less motion */
+@keyframes fm-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes fm-draw{from{stroke-dashoffset:var(--len,2000)}to{stroke-dashoffset:0}}
+@media (prefers-reduced-motion:no-preference){
+  .content:not(.map-content)>*{animation:fm-in .28s ease-out both}
+  .card,.worker-card,.btn,.chip,.tab{transition:transform .15s ease,box-shadow .15s ease,background-color .15s ease,color .15s ease}
+  @media (hover:hover){.worker-card:hover,.kpi-card:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.18)}}
+  .btn:active,.chip:active,.tab:active{transform:scale(.97)}
+  .fm-draw{stroke-dasharray:var(--len,2000);animation:fm-draw 1s ease-out both}
+  .fm-grow{transform-origin:left;animation:fm-grow .7s ease-out both}
+  @keyframes fm-grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+}
 /* desktop (≥1100 px): tabs as a sidebar on the left, wider content, taller maps. Phones never reach these rules. */
 @media (min-width:1100px){
   .shell{flex-direction:row}.content{min-width:0}
@@ -458,7 +470,8 @@ button.rbtn{width:100%;background:none;border:0;border-bottom:1px solid var(--co
   @media (hover:hover){.tab:not(.on):hover{background:var(--color-surface-subtle);color:var(--color-text)}}
   .content:not(.map-content)>*{max-width:960px}
   .fab{right:max(var(--page-pad), calc((100% - 232px) / 2 - 480px + var(--page-pad)));bottom:28px}
-  .tab-out{display:flex;margin-top:auto;color:var(--color-text-secondary)}
+  .tab-out{display:flex;margin-top:auto;color:#EF4444}
+  @media (hover:hover){.tab-out:hover{background:rgba(239,68,68,.12)!important;color:#EF4444!important}}
   .sheet{left:248px}
   .toast{bottom:28px;left:calc(50% + 116px)}
   .mapbox{height:420px}
