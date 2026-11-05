@@ -192,5 +192,5 @@ Object.assign(T.de, { waLogin:'Mit WhatsApp anmelden', waConfirm:'Nummer per Wha
 Object.assign(T.ru, { waLogin:'Войти через WhatsApp', waConfirm:'Подтвердить номер через WhatsApp', waTitle:'Подтверждение через WhatsApp', waHint:'Нажми «Открыть WhatsApp» и отправь готовое сообщение. После этого всё продолжится здесь само.', waOpen:'Открыть WhatsApp', waWait:'Ждём твоё сообщение …', waTimeout:'Время вышло. Попробуй ещё раз.', waOff:'Подтверждение через WhatsApp ещё не настроено.', waPhoneOk:'Номер подтверждён: {p}', e_wa_expired:'Код устарел. Попробуй ещё раз.' });
 Object.assign(T.de, { prevWorker:'Vorher: {n} · {km} · {h} h' });
 Object.assign(T.ru, { prevWorker:'Раньше: {n} · {km} · {h} ч' });
-Object.assign(T.de, { oneDayHint:'Alles zusammen ≈ {h} – das schafft 1 Mitarbeiter an 1 Tag.', fitsOne:'Passt in 1 Tag.' });
-Object.assign(T.ru, { oneDayHint:'Всего ≈ {h} – это сделает 1 работник за 1 день.', fitsOne:'Укладывается в 1 день.' });
+Object.assign(T.de, { oneDayHint:'Alles zusammen ≈ {h} Std. – das schafft 1 Mitarbeiter an 1 Tag.', fitsOne:'Passt in 1 Tag.' });
+Object.assign(T.ru, { oneDayHint:'Всего ≈ {h} ч – это сделает 1 работник за 1 день.', fitsOne:'Укладывается в 1 день.' });

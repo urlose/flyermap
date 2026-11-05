@@ -89,7 +89,7 @@ export function createPlanService(cache){
     async plan({ start, flyers, n, days, hours, must, zone, side, quota, bike, travel, split }, stage, stale){
       travel = travel === 'bike' || travel === 'car' ? travel : (bike ? 'bike' : 'bus'); bike = travel !== 'bus';
       Planner.setPace(quota);   // hours from the order's quota (metres per 30 minutes)
-      side = (side || []).filter(c => c && c.flyers > 0);
+      side = (side || []).filter(c => c && (c.flyers > 0 || split === 'even'));   // even split: a place added without a number gets its share below
       // a near Nebenstadt is walked only when there are mailboxes on the way; an empty road to it (> EMPTY_GAP) → bus, like a far place
       const bus = [];
       if((must || []).some(a => a && a.name && a.p && a.p.length > 2)){
