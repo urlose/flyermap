@@ -922,6 +922,22 @@
     return { visit, visitLine, visitAll(pts){ for(let i = 0; i < pts.length; i++){ if(i && dist(pts[i-1], pts[i]) < 120) visitLine(pts[i-1], pts[i]); else visit(pts[i][0], pts[i][1]); } return count; }, count:() => count, total };
   }
 
+  // GPS points → walking runs and driving runs. A step faster than 14 km/h (car, bus, bike) is driving: it is working time,
+  // but streets passed then are not distributed. pts: [{lat,lng,t}] or [lat,lng,ms]
+  const DRIVE_MS = 14 / 3.6;
+  function walkRuns(pts){
+    const P = (pts || []).map(p => Array.isArray(p) ? p : [p.lat, p.lng, +new Date(p.t)]), walk = [], drive = [];
+    let w = [], dr = [];
+    for(let i = 0; i < P.length; i++){
+      const b = P[i]; if(!i){ w.push([b[0], b[1]]); continue; }
+      const a = P[i-1], d = dist(a, b), dt = ((b[2] || 0) - (a[2] || 0)) / 1000;
+      if(d > 30 && dt > 0 && d / dt > DRIVE_MS){ if(w.length) walk.push(w); w = []; if(!dr.length) dr.push([a[0], a[1]]); dr.push([b[0], b[1]]); }
+      else { if(dr.length){ drive.push(dr); dr = []; } if(!w.length) w.push([a[0], a[1]]); w.push([b[0], b[1]]); }
+    }
+    if(w.length) walk.push(w); if(dr.length > 1) drive.push(dr);
+    return { walk, drive, driveM:drive.reduce((s, r) => s + r.reduce((x, q, k) => x + (k ? dist(r[k-1], q) : 0), 0), 0) };
+  }
+
   function suggestWorkers(totalMinutes, hoursPerDay, days){ return Math.max(1, Math.ceil(totalMinutes / 60 / ((hoursPerDay || WORK_HOURS) * (days || 1)))); }
   function hours(meters){ return walkMin(meters, 0) / 60; }
   function routeMinutes(len, mb){ return Math.round(walkMin(len, mb)); }
@@ -1182,6 +1198,6 @@
     return partition(g, start, n).map((part, k) => ({ idx:k, ...planPart(g, part, start) }));
   }
 
-  const api = { setTileStamp, setPace, denseEntry, pathRuns, emptyGap, tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, makeBoxCounter, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
+  const api = { setTileStamp, setPace, denseEntry, pathRuns, emptyGap, tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, makeBoxCounter, walkRuns, DRIVE_MS, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
   if(typeof module !== 'undefined' && module.exports) module.exports = api; else root.Planner = api;
 })(typeof window !== 'undefined' ? window : globalThis);

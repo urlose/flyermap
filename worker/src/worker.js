@@ -129,8 +129,8 @@ function onLocation(lat, lng, acc, time, sim){
     if(dt < 30 && d / dt > 12) return;
     W.route.distance += d;
   }
-  // riding the bike between villages (faster than ≈ 12 km/h): no flyers then – streets passed do not count as done
-  const riding = !!(W.route.task && W.route.task.bike) && last && sim !== 'first' && (time - last[2]) > 0 && hav(last[0], last[1], lat, lng) / ((time - last[2]) / 1000) > 3.4;
+  // driving or riding between villages (faster than 14 km/h): no flyers then – streets passed do not count as done
+  const riding = !!last && sim !== 'first' && (time - last[2]) > 0 && hav(last[0], last[1], lat, lng) > 30 && hav(last[0], last[1], lat, lng) / ((time - last[2]) / 1000) > Planner.DRIVE_MS;   // > 14 km/h: car, bus, bike
   if(W.tracker && !riding){ if(last && sim !== 'first'){ const g = hav(last[0], last[1], lat, lng); if(g < 120) W.tracker.markLine([last[0], last[1]], [lat, lng]); else { W.tracker.fillGap([last[0], last[1]], [lat, lng]); W.tracker.mark([lat, lng]); } } else W.tracker.mark([lat, lng]); }   // a long gap (screen was off) counts only along the route
   if(W.counter && !riding){ if(last && sim !== 'first') W.counter.visitLine([last[0], last[1]], [lat, lng]); else W.counter.visit(lat, lng); }
   W.track.push([lat, lng, time]);
@@ -503,7 +503,7 @@ function viewMap(){
 
 function viewTracking(){
   const task = routeTask(); ensureTracker();
-  const hasPlan = !!W.tracker, paused = !!W.route.paused, quota = task && task.quota_m30;
+  const hasPlan = !!W.tracker, paused = !!W.route.paused, quota = task && !task.no_quota && task.quota_m30;
   shell('map', `<div id="fullMap" class="fullmap"></div>
     <button class="icon-btn map-btn" id="recenter" aria-label="center">${ICONS.locate}</button>
     ${hasPlan ? `<div class="nav" id="nav"><div class="nav-ic" id="navIc"></div><div class="nav-tx"><b id="navMain"></b><span id="navSub"></span><button class="nav-skip" id="navSkip">${esc(t('skipBtn'))}</button></div><a class="nav-ext" id="navExt" target="_blank" rel="noopener" aria-label="${esc(t('navExt'))}">${ICONS.map}</a></div>
