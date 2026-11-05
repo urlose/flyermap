@@ -13,13 +13,14 @@ cpSync('node_modules/leaflet/dist/images', 'www/images', { recursive: true });
 copyFileSync('assets/icon-only.png', 'www/icon.png');
 // Inter is shipped with the app (latin + cyrillic): no request to a font server (privacy, works offline)
 mkdirSync('www/fonts', { recursive: true });
-for(const f of ['latin', 'latin-ext', 'cyrillic', 'cyrillic-ext']) copyFileSync(`node_modules/@fontsource-variable/inter/files/inter-${f}-wght-normal.woff2`, `www/fonts/inter-${f}-wght-normal.woff2`);
+// Onest (main font since 06.11.2026, SIL OFL) + Inter as fallback
+for(const fam of ['onest', 'inter']) for(const f of ['latin', 'latin-ext', 'cyrillic', 'cyrillic-ext']) copyFileSync(`node_modules/@fontsource-variable/${fam}/files/${fam}-${f}-wght-normal.woff2`, `www/fonts/${fam}-${f}-wght-normal.woff2`);
 writeFileSync('www/manifest.json', JSON.stringify({ name:'FlyerMap', short_name:'FlyerMap', start_url:'./', scope:'./', display:'standalone', background_color:'#F5F6F8', theme_color:'#2563EB', icons:[{ src:'icon.png', sizes:'1024x1024', type:'image/png', purpose:'any' }] }));
 // service worker (web app only): the app opens without signal; the page itself always comes fresh when there is signal
 { const { readFileSync } = await import('fs'); const { createHash } = await import('crypto');
   const v = createHash('sha1').update(readFileSync('www/app.js')).update(readFileSync('www/index.html')).digest('hex').slice(0, 10);
   const shell = ['./', './index.html', readFileSync('www/index.html', 'utf8').match(/src="(app\.js\?v=[^"]+)"/)[1], './leaflet.css', './icon.png', './manifest.json',
-    ...['latin', 'latin-ext', 'cyrillic', 'cyrillic-ext'].map(f => `./fonts/inter-${f}-wght-normal.woff2`)];
+    ...['latin', 'latin-ext', 'cyrillic', 'cyrillic-ext'].map(f => `./fonts/onest-${f}-wght-normal.woff2`)];
   writeFileSync('www/sw.js', `const SHELL = 'fm-shell-${v}', FILES = ${JSON.stringify(shell)};
 self.addEventListener('install', e => e.waitUntil(caches.open(SHELL).then(c => c.addAll(FILES)).then(() => self.skipWaiting())));
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith('fm-shell-') && k !== SHELL).map(k => caches.delete(k)))).then(() => self.clients.claim())));
