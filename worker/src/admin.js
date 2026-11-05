@@ -668,7 +668,7 @@ const accOf = k => ({ done:'acc-neutral', ok:'acc-ok', live:'acc-ok', info:'acc-
 function viewTasks(){
   const opts = k => [...new Set(A.tasks.map(x => x[k]).filter(Boolean))].sort();
   const sel = (id, label, list, cur) => `<div><label class="f" for="${id}">${esc(label)}</label><select class="in small" id="${id}"><option value="">${esc(t('fAll'))}</option>${list.map(v => `<option ${v === cur ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></div>`;
-  const card = tk => { const [k, txt] = taskState(tk); return `<button class="card acc ${accOf(k)} task-card" data-id="${tk.id}"><div class="tc-main"><b>${esc(tk.title)}</b>
+  const card = tk => { const [k, txt] = taskState(tk); return `<button class="card acc ${accOf(k)} task-card ${k === 'done' ? 'is-done' : ''}" data-id="${tk.id}"><div class="tc-main"><b>${k === 'done' ? `<span class="done-ic">${ICONS.check}</span>` : ''}${esc(tk.title)}</b>
     <div class="tc-meta">${coName(tk.company_id) ? `<i>${ICONS.users}${esc(coName(tk.company_id))}</i>` : ''}<i>${ICONS.calendar}${esc(fmtDay(tk.work_date))}</i>${tk.district || tk.city_name ? `<i>${ICONS.pin}${esc([tk.district, tk.city_name].filter(Boolean).join(', '))}</i>` : ''}${tk.flyers ? `<i>${ICONS.mail}${esc(fmtN(tk.flyers))}</i>` : ''}<i>${ICONS.users}${(tk.task_workers || []).length}</i></div>
     ${statusPill(k, txt)}</div>${ICONS.chevron}</button>`; };
   const f = A.filter, list = A.tasks.filter(taskMatches).sort((a, b) => (a.status !== 'open') - (b.status !== 'open'));
