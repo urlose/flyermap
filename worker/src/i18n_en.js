@@ -185,3 +185,4 @@ Object.assign(T.en, { prevWorker:'Before: {n} · {km} · {h} h' });
 Object.assign(T.en, { oneDayHint:'All together ≈ {h} h – 1 person can do it in 1 day.', fitsOne:'Fits into 1 day.' });
 Object.assign(T.en, { startAnywhere:'May start anywhere (no start point check)' });
 Object.assign(T.en, { mergeHint:'{n} has {k} routes in this order.', mergeBtn:'Merge into one route', mergeQ:'The {k} routes of {n} become one route: the days follow each other, done parts and all shifts stay. {n} then picks the days again.' });
+Object.assign(T.en, { dayDone:'done', restLine:'Still open: ≈ {km} · {h} h', restNone:'All done' });

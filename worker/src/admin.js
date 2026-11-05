@@ -1102,7 +1102,7 @@ function editTaskSheet(tk, plans, routes){
   const rp = mo.querySelector('#eReplan'); if(rp) rp.onclick = () => { mo.remove(); viewCreate({ tk, plans }); };
 }
 /* task detail: info + map + routes with status, worker assignment and progress */
-const dayLines = (days, col) => (days && days.length > 1) ? days.map((x, k) => `<span class="small day-line"><b><i class="dsw" style="background:${esc(dayColor(col, k))}"></i>${esc(t('dayN', { n:k + 1 }) + (x.place ? ' · ' + x.place : ''))}:</b> ${esc(t('routeLine', { km:fmtDist(x.length_m), h:fmtHm(x.minutes), mb:fmtN(x.mailboxes) }))}</span>`).join('') : '';
+const dayLines = (days, col, pid) => (days && days.length > 1) ? days.map((x, k) => `<span class="small day-line"><b><i class="dsw" style="background:${esc(dayColor(col, k))}"></i>${esc(t('dayN', { n:k + 1 }) + (x.place ? ' · ' + x.place : ''))}:</b> ${esc(t('routeLine', { km:fmtDist(x.length_m), h:fmtHm(x.minutes), mb:fmtN(x.mailboxes) }))}${pid ? `<em class="day-pct" id="dp${pid}_${k}"></em>` : ''}</span>`).join('') : '';
 const stText = p => p.status === 'accepted' ? t('stAccepted') : p.status === 'declined' ? t('stDeclined') : p.status === 'done' ? t('stDone') : t('stOffered');
 const stCls = p => p.status === 'done' ? 'ok' : p.status === 'accepted' ? '' : p.status === 'declined' ? 'bad' : 'neutral';   // angeboten = neutral, angenommen = blau, erledigt = grün, abgelehnt = rot
 // walked so far on one route (all sessions, also the running one; a session lying inside another one counts once)
@@ -1114,7 +1114,7 @@ function prevWorkers(p, routes){
     return `<span class="small muted">${esc(t('prevWorker', { n:w ? w.name : '?', km:fmtDist(m), h:fmtHm(min) }))}</span>`; }).join('');
 }
 function planWalked(p, routes){
-  const rs = (routes || []).filter(r => r.plan_id === p.id || (!r.plan_id && r.worker_id && r.worker_id === p.worker_id));
+  const rs = (routes || []).filter(r => (r.plan_id === p.id && (!p.worker_id || r.worker_id === p.worker_id)) || (!r.plan_id && r.worker_id && r.worker_id === p.worker_id));
   const end = r => r.ended_at ? +new Date(r.ended_at) : Date.now();
   const own = rs.filter(r => !rs.some(o => o !== r && +new Date(o.started_at) <= +new Date(r.started_at) && end(o) >= end(r) && (o.distance_m || 0) > (r.distance_m || 0)));
   if(!own.length) return '';
@@ -1172,7 +1172,7 @@ async function viewTask(id){
       ${(plans || []).length ? plans.map(p => { const w = wById(p.worker_id); return `<div class="route-row"><span class="swatch" style="background:${esc(p.color || '#2563EB')}"></span>
         <div class="grow"><b>${esc(t('planRoute', { n:p.idx + 1 }))} <span class="muted" id="pp${p.idx}"></span></b>
         <span>${esc(t('routeLine', { km:fmtDist(p.length_m), h:fmtHm(p.minutes || 0), mb:fmtN(p.mailboxes || 0) }))}</span>
-        ${dayLines(p.days, p.color)}
+        ${dayLines(p.days, p.color, p.idx)}<span class="small" id="prest${p.idx}" style="font-weight:600"></span>
         <div class="bar"><i id="pb${p.idx}"></i></div><span id="pf${p.idx}" style="margin-top:4px"></span><span class="small" id="pw${p.idx}">${planWalked(p, routes)}</span>${prevWorkers(p, routes)}
         ${p.worker_id ? `<div class="rr-status"><span class="pill ${(A.live || []).some(r => r.plan_id === p.id && !r.paused_at) ? 'live' : stCls(p)}">${(A.live || []).some(r => r.plan_id === p.id && !r.paused_at) ? esc(t('stLive')) + ' · ' : ''}${esc(stText(p))}${p.status === 'accepted' && (p.work_dates || []).length ? ' · ' + esc(p.work_dates.map(fmtDay).join(', ')) : ''}</span>${p.status === 'accepted' ? `<button class="link small" data-dates="${p.id}">${ICONS.edit}${esc(t('chgDates'))}</button>` : ''}</div>` : ''}
         ${w ? `<button class="rr-worker" data-wk="${w.id}">${avatar()}<span class="grow"><b>${esc(w.name)}</b><small>${esc(t('openWorker'))}</small></span><span class="rr-chev">›</span></button>
@@ -1265,7 +1265,14 @@ async function viewTask(id){
     byPlan[p.id] = byPlan[p.id] || [];
     const tr = addSkips(Planner.makeTracker(p.path), p), ct = p.boxes && p.boxes.length ? Planner.makeBoxCounter(p.boxes) : null;
     allTracks.forEach(pts => { tr.addTrack(pts); if(ct) ct.visitAll(pts); });
-    PLAN_TR[p.id] = tr;   // also streets of this route walked by somebody else
+    PLAN_TR[p.id] = tr;
+    // per day: done or how far; and what is still open (what a new worker gets)
+    try{
+      const ds = p.days && p.days.length > 1 ? p.days : [{ minutes:p.minutes, length_m:p.length_m }], dp = p.days && p.days.length > 1 ? dayProgress(p, tr) : [tr.pct()];
+      dp.forEach((x, k) => { const el = $('#dp' + p.idx + '_' + k); if(el) el.textContent = x >= 95 ? ' · ✓ ' + t('dayDone') : ' · ' + Math.round(x) + ' %'; });
+      const restMin = ds.reduce((a, d, k) => a + (d.minutes || 0) * (dp[k] >= 95 ? 0 : 1 - (dp[k] || 0) / 100), 0), restM = ds.reduce((a, d, k) => a + (d.length_m || 0) * (dp[k] >= 95 ? 0 : 1 - (dp[k] || 0) / 100), 0);
+      const re = $('#prest' + p.idx); if(re) re.textContent = restMin > 1 ? t('restLine', { km:fmtDist(restM), h:fmtHm(restMin) }) : t('restNone');
+    }catch{}   // also streets of this route walked by somebody else
     tr.runs().forEach(run => L.polyline(run, { color:GREEN, weight:6, opacity:.95 }).addTo(doneLayer));
     const pct = tr.pct(); const el = $('#pp' + p.idx); if(el) el.textContent = '· ' + t('done', { p:pct }); const bar = $('#pb' + p.idx); if(bar) bar.style.width = pct + '%';
     const pf = $('#pf' + p.idx); if(pf && ct) pf.textContent = t('flyersDone', { a:fmtN(ct.count()), b:fmtN(ct.total) }) + (ct.total ? ' · ' + Math.round(ct.count() / ct.total * 100) + ' %' : '');
