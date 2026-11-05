@@ -10,7 +10,7 @@ import { checkpoints, addSkips, dayProgress, makeNav } from './nav.js';
 import { loadFirm, firmCardHtml, bindFirmCard, firmComplete, avvOk } from './firm.js';
 import { viewMaster, poolHtml } from './master.js';
 
-const GREEN = '#16A34A';
+const GREEN_C = () => css('--color-map-route-completed') || '#16A34A';   // done parts: the theme's "completed" colour
 const APP_LINK = 'https://urlose.github.io/flyermap/app/';
 // e-mail admins: change the password (e.g. the first one they got from the master admin)
 document.addEventListener('click', e => {
@@ -549,7 +549,7 @@ async function viewDayMap(routeId, back){
         const ds = (pl.days || []).length > 1 ? pl.days : [{ i0:0, i1:pl.path.length - 1 }];
         ds.forEach((d, k) => L.polyline(Planner.pathRuns(pl.path.slice(d.i0, d.i1 + 1)), { color:dayColor(col, k), weight:4, opacity:.6, dashArray:'6 7', lineJoin:'round' }).addTo(g)); } },
       // one layer: everything done on this route – this day, earlier days and colleagues alike
-      { key:'done', label:runs.length || runsPrev.length ? t('rvDone') : '', add:g => [...runsPrev, ...runs, ...(pl ? offRoute([ll], [pl]) : [])].forEach(x => L.polyline(x, { color:GREEN, weight:8, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g)) },
+      { key:'done', label:runs.length || runsPrev.length ? t('rvDone') : '', add:g => [...runsPrev, ...runs, ...(pl ? offRoute([ll], [pl]) : [])].forEach(x => L.polyline(x, { color:GREEN_C(), weight:8, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g)) },
       { key:'skip', label:workerSkips(pl).length ? t('rvSkipped') : '', add:g => drawSkips(g, [pl]) },
       { key:'cp', label:cps.length ? t('checkpoints') : '', add:g => cps.forEach(c => cpMarker(c, dayColor(col, c.day), (pl.days || []).length > 1).addTo(g)) },
       { key:'gps', label:ll.length > 1 ? t('rvGps') : '', add:g => {
@@ -638,7 +638,7 @@ async function viewTaskMap(id, back){
         return nd > 1 ? [...Array.from({ length:nd }, (_, k) => ({ key:'day' + k, label:t('dayN', { n:k + 1 }) + (k ? ' ┄' : ' ━'), add:g => drawDay(g, k) })), { key:'start', add:start }]
           : [{ key:'plan', label:t('rvPlan'), add:g => { drawDay(g, 0); start(g); } }];
       })(),
-      { key:'done', label:t('rvDone'), add:g => { res.forEach(x => x.runs.forEach(run => L.polyline(run, { color:GREEN, weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g))); offRuns.forEach(run => L.polyline(run, { color:GREEN, weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g)); } },
+      { key:'done', label:t('rvDone'), add:g => { res.forEach(x => x.runs.forEach(run => L.polyline(run, { color:GREEN_C(), weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g))); offRuns.forEach(run => L.polyline(run, { color:GREEN_C(), weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g)); } },
       { key:'gps', label:tracks.some(x => x.length > 1) ? t('rvGps') : '', on:false, add:g => tracks.forEach(ll => { if(ll.length > 1) gpsLine(g, ll, 2.5); }) },
       ...((plans || []).some(p => (p.path || []).some(q => q[2] === 1)) ? [{ key:'jumps', label:t(tk.bike ? 'tripsBike' : 'tripsBus'), add:g => (plans || []).forEach(p => drawJumps(g, p.path, tk.bike)) }] : []),
       ...((plans || []).some(p => workerSkips(p).length) ? [{ key:'skip', label:t('rvSkipped'), add:g => drawSkips(g, plans) }] : []),
@@ -1299,7 +1299,7 @@ async function viewTask(id){
       const re = $('#prest' + p.idx); if(re) re.textContent = restMin > 1 ? t('restLine', { km:fmtDist(restM), h:fmtHm(restMin) }) : t('restNone');
       const rb = $('#pred' + p.idx); if(rb && restMin > 1 && dp.some(x => x > 0)) rb.classList.remove('hidden');
     }catch{}   // also streets of this route walked by somebody else
-    tr.runs().forEach(run => L.polyline(run, { color:GREEN, weight:6, opacity:.95 }).addTo(doneLayer));
+    tr.runs().forEach(run => L.polyline(run, { color:GREEN_C(), weight:6, opacity:.95 }).addTo(doneLayer));
     const pct = tr.pct(); const el = $('#pp' + p.idx); if(el) el.textContent = '· ' + t('done', { p:pct }); const bar = $('#pb' + p.idx); if(bar) bar.style.width = pct + '%';
     const pf = $('#pf' + p.idx); if(pf && ct) pf.textContent = t('flyersDone', { a:fmtN(ct.count()), b:fmtN(ct.total) }) + (ct.total ? ' · ' + Math.round(ct.count() / ct.total * 100) + ' %' : '');
     if(ct){ flSum += ct.count(); flHas = true; }

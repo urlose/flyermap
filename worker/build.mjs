@@ -14,7 +14,7 @@ copyFileSync('assets/icon-only.png', 'www/icon.png');
 // Inter is shipped with the app (latin + cyrillic): no request to a font server (privacy, works offline)
 mkdirSync('www/fonts', { recursive: true });
 for(const f of ['latin', 'latin-ext', 'cyrillic', 'cyrillic-ext']) copyFileSync(`node_modules/@fontsource-variable/inter/files/inter-${f}-wght-normal.woff2`, `www/fonts/inter-${f}-wght-normal.woff2`);
-writeFileSync('www/manifest.json', JSON.stringify({ name:'FlyerMap', short_name:'FlyerMap', start_url:'./', scope:'./', display:'standalone', background_color:'#F8FAFC', theme_color:'#2563EB', icons:[{ src:'icon.png', sizes:'1024x1024', type:'image/png', purpose:'any' }] }));
+writeFileSync('www/manifest.json', JSON.stringify({ name:'FlyerMap', short_name:'FlyerMap', start_url:'./', scope:'./', display:'standalone', background_color:'#F5F6F8', theme_color:'#2563EB', icons:[{ src:'icon.png', sizes:'1024x1024', type:'image/png', purpose:'any' }] }));
 // service worker (web app only): the app opens without signal; the page itself always comes fresh when there is signal
 { const { readFileSync } = await import('fs'); const { createHash } = await import('crypto');
   const v = createHash('sha1').update(readFileSync('www/app.js')).update(readFileSync('www/index.html')).digest('hex').slice(0, 10);

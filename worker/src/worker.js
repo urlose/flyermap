@@ -13,7 +13,7 @@ import { waVerify } from './auth.js';
 import { UI, ICONS, shell, setLoc, getLoc, prefetchRoute, plain, topbar, bindBack, makeMap, dot, fit, drawJumps, modal, confirmBox, reasonBox, toast, cityPicker, langSwitch, themeSwitch, statusPill, emptyState, avatar, every } from './ui.js';
 
 const BackgroundGeolocation = registerPlugin('BackgroundGeolocation');
-const GREEN = '#16A34A';
+const GREEN_C = () => css('--color-map-route-completed') || '#16A34A';   // done parts: the theme's "completed" colour
 
 export const W = { gps:{ state:'wait', acc:null, at:0 }, canAdmin:false, token:null, me:null, route:null, queue:[], track:[], busy:false, watcherId:null, focus:null, tracker:null, counter:null, prev:null, sim:null, flushFailed:false, hooks:{} };
 const tasks = () => (W.me && W.me.tasks) || [];
@@ -361,7 +361,7 @@ function viewInbox(){
 async function drawCoverage(m, task, below){
   try{
     const cov = await rpc('task_coverage', { p_token:W.token, p_task_id:task.id });
-    (cov || []).forEach(line => { if(line.length > 1) L.polyline(line, { color:GREEN, weight:10, opacity:.22, lineCap:'round', interactive:false }).addTo(m); });
+    (cov || []).forEach(line => { if(line.length > 1) L.polyline(line, { color:GREEN_C(), weight:10, opacity:.22, lineCap:'round', interactive:false }).addTo(m); });
     below && below.forEach(l => l.bringToFront());
   }catch{}
 }
@@ -576,7 +576,7 @@ function viewTracking(){
     while(i1 + 1 < S.length && i1 - i0 < 90 && ok(i1 + 1) && near(i1, i1 + 1)) i1++;
     while(i0 > 0 && i1 - i0 < 90 && ok(i0 - 1) && near(i0 - 1, i0)) i0--;
     const pts = S.slice(i0, i1 + 1).map(q => [+q[0].toFixed(6), +q[1].toFixed(6)]); if(pts.length < 2){ toast(t('skipNone')); return; }
-    skipLayer.clearLayers(); L.polyline(pts, { color:'#DC2626', weight:9, opacity:.85, dashArray:'4 10', lineCap:'round', interactive:false }).addTo(skipLayer);
+    skipLayer.clearLayers(); L.polyline(pts, { color:css('--color-map-marker-error') || '#DC2626', weight:9, opacity:.85, dashArray:'4 10', lineCap:'round', interactive:false }).addTo(skipLayer);
     view.follow = false; try{ m.fitBounds(L.latLngBounds(pts), { padding:[60, 60], maxZoom:17 }); }catch{}
     const why = await reasonBox(t('skipQ'), t('skipText', { d:fmtDist(pts.length * 8) }), t('skipYes'), WHY_CHOICES());
     skipLayer.clearLayers(); view.follow = true;
@@ -596,7 +596,7 @@ function viewTracking(){
     if(!W.tracker) return; doneLayer.clearLayers();
     // checkpoints of today's day: what is finished, what is still open
     cpLayer.clearLayers(); if(plan && plan.path) checkpoints(plan, i => W.tracker.isDone(i)).filter(c => c.day === (dayIdx || 0)).forEach(c => cpMarker(c, plan.color, false).addTo(cpLayer));
-    W.tracker.runs().forEach(r => L.polyline(r, { color:GREEN, weight:7, opacity:.95, lineJoin:'round' }).addTo(doneLayer));
+    W.tracker.runs().forEach(r => L.polyline(r, { color:GREEN_C(), weight:7, opacity:.95, lineJoin:'round' }).addTo(doneLayer));
     const p = W.tracker.pct(), sp = $('#sP'); if(sp) sp.textContent = p + '%'; const bar = $('#sBar'); if(bar) bar.style.width = p + '%';
     checkDayEnd();
   };
