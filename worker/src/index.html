@@ -447,6 +447,25 @@ button.rbtn{width:100%;background:none;border:0;border-bottom:1px solid var(--co
   .sheet{left:16px;right:auto;width:min(520px, calc(100% - 32px));bottom:16px;border-radius:var(--radius-xl)}
 }
 .tab-out{display:none}
+/* animated icons (in the style of Lucide Animated, MIT – recreated in CSS): play on hover and once when a tab is opened */
+@media (prefers-reduced-motion:no-preference){
+  .ia *{transform-box:fill-box}
+  @keyframes ia-gear{to{transform:rotate(90deg)}}
+  @keyframes ia-wave{0%,100%{transform:none}30%{transform:skewY(-8deg) scaleX(.92)}65%{transform:skewY(5deg)}}
+  @keyframes ia-bar{0%{transform:scaleY(1)}40%{transform:scaleY(.35)}100%{transform:scaleY(1)}}
+  @keyframes ia-side{0%,100%{transform:none}45%{transform:translateX(2.5px)}}
+  @keyframes ia-fold{0%,100%{transform:none}40%{transform:scale(.88,1)}70%{transform:scale(1.04,1)}}
+  @keyframes ia-out{0%,100%{transform:none}45%{transform:translateX(3px)}}
+  .ia-cloth{transform-origin:left center}.ia-bar{transform-origin:bottom}.ia-map{transform-origin:center}
+  .tab.on .ia-gear,.tab:hover .ia-gear{animation:ia-gear .5s ease-in-out}
+  .tab.on .ia-cloth,.tab:hover .ia-cloth{animation:ia-wave .7s ease-in-out}
+  .tab.on .ia-bar,.tab:hover .ia-bar{animation:ia-bar .55s ease-in-out}
+  .tab.on .ia-bar:nth-of-type(3),.tab:hover .ia-bar:nth-of-type(3){animation-delay:.08s}
+  .tab.on .ia-bar:nth-of-type(4),.tab:hover .ia-bar:nth-of-type(4){animation-delay:.16s}
+  .tab.on .ia-2,.tab:hover .ia-2{animation:ia-side .5s ease-in-out}
+  .tab.on .ia-map,.tab:hover .ia-map{animation:ia-fold .5s ease-in-out}
+  .tab:hover .ia-arrow{animation:ia-out .5s ease-in-out}
+}
 /* motion: short, calm, off for people who ask for less motion */
 @keyframes fm-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 @keyframes fm-draw{from{stroke-dashoffset:var(--len,2000)}to{stroke-dashoffset:0}}
