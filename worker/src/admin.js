@@ -1502,5 +1502,5 @@ function restoreAdmin(){
   if(k === 'task' && id && A.tasks.some(x => x.id === id)) return viewTask(id);
   if(k === 'worker' && id && A.workers.some(w => w.id === id)) return viewWorker(id);
   if(k === 'new') return viewCreate();
-  adminTab(['map', 'people', 'tasks', 'settings'].includes(k) ? k : 'tasks');
+  adminTab(['map', 'people', 'tasks', 'settings', 'stats'].includes(k) ? k : 'tasks');
 }
