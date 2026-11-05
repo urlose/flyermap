@@ -1116,7 +1116,7 @@ function prevWorkers(p, routes){
 function planWalked(p, routes){
   const rs = (routes || []).filter(r => (r.plan_id === p.id && (!p.worker_id || r.worker_id === p.worker_id)) || (!r.plan_id && r.worker_id && r.worker_id === p.worker_id));
   const end = r => r.ended_at ? +new Date(r.ended_at) : Date.now();
-  const own = rs.filter(r => !rs.some(o => o !== r && +new Date(o.started_at) <= +new Date(r.started_at) && end(o) >= end(r) && (o.distance_m || 0) > (r.distance_m || 0)));
+  const own = rs.filter(r => !rs.some(o => o !== r && o.worker_id === r.worker_id && +new Date(o.started_at) <= +new Date(r.started_at) && end(o) >= end(r) && (o.distance_m || 0) > (r.distance_m || 0)));
   if(!own.length) return '';
   const m = own.reduce((s, r) => s + (r.distance_m || 0), 0), dd = mergeDays(own), min = dd.reduce((s, r) => s + workMin(r), 0);
   const live = own.some(r => !r.ended_at);
@@ -1124,7 +1124,7 @@ function planWalked(p, routes){
 }
 function taskHours(plans, routes){
   const ownR = p => { const rs = (routes || []).filter(r => r.plan_id === p.id || (!r.plan_id && r.worker_id && r.worker_id === p.worker_id)); const end = r => r.ended_at ? +new Date(r.ended_at) : Date.now();
-    return rs.filter(r => !rs.some(o => o !== r && +new Date(o.started_at) <= +new Date(r.started_at) && end(o) >= end(r) && (o.distance_m || 0) > (r.distance_m || 0))); };
+    return rs.filter(r => !rs.some(o => o !== r && o.worker_id === r.worker_id && +new Date(o.started_at) <= +new Date(r.started_at) && end(o) >= end(r) && (o.distance_m || 0) > (r.distance_m || 0))); };
   const seen = new Set(); let done = 0, brk = 0;
   const mine = []; (plans || []).forEach(p => ownR(p).forEach(r => { if(!seen.has(r.id)){ seen.add(r.id); mine.push(r); } }));
   mergeDays(mine).forEach(r => { done += workMin(r); brk += brkMin(r); });
