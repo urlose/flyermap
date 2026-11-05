@@ -25,8 +25,15 @@ export function legalModal(kind){
   m.querySelector('[data-ok]').onclick = () => m.remove();
 }
 // small links "Datenschutz · Impressum" for any screen
-export const legalLinks = () => `<p class="small center legal-links">${['privacy', 'imprint', 'terms', 'contract', 'agb'].map(k => `<button class="link muted" data-legal="${k}">${esc(LEGAL_TITLES[k][lang()])}</button>`).join(' · ')}</p>`;
-export function bindLegal(back){ document.querySelectorAll('[data-legal]').forEach(b => b.onclick = () => viewLegal(b.dataset.legal, back)); }
+// one quiet "Rechtliches" link (Datenschutz · Impressum); the full list opens on tap
+const LEGAL_KEYS = ['privacy', 'imprint', 'terms', 'contract', 'agb'];
+const LEGAL_WORD = { de:'Rechtliches', ru:'Правовая информация', en:'Legal' };
+export const legalLinks = () => `<p class="small center legal-links"><button class="link muted" data-legal="privacy">${esc(LEGAL_TITLES.privacy[lang()])}</button> · <button class="link muted" data-legal="imprint">${esc(LEGAL_TITLES.imprint[lang()])}</button> · <button class="link muted" id="legalMore">${esc(LEGAL_WORD[lang()] || LEGAL_WORD.de)}</button></p>`;
+export function bindLegal(back){
+  document.querySelectorAll('[data-legal]').forEach(b => b.onclick = () => viewLegal(b.dataset.legal, back));
+  const mo = document.getElementById('legalMore');
+  if(mo) mo.onclick = () => { const m = modal(`<h2>${esc(LEGAL_WORD[lang()] || LEGAL_WORD.de)}</h2>${LEGAL_KEYS.map(k => `<button class="mm-i" data-lg="${k}">${esc(LEGAL_TITLES[k][lang()])}</button>`).join('')}`); m.querySelectorAll('[data-lg]').forEach(b => b.onclick = () => { m.remove(); viewLegal(b.dataset.lg, back); }); };
+}
 
 // before the first working day (and after a substantial change of the policy): what is recorded, who sees it, how long
 export function locationNote(me, onAck){

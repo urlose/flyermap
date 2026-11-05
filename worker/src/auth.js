@@ -20,7 +20,7 @@ export async function viewJoinLink(code){
     <div class="err" id="jErr"></div>
     <p class="small center"><button class="link" id="jBack">${esc(t('back'))}</button></p>${legalLinks()}</div>`);
   bindLegal(() => viewJoinLink(code));
-  $('#jBack').onclick = () => viewLogin();
+  $('#jBack').onclick = async () => { if((await store.get('role')) === 'admin') location.replace(location.pathname); else viewLogin(); };   // an admin testing the link goes back to the admin
   if(!firm) return;
   $('#jGo').onclick = async () => {
     const b = $('#jGo'), name = $('#jName').value.trim(), phone = $('#jPhone').value.trim(); if(name.length < 2){ $('#jErr').textContent = t('e_name_required'); return; }
