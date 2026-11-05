@@ -10,6 +10,7 @@ import { openMapView } from './routeview.js';
 import { checkpoints, addSkips, dayProgress, makeNav } from './nav.js';
 import { loadFirm, firmCardHtml, bindFirmCard, firmComplete, avvOk } from './firm.js';
 import { viewMaster, poolHtml } from './master.js';
+const DONE_TX = () => ({ de:{ chip:'Erledigte', tag:'erledigt' }, ru:{ chip:'Выполненные', tag:'выполнен' }, en:{ chip:'Finished', tag:'finished' } }[['ru', 'en'].includes(I.lang) ? I.lang : 'de']);
 
 const GREEN_C = () => css('--color-map-route-completed') || '#16A34A';   // done parts: the theme's "completed" colour
 const APP_LINK = 'https://urlose.github.io/flyermap/app/';
@@ -132,11 +133,24 @@ function viewLive(){
   shell('map', `<div id="fullMap" class="fullmap"></div>
     <div class="map-search">${sf.html}<div class="rad-row hidden" id="radRow"></div></div>
     <div class="float-card"><div class="fc-row"><b id="liveCount">${esc(t('loadingShort'))}</b><span class="muted small" id="liveUpd" role="status"></span></div><div class="live-list" id="liveList"></div>
-      <div class="fc-row" style="margin-top:8px;justify-content:flex-start"><button class="chip ${MAPQ.tasks !== false ? 'on' : ''}" id="mTasks" aria-pressed="${MAPQ.tasks !== false}">${ICONS.route}<span id="mTasksTx">${esc(t('mapOrders'))}</span></button></div></div>`, { map:true });
+      <div class="fc-row" style="margin-top:8px;justify-content:flex-start"><button class="chip ${MAPQ.tasks !== false ? 'on' : ''}" id="mTasks" aria-pressed="${MAPQ.tasks !== false}">${ICONS.route}<span id="mTasksTx">${esc(t('mapOrders'))}</span></button><button class="chip ${MAPQ.done !== false ? 'on' : ''}" id="mDone" aria-pressed="${MAPQ.done !== false}">${ICONS.check}<span id="mDoneTx">${esc(DONE_TX().chip)}</span></button></div></div>`, { map:true });
   sf.bind();
   m = makeMap($('#fullMap'), MAPQ.place ? [MAPQ.place.lat, MAPQ.place.lng] : null, 12);
   // open orders: planned routes in their colours, walked parts green; tap → order
   const taskLayer = L.layerGroup(); if(MAPQ.tasks !== false) taskLayer.addTo(m);
+  // finished orders: grey dashed routes + green check pin "… · erledigt"; tap → order
+  const doneLayer = L.layerGroup(); if(MAPQ.done !== false) doneLayer.addTo(m);
+  (async () => {
+    const done = A.tasks.filter(x => x.status === 'done' && x.start_lat != null);
+    $('#mDoneTx').textContent = DONE_TX().chip + ' (' + done.length + ')'; if(!done.length) return;
+    const { data:plans } = await sb.from('task_plans').select('task_id,path').in('task_id', done.map(x => x.id));
+    if(!document.getElementById('mDone')) return;
+    for(const tk of done){
+      const go = () => viewTask(tk.id), tip = tk.title + ' · ' + DONE_TX().tag + (tk.work_date ? ' · ' + fmtDay(tk.work_date) : '');
+      (plans || []).filter(p => p.task_id === tk.id && p.path && p.path.length > 1).forEach(p => L.polyline(Planner.pathRuns(p.path), { color:'#64748B', weight:3, opacity:.5, dashArray:'6 6', lineJoin:'round' }).bindTooltip(tip, { sticky:true }).on('click', go).addTo(doneLayer));
+      L.marker([tk.start_lat, tk.start_lng], { icon:labelIcon('pin-done', tk.title + ' · ' + DONE_TX().tag), zIndexOffset:100 }).bindTooltip(tip).on('click', go).addTo(doneLayer);
+    }
+  })().catch(() => {});
   layer = L.layerGroup().addTo(m);
   let taskBounds = null, tasksLoaded = false, lastWB = null, userMoved = false;
   m.on('dragstart', () => { userMoved = true; });
@@ -162,6 +176,11 @@ function viewLive(){
     taskBounds = b.isValid() ? b : null; tasksLoaded = true;
     if(!userMoved && !MAPQ.place) autoFit();
   })().catch(() => {});
+  $('#mDone').onclick = () => {
+    MAPQ.done = MAPQ.done === false; const on = MAPQ.done !== false;
+    if(on) doneLayer.addTo(m); else m.removeLayer(doneLayer);
+    $('#mDone').classList.toggle('on', on); $('#mDone').setAttribute('aria-pressed', on);
+  };
   $('#mTasks').onclick = () => {
     MAPQ.tasks = MAPQ.tasks === false; const on = MAPQ.tasks !== false;
     if(on) taskLayer.addTo(m); else m.removeLayer(taskLayer);
