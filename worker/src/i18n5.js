@@ -208,3 +208,5 @@ Object.assign(T.de, { replanWork:'Routen neu planen (läuft schon)', replanWorkH
 Object.assign(T.ru, { replanWork:'Пересчитать маршруты (заказ уже идёт)', replanWorkHint:'Пройденное сохраняется и на новых маршрутах считается сделанным. Работники получат уведомление.', replanLive:'Сейчас кто-то идёт по этому заказу. Пересчитать можно после Feierabend.', routeChangedTitle:'Маршрут изменён: {title}', routeChangedBody:'Заказ пересчитан. {date}≈ {mb} ящиков · {km}. Обновите страницу.', routeChangedDays:'Заказ пересчитан, и теперь нужно больше дней. Посмотрите маршрут и выберите дни заново.' });
 Object.assign(T.de, { noQuota:'Ohne Quote (keine Tempo-Warnungen, z. B. mit Auto)', driveTip:'Fahrt · {km} (zählt als Arbeitszeit, nicht als verteilt)' });
 Object.assign(T.ru, { noQuota:'Без квоты (без предупреждений о темпе, напр. с машиной)', driveTip:'Поездка · {km} (рабочее время, но не раздача)' });
+Object.assign(T.de, { tabStats:'Statistik' });
+Object.assign(T.ru, { tabStats:'Статистика' });

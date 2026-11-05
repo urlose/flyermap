@@ -5,6 +5,8 @@ import { sb, store, $, esc, css, hav, fmtDist, fmtH, fmtHm, fmtN, fmtDay, fmtDT,
 import { UI, ICONS, shell, setLoc, getLoc, plain, topbar, bindBack, makeMap, dot, labelIcon, fit, drawJumps, modal, confirmBox, toast, searchField, langSwitch, themeSwitch, statusPill, emptyState, avatar, every, personIcon } from './ui.js';
 import { legalLinks, bindLegal } from './legalview.js';
 import { adminContractHtml, bindAdminContract } from './contractview.js';
+import { loadWorkerStats, okBadge, shortLine, workerStatsHtml, bindWorkerStats, isVerified, viewStats } from './stats.js';
+window.addEventListener('fm-open-task', e => viewTask(e.detail, () => viewStats()));
 import { makePlanEngine, setStampClient, tileStamp } from './planengine.js';
 import { openMapView } from './routeview.js';
 import { checkpoints, addSkips, dayProgress, makeNav } from './nav.js';
@@ -114,7 +116,7 @@ function pace(w){
 }
 const isLive = w => w.active_route_id && ((w.last_seen && Date.now() - new Date(w.last_seen) < 20 * 60e3) || A.live.some(r => r.worker_id === w.id && r.paused_at));
 function workerOptions(lat, lng, sel){
-  return `<option value="">${esc(t('nobody'))}</option>` + forPoint(lat, lng).map(x => `<option value="${x.w.id}" ${x.w.id === sel ? 'selected' : ''}>${esc(x.w.name)}${x.city ? ' · ' + esc(x.city.name) : ''}${isFinite(x.km) ? ' · ' + Math.round(x.km) + ' km' : ''}${x.inZone ? '' : ' · ' + esc(t('outZone'))}</option>`).join('');
+  return `<option value="">${esc(t('nobody'))}</option>` + forPoint(lat, lng).sort((a, b) => isVerified(b.w.id) - isVerified(a.w.id)).map(x => `<option value="${x.w.id}" ${x.w.id === sel ? 'selected' : ''}>${isVerified(x.w.id) ? '✓ ' : ''}${esc(x.w.name)}${x.city ? ' · ' + esc(x.city.name) : ''}${isFinite(x.km) ? ' · ' + Math.round(x.km) + ' km' : ''}${x.inZone ? '' : ' · ' + esc(t('outZone'))}</option>`).join('');
 }
 
 /* ---------- tabs ---------- */
@@ -122,6 +124,7 @@ export function adminTab(tab){
   if(tab === 'map') return viewLive();
   if(tab === 'people') return viewPeople();
   if(tab === 'settings') return viewSettings();
+  if(tab === 'stats') return viewStats();
   return viewTasks();
 }
 
@@ -322,6 +325,7 @@ function bindDayFilter(f, again){
 }
 
 async function viewPeople(){
+  await loadWorkerStats();
   let place = null;
   const f = dayFilter();
   const sf = searchField('wCity', t('whoPh'), c => { place = c; render(); }, { citiesOnly:true });
@@ -361,7 +365,7 @@ async function viewPeople(){
     $('#wList').innerHTML = (on ? `<div class="hint">${esc(shown.length ? t('workedSum', { w:list.length, d:daysSum(shown) }) : t('noDaysRange'))}</div>` : '') +
       (place ? `<div class="hint">${esc(t('canReach', { n:list.length, city:place.name }))} <button class="link" id="wClr">${esc(t('reset'))}</button></div>` : '') +
       (list.length ? list.map(({ w, km }) => `<div class="card worker-card"><button class="wc-main" data-id="${w.id}">${avatar(w.name, isLive(w) ? 'live' : '')}
-        <div class="grow"><b>${esc(w.name)}</b><span>${coName(w.company_id) ? esc(coName(w.company_id)) + ' · ' : ''}${esc((w.cities || []).map(c => c.name).join(', '))}${km != null ? ' · ' + Math.round(km) + ' km' : ''} · ${esc(t('zoneChip', { n:w.zone_minutes }))}</span><span>${isLive(w) ? statusPill('live', t('stLive')) : esc(t('lastActive', { a:ago(w.last_seen) }))}</span></div>${ICONS.chevron}</button>
+        <div class="grow"><b>${esc(w.name)} ${okBadge(w.id)}</b>${shortLine(w.id) ? `<span>${esc(shortLine(w.id))}</span>` : ''}<span>${coName(w.company_id) ? esc(coName(w.company_id)) + ' · ' : ''}${esc((w.cities || []).map(c => c.name).join(', '))}${km != null ? ' · ' + Math.round(km) + ' km' : ''} · ${esc(t('zoneChip', { n:w.zone_minutes }))}</span><span>${isLive(w) ? statusPill('live', t('stLive')) : esc(t('lastActive', { a:ago(w.last_seen) }))}</span></div>${ICONS.chevron}</button>
         ${on ? `<div class="wc-days">${byW.get(w.id).map(r => dayLine(r)).join('')}</div>` : ''}
         <div class="wc-act"><a class="btn ghost small" href="${telLink(w.phone)}">${ICONS.phone}${esc(t('call'))}</a><a class="btn ghost small" target="_blank" rel="noopener" href="${waLink(w.phone)}">${ICONS.chat}WhatsApp</a></div></div>`).join('')
        : on ? '' : emptyState(A.workers.length ? t('notFound') : t('noWorkers'), A.workers.length ? 'search' : 'users'));
@@ -408,6 +412,7 @@ function viewSettings(){
 }
 
 async function viewWorker(id, back, focusId){
+  await loadWorkerStats();
   back = back || viewPeople;
   const w = wById(id); if(!w) return back();
   const { data:routes } = await sb.from('routes').select('*').eq('worker_id', id).order('started_at', { ascending:false }).limit(300);
@@ -418,6 +423,7 @@ async function viewWorker(id, back, focusId){
       <div class="person-row big">${avatar(w.name, isLive(w) ? 'live' : '')}<div><b>${esc(w.name)}</b><span>${esc(w.phone)} · ${esc(t('lastActive', { a:ago(w.last_seen) }))}</span></div></div>
       <div class="tool-row"><a class="btn primary small" href="${telLink(w.phone)}">${ICONS.phone}${esc(t('call'))}</a><a class="btn ghost small" target="_blank" rel="noopener" href="${waLink(w.phone)}">${ICONS.chat}WhatsApp</a></div>
       <div class="chips">${(w.cities || []).map(c => `<span class="chip">${esc(c.name)}</span>`).join('')}</div>
+      ${workerStatsHtml(w.id)}
       <h2 class="sec">${esc(t('workDays'))}</h2>
       <div id="wDaysSum" class="muted small" style="margin:0 0 2px"></div>
       <div id="wMap" class="wmap"></div>
@@ -432,7 +438,7 @@ async function viewWorker(id, back, focusId){
       ${/^\+490000/.test(w.phone || '') && !/^\+4900000000/.test(w.phone || '') ? `<div id="wLink" class="card" style="display:block;margin-top:16px"><label class="f" style="margin-top:0">${esc(t('loginLink'))}</label><p class="small muted">${esc(t('loadingShort'))}</p></div>` : ''}
       <button class="btn ghost danger-text" id="wdel" style="margin-top:20px">${esc(t('del'))}</button>
     </div>`); setLoc('worker/' + id);
-  bindBack(back);
+  bindBack(back); bindWorkerStats(w.id, () => viewWorker(id, back, focusId));
   const wm = makeMap($('#wMap'), (w.last_lat != null) ? [w.last_lat, w.last_lng] : null, 14), wl = L.layerGroup().addTo(wm);
   let curDay = null;
   const showRoute = async r => {
@@ -1483,7 +1489,7 @@ export async function bootAdmin(){
   if(!session) return false;
   const { data:ok, error } = await sb.rpc('become_admin');
   if(error || !ok) return false;
-  A.user = session.user; UI.role = 'admin'; UI.onTab = adminTab;
+  A.user = session.user; UI.role = 'admin'; UI.onTab = adminTab; loadWorkerStats().catch(() => {});
   await store.set('role', 'admin');
   try{ await loadAll(); }catch{}
   if(A.company && A.company.master && !A.company.id){ adminTab('people'); viewMaster(() => adminTab('people')); }

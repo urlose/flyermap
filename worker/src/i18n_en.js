@@ -190,3 +190,4 @@ Object.assign(T.en, { redayBtn:'Spread the rest over days', redayHint:'The route
 Object.assign(T.en, { stCancelled:'Cancelled', cancelTask:'Cancel order', cancelTaskQ:'Cancel the order? It disappears for the workers, walked parts stay saved. "Reopen" undoes it.' });
 Object.assign(T.en, { replanWork:'Re-plan routes (order already running)', replanWorkHint:'What was walked stays saved and counts as done on the new routes. Workers get notified.', replanLive:'Someone is walking this order right now. Re-plan after they finish.', routeChangedTitle:'Route changed: {title}', routeChangedBody:'The order was re-planned. {date}≈ {mb} mailboxes · {km}. Please refresh.', routeChangedDays:'The order was re-planned and now needs more days. Please check the route and pick the days again.' });
 Object.assign(T.en, { noQuota:'No quota (no pace warnings, e.g. by car)', driveTip:'Driving · {km} (working time, not distributed)' });
+Object.assign(T.en, { tabStats:'Statistics' });
