@@ -6,7 +6,7 @@ import { UI, ICONS, shell, setLoc, getLoc, plain, topbar, bindBack, makeMap, dot
 import { legalLinks, bindLegal } from './legalview.js';
 import { makePlanEngine, setStampClient, tileStamp } from './planengine.js';
 import { openMapView } from './routeview.js';
-import { checkpoints, addSkips, dayProgress } from './nav.js';
+import { checkpoints, addSkips, dayProgress, makeNav } from './nav.js';
 import { loadFirm, firmCardHtml, bindFirmCard, firmComplete, avvOk } from './firm.js';
 import { viewMaster, poolHtml } from './master.js';
 
@@ -1172,7 +1172,7 @@ async function viewTask(id){
       ${(plans || []).length ? plans.map(p => { const w = wById(p.worker_id); return `<div class="route-row"><span class="swatch" style="background:${esc(p.color || '#2563EB')}"></span>
         <div class="grow"><b>${esc(t('planRoute', { n:p.idx + 1 }))} <span class="muted" id="pp${p.idx}"></span></b>
         <span>${esc(t('routeLine', { km:fmtDist(p.length_m), h:fmtHm(p.minutes || 0), mb:fmtN(p.mailboxes || 0) }))}</span>
-        ${dayLines(p.days, p.color, p.idx)}<span class="small" id="prest${p.idx}" style="font-weight:600"></span>
+        ${dayLines(p.days, p.color, p.idx)}<span class="small" id="prest${p.idx}" style="font-weight:600"></span><button class="link small hidden" id="pred${p.idx}" data-reday="${p.id}" style="align-self:flex-start">${ICONS.calendar}${esc(t('redayBtn'))}</button>
         <div class="bar"><i id="pb${p.idx}"></i></div><span id="pf${p.idx}" style="margin-top:4px"></span><span class="small" id="pw${p.idx}">${planWalked(p, routes)}</span>${prevWorkers(p, routes)}
         ${p.worker_id ? `<div class="rr-status"><span class="pill ${(A.live || []).some(r => r.plan_id === p.id && !r.paused_at) ? 'live' : stCls(p)}">${(A.live || []).some(r => r.plan_id === p.id && !r.paused_at) ? esc(t('stLive')) + ' · ' : ''}${esc(stText(p))}${p.status === 'accepted' && (p.work_dates || []).length ? ' · ' + esc(p.work_dates.map(fmtDay).join(', ')) : ''}</span>${p.status === 'accepted' ? `<button class="link small" data-dates="${p.id}">${ICONS.edit}${esc(t('chgDates'))}</button>` : ''}</div>` : ''}
         ${w ? `<button class="rr-worker" data-wk="${w.id}">${avatar()}<span class="grow"><b>${esc(w.name)}</b><small>${esc(t('openWorker'))}</small></span><span class="rr-chev">›</span></button>
@@ -1212,6 +1212,31 @@ async function viewTask(id){
     await loadTasks(); toast(t('saved')); viewTask(id);
   });
   // one worker on several routes of the order: the routes become one (days after each other, progress and sessions stay)
+  // the rest of a route on N days: same line (walked parts stay walked and are passed over), new day cuts so that
+  // every day gets the same open work; for a successor who does the rest alone
+  document.querySelectorAll('[data-reday]').forEach(bt => bt.onclick = async () => {
+    const p = (plans || []).find(x => x.id === bt.dataset.reday), tr = p && PLAN_TR[p.id]; if(!tr) return;
+    const cur = p.days && p.days.length > 1 ? dayProgress(p, tr).filter(x => x < 95).length : 1;
+    const mo = modal(`<h2>${esc(t('redayBtn'))}</h2><p class="muted small">${esc(t('redayHint'))}</p><label class="f" for="rdN">${esc(t('redayN'))}</label><input class="in" id="rdN" type="number" min="1" max="14" value="${Math.max(1, p.days_left || cur)}"><button class="btn primary" id="rdGo" style="margin-top:12px">${esc(t('save'))}</button><div class="err" id="rdErr"></div>`);
+    mo.querySelector('#rdGo').onclick = async () => {
+      const n = Math.max(1, Math.min(14, parseInt(mo.querySelector('#rdN').value, 10) || 1));
+      const nav = makeNav(p), L = p.path.length, S = new Float64Array(L), O = new Float64Array(L);
+      for(let i = 1; i < tr.samples.length; i++){ const j = Math.min(L - 2, Math.max(0, Math.ceil(nav.posOf[i] - 1e-9) - 1)); S[j]++; if(!tr.isDone(i)) O[j]++; }
+      const sAll = S.reduce((a, b) => a + b, 0) || 1, oAll = O.reduce((a, b) => a + b, 0);
+      if(!oAll){ mo.querySelector('#rdErr').textContent = t('restNone'); return; }
+      const cuts = [0]; let acc = 0, k = 1;
+      for(let j = 0; j < L - 1 && k < n; j++){ acc += O[j]; if(acc >= oAll * k / n){ cuts.push(j + 1); k++; } }
+      cuts.push(L - 1);
+      const days = [];
+      for(let d = 0; d + 1 < cuts.length; d++){
+        const i0 = cuts[d], i1 = cuts[d + 1]; let s = 0; for(let j = i0; j < i1; j++) s += S[j];
+        const f = s / sAll; days.push({ i0, i1, minutes:Math.round((p.minutes || 0) * f), length_m:Math.round((p.length_m || 0) * f), street_m:Math.round((p.street_m || 0) * f), mailboxes:Math.round((p.mailboxes || 0) * f) });
+      }
+      const { error } = await sb.from('task_plans').update({ days, days_left:null, work_dates:[], status:p.worker_id ? 'offered' : p.status, accepted_at:null }).eq('id', p.id);
+      if(error){ mo.querySelector('#rdErr').textContent = error.message; return; }
+      mo.remove(); if(p.worker_id) await notifyAssigned(tk, p); await loadTasks(); toast(t('saved')); viewTask(id);
+    };
+  });
   document.querySelectorAll('[data-merge]').forEach(bt => bt.onclick = async () => {
     const ps = (plans || []).filter(p => p.worker_id === bt.dataset.merge).sort((a, b) => a.idx - b.idx), w = wById(bt.dataset.merge);
     if(ps.length < 2 || !await confirmBox(t('mergeBtn'), t('mergeQ', { n:w ? w.name : '?', k:ps.length }), t('mergeBtn'))) return;
@@ -1269,9 +1294,10 @@ async function viewTask(id){
     // per day: done or how far; and what is still open (what a new worker gets)
     try{
       const ds = p.days && p.days.length > 1 ? p.days : [{ minutes:p.minutes, length_m:p.length_m }], dp = p.days && p.days.length > 1 ? dayProgress(p, tr) : [tr.pct()];
-      dp.forEach((x, k) => { const el = $('#dp' + p.idx + '_' + k); if(el) el.textContent = x >= 95 ? ' · ✓ ' + t('dayDone') : ' · ' + Math.round(x) + ' %'; });
+      dp.forEach((x, k) => { const el = $('#dp' + p.idx + '_' + k); if(el) el.textContent = x >= 95 ? ' · ✓ ' + t('dayDone') : ' · ' + Math.round(x) + ' % · ' + t('openH', { h:fmtHm((ds[k].minutes || 0) * (1 - x / 100)) }); });
       const restMin = ds.reduce((a, d, k) => a + (d.minutes || 0) * (dp[k] >= 95 ? 0 : 1 - (dp[k] || 0) / 100), 0), restM = ds.reduce((a, d, k) => a + (d.length_m || 0) * (dp[k] >= 95 ? 0 : 1 - (dp[k] || 0) / 100), 0);
       const re = $('#prest' + p.idx); if(re) re.textContent = restMin > 1 ? t('restLine', { km:fmtDist(restM), h:fmtHm(restMin) }) : t('restNone');
+      const rb = $('#pred' + p.idx); if(rb && restMin > 1 && dp.some(x => x > 0)) rb.classList.remove('hidden');
     }catch{}   // also streets of this route walked by somebody else
     tr.runs().forEach(run => L.polyline(run, { color:GREEN, weight:6, opacity:.95 }).addTo(doneLayer));
     const pct = tr.pct(); const el = $('#pp' + p.idx); if(el) el.textContent = '· ' + t('done', { p:pct }); const bar = $('#pb' + p.idx); if(bar) bar.style.width = pct + '%';
