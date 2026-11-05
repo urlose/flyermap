@@ -100,9 +100,51 @@ export const topbar = (title, backFn, right = '') => `<header class="topbar ${ba
 export function bindBack(fn){ const b = $('#tbBack'); if(b) b.onclick = fn; }
 
 /* ---------- map ---------- */
+// map tiles are kept on the phone (Cache Storage): a map seen once (or the route area loaded in advance) shows without signal
+const TILE_CACHE = 'fm-tiles-v1', TILE_MAX = 6000; let tilePuts = 0;
+async function trimTiles(c){ try{ const ks = await c.keys(); for(let i = 0; i < ks.length - TILE_MAX; i++) await c.delete(ks[i]); }catch{} }
+export async function tileBlob(url, onlyCache){
+  if(!('caches' in window)) throw new Error('no_cache');
+  const c = await caches.open(TILE_CACHE), hit = await c.match(url);
+  if(hit) return hit.blob();
+  if(onlyCache || !navigator.onLine) throw new Error('offline');
+  const r = await fetch(url, { mode:'cors', credentials:'omit' }); if(!r.ok) throw new Error('tile ' + r.status);
+  await c.put(url, r.clone()); if(++tilePuts % 200 === 0) trimTiles(c);
+  return r.blob();
+}
+const CachedTiles = L.TileLayer.extend({
+  createTile(coords, done){
+    const img = document.createElement('img'), url = this.getTileUrl(coords);
+    img.alt = ''; img.setAttribute('role', 'presentation');
+    const direct = () => { img.onload = () => done(null, img); img.onerror = e => done(e, img); img.src = url; };
+    tileBlob(url).then(b => { const u = URL.createObjectURL(b); img.onload = () => { URL.revokeObjectURL(u); done(null, img); }; img.onerror = e => { URL.revokeObjectURL(u); done(e, img); }; img.src = u; })
+      .catch(e => { if(e && e.message === 'offline') done(e, img); else direct(); });
+    return img;
+  }
+});
+// load the map of a route in advance (zoom 15–17 along the path, a few hundred tiles at most), when there is signal
+export async function prefetchRoute(path, key){
+  if(!path || path.length < 2 || !navigator.onLine || !('caches' in window)) return;
+  const done = (() => { try{ return JSON.parse(localStorage.getItem('fm.tilesDone') || '[]'); }catch{ return []; } })();
+  if(key && done.includes(key)) return;
+  const tiles = new Set();
+  const tx = (lng, z) => Math.floor((lng + 180) / 360 * 2 ** z), ty = (lat, z) => { const r = lat * Math.PI / 180; return Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * 2 ** z); };
+  for(let i = 0; i < path.length; i++){
+    const a = path[i], b = path[i + 1] || a, n = Math.max(1, Math.ceil(Math.hypot((b[0] - a[0]) * 111000, (b[1] - a[1]) * 70000) / 80));
+    for(let k = 0; k < n; k++){ const lat = a[0] + (b[0] - a[0]) * k / n, lng = a[1] + (b[1] - a[1]) * k / n; for(const z of [15, 16, 17]) tiles.add(z + '/' + tx(lng, z) + '/' + ty(lat, z)); }
+    if(tiles.size > 700) break;
+  }
+  const urls = [...tiles].slice(0, 700).map(s => { const [z, x, y] = s.split('/'); return TILES.replace('{z}', z).replace('{x}', x).replace('{y}', y); });
+  let ok = 0;
+  for(let i = 0; i < urls.length; i += 4){
+    if(!navigator.onLine) return;
+    const res = await Promise.allSettled(urls.slice(i, i + 4).map(u => tileBlob(u))); ok += res.filter(r => r.status === 'fulfilled').length;
+  }
+  if(key && ok > urls.length * 0.9){ done.push(key); try{ localStorage.setItem('fm.tilesDone', JSON.stringify(done.slice(-50))); }catch{} }
+}
 export function makeMap(el, center, zoom = 15, opts = {}){
   const m = L.map(el, { zoomControl:false, attributionControl:true, ...opts }).setView(center || [51.2277, 6.7735], zoom);
-  L.tileLayer(TILES, { maxZoom:19, attribution:'© OpenStreetMap' }).addTo(m);
+  new CachedTiles(TILES, { maxZoom:19, attribution:'© OpenStreetMap' }).addTo(m);
   UI.maps.push(m); el._map = m;
   // zoomed out (country / region): only the markers, names come back from city level on (people on the way keep theirs)
   const far = () => el.classList.toggle('map-far', m.getZoom() < 10); m.on('zoomend', far); far();

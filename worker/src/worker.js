@@ -10,7 +10,7 @@ import { setLegalFirm } from './legal.js';
 import { t, I } from './i18n.js';
 import { NATIVE, PRIVACY_URL, sb, store, rpc, errText, deMobile, $, esc, css, hav, fmtDist, fmtHm, fmtN, fmtTime, fmtDay, loopPath } from './core.js';
 import { waVerify } from './auth.js';
-import { UI, ICONS, shell, setLoc, getLoc, plain, topbar, bindBack, makeMap, dot, fit, drawJumps, modal, confirmBox, reasonBox, toast, cityPicker, langSwitch, themeSwitch, statusPill, emptyState, avatar, every } from './ui.js';
+import { UI, ICONS, shell, setLoc, getLoc, prefetchRoute, plain, topbar, bindBack, makeMap, dot, fit, drawJumps, modal, confirmBox, reasonBox, toast, cityPicker, langSwitch, themeSwitch, statusPill, emptyState, avatar, every } from './ui.js';
 
 const BackgroundGeolocation = registerPlugin('BackgroundGeolocation');
 const GREEN = '#16A34A';
@@ -77,6 +77,14 @@ export async function loadMe(){
   try{ W.me = await rpc('worker_me', { p_token:W.token }); await store.set('me', W.me); setLegalFirm(W.me && W.me.company); }
   catch(e){ if(e.message === 'invalid_token') return forceLogout(t('e_invalid_token')); W.me = W.me || await store.get('me'); return; }
   syncSkips();
+  preloadMaps();
+}
+// the maps of the own accepted routes are loaded onto the phone in advance (one after the other, only with signal)
+let preloading = null;
+function preloadMaps(){
+  if(preloading) return;
+  const ps = tasks().map(x => x.plan).filter(p => p && p.status === 'accepted' && p.path && p.path.length > 1);
+  preloading = (async () => { for(const p of ps){ try{ await prefetchRoute(p.path, p.id + ':' + p.path.length); }catch{} } })().finally(() => { preloading = null; });
 }
 // pieces marked "not needed" (by a colleague on the same route or by the admin) reach a running route too
 function syncSkips(){

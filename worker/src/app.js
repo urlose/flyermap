@@ -4,7 +4,7 @@ import './i18n3.js';
 import './i18n4.js';
 import './i18n5.js';
 import './i18n_en.js';
-import { store } from './core.js';
+import { store, NATIVE } from './core.js';
 import { UI, applyTheme, initOffline } from './ui.js';
 import { W, bootWorker, workerTab, acceptToken } from './worker.js';
 import { A, bootAdmin, adminTab } from './admin.js';
@@ -36,6 +36,8 @@ document.addEventListener('click', async e => {
 matchMedia('(prefers-color-scheme: dark)').addEventListener && matchMedia('(prefers-color-scheme: dark)').addEventListener('change', async () => applyTheme(await store.get('theme')));
 
 (async function boot(){
+  // web app: works without signal after the first visit (the phone app has its files on board)
+  if(!NATIVE && 'serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(() => {});
   applyTheme(await store.get('theme'));
   initOffline();
   I.lang = await store.get('lang') || 'de';          // German by default
