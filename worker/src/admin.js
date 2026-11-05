@@ -169,6 +169,32 @@ function viewLive(){
     walked(done.map(x => x.id), doneLayer);
   })().catch(() => {});
   layer = L.layerGroup().addTo(m);
+  const wLayer = L.layerGroup().addTo(m); let wItems = [];
+  const drawWorkers = () => {
+    wLayer.clearLayers(); if(!m) return;
+    const R = 46, groups = [];   // px: markers closer than this on screen become one group
+    for(const it of [...wItems].sort((a, c) => c.on - a.on)){
+      const pt = m.latLngToLayerPoint(it.p), g = groups.find(x => x.pt.distanceTo(pt) < R);
+      if(g){ g.items.push(it); } else groups.push({ pt, items:[it] });
+    }
+    for(const g of groups){
+      if(g.items.length === 1){
+        const { w, on, p, city } = g.items[0];
+        if(!on && !city) L.circle(p, { radius:350, color:'#94A3B8', weight:1, fillColor:'#94A3B8', fillOpacity:.15, interactive:false }).addTo(wLayer);
+        L.marker(p, { icon:personIcon(w.name, on, on ? '' : city ? city : ago(w.last_seen)), zIndexOffset:on ? 800 : 400 }).on('click', () => viewWorker(w.id, viewLive)).addTo(wLayer);
+        continue;
+      }
+      const bb = L.latLngBounds(g.items.map(x => x.p)), c = bb.getCenter(), live = g.items.filter(x => x.on).length;
+      const cities = [...new Set(g.items.map(x => x.city).filter(Boolean))], label = cities.length === 1 ? cities[0] : live ? t('liveNow', { n:live }) : '';
+      const html = g.items.map(({ w, on, city }) => `<button class="link" data-wk="${w.id}" style="display:block;margin:4px 0;text-align:left">${on ? '🟢 ' : ''}${esc(w.name)}<small class="muted"> · ${esc(on ? t('stLive') : city || ago(w.last_seen))}</small></button>`).join('');
+      const mk = L.marker(c, { icon:groupIcon(g.items.length, label, live), zIndexOffset:live ? 900 : 500 }).addTo(wLayer);
+      // same place (e.g. home city) or already fully zoomed in: list; otherwise zoom in so the group splits
+      const samePlace = bb.getNorthEast().distanceTo(bb.getSouthWest()) < 30;
+      if(samePlace || m.getZoom() >= m.getMaxZoom() - 1) mk.bindPopup(html, { maxHeight:280 }).on('popupopen', e => e.popup.getElement().querySelectorAll('[data-wk]').forEach(x => x.onclick = () => viewWorker(x.dataset.wk, viewLive)));
+      else mk.on('click', () => m.fitBounds(bb.pad(.4), { maxZoom:Math.min(m.getMaxZoom(), m.getZoom() + 4) }));
+    }
+  };
+  m.on('zoomend', drawWorkers);
   let taskBounds = null, tasksLoaded = false, lastWB = null, userMoved = false;
   m.on('dragstart', () => { userMoved = true; });
   // first view: every worker and every open order; stops as soon as the admin moves the map
@@ -236,23 +262,13 @@ function viewLive(){
       L.circle([pl.lat, pl.lng], { radius:MAPQ.km * 1000, color:'#2563EB', weight:2, fillColor:'#2563EB', fillOpacity:.06, interactive:false }).addTo(layer);
       L.circleMarker([pl.lat, pl.lng], { radius:6, color:'#fff', weight:3, fillColor:'#2563EB', fillOpacity:1, interactive:false }).addTo(layer);
     }
-    // workers at home in the same city: one marker with the number, tap → list
-    for(const [k, ws] of perCity){
-      if(ws.length < 2) continue;
-      const { p, city } = posOf.get(ws[0].id); b.extend(p);
-      const html = `<b>${esc(city)}</b>` + ws.map(w => `<button class="link" data-wk="${w.id}" style="display:block;margin-top:6px;text-align:left">${esc(w.name)} · ${esc(ago(w.last_seen))}</button>`).join('');
-      L.marker(p, { icon:groupIcon(ws.length, city), zIndexOffset:300 }).bindPopup(html).on('popupopen', e => e.popup.getElement().querySelectorAll('[data-wk]').forEach(x => x.onclick = () => viewWorker(x.dataset.wk, viewLive))).addTo(layer);
+    // worker markers are clustered by distance on screen: zoomed out they merge into one marker with the number, zooming in splits them
+    wItems = known.map(w => ({ w, on:isLive(w), ...posOf.get(w.id) }));
+    for(const it of wItems){
+      b.extend(it.p);
+      if(it.on){ navTarget(layer, it.w, '#7C3AED', it.w.name); todayTrack(it.w.id).then(pts => { if(pts.length > 1) L.polyline(pts.map(q => [q.lat, q.lng]), { color:css('--route'), weight:4, opacity:.85 }).addTo(layer); }).catch(() => {}); }
     }
-    for(const w of known){
-      const on = isLive(w), { p, city, key } = posOf.get(w.id);
-      if(key && (perCity.get(key) || []).length > 1) continue;
-      if(!on && !city) L.circle(p, { radius:350, color:'#94A3B8', weight:1, fillColor:'#94A3B8', fillOpacity:.15, interactive:false }).addTo(layer);
-      L.marker(p, { icon:personIcon(w.name, on, on ? '' : city ? city : ago(w.last_seen)), zIndexOffset:on ? 800 : city ? 300 : 400 }).on('click', () => viewWorker(w.id, viewLive)).addTo(layer);
-      b.extend(p);
-      // the whole day so far (all sessions of today), not only the running one
-      if(on) navTarget(layer, w, '#7C3AED', w.name);
-      if(on) todayTrack(w.id).then(pts => { if(pts.length > 1) L.polyline(pts.map(q => [q.lat, q.lng]), { color:css('--route'), weight:4, opacity:.85 }).addTo(layer); }).catch(() => {});
-    }
+    drawWorkers();
     if(!$('#liveCount')) return;
     radRow();
     $('#liveUpd').textContent = t('updated', { x:t('justNow') });
