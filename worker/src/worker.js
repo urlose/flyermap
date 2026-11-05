@@ -198,6 +198,8 @@ async function startHereOrAsk(task, plan, prev){
   let near = null;
   if(here && plan && plan.path && plan.path.length > 1){ const tr = addSkips(Planner.makeTracker(plan.path), plan); if(prev && prev.length) tr.addTrack(prev); near = nearestOpen(plan, tr, here.lat, here.lng); }
   if(near && near.d - slack <= START_RADIUS) return { ok:true, day:near.day };
+  // allowed by the admin for this worker: start anywhere (the day = the open part nearest to here)
+  if(W.me && W.me.start_anywhere) return { ok:true, day:near && near.d < 3000 ? near.day : undefined };
   if(d != null && d - slack <= START_RADIUS) return { ok:true };
   return new Promise(resolve => {
     const m2 = modal(`<h2>${esc(t('notAtStart'))}</h2>

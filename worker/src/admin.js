@@ -82,7 +82,7 @@ const planEngine = () => engine || (setStampClient(sb), tileStamp(), engine = ma
 export const A = { user:null, workers:[], tasks:[], live:[], demo:null, hooks:{}, filter:{ status:'open', from:'', to:'', city:'', district:'' } };
 
 /* ---------- data ---------- */
-async function loadWorkers(){ const { data, error } = await sb.from('workers').select('id,name,phone,cities,zone_minutes,notes,last_lat,last_lng,last_seen,nav_lat,nav_lng,nav_at,active_route_id,created_at,company_id').order('name'); if(error) throw error; A.workers = data; }
+async function loadWorkers(){ const { data, error } = await sb.from('workers').select('id,name,phone,cities,zone_minutes,notes,start_anywhere,last_lat,last_lng,last_seen,nav_lat,nav_lng,nav_at,active_route_id,created_at,company_id').order('name'); if(error) throw error; A.workers = data; }
 async function loadTasks(){ const { data, error } = await sb.from('tasks').select('*,task_workers(worker_id)').order('created_at', { ascending:false }); if(error) throw error; A.tasks = data; }
 async function loadLive(){ const { data } = await sb.from('routes').select('id,worker_id,task_id,plan_id,paused_at,last30_m,started_at,break_s').is('ended_at', null); A.live = data || []; }
 async function loadAll(){
@@ -405,6 +405,7 @@ async function viewWorker(id, back, focusId){
       <label class="f">${esc(t('zoneLabel'))}</label>
       <select class="in" id="wzm">${[30, 45, 60, 75, 90, 120].map(m => `<option value="${m}" ${m === w.zone_minutes ? 'selected' : ''}>${m < 60 ? m + ' ' + t('min') : (m/60).toString().replace('.', ',') + ' ' + t('h')} (~${Math.round(m * KM_PER_MIN_TRANSIT)} km)</option>`).join('')}</select>
       <label class="f">${esc(t('notes'))}</label><textarea class="in" id="wnotes">${esc(w.notes || '')}</textarea>
+      <label class="check-row" style="display:flex;gap:10px;align-items:center;margin-top:12px"><input type="checkbox" id="wany" ${w.start_anywhere ? 'checked' : ''}><span>${esc(t('startAnywhere'))}</span></label>
       <button class="btn primary" id="wsave" style="margin-top:12px">${esc(t('save'))}</button>
       ${/^\+490000/.test(w.phone || '') && !/^\+4900000000/.test(w.phone || '') ? `<div id="wLink" class="card" style="display:block;margin-top:16px"><label class="f" style="margin-top:0">${esc(t('loginLink'))}</label><p class="small muted">${esc(t('loadingShort'))}</p></div>` : ''}
       <button class="btn ghost danger-text" id="wdel" style="margin-top:20px">${esc(t('del'))}</button>
@@ -446,7 +447,7 @@ async function viewWorker(id, back, focusId){
     box.innerHTML = `<label class="f" style="margin-top:0">${esc(t('loginLink'))}</label><p class="small muted">${esc(t('loginLinkHint'))}</p><div class="code-row"><input class="in small" readonly value="${esc(link)}" style="flex:1;min-width:0"><button class="btn ghost small" id="wlCopy">${esc(t('copy'))}</button><a class="btn ghost small" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(link)}">${ICONS.chat}WhatsApp</a></div>`;
     $('#wlCopy').onclick = async () => { try{ await navigator.clipboard.writeText(link); toast(t('copied')); }catch{ toast(link); } };
   });
-  $('#wsave').onclick = async () => { const { error } = await sb.from('workers').update({ zone_minutes:+$('#wzm').value, notes:$('#wnotes').value.trim() || null }).eq('id', id); if(!error){ await loadWorkers(); toast(t('saved')); } };
+  $('#wsave').onclick = async () => { const { error } = await sb.from('workers').update({ zone_minutes:+$('#wzm').value, notes:$('#wnotes').value.trim() || null, ...($('#wany') ? { start_anywhere:$('#wany').checked } : {}) }).eq('id', id); if(!error){ await loadWorkers(); toast(t('saved')); } };
   $('#wdel').onclick = async () => { if(!await confirmBox(t('del'), t('delWorkerQ', { name:w.name }), t('del'), true)) return; await sb.from('workers').delete().eq('id', id); await loadWorkers(); back(); };
 }
 

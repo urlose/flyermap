@@ -194,3 +194,5 @@ Object.assign(T.de, { prevWorker:'Vorher: {n} · {km} · {h} h' });
 Object.assign(T.ru, { prevWorker:'Раньше: {n} · {km} · {h} ч' });
 Object.assign(T.de, { oneDayHint:'Alles zusammen ≈ {h} Std. – das schafft 1 Mitarbeiter an 1 Tag.', fitsOne:'Passt in 1 Tag.' });
 Object.assign(T.ru, { oneDayHint:'Всего ≈ {h} ч – это сделает 1 работник за 1 день.', fitsOne:'Укладывается в 1 день.' });
+Object.assign(T.de, { startAnywhere:'Darf überall starten (ohne Startpunkt-Prüfung)' });
+Object.assign(T.ru, { startAnywhere:'Может начинать где угодно (без проверки точки старта)' });
