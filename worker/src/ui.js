@@ -164,12 +164,13 @@ export const labelIcon = (cls, text) => L.divIcon({ className:'', html:`<div cla
 // the trips between the places of an order (jump points [lat,lng,1] in a route): drawn along the roads (car, bike or bus –
 // it does not matter which); the exact connection for the worker comes from Google / Apple Maps
 export function drawJumps(g, path, bike){
+  const mode = typeof bike === 'string' ? bike : (bike ? 'bike' : 'bus'); bike = mode !== 'bus';   // 'car' | 'bike' | 'bus' (old callers: true = bike)
   (path || []).forEach((q, i) => {
     if(!i || q[2] !== 1) return;
     const a = [path[i - 1][0], path[i - 1][1]], b = [q[0], q[1]];
     const ln = L.polyline([a, b], { color:bike ? (css('--color-map-route-completed') || '#16A34A') : (css('--color-map-route-pending') || '#64748B'), weight:4, opacity:.9, dashArray:bike ? '6 6' : '2 9', lineCap:'round', interactive:false }).addTo(g);
     const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-    const mk = L.marker(mid, { icon:L.divIcon({ className:'', html:`<span class="jump-ic">${bike ? '🚲' : '🚌'}</span>`, iconSize:[26, 26], iconAnchor:[13, 13] }), interactive:false, keyboard:false }).addTo(g);
+    const mk = L.marker(mid, { icon:L.divIcon({ className:'', html:`<span class="jump-ic">${mode === 'car' ? '🚗' : mode === 'bike' ? '🚲' : '🚌'}</span>`, iconSize:[26, 26], iconAnchor:[13, 13] }), interactive:false, keyboard:false }).addTo(g);
     bikeRoute(a, b, 'auto').then(pts => { if(pts && pts.length > 1){ ln.setLatLngs(pts); mk.setLatLng(pts[Math.floor(pts.length / 2)]); } }).catch(() => {});
   });
 }

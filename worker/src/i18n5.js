@@ -174,8 +174,8 @@ Object.assign(T.de, { sideFailed:'In diesen Orten wurden innerhalb der Grenze ke
 Object.assign(T.ru, { sideFailed:'В этих местах внутри границы не найдено улиц с ящиками, они не вошли в маршрут: {list}. Удалите место и нарисуйте его на карте сами.' });
 Object.assign(T.de, { draftQ:'Entwurf fortsetzen?', draftText:'Es gibt einen nicht gespeicherten Auftrag „{name}“. Weitermachen, wo du aufgehört hast?', draftYes:'Fortsetzen' });
 Object.assign(T.ru, { draftQ:'Продолжить черновик?', draftText:'Есть несохранённый заказ «{name}». Продолжить с того места?', draftYes:'Продолжить' });
-Object.assign(T.de, { tripsBike:'Radwege', tripsBus:'Bus/Bahn-Fahrten' });
-Object.assign(T.ru, { tripsBike:'Велопереезды', tripsBus:'Переезды на автобусе' });
+Object.assign(T.de, { tripsCar:'Autofahrten', tripsBike:'Radwege', tripsBus:'Bus/Bahn-Fahrten' });
+Object.assign(T.ru, { tripsCar:'Переезды на машине', tripsBike:'Велопереезды', tripsBus:'Переезды на автобусе' });
 Object.assign(T.de, { travelLbl:'Zwischen den Orten', travel_bus:'Bus / Bahn (30 Min. pro Fahrt)', travel_bike:'Fahrrad (≈ 15 km/h)', travel_car:'Auto (≈ 40 km/h)', travelHint:'So werden die Fahrten zwischen Hauptstadt und Nebenstädten gerechnet (echte Straßenlänge, + 5 Min. pro Fahrt). Verteilt wird zu Fuß.', byCar:'Mit dem Auto (Google Maps)' });
 Object.assign(T.ru, { travelLbl:'Между местами', travel_bus:'Автобус / поезд (30 мин на поездку)', travel_bike:'Велосипед (≈ 15 км/ч)', travel_car:'Машина (≈ 40 км/ч)', travelHint:'Так считаются переезды между основным городом и доп. городами (реальная длина дорог, + 5 мин на поездку). Раздают пешком.', byCar:'На машине (Google Maps)' });
 Object.assign(T.de, { mustTooMany:'Die Nebenstädte mit „alle Briefkästen“ haben zusammen ≈ {mb} Briefkästen, aber es gibt nur {f} Flyer. In Schritt 1 auf den Namen tippen und eine Flyerzahl eintragen – oder mehr Flyer eingeben.' });
