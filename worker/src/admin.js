@@ -1083,8 +1083,8 @@ function viewCreate(edit){
       ${planBlock()}
       <div class="must-box zone-box"><div class="sec-row" style="margin:0"><b>${esc(t('zoneTitle'))}</b><span class="small muted">${esc(d.zone ? t('zoneOwn') + (p && p.zone_mb != null ? ' · ' + t('mustMb', { mb:fmtN(p.zone_mb) }) : '') : t('zoneAuto'))}</span></div>
         <p class="small muted" style="margin:2px 0 8px">${esc(t(d.zone ? 'zoneHintOwn' : 'zoneHint'))}</p>
-        ${d.zone && p && p.zone_mb != null && p.zone_mb > d.flyers * 1.05 ? `<div class="note" style="margin:0 0 8px">${esc(t('zoneBig', { mb:fmtN(p.zone_mb), f:fmtN(d.flyers) }))} <button class="link" id="cZoneAll">${esc(t('zoneAll', { f:fmtN(p.zone_mb) }))}</button></div>` : ''}
-        ${d.zone && p && p.zone_mb != null && p.zone_mb < d.flyers * 0.95 ? `<div class="warnbox" style="margin:0 0 8px">${esc(t('zoneSmall', { mb:fmtN(p.zone_mb), f:fmtN(d.flyers) }))} <button class="link" id="cZoneFit">${esc(t('reduceTo', { f:fmtN(Math.max(100, Math.floor(p.zone_mb / 50) * 50)) }))}</button></div>` : ''}
+        ${d.zone && p && p.zone_mb != null && p.zone_mb > (d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0)) * 1.05 ? `<div class="note" style="margin:0 0 8px">${esc(t('zoneBig', { mb:fmtN(p.zone_mb), f:fmtN((d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0))) }))} <button class="link" id="cZoneAll">${esc(t('zoneAll', { f:fmtN(p.zone_mb) }))}</button></div>` : ''}
+        ${d.zone && p && p.zone_mb != null && p.zone_mb < (d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0)) * 0.95 ? `<div class="warnbox" style="margin:0 0 8px">${esc(t('zoneSmall', { mb:fmtN(p.zone_mb), f:fmtN((d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0))) }))} <button class="link" id="cZoneFit">${esc(t('reduceTo', { f:fmtN(Math.max(100, Math.floor(p.zone_mb / 50) * 50)) }))}</button></div>` : ''}
         <div class="tool-row"><button class="btn ghost small" id="cZoneDraw" ${d.start ? '' : 'disabled'}>${ICONS.edit}${esc(t(d.zone ? 'zoneRedraw' : 'zoneDraw'))}</button>${d.zone ? `<button class="btn ghost small" id="cZoneAuto">${esc(t('zoneBackAuto'))}</button>` : ''}</div></div>
       ${p && p.split ? `<div class="hint">${esc(t('splitHint', { list:p.split.map(x => (x.name || mainCity() || t('mainCity')) + ' ' + fmtN(x.flyers)).join(' · ') }))}</div>` : ''}
       ${p && !d.split && p.must_mb > d.flyers ? `<div class="warnbox" style="margin:8px 0">${esc(t('mustTooMany', { mb:fmtN(p.must_mb), f:fmtN(d.flyers) }))}</div>` : ''}
@@ -1150,8 +1150,8 @@ function viewCreate(edit){
     document.querySelectorAll('[data-srm]').forEach(b => b.onclick = () => { saved = keep(); d.side.splice(+b.dataset.srm, 1); recompute(); });
     if($('#cZoneDraw')) $('#cZoneDraw').onclick = () => { saved = keep(); drawMode(true, 'zone'); };
     if($('#cZoneAuto')) $('#cZoneAuto').onclick = () => { saved = keep(); d.zone = null; drawMust(); recompute(); };
-    if($('#cZoneAll')) $('#cZoneAll').onclick = () => { saved = keep(); d.flyers = p.zone_mb; d.nAuto = true; recompute(); };
-    if($('#cZoneFit')) $('#cZoneFit').onclick = () => { saved = keep(); d.flyers = Math.max(100, Math.floor(p.zone_mb / 50) * 50); d.nAuto = true; recompute(); };
+    if($('#cZoneAll')) $('#cZoneAll').onclick = () => { saved = keep(); d.flyers += p.zone_mb - (d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0)); d.nAuto = true; recompute(); };
+    if($('#cZoneFit')) $('#cZoneFit').onclick = () => { saved = keep(); d.flyers = Math.max(100, d.flyers - (d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0)) + Math.floor(p.zone_mb / 50) * 50); d.nAuto = true; recompute(); };
     document.querySelectorAll('[data-med]').forEach(b => b.onclick = async () => {
       const k = +b.dataset.med, inf = p && p.must_info && p.must_info[k], n = await askMustN(d.must[k].n, inf ? inf.avail : 0);
       if(n === null) return; saved = keep(); d.must[k].n = n; drawMust(); recompute();
