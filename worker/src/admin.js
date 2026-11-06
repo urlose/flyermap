@@ -1310,7 +1310,7 @@ async function viewTask(id){
         <div><span>${esc(t('walkedLbl'))}</span><b>${esc(fmtDist(walked))}</b></div>
         <div><span>${esc(t('progLbl'))}</span><b id="tProg">—</b></div>
         <div><span>${esc(t('hoursLbl'))}</span><b id="tHrs">${taskHours(plans, routes)}</b></div>
-        <div id="tFlRow" style="display:none"><span>${esc(t('handedLbl'))}</span><b id="tFl"></b></div>
+        <div id="tFlRow" ${tk.flyers_done != null ? '' : 'style="display:none"'}><span>${esc(t('handedLbl'))} <button class="link" id="tFlEdit" style="font-size:12px">${esc(t('adjust'))}</button></span><b id="tFl">${tk.flyers_done != null ? '≈ ' + fmtN(tk.flyers_done) + (tk.flyers ? ' / ' + fmtN(tk.flyers) : '') : ''}</b>${tk.flyers_done != null ? `<small class="muted">${esc(t('flDoneManual', { d:fmtDT(tk.flyers_done_at) }))}${(A.live || []).some(r => r.task_id === tk.id) ? ' · ' + esc(t('stillWorking')) : ''}</small>` : ''}</div>
         ${tk.notes ? `<div><span>${esc(t('note'))}</span><b>${esc(tk.notes)}</b></div>` : ''}
       </div>
       <div class="mapbox" id="tMap"></div>
@@ -1420,6 +1420,20 @@ async function viewTask(id){
   $('#tBig').onclick = () => viewTaskMap(id, () => viewTask(id));
   $('#tEdit').onclick = () => editTaskSheet(tk, plans || [], routes || []);
   if($("#tMerge")) $("#tMerge").onclick = () => mergeDialog(tk);
+  // the admin enters how many flyers are really out (counted packs); empty = back to the GPS estimate
+  if($('#tFlEdit')) $('#tFlEdit').onclick = () => {
+    const m = modal(`<h2>${esc(t('handedLbl'))}</h2><p class="small muted">${esc(t('flDoneHint'))}</p>
+      <input class="in" id="fdN" type="number" min="0" step="100" inputmode="numeric" value="${tk.flyers_done != null ? tk.flyers_done : ''}" placeholder="${esc(t('flDoneAuto'))}">
+      <button class="btn primary" id="fdGo" style="margin-top:12px">${esc(t('save'))}</button><button class="btn ghost" id="fdNo">${esc(t('back'))}</button><div class="err" id="fdErr"></div>`);
+    m.querySelector('#fdNo').onclick = () => m.remove();
+    m.querySelector('#fdGo').onclick = async () => {
+      const raw = m.querySelector('#fdN').value.trim(), n = raw === '' ? null : Math.max(0, Math.round(+raw));
+      if(raw !== '' && !isFinite(n)){ m.querySelector('#fdErr').textContent = t('flDoneBad'); return; }
+      const { error } = await sb.from('tasks').update({ flyers_done:n, flyers_done_at:n == null ? null : new Date().toISOString() }).eq('id', tk.id);
+      if(error){ m.querySelector('#fdErr').textContent = error.message; return; }
+      m.remove(); await loadTasks(); viewTask(tk.id);
+    };
+  };
   if($('#tCancel')) $('#tCancel').onclick = async () => { if(!await confirmBox(t('cancelTask'), t('cancelTaskQ'), t('cancelTask'), true)) return; const { error } = await sb.from('tasks').update({ status:'cancelled' }).eq('id', id); if(error) return toast(error.message); await loadTasks(); viewTask(id); };
   $('#tDone').onclick = async () => { const { error } = await sb.from('tasks').update({ status:tk.status === 'open' ? 'done' : 'open' }).eq('id', id); if(error) return toast(error.message); await loadTasks(); viewTask(id); };
   $('#tDel').onclick = async () => { if(!await confirmBox(t('del'), t('delTaskQ'), t('del'), true)) return; await sb.from('tasks').delete().eq('id', id); await loadTasks(); viewTasks(); };
@@ -1458,6 +1472,7 @@ async function viewTask(id){
     if(ct){ flSum += ct.count(); flHas = true; }
   }
   const fr = $('#tFlRow'), fe = $('#tFl');
+  if(tk.flyers_done != null){ if(fr){ fr.style.display = ''; PROG.f = tk.flyers ? Math.min(100, 100 * tk.flyers_done / tk.flyers) : null; showProg(); } return; }   // the admin's count wins over the estimate
   if(fr && fe && flHas){ const tot = tk.flyers || 0; fe.textContent = '≈ ' + fmtN(flSum) + (tot ? ' / ' + fmtN(tot) : ''); fr.style.display = ''; PROG.f = tot ? Math.min(100, 100 * flSum / tot) : null; showProg(); }
 }
 
