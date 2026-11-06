@@ -88,7 +88,7 @@ export const A = { user:null, workers:[], tasks:[], live:[], demo:null, hooks:{}
 
 /* ---------- data ---------- */
 async function loadWorkers(){ const { data, error } = await sb.from('workers').select('id,name,phone,cities,zone_minutes,notes,start_anywhere,last_lat,last_lng,last_seen,nav_lat,nav_lng,nav_at,active_route_id,created_at,company_id').order('name'); if(error) throw error; A.workers = data; }
-async function loadTasks(){ const { data, error } = await sb.from('tasks').select('*,task_workers(worker_id)').order('created_at', { ascending:false }); if(error) throw error; A.tasks = data; }
+async function loadTasks(){ const { data, error } = await sb.from('tasks').select('*,task_workers(worker_id)').is('merged_into', null).order('created_at', { ascending:false }); if(error) throw error; A.tasks = data; }
 async function loadLive(){ const { data } = await sb.from('routes').select('id,worker_id,task_id,plan_id,paused_at,last30_m,started_at,break_s').is('ended_at', null); A.live = data || []; }
 async function loadAll(){
   await Promise.all([loadWorkers(), loadTasks(), loadFirm().then(c => { A.company = c; }).catch(() => {})]);
@@ -122,6 +122,27 @@ function workerOptions(lat, lng, sel){
 
 /* ---------- tabs ---------- */
 async function adminLogout(){ if(await confirmBox(t('logout'), t('logoutQ'), t('logout'))){ await sb.auth.signOut(); for(const k of ['role', 'token', 'me', 'canAdmin']) await store.del(k); A.hooks.loggedOut && A.hooks.loggedOut(); } }
+// merge orders that belong together (platform admins only for now): everything of the chosen orders moves into this one
+function mergeDialog(tk){
+  const others = A.tasks.filter(x => x.id !== tk.id && x.company_id === tk.company_id);
+  const word = (tk.title || '').split(/[\s·,.-]+/).find(w => w.length > 3) || '';
+  const like = x => word && (x.title || '').toLowerCase().includes(word.toLowerCase());
+  const row = x => `<label class="check" style="display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--color-border)"><input type="checkbox" value="${x.id}" ${like(x) ? 'checked' : ''}><span><b>${esc(x.title)}</b><br><span class="small muted">${esc(x.work_date ? fmtDay(x.work_date) : t('noDate'))} · ${fmtN(x.flyers || 0)} Flyer · ${esc(taskState(x)[1])}</span></span></label>`;
+  const m = modal(`<h2>${esc(t('mergeTasks'))}</h2><p class="small muted">${esc(t('mergeHint', { title:tk.title }))}</p>
+    <input class="in" id="mgQ" placeholder="${esc(t('search'))}" style="margin:8px 0">
+    <div id="mgL" style="max-height:46vh;overflow:auto">${others.sort((a, b) => like(b) - like(a) || (a.title || '').localeCompare(b.title || '')).map(row).join('') || `<p class="muted">${esc(t('noTasks'))}</p>`}</div>
+    <button class="btn primary" id="mgGo" style="margin-top:12px">${esc(t('mergeGo'))}</button><button class="btn ghost" id="mgNo">${esc(t('back'))}</button><div class="err" id="mgErr"></div>`);
+  m.querySelector('#mgQ').oninput = e => { const q = e.target.value.toLowerCase(); m.querySelectorAll('#mgL label').forEach(l => l.style.display = l.textContent.toLowerCase().includes(q) ? '' : 'none'); };
+  m.querySelector('#mgNo').onclick = () => m.remove();
+  m.querySelector('#mgGo').onclick = async () => {
+    const ids = [...m.querySelectorAll('#mgL input:checked')].map(i => i.value);
+    if(!ids.length){ m.querySelector('#mgErr').textContent = t('mergeNone'); return; }
+    if(!await confirmBox(t('mergeTasks'), t('mergeQ', { n:ids.length, title:tk.title }), t('mergeGo'))) return;
+    const { data, error } = await sb.rpc('merge_tasks', { p_target:tk.id, p_sources:ids });
+    if(error){ m.querySelector('#mgErr').textContent = /someone_walking/.test(error.message) ? t('replanLive') : error.message; return; }
+    m.remove(); toast(t('mergeDone', { n:data.merged })); await loadTasks(); viewTask(tk.id);
+  };
+}
 function routeFromHash(){
   const [k, id] = getLoc().split('/');
   if(k === 'task' && id && A.tasks.some(x => x.id === id)) return viewTask(id);
@@ -1307,7 +1328,7 @@ async function viewTask(id){
         ${w ? `<button class="rr-worker" data-wk="${w.id}">${avatar()}<span class="grow"><b>${esc(w.name)}</b><small>${esc(t('openWorker'))}</small></span><span class="rr-chev">›</span></button>
         <div class="rr-btns"><a class="btn ghost small" target="_blank" rel="noopener" href="${waLink(w.phone, invite(w))}">${ICONS.chat}${esc(t('write'))}</a><button class="btn ghost small" data-swap="${p.id}">${ICONS.users}${esc(t('swapWorker'))}</button></div>` : ''}
         <div class="rr-swap" id="sw${p.id}" ${w ? 'hidden' : ''}><select class="in small" data-plan="${p.id}">${workerOptions(tk.start_lat, tk.start_lng, p.worker_id)}</select><span class="small muted">${esc(t('replaceHint'))}</span></div></div></div>`; }).join('') : `<p class="muted small">${esc(t('noPlans'))}</p>`}
-      <div class="tool-row" style="margin-top:16px"><button class="btn ghost small" id="tEdit">${ICONS.edit}${esc(t('editTask'))}</button><button class="btn ghost small" id="tDone">${ICONS.check}${esc(tk.status === 'open' ? t('finish') : t('reopen'))}</button><details class="more-menu"><summary class="btn ghost small" aria-label="${esc(t('more'))}">⋯</summary><div class="mm-pop">${tk.status === 'open' ? `<button class="mm-i" id="tCancel">${ICONS.close}${esc(t('cancelTask'))}</button>` : ''}<button class="mm-i danger-text" id="tDel">${esc(t('del'))}</button></div></details></div>
+      <div class="tool-row" style="margin-top:16px"><button class="btn ghost small" id="tEdit">${ICONS.edit}${esc(t('editTask'))}</button><button class="btn ghost small" id="tDone">${ICONS.check}${esc(tk.status === 'open' ? t('finish') : t('reopen'))}</button><details class="more-menu"><summary class="btn ghost small" aria-label="${esc(t('more'))}">⋯</summary><div class="mm-pop">${A.company && A.company.master ? `<button class="mm-i" id="tMerge">${ICONS.plus}${esc(t('mergeTasks'))}</button>` : ''}${tk.status === 'open' ? `<button class="mm-i" id="tCancel">${ICONS.close}${esc(t('cancelTask'))}</button>` : ''}<button class="mm-i danger-text" id="tDel">${esc(t('del'))}</button></div></details></div>
     </div>`); setLoc('task/' + id);
   bindBack(viewTasks);
   const m = makeMap($('#tMap'), [tk.start_lat, tk.start_lng], 14);
@@ -1396,6 +1417,7 @@ async function viewTask(id){
   });
   $('#tBig').onclick = () => viewTaskMap(id, () => viewTask(id));
   $('#tEdit').onclick = () => editTaskSheet(tk, plans || [], routes || []);
+  if($("#tMerge")) $("#tMerge").onclick = () => mergeDialog(tk);
   if($('#tCancel')) $('#tCancel').onclick = async () => { if(!await confirmBox(t('cancelTask'), t('cancelTaskQ'), t('cancelTask'), true)) return; const { error } = await sb.from('tasks').update({ status:'cancelled' }).eq('id', id); if(error) return toast(error.message); await loadTasks(); viewTask(id); };
   $('#tDone').onclick = async () => { const { error } = await sb.from('tasks').update({ status:tk.status === 'open' ? 'done' : 'open' }).eq('id', id); if(error) return toast(error.message); await loadTasks(); viewTask(id); };
   $('#tDel').onclick = async () => { if(!await confirmBox(t('del'), t('delTaskQ'), t('del'), true)) return; await sb.from('tasks').delete().eq('id', id); await loadTasks(); viewTasks(); };

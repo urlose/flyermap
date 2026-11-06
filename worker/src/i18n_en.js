@@ -196,3 +196,4 @@ Object.assign(T.en, { joinPhone:'Mobile number', joinPhoneHint:'So you can log b
 Object.assign(T.en, { more:'More' });
 Object.assign(T.en, { nobodyLiveHint:'Nobody is on the way right now.', chipsAll:'Show all {n}', chipsLess:'On the way only' });
 Object.assign(T.en, { waLoginHint:'WhatsApp opens with a ready message – just send it. That confirms your number without SMS.', noWaYet:'Sign-in with WhatsApp is being set up. Until then, sign in with the login link from your admin.' });
+Object.assign(T.en, { mergeTasks:'Merge orders', mergeHint:'Routes, working days, GPS tracks and workers of the chosen orders move into “{title}”. Flyers are added up. Can be undone.', mergeGo:'Merge', mergeNone:'Choose at least one order.', mergeQ:'Merge {n} order(s) into “{title}”?', mergeDone:'{n} order(s) merged' });
