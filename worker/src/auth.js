@@ -65,18 +65,19 @@ export function viewLogin(){
       <div class="logo"><img src="icon.png" alt=""></div>
       <h1 class="hero">${esc(t('welcomeTitle'))}</h1>
       <p class="muted">${esc(t('welcomeText'))}</p>
-      <label class="f">${esc(t('phoneLogin'))}</label>
-      <input class="in" id="lPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+49 170 1234567">
-      <p class="small muted">${esc(t('smsHint'))}</p>
-      <button class="btn primary big" id="lSend">${esc(t('sendCode'))}</button><div class="err" id="lErr"></div>
-      <button class="btn ghost big hidden" id="lWa" style="margin-top:10px">${esc(t('waLogin'))}</button>
+      <button class="btn primary big hidden" id="lWa"><svg viewBox="0 0 24 24" aria-hidden="true" style="width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round"><path d="M3 21l1.65-3.8A9 9 0 1 1 7.8 20.3L3 21"/><path d="M9 10a.5.5 0 0 0 1 0V9a.5.5 0 0 0-1 0v1a5 5 0 0 0 5 5h1a.5.5 0 0 0 0-1h-1a.5.5 0 0 0 0 1"/></svg>${esc(t('waLogin'))}</button>
+      <p class="small muted hidden" id="lWaHint" style="margin-top:8px">${esc(t('waLoginHint'))}</p>
+      <div class="note hidden" id="lNoWa" style="margin-top:0">${esc(t('noWaYet'))}</div>
+      <button class="btn primary big hidden" id="lLinkBig">${esc(t('haveLink'))}</button><div class="err" id="lErr"></div>
       ${langSwitch(I.lang)}
       <p class="small center"><button class="link" id="lLink">${esc(t('haveLink'))}</button></p>
       <p class="small center"><button class="link" id="lEmail">${esc(t('emailAdmin'))}</button></p>
       ${legalLinks()}
     </div>`);
   bindLegal(viewLogin);
-  sb.rpc('wa_enabled').then(({ data }) => { const b = $('#lWa'); if(data && b){ b.classList.remove('hidden'); b.onclick = waLogin; } }).catch(() => {});
+  // WhatsApp on: big WhatsApp button; until the firm number is set up: the login link from the admin is the way in
+  const noWa = () => { if(!$('#lNoWa')) return; $('#lNoWa').classList.remove('hidden'); $('#lLinkBig').classList.remove('hidden'); $('#lLinkBig').onclick = () => $('#lLink').click(); $('#lLink').parentElement.classList.add('hidden'); };
+  sb.rpc('wa_enabled').then(({ data }) => { const b = $('#lWa'); if(!b) return; if(data){ b.classList.remove('hidden'); $('#lWaHint').classList.remove('hidden'); b.onclick = waLogin; } else noWa(); }).catch(noWa);
   $('#lEmail').onclick = () => viewAdminLogin(viewLogin);
   // login link from the admin (WhatsApp etc.): in the installed app a link does not open the app, so it is pasted here
   $('#lLink').onclick = () => {
@@ -90,49 +91,8 @@ export function viewLogin(){
       m.remove(); await store.set('canAdmin', false); await acceptToken(id);
     };
   };
-  $('#lPhone').addEventListener('keydown', e => { if(e.key === 'Enter') $('#lSend').click(); });
-  $('#lSend').onclick = async () => {
-    const phone = deMobile($('#lPhone').value);
-    if(!phone){ $('#lErr').textContent = t('badPhone'); return; }
-    await sendCode(phone, $('#lSend'), $('#lErr'));
-  };
 }
-async function sendCode(phone, btn, errEl){
-  btn.disabled = true; errEl.textContent = '';
-  const { error } = await sb.auth.signInWithOtp({ phone });
-  btn.disabled = false;
-  if(error){
-    const m = error.message || '';
-    // only a missing / switched-off SMS provider is "not set up"; anything else (e.g. the SMS provider has not approved the account yet) is shown as it is
-    errEl.textContent = /unsupported phone provider|phone.*(disabled|not enabled)|sms provider.*(not|missing)/i.test(m) ? t('smsNotConfigured')
-      : /compliance|kyc|customer profile/i.test(m) ? t('smsPending')
-      : (t('smsFail') + ' ' + m);
-    return;
-  }
-  viewCode(phone);
-}
-function viewCode(phone){
-  plain(`<button class="link back-link" id="bk">← ${esc(t('changeNumber'))}</button>
-    <h1 class="hero">${esc(t('codeTitle'))}</h1><p class="muted">${esc(t('codeSent', { phone }))}</p>
-    <input class="in pin" id="cCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••">
-    <button class="btn primary big" id="cGo" style="margin-top:16px">${esc(t('verify'))}</button><div class="err" id="cErr"></div>
-    <button class="btn ghost" id="cAgain" disabled></button>`);
-  $('#bk').onclick = viewLogin;
-  let left = 30; const again = $('#cAgain');
-  const tick = () => { if(!again.isConnected) return; if(left > 0){ again.textContent = t('resendIn', { s:left-- }); setTimeout(tick, 1000); } else { again.textContent = t('resend'); again.disabled = false; } };
-  tick();
-  again.onclick = async () => { again.disabled = true; left = 30; tick(); const { error } = await sb.auth.signInWithOtp({ phone }); if(error) $('#cErr').textContent = t('smsFail') + ' ' + error.message; };
-  const go = async () => {
-    const token = $('#cCode').value.replace(/\D/g, ''); if(token.length < 4){ $('#cErr').textContent = t('wrongCode'); return; }
-    $('#cGo').disabled = true; $('#cErr').textContent = '';
-    const { error } = await sb.auth.verifyOtp({ phone, token, type:'sms' });
-    if(error){ $('#cErr').textContent = t('wrongCode'); $('#cGo').disabled = false; return; }
-    afterVerified();
-  };
-  $('#cGo').onclick = go; $('#cCode').addEventListener('input', () => { if($('#cCode').value.replace(/\D/g, '').length === 6) go(); });
-}
-
-// phone is verified: admin → choose role; everyone else → worker
+// SMS sign-in removed on 06.11.2026 (no Twilio); numbers are confirmed via WhatsApp (wa_start / wa_check)
 export async function afterVerified(){
   const { data:st, error } = await sb.rpc('me_status');
   if(error){ toast(error.message); return viewLogin(); }

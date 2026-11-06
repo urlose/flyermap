@@ -217,3 +217,5 @@ Object.assign(T.ru, { joinPhone:'Номер мобильного', joinPhoneHint
 Object.assign(T.de, { more:'Mehr' }); Object.assign(T.ru, { more:'Ещё' });
 Object.assign(T.de, { nobodyLiveHint:'Gerade ist niemand unterwegs.', chipsAll:'Alle {n} anzeigen', chipsLess:'Nur Unterwegs' });
 Object.assign(T.ru, { nobodyLiveHint:'Сейчас никто не в пути.', chipsAll:'Показать всех ({n})', chipsLess:'Только в пути' });
+Object.assign(T.de, { waLoginHint:'WhatsApp öffnet sich mit einer fertigen Nachricht – einfach absenden. So bestätigst du deine Nummer, ohne SMS.', noWaYet:'Die Anmeldung per WhatsApp wird gerade eingerichtet. Bis dahin meldest du dich mit dem Login-Link von deinem Admin an.' });
+Object.assign(T.ru, { waLoginHint:'Откроется WhatsApp с готовым сообщением — просто отправьте его. Так номер подтверждается без SMS.', noWaYet:'Вход через WhatsApp сейчас настраивается. До этого входите по Login-Link от вашего админа.' });

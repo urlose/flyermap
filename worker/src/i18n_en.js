@@ -195,3 +195,4 @@ Object.assign(T.en, { fRange:'Period', fWho:'Find a worker' });
 Object.assign(T.en, { joinPhone:'Mobile number', joinPhoneHint:'So you can log back into the same account on any phone later.', joinPhoneNeed:'Please enter your mobile number.', joinPhoneTaken:'There is already an account with this number.', joinToLogin:'Log in' });
 Object.assign(T.en, { more:'More' });
 Object.assign(T.en, { nobodyLiveHint:'Nobody is on the way right now.', chipsAll:'Show all {n}', chipsLess:'On the way only' });
+Object.assign(T.en, { waLoginHint:'WhatsApp opens with a ready message – just send it. That confirms your number without SMS.', noWaYet:'Sign-in with WhatsApp is being set up. Until then, sign in with the login link from your admin.' });

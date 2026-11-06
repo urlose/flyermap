@@ -24,7 +24,7 @@ export const setLegalFirm = f => { LEGAL_CTX.firm = f && isSet(f.name) ? f : nul
 const isSet = v => !!v && !/^\[/.test(String(v).trim());
 export const IMPRINT_READY = true;   // shown with [placeholders] until PROVIDER is filled in
 export const PRIVACY_VERSION = '2026-10-30c';      // bump when the text changes in substance: workers then see the location note again
-export const PRIVACY_DATE = { de:'30. Oktober 2026', ru:'30 октября 2026', en:'30 October 2026' };
+export const PRIVACY_DATE = { de:'6. November 2026', ru:'6 ноября 2026', en:'6 November 2026' };
 export const RETENTION = { trackMonths:6, positionHours:12, inboxMonths:6 };
 export const AVV_VERSION = 'AVV-2026-10-30';      // must match avv_current() in the database
 
@@ -58,7 +58,7 @@ ${CTRL.de()}
 <p>FlyerMap ist eine App, mit der das Unternehmen die Verteilung von Flyern organisiert: für die Personen, die für das Unternehmen Flyer verteilen, und für seine Disponenten (Administratoren). Die App plant Verteilgebiete und Laufrouten, teilt Aufträge zu und zeichnet während eines Arbeitstags die gelaufene Strecke auf, damit die Verteilung organisiert, abgerechnet und gegenüber den Kunden des Unternehmens nachgewiesen werden kann.</p>
 <h2>3. Welche Daten wir verarbeiten</h2>
 <ul>
-<li><b>Konto:</b> Telefonnummer (Anmeldung per SMS-Code), Name, Städte, in denen du arbeiten kannst. Bei Administratoren: Telefonnummer oder E-Mail-Adresse.</li>
+<li><b>Konto:</b> Telefonnummer (Bestätigung per WhatsApp oder Login-Link vom Admin), Name, Städte, in denen du arbeiten kannst. Bei Administratoren: Telefonnummer oder E-Mail-Adresse.</li>
 <li><b>Standort während eines Arbeitstags:</b> nur zwischen „Start" und „Feierabend" (in Pausen nicht): GPS-Punkte mit Uhrzeit und Genauigkeit, auch im Hintergrund bei gesperrtem Bildschirm. Administratoren sehen während des Arbeitstags deine aktuelle Position und dein Tempo. <b>Außerhalb eines Arbeitstags wird kein Standort erfasst.</b></li>
 <li><b>Prüfung am Startpunkt:</b> Vor dem Start wird einmal dein Standort bestimmt, um zu prüfen, ob du am Startpunkt bist. Dieser Standort wird nur auf dem Gerät verwendet und nicht gespeichert.</li>
 <li><b>Arbeitstage:</b> Datum, Beginn und Ende, Pausen, gelaufene Strecke, Ort (Ortsteil, Stadt), Auftrag, geschätzte Zahl verteilter Flyer.</li>
@@ -77,7 +77,7 @@ ${CTRL.de()}
 <ul>
 <li><b>Anbieter der Software</b> (siehe Abschnitt 1): Betrieb von FlyerMap als Auftragsverarbeiter des Unternehmens.</li>
 <li><b>Supabase</b> (Supabase Inc., USA; Server in Frankfurt am Main, EU): Datenbank, Anmeldung, Speicherung aller oben genannten Daten. Auftragsverarbeitung nach Art. 28 DSGVO; für einen möglichen Zugriff aus den USA gelten EU-Standardvertragsklauseln.</li>
-<li><b>SMS-Versand der Anmeldecodes</b> (z. B. Twilio Inc., USA): erhält deine Telefonnummer und den Code. Auftragsverarbeitung; Übermittlung in die USA auf Grundlage des EU-US Data Privacy Framework bzw. von Standardvertragsklauseln.</li>
+<li><b>WhatsApp-Bestätigung der Nummer</b> (Meta Platforms Ireland Ltd., Irland; WhatsApp Business Plattform): Wenn du deine Nummer per WhatsApp bestätigst, sendest du selbst eine Nachricht mit einem Code an die Nummer des Unternehmens. Meta übermittelt uns dabei deine Telefonnummer und den Nachrichtentext. Wir speichern nur Nummer, Code und Zeitpunkt der Bestätigung (Code-Einträge werden nach 30 Minuten ungültig). Auftragsverarbeitung; eine Übermittlung in die USA ist möglich (EU-US Data Privacy Framework bzw. Standardvertragsklauseln). Für die Nutzung von WhatsApp selbst gelten die Bedingungen von WhatsApp.</li>
 <li><b>GitHub Pages</b> (GitHub Inc., USA): liefert die Web-Version der App und diese Seite aus (IP-Adresse in Server-Protokollen).</li>
 <li><b>Karten:</b> Kartenbilder von tile.openstreetmap.de, Wege-/Zonenberechnung über valhalla1.openstreetmap.de (beide FOSSGIS e.V., Deutschland), Straßen- und Gebäudedaten über die Overpass-API (OpenStreetMap). Diese Dienste erhalten deine IP-Adresse und den angezeigten Kartenausschnitt.</li>
 <li><b>Adresssuche und Ortsbestimmung:</b> Photon (komoot GmbH, Deutschland). Für die Übersicht der Arbeitstage wird für Tage ohne Auftrag der erste Punkt der Route einmal an Photon gesendet, um den Ortsnamen zu bestimmen; dabei werden keine Namen oder Telefonnummern übermittelt.</li>
@@ -106,7 +106,7 @@ ${CTRL.ru()}
 <p>FlyerMap — приложение, с помощью которого фирма организует раздачу флаеров: для людей, которые раздают флаеры для фирмы, и для её диспетчеров (администраторов). Оно планирует зоны и маршруты, распределяет заказы и во время рабочего дня записывает пройденный путь, чтобы организовать и оплатить раздачу и подтвердить её перед клиентами фирмы.</p>
 <h2>3. Какие данные мы обрабатываем</h2>
 <ul>
-<li><b>Аккаунт:</b> номер телефона (вход по SMS-коду), имя, города, где вы можете работать. У администраторов — телефон или email.</li>
+<li><b>Аккаунт:</b> номер телефона (подтверждение через WhatsApp или Login-Link от админа), имя, города, где вы можете работать. У администраторов — телефон или email.</li>
 <li><b>Геопозиция во время рабочего дня:</b> только между «Старт» и «Закончить» (во время паузы — нет): GPS-точки со временем и точностью, в том числе в фоне при заблокированном экране. Администраторы во время рабочего дня видят вашу текущую позицию и темп. <b>Вне рабочего дня геопозиция не записывается.</b></li>
 <li><b>Проверка точки старта:</b> перед началом дня один раз определяется ваше местоположение, чтобы проверить, что вы на месте. Оно используется только на телефоне и не сохраняется.</li>
 <li><b>Рабочие дни:</b> дата, начало и конец, паузы, пройденный путь, место (район, город), заказ, примерное число розданных флаеров.</li>
@@ -125,7 +125,7 @@ ${CTRL.ru()}
 <ul>
 <li><b>Поставщик программы</b> (см. раздел 1): работа FlyerMap по поручению фирмы.</li>
 <li><b>Supabase</b> (Supabase Inc., США; серверы во Франкфурте, ЕС): база данных, вход, хранение всех данных выше. Обработка по поручению (ст. 28 GDPR); на случай доступа из США действуют стандартные договорные условия ЕС.</li>
-<li><b>Отправка SMS-кодов</b> (например, Twilio Inc., США): получает номер телефона и код. Обработка по поручению; передача в США на основе EU-US Data Privacy Framework или стандартных договорных условий.</li>
+<li><b>Подтверждение номера через WhatsApp</b> (Meta Platforms Ireland Ltd., Ирландия; WhatsApp Business Platform): вы сами отправляете сообщение с кодом на номер фирмы, Meta передаёт нам ваш номер и текст. Храним только номер, код и время подтверждения (код действует 30 минут). Обработка по поручению; возможна передача в США (EU-US Data Privacy Framework или стандартные договорные условия).</li>
 <li><b>GitHub Pages</b> (GitHub Inc., США): отдаёт веб-версию приложения и эту страницу (IP-адрес в журналах).</li>
 <li><b>Карты:</b> изображения карт с tile.openstreetmap.de, расчёт путей и зон через valhalla1.openstreetmap.de (оба — FOSSGIS e.V., Германия), данные улиц и зданий через Overpass API (OpenStreetMap). Эти сервисы получают IP-адрес и показанный участок карты.</li>
 <li><b>Поиск адресов и определение места:</b> Photon (komoot GmbH, Германия). Для дней без заказа первая точка маршрута один раз отправляется в Photon, чтобы узнать название места; имя и телефон не передаются.</li>
@@ -154,7 +154,7 @@ ${CTRL.en()}
 <p>FlyerMap is an app a company uses to organise flyer distribution: for the people who distribute flyers for the company and for its dispatchers (administrators). It plans areas and walking routes, assigns jobs and, during a working day, records the walked route so the work can be organised, paid and proven to the company's clients.</p>
 <h2>3. Data we process</h2>
 <ul>
-<li><b>Account:</b> phone number (sign-in with an SMS code), name, cities you can work in. For administrators: phone number or email.</li>
+<li><b>Account:</b> phone number (confirmed via WhatsApp or a login link from the admin), name, cities you can work in. For administrators: phone number or email.</li>
 <li><b>Location during a working day:</b> only between “Start” and “Finish” (not during breaks): GPS points with time and accuracy, also in the background with the screen locked. Administrators see your current position and pace during the working day. <b>No location is collected outside a working day.</b></li>
 <li><b>Start-point check:</b> before starting, your location is determined once to check that you are at the start point. It is used on the phone only and not stored.</li>
 <li><b>Working days:</b> date, start and end, breaks, distance walked, place (district, town), job, estimated number of flyers delivered.</li>
@@ -174,7 +174,7 @@ ${CTRL.en()}
 <li><b>Anbieter der Software</b> (siehe Abschnitt 1): Betrieb von FlyerMap als Auftragsverarbeiter des Unternehmens.</li>
 <li><b>Provider of the software</b> (see section 1): runs FlyerMap as the company's processor.</li>
 <li><b>Supabase</b> (Supabase Inc., USA; servers in Frankfurt am Main, EU): database, sign-in, storage of all data above. Processor under Art. 28 GDPR; EU standard contractual clauses cover any access from the USA.</li>
-<li><b>SMS delivery of sign-in codes</b> (e.g. Twilio Inc., USA): receives your phone number and the code. Processor; transfer to the USA based on the EU-US Data Privacy Framework or standard contractual clauses.</li>
+<li><b>Number confirmation via WhatsApp</b> (Meta Platforms Ireland Ltd., Ireland; WhatsApp Business Platform): you send a message with a code to the company's number yourself; Meta passes your number and the text to us. We only store number, code and time of confirmation (codes expire after 30 minutes). Processor; a transfer to the USA is possible (EU-US Data Privacy Framework or standard contractual clauses).</li>
 <li><b>GitHub Pages</b> (GitHub Inc., USA): serves the web version of the app and this page (IP address in server logs).</li>
 <li><b>Maps:</b> map images from tile.openstreetmap.de, route/area calculation via valhalla1.openstreetmap.de (both FOSSGIS e.V., Germany), street and building data via the Overpass API (OpenStreetMap). These services receive your IP address and the map area shown.</li>
 <li><b>Address search and place names:</b> Photon (komoot GmbH, Germany). For working days without a job, the first point of the route is sent to Photon once to find the place name; no names or phone numbers are sent.</li>
@@ -278,8 +278,8 @@ export function avvHtml(firm){
 <h3>§ 3 Daten und Betroffene</h3><p>Betroffene: Verteiler und Administratoren des Verantwortlichen. Daten: Name, Telefonnummer, Städte; GPS-Punkte mit Zeit und Genauigkeit nur zwischen Start und Feierabend; Arbeitstage (Datum, Zeiten, Pausen, Strecke, Ort, Auftrag); Aufträge, Benachrichtigungen; technische Protokolle (IP-Adresse).</p>
 <h3>§ 4 Weisungen</h3><p>Der Auftragsverarbeiter verarbeitet die Daten nur auf dokumentierte Weisung des Verantwortlichen, auch bei Übermittlungen in Drittländer. Hält er eine Weisung für rechtswidrig, informiert er den Verantwortlichen unverzüglich.</p>
 <h3>§ 5 Vertraulichkeit und Zugriff des Anbieters</h3><p>Alle Personen mit Zugriff auf die Daten sind zur Vertraulichkeit verpflichtet. Betreuer des Auftragsverarbeiters (Master-Admins) haben zur Betreuung, Fehlerbehebung und Sicherheit des Systems Lesezugriff auf alle Daten des Verantwortlichen; sie nutzen sie ausschließlich dafür und nicht für eigene Zwecke. Verteiler, die ausdrücklich in Jobangebote anderer Firmen einwilligen, werden in diesem Umfang auch anderen Firmen angezeigt; dafür ist der Anbieter selbst verantwortlich.</p>
-<h3>§ 6 Sicherheit (Art. 32 DSGVO)</h3><p>Anmeldung per SMS-Code; Rollen (Verteiler sehen nur eigene Daten, Administratoren nur die ihres Unternehmens); Zugriffsregeln in der Datenbank (Row Level Security); Verschlüsselung der Übertragung (TLS); Server in Frankfurt (EU); Standorterfassung nur zwischen Start und Feierabend; automatische Löschung; SMS-Versand nur an deutsche Mobilnummern mit Betrugsschutz. Die Maßnahmen werden dem Stand der Technik angepasst.</p>
-<h3>§ 7 Unterauftragsverarbeiter</h3><p>Genehmigt sind: Supabase Inc. (Datenbank, Anmeldung; Server in Frankfurt), Twilio Inc. (SMS-Codes), GitHub Inc. (Auslieferung der Web-App) – jeweils mit Auftragsverarbeitungsvertrag und EU-US Data Privacy Framework bzw. Standardvertragsklauseln. Über neue Dienste informiert der Auftragsverarbeiter mindestens 14 Tage vorher; der Verantwortliche kann widersprechen.</p>
+<h3>§ 6 Sicherheit (Art. 32 DSGVO)</h3><p>Anmeldung per persönlichem Login-Link bzw. WhatsApp-Bestätigung der Nummer, Administratoren per E-Mail und Passwort; Rollen (Verteiler sehen nur eigene Daten, Administratoren nur die ihres Unternehmens); Zugriffsregeln in der Datenbank (Row Level Security); Verschlüsselung der Übertragung (TLS); Server in Frankfurt (EU); Standorterfassung nur zwischen Start und Feierabend; automatische Löschung; Bestätigungscodes gelten nur 30 Minuten und nur einmal. Die Maßnahmen werden dem Stand der Technik angepasst.</p>
+<h3>§ 7 Unterauftragsverarbeiter</h3><p>Genehmigt sind: Supabase Inc. (Datenbank, Anmeldung; Server in Frankfurt), Meta Platforms Ireland Ltd. (WhatsApp-Bestätigung der Telefonnummer), GitHub Inc. (Auslieferung der Web-App) – jeweils mit Auftragsverarbeitungsvertrag und EU-US Data Privacy Framework bzw. Standardvertragsklauseln. Über neue Dienste informiert der Auftragsverarbeiter mindestens 14 Tage vorher; der Verantwortliche kann widersprechen.</p>
 <h3>§ 8 Unterstützung</h3><p>Der Auftragsverarbeiter hilft bei Anfragen Betroffener (Auskunft, Berichtigung, Löschung, Datenübertragbarkeit), bei der Datenschutz-Folgenabschätzung und bei Meldungen nach Art. 33 und 34 DSGVO.</p>
 <h3>§ 9 Datenpannen</h3><p>Verletzungen des Schutzes personenbezogener Daten meldet der Auftragsverarbeiter unverzüglich, spätestens binnen 24 Stunden nach Kenntnis.</p>
 <h3>§ 10 Löschung und Rückgabe</h3><p>GPS-Punkte werden nach ${RETENTION.trackMonths} Monaten gelöscht, die letzte Position ${RETENTION.positionHours} Stunden nach Arbeitsende, Benachrichtigungen nach ${RETENTION.inboxMonths} Monaten. Nach Vertragsende gibt der Auftragsverarbeiter die Daten auf Wunsch als Export heraus und löscht sie binnen 30 Tagen, soweit keine Aufbewahrungspflicht besteht.</p>
