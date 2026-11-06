@@ -186,7 +186,7 @@ Object.assign(T.en, { prevWorker:'Before: {n} · {km} · {h} h' });
 Object.assign(T.en, { oneDayHint:'All together ≈ {h} h – 1 person can do it in 1 day.', fitsOne:'Fits into 1 day.' });
 Object.assign(T.en, { startAnywhere:'May start anywhere (no start point check)' });
 Object.assign(T.en, { mergeHint:'{n} has {k} routes in this order.', mergeBtn:'Merge into one route', mergeQ:'The {k} routes of {n} become one route: the days follow each other, done parts and all shifts stay. {n} then picks the days again.' });
-Object.assign(T.en, { dayDone:'done', restLine:'Still open: ≈ {km} · {h} h', restNone:'All done' });
+Object.assign(T.en, { restLbl:'Still open', hShort:'h', dayDone:'done', restLine:'Still open: ≈ {km} · {h} h', restNone:'All done' });
 Object.assign(T.en, { redayBtn:'Spread the rest over days', redayHint:'The route stays the same, done parts stay done and are skipped. The open work is split evenly over the days; the worker picks the days again.', redayN:'Number of days', openH:'open ≈ {h} h' });
 Object.assign(T.en, { stCancelled:'Cancelled', cancelTask:'Cancel order', cancelTaskQ:'Cancel the order? It disappears for the workers, walked parts stay saved. "Reopen" undoes it.' });
 Object.assign(T.en, { replanWork:'Re-plan routes (order already running)', replanWorkHint:'What was walked stays saved and counts as done on the new routes. Workers get notified.', replanLive:'Someone is walking this order right now. Re-plan after they finish.', routeChangedTitle:'Route changed: {title}', routeChangedBody:'The order was re-planned. {date}≈ {mb} mailboxes · {km}. Please refresh.', routeChangedDays:'The order was re-planned and now needs more days. Please check the route and pick the days again.' });

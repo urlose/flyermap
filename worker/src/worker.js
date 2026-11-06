@@ -395,7 +395,8 @@ function viewTaskDetail(task){
         <div><span>${esc(t('place'))}</span><b>${esc([task.district, task.city_name].filter(Boolean).join(', ') || '—')}</b></div>
         <div><span>${esc(t('dates'))}</span><b>${esc(taskDates(task))}</b></div>
         ${plan ? `<div><span>${esc(t('mailboxes'))}</span><b>${esc(t('mbApprox', { n:fmtN(plan.mailboxes || 0) }))}</b></div>
-        <div><span>${esc(t('duration'))}</span><b>${esc(planInfo(task))}</b></div>` : ''}
+        <div><span>${esc(t('duration'))}</span><b>${esc(planInfo(task))}</b></div>
+        <div id="tdRest" hidden><span>${esc(t('restLbl'))}</span><b></b></div>` : ''}
         ${task.quota_m30 ? `<div><span>${esc(t('quotaInfo'))}</span><b>${fmtN(task.quota_m30)} m / 30 ${esc(t('min'))}</b></div>` : ''}
         ${task.notes ? `<div><span>${esc(t('note'))}</span><b>${esc(task.notes)}</b></div>` : ''}
       </div>
@@ -422,9 +423,14 @@ function viewTaskDetail(task){
   if($('#go')) $('#go').onclick = () => beginRoute(task);
   if($('#tdBig')) $('#tdBig').onclick = () => bigRouteMap(task, null);
   document.querySelectorAll('[data-dbig]').forEach(r => { r.onclick = () => bigRouteMap(task, +r.dataset.dbig); r.onkeydown = e => { if(e.key === 'Enter') bigRouteMap(task, +r.dataset.dbig); }; });
-  if(plan && plan.days && plan.days.length > 1 && st === 'accepted'){   // how much of each day is already walked → which day comes next
+  if(plan && plan.path && plan.path.length > 1 && st !== 'declined'){   // what of the route is already walked (by anybody) and what is still open
     rpc('plan_progress', { p_token:W.token, p_plan_id:plan.id }).then(prev => {
       const tr = addSkips(Planner.makeTracker(plan.path), plan); tr.addTrack(prev || []);
+      const multi = plan.days && plan.days.length > 1, ds = multi ? plan.days : [{ minutes:plan.minutes, length_m:plan.length_m }], dp = multi ? dayProgress(plan, tr) : [tr.pct()];
+      const part = (k, v) => v * (dp[k] >= 95 ? 0 : 1 - (dp[k] || 0) / 100);
+      const restMin = ds.reduce((a, d, k) => a + part(k, d.minutes || 0), 0), restM = ds.reduce((a, d, k) => a + part(k, d.length_m || 0), 0);
+      const row = $('#tdRest'); if(row && dp.some(x => x > 0)){ row.hidden = false; row.querySelector('b').textContent = restMin > 1 ? '≈ ' + fmtDist(restM) + ' · ' + fmtHm(restMin) + ' ' + t('hShort') : t('restNone'); }
+      if(!multi || st !== 'accepted') return;
       const pc = dayProgress(plan, tr); pc.forEach((p, k) => { const el = $('#dp' + k); if(el) el.innerHTML = p >= 95 ? statusPill('ok', t('stDone')) : p ? '· ' + p + '%' : ''; });
       const next = pc.findIndex(p => p < 95), go = $('#go');
       if(next >= 0 && plan.days[next]){ const q = plan.path[plan.days[next].i0]; if(q){ const g = $('#dirG'), a = $('#dirA'); if(g) g.href = (task.bike ? rideLink(task) : gTransit)(q[0], q[1]); if(a) a.href = aTransit(q[0], q[1]); } } if(go && next >= 0) go.querySelector('span').textContent = t(pc[next] >= 3 ? 'contDayN' : 'startDayN', { n:next + 1 });

@@ -200,8 +200,8 @@ Object.assign(T.de, { startAnywhere:'Darf überall starten (ohne Startpunkt-Prü
 Object.assign(T.ru, { startAnywhere:'Может начинать где угодно (без проверки точки старта)' });
 Object.assign(T.de, { mergeHint:'{n} hat {k} Routen in diesem Auftrag.', mergeBtn:'Zu einer Route zusammenlegen', mergeQ:'Die {k} Routen von {n} werden eine Route: die Tage folgen nacheinander, Erledigtes und alle Schichten bleiben. {n} wählt danach die Tage neu.' });
 Object.assign(T.ru, { mergeHint:'У {n} {k} маршрута в этом заказе.', mergeBtn:'Объединить в один маршрут', mergeQ:'{k} маршрута {n} станут одним: дни идут друг за другом, сделанное и все смены сохраняются. Потом {n} заново выбирает дни.' });
-Object.assign(T.de, { dayDone:'erledigt', restLine:'Noch offen: ≈ {km} · {h} Std.', restNone:'Alles erledigt' });
-Object.assign(T.ru, { dayDone:'сделано', restLine:'Осталось: ≈ {km} · {h} ч', restNone:'Всё сделано' });
+Object.assign(T.de, { restLbl:'Noch offen', hShort:'Std.', dayDone:'erledigt', restLine:'Noch offen: ≈ {km} · {h} Std.', restNone:'Alles erledigt' });
+Object.assign(T.ru, { restLbl:'Осталось', hShort:'ч', dayDone:'сделано', restLine:'Осталось: ≈ {km} · {h} ч', restNone:'Всё сделано' });
 Object.assign(T.de, { redayBtn:'Rest neu auf Tage verteilen', redayHint:'Die Route bleibt gleich, Erledigtes bleibt erledigt und wird übersprungen. Die offene Arbeit wird gleichmäßig auf die Tage verteilt; der Mitarbeiter wählt die Tage neu.', redayN:'Anzahl Tage', openH:'offen ≈ {h} Std.' });
 Object.assign(T.ru, { redayBtn:'Распределить остаток по дням', redayHint:'Маршрут тот же, сделанное остаётся сделанным и пропускается. Оставшаяся работа делится поровну на дни; работник заново выбирает дни.', redayN:'Сколько дней', openH:'осталось ≈ {h} ч' });
 Object.assign(T.de, { stCancelled:'Storniert', cancelTask:'Stornieren', cancelTaskQ:'Auftrag stornieren? Er verschwindet bei den Mitarbeitern, Gelaufenes bleibt gespeichert. „Wieder öffnen“ macht es rückgängig.' });
