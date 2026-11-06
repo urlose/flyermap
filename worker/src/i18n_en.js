@@ -137,6 +137,7 @@ T.en = {
   msNoAccount:'There is no account for this number or email yet. The person has to sign in once first.', msBadIdent:'Please enter a phone number or email.', msAdded:'Added', msInvitedToast:'Invited – applies at the first sign-in',
   mustNTitle:'How many flyers in this area?', mustNHint:'Distribution happens in the part of the area closest to the start point.', mustAll:'All mailboxes in the area', mustAllShort:'all mailboxes',
   mustNFly:'{n} flyers', mustAvail:'≈ {mb} mailboxes in the area', mustFewer:'fewer than wanted', change:'Change',
+  zoneBig:'The drawn area has ≈ {mb} mailboxes, but only {f} flyers are planned.', zoneAll:'Deliver all {f}', panelHide:'Collapse', panelShow:'Expand',
   zoneTitle:'Distribution area', zoneAuto:'automatic', zoneOwn:'drawn by you',
   zoneHint:'Automatic: a compact area around the start point. If you don’t like it, draw the area yourself – then only that area gets flyers.',
   zoneHintOwn:'Flyers only go inside the drawn area (and in the priority areas).', zoneDraw:'Draw the area yourself', zoneRedraw:'Draw again', zoneBackAuto:'Back to automatic',

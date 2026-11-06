@@ -387,6 +387,10 @@ button.kpi{cursor:pointer}button.kpi.on{border-color:var(--color-primary);backgr
 .sheet-grip{display:block;width:100%;height:32px;border:0;background:none;padding:0;margin:-4px 0 0;position:sticky;top:-8px;z-index:2}
 .sheet-grip::after{content:"";display:block;width:40px;height:4px;border-radius:2px;background:var(--color-border-strong);margin:8px auto 0}
 .sheet.calc{opacity:.75}
+.sheet-min{position:absolute;top:6px;right:8px;z-index:3;display:inline-flex;align-items:center;gap:4px;height:30px;padding:0 10px;border:0;border-radius:var(--radius-full);background:var(--color-surface-subtle);color:var(--color-text-secondary,var(--color-text));font:600 13px/1 var(--font-family);cursor:pointer}
+.sheet-min svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;transition:transform var(--dur)}
+.sheet.mini{max-height:52px!important;overflow:hidden}.sheet.mini .sheet-min svg{transform:rotate(180deg)}
+.sheet{position:absolute}
 .cbusy{position:absolute;right:16px;top:8px;display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--color-text-secondary);background:var(--color-surface-subtle);padding:3px 10px;border-radius:var(--radius-full)}
 .cbusy::before{content:"";width:10px;height:10px;border-radius:50%;border:2px solid var(--color-primary);border-right-color:transparent;animation:spin .8s linear infinite}
 /* steps of the order wizard */
@@ -595,11 +599,18 @@ button.rbtn{width:100%;background:none;border:0;padding:var(--space-3) var(--spa
   .fab{right:max(var(--page-pad), calc((100% - 232px) / 2 - 480px + var(--page-pad)));bottom:28px}
   .tab-out{display:flex;margin-top:auto;color:var(--color-danger)}
   @media (hover:hover){.tab-out:hover{background:var(--color-danger-bg)!important;color:var(--color-danger)!important}}
-  .sheet{left:248px}
   .toast{bottom:28px;left:calc(50% + 116px)}
   .mapbox{height:420px}
   .plain-in:has(>.legal){max-width:760px}
   .modal-box{max-width:640px}
+}
+ /* route wizard on a wide screen: panel docked on the left under the search, full height, can be folded away */
+@media (min-width:900px){
+  .sheet{left:16px;right:auto;top:calc(var(--st) + 70px);bottom:16px;width:min(440px,calc(100% - 32px));max-height:none;border-radius:var(--radius-xl)}
+  .sheet.tall{max-height:none}
+  .sheet.mini{bottom:auto}
+  .sheet .sheet-grip{display:none}
+  .sheet .wz{padding-right:96px}
 }
 @media (max-width:359px){ .kpi{padding:10px}.kpi b{font-size:20px}.topbar h1{font-size:24px;line-height:30px}.stats b{font-size:19px}.btn{font-size:14.5px} }
 @media (prefers-reduced-motion:reduce){ *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important} }

@@ -707,7 +707,8 @@
     const minDens = Math.max(4, Math.min(15, 0.25 * D));
     const sparse = e => e.len > 100 && e.mb * 1000 / e.len < minDens;
     let skipped = 0;
-    g.edges.forEach((e, i) => { if(e.mb > 0){ if(sparse(e)){ skipped += e.mb; return; } items.push({ i, k:(tree.d[e.a] + tree.d[e.b]) / 2, v:tree.d[e.a] <= tree.d[e.b] ? e.b : e.a }); } });
+    // an area the admin drew himself is walked completely: no street inside it is skipped as too empty
+    g.edges.forEach((e, i) => { if(e.mb > 0){ if(!g.zoned && sparse(e)){ skipped += e.mb; return; } items.push({ i, k:(tree.d[e.a] + tree.d[e.b]) / 2, v:tree.d[e.a] <= tree.d[e.b] ? e.b : e.a }); } });
     // 2. drop poor branches: along the shortest-path tree from the start, a branch (road out to somewhere) is only worth walking
     //    if it brings enough mailboxes per km (walking out and back). Rich far villages survive, long empty spurs do not.
     const B = new Float64Array(n), Lc = new Float64Array(n), kids = Array.from({ length:n }, () => []);
@@ -716,7 +717,7 @@
     items.forEach(it => { const e = g.edges[it.i]; B[it.v] += e.mb; Lc[it.v] += e.len; });
     for(let q = pre.length - 1; q >= 0; q--){ const v = pre[q]; if(tree.pe[v] === -1) continue; Lc[v] += g.edges[tree.pe[v]].len; B[tree.pv[v]] += B[v]; Lc[tree.pv[v]] += Lc[v]; }
     const thr = Math.max(6, Math.min(25, 0.3 * D)), drop = new Uint8Array(n);
-    for(const v of pre){ if(tree.pe[v] === -1) continue; if(drop[tree.pv[v]]) drop[v] = 1; else if(tree.d[v] > 300 && Lc[v] > 0 && B[v] / Lc[v] * 1000 < thr) drop[v] = 1; }
+    for(const v of pre){ if(tree.pe[v] === -1) continue; if(drop[tree.pv[v]]) drop[v] = 1; else if(!g.zoned && tree.d[v] > 300 && Lc[v] > 0 && B[v] / Lc[v] * 1000 < thr) drop[v] = 1; }
     const kept = items.filter(it => { if(drop[it.v]){ skipped += g.edges[it.i].mb; return false; } return true; });
     // 3. villages = dense clusters of street pieces. Long, thin connecting roads do NOT glue villages together (otherwise a poor
     //    connector drags a rich village down and the pieces taken from such a blob are random).
