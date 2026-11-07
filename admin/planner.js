@@ -117,11 +117,18 @@
   }
   const r6 = v => Math.round(v * 1e6) / 1e6;
   // only what the planner needs: street nodes, street ways (id, name, node ids), houses with their estimated mailboxes
+  // = build.py fast_no_sidewalk: country road at 70 km/h or more without a sidewalk is not walked (safety)
+  function fastNoWalk(g){
+    if(!/^(primary|secondary|tertiary)(_link)?$/.test(g.highway || '')) return false;
+    const v = String(g.maxspeed || '').trim().toLowerCase(), sp = /^(de:rural|de:motorway|none)$/.test(v) ? 100 : /^(de:urban|walk|de:living_street)$/.test(v) ? 50 : parseInt(v, 10);
+    if(!(sp >= 70)) return false;
+    return !['sidewalk', 'sidewalk:both', 'sidewalk:left', 'sidewalk:right'].some(k => /^(yes|both|left|right|separate)$/.test(g[k] || ''));
+  }
   function compactTile(osm){
     const n = [], w = [], b = [];
     for(const e of (osm && osm.elements) || []){
       if(e.type === 'node') n.push(e.id, r6(e.lat), r6(e.lon));
-      else if(e.type === 'way' && e.nodes && e.tags && e.tags.highway) w.push([e.id, e.tags.name || e.tags.ref || '', e.nodes]);
+      else if(e.type === 'way' && e.nodes && e.tags && e.tags.highway){ if(!fastNoWalk(e.tags)) w.push([e.id, e.tags.name || e.tags.ref || '', e.nodes]); }
       else if(e.type === 'way'){ const x = parseBuildings({ elements:[e] })[0]; if(x) b.push([e.id, r6(x.lat), r6(x.lng), x.n]); }
     }
     return { v:TILE_V, elements:[], n, w, b };

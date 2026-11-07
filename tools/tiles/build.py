@@ -47,7 +47,30 @@ def is_street(tags):
     if RX_ACCESS.search(tags.get('access') or ''): return False
     if RX_FOOT_NO.search(tags.get('foot') or ''): return False   # walking forbidden (e.g. a Bundesstraße outside town)
     if tags.get('motorroad') == 'yes': return False                # Kraftfahrstraße: no pedestrians
+    if fast_no_sidewalk(tags): return False                         # = planner.js fastNoWalk: country road ≥ 70 km/h without a sidewalk
     return True
+
+RX_FAST_HW = re.compile('^(primary|primary_link|secondary|secondary_link|tertiary|tertiary_link)$')
+RX_WALK_SIDE = re.compile('^(yes|both|left|right|separate)$')
+def max_speed(v):
+    v = (v or '').strip().lower()
+    if v in ('de:rural', 'de:motorway', 'none'): return 100
+    if v in ('de:urban', 'walk', 'de:living_street'): return 50
+    return parse_int(v)
+def fast_no_sidewalk(tags):
+    if not RX_FAST_HW.search(tags.get('highway') or ''): return False
+    sp = max_speed(tags.get('maxspeed'))
+    if sp is None or sp < 70: return False
+    return not any(RX_WALK_SIDE.search(tags.get(k) or '') for k in ('sidewalk', 'sidewalk:both', 'sidewalk:left', 'sidewalk:right'))
+
+LANDUSE_NO = ('industrial', 'commercial', 'retail')
+def in_ring(lat, lon, ring):
+    inside = False; j = len(ring) - 1
+    for i in range(len(ring)):
+        yi, xi = ring[i]; yj, xj = ring[j]
+        if (yi > lat) != (yj > lat) and lon < (xj - xi) * (lat - yi) / (yj - yi) + xi: inside = not inside
+        j = i
+    return inside
 
 def estimate_mailboxes(tags, area):   # = estimateMailboxes() in admin/planner.js
     if tags.get('abandoned') or tags.get('disused') or tags.get('disused:building'): return 0
@@ -86,11 +109,15 @@ class Collect(osmium.SimpleHandler):
     """streets and houses for the squares in `want` (set of (i, j)); nodes are kept only for streets"""
     def __init__(self, want):
         super().__init__(); self.want = want
-        self.nodes = {}; self.ways = {}; self.tile_ways = {}; self.tile_b = {}
+        self.nodes = {}; self.ways = {}; self.tile_ways = {}; self.tile_b = {}; self.tile_lu = {}
         self.n_ways = 0
     def way(self, w):
         tags = w.tags
         b = tags.get('building')
+        if b is None and tags.get('landuse') in LANDUSE_NO and len(w.nodes) > 3 and w.nodes[0].ref == w.nodes[-1].ref:
+            ring = [(nd.lat, nd.lon) for nd in w.nodes if nd.location.valid()]
+            if len(ring) > 3: self.add_landuse(ring)
+            return
         street = is_street(tags)
         if not street and b is None: return
         pts = []
@@ -113,6 +140,14 @@ class Collect(osmium.SimpleHandler):
         for (nid, la, lo) in pts: self.nodes[nid] = (i6(la), i6(lo))
         for t in tiles: self.tile_ways.setdefault(t, []).append(wid)
         self.n_ways += 1
+    def add_landuse(self, ring):   # Gewerbegebiet / shops: plain "building=yes" there has no mailboxes
+        las = [p[0] for p in ring]; los = [p[1] for p in ring]; bb = (min(las), min(los), max(las), max(los))
+        for i in range(math.floor(bb[0] / TILE_LAT), math.floor(bb[2] / TILE_LAT) + 1):
+            for j in range(math.floor(bb[1] / TILE_LNG), math.floor(bb[3] / TILE_LNG) + 1):
+                if (i, j) in self.want: self.tile_lu.setdefault((i, j), []).append((bb, ring))
+    def in_business_area(self, t, la6, lo6):
+        lat, lon = la6 / 1e6, lo6 / 1e6
+        return any(bb[0] <= lat <= bb[2] and bb[1] <= lon <= bb[3] and in_ring(lat, lon, ring) for bb, ring in self.tile_lu.get(t, ()))
     def add_building(self, b, tags, pts):
         if RX_HOUSE.search(b):   # Overpass "out center" = centre of the bounding box; footprint does not matter for houses
             las = [p[1] for p in pts]; los = [p[2] for p in pts]
@@ -124,7 +159,8 @@ class Collect(osmium.SimpleHandler):
             lat = sum(p[0] for p in geom) / len(geom); lon = sum(p[1] for p in geom) / len(geom)
         if not n: return
         t = tile_of(lat, lon)
-        if t in self.want: self.tile_b.setdefault(t, []).append((i6(lat), i6(lon), n))
+        soft = b == 'yes' and parse_int(tags.get('building:flats') or tags.get('addr:flats')) is None   # may be a hall in a Gewerbegebiet
+        if t in self.want: self.tile_b.setdefault(t, []).append((i6(lat), i6(lon), n, soft))
 
 def encode(c, t):
     """fm4: n = [Δid, Δlat, Δlon …] (ids ascending, coordinates in 1e-6 degrees), w = [[Δid, name, [first node, Δ …]] …],
@@ -140,7 +176,8 @@ def encode(c, t):
         for x in ids: d.append(x - prev); prev = x
         w.append([wid - pw, name, d]); pw = wid
     b = []; plat = plon = 0
-    for (la, lo, k) in sorted(set(c.tile_b.get(t, []))):
+    for (la, lo, k, soft) in sorted(set(c.tile_b.get(t, []))):
+        if soft and c.in_business_area(t, la, lo): continue
         b += [la - plat, lo - plon, k]; plat, plon = la, lo
     return {'v': TILE_V, 'n': n, 'w': w, 'b': b}
 

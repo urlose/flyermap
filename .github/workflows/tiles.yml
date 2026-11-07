@@ -34,7 +34,7 @@ jobs:
           curl -sSfL --retry 3 -o region.poly "https://download.geofabrik.de/$REGION.poly"
           echo "::notice::extract $(du -h region.osm.pbf | cut -f1), free disk $(df -h /mnt | tail -1 | awk '{print $4}')"
       - name: Streets and buildings only
-        run: osmium tags-filter /mnt/osm/region.osm.pbf w/highway w/building --overwrite -o /mnt/osm/f.osm.pbf && rm /mnt/osm/region.osm.pbf && ls -la /mnt/osm
+        run: osmium tags-filter /mnt/osm/region.osm.pbf w/highway w/building w/landuse=industrial,commercial,retail --overwrite -o /mnt/osm/f.osm.pbf && rm /mnt/osm/region.osm.pbf && ls -la /mnt/osm
       - name: Cut into squares
         run: |
           python3 tools/tiles/build.py --pbf /mnt/osm/f.osm.pbf --poly /mnt/osm/region.poly --out /mnt/osm/tiles --work /mnt/osm | tee /mnt/osm/build.log
