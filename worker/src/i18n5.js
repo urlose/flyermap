@@ -1,7 +1,7 @@
 // Companies: registration, company code, company settings, AVV
 import { T } from './i18n.js';
 Object.assign(T.de, {
-  copy:'Kopieren', copied:'Kopiert', mustTitle:'Pflichtgebiete', mustHint:'Hier wird auf jeden Fall verteilt – zusätzlich zur normalen Route ab dem Startpunkt. Die Briefkästen zählen zur Flyerzahl.', mustAdd:'Gebiet einzeichnen', mustN:'Gebiet {n}', mustMb:'≈ {mb} Briefkästen', mustSum:'{n} · ≈ {mb} Briefkästen', mustDrawHint:'Tippe die Ecken des Gebiets auf die Karte', mustCorners:'{n} Ecken (mind. 3)', mustUndo:'Rückgängig', mustTooMany:'Die Pflichtgebiete haben ≈ {mb} Briefkästen, aber nur {f} Flyer. Mehr Flyer eingeben oder ein Gebiet verkleinern.', mustDone:'Fertig', handoverHint:'Willkommen! Bitte trage deinen Namen, deine Handynummer und die Städte ein, in denen du arbeiten kannst, und tippe auf „Speichern“.', handoverPhone:'Deine Handynummer', e_phone_taken:'Diese Nummer ist schon bei FlyerMap registriert.', e_phone_invalid:'Bitte eine deutsche Handynummer eingeben.', loginLink:'Login-Link zum Weitergeben', loginLinkHint:'Wer diesen Link öffnet, ist in diesem Konto angemeldet. Nur an die Person schicken, für die das Konto ist.',
+  copy:'Kopieren', copied:'Kopiert', mustTitle:'Pflichtgebiete', mustHint:'Hier wird auf jeden Fall verteilt – zusätzlich zur normalen Route ab dem Startpunkt. Die Briefkästen zählen zur Flyerzahl.', mustAdd:'Gebiet einzeichnen', mustN:'Gebiet {n}', mustMb:'≈ {mb} Briefkästen', mustSum:'{n} · ≈ {mb} Briefkästen', mustDrawHint:'Tippe Punkte auf die Karte – Punkte lassen sich verschieben', mustCorners:'{n} Ecken (mind. 3)', mustUndo:'Rückgängig', mustTooMany:'Die Pflichtgebiete haben ≈ {mb} Briefkästen, aber nur {f} Flyer. Mehr Flyer eingeben oder ein Gebiet verkleinern.', mustDone:'Fertig', handoverHint:'Willkommen! Bitte trage deinen Namen, deine Handynummer und die Städte ein, in denen du arbeiten kannst, und tippe auf „Speichern“.', handoverPhone:'Deine Handynummer', e_phone_taken:'Diese Nummer ist schon bei FlyerMap registriert.', e_phone_invalid:'Bitte eine deutsche Handynummer eingeben.', loginLink:'Login-Link zum Weitergeben', loginLinkHint:'Wer diesen Link öffnet, ist in diesem Konto angemeldet. Nur an die Person schicken, für die das Konto ist.',
   newUserQ:'Wie möchtest du FlyerMap nutzen?', newUserWorker:'Ich verteile Flyer', newUserWorkerSub:'Du hast einen Firmencode oder Link von deiner Firma.',
   newUserFirm:'Ich registriere meine Firma', newUserFirmSub:'Du planst Aufträge und teilst Verteiler ein.',
   firmRegTitle:'Firma registrieren', firmRegHint:'Diese Angaben sehen deine Verteiler in der Datenschutzerklärung: deine Firma ist für ihre Daten verantwortlich.', firmRegBtn:'Firma registrieren',
@@ -29,7 +29,7 @@ Object.assign(T.de, {
   msAddHint:'Telefonnummer oder E-Mail eines bestehenden FlyerMap-Kontos.', msNoAccount:'Zu dieser Nummer bzw. E-Mail gibt es noch kein Konto. Die Person muss sich zuerst einmal anmelden.', msBadIdent:'Bitte Telefonnummer oder E-Mail eingeben.', msAdded:'Hinzugefügt', msInvitedToast:'Eingeladen – gilt beim ersten Login',
 });
 Object.assign(T.ru, {
-  copy:'Копировать', copied:'Скопировано', mustTitle:'Обязательные участки', mustHint:'Здесь раздать обязательно — в дополнение к обычному маршруту от точки старта. Ящики засчитываются в число флаеров.', mustAdd:'Обвести участок', mustN:'Участок {n}', mustMb:'≈ {mb} ящиков', mustSum:'{n} · ≈ {mb} ящиков', mustDrawHint:'Нажимайте на карту по углам участка', mustCorners:'{n} углов (мин. 3)', mustUndo:'Отменить', mustTooMany:'В обязательных участках ≈ {mb} ящиков, а флаеров только {f}. Увеличьте число флаеров или уменьшите участок.', mustDone:'Готово', handoverHint:'Добро пожаловать! Впишите своё имя, номер мобильного и города, где можете работать, и нажмите «Сохранить».', handoverPhone:'Ваш мобильный номер', e_phone_taken:'Этот номер уже зарегистрирован в FlyerMap.', e_phone_invalid:'Введите немецкий мобильный номер.', loginLink:'Ссылка для входа (передать)', loginLinkHint:'Кто откроет эту ссылку, войдёт в этот аккаунт. Отправляйте только тому, для кого аккаунт.',
+  copy:'Копировать', copied:'Скопировано', mustTitle:'Обязательные участки', mustHint:'Здесь раздать обязательно — в дополнение к обычному маршруту от точки старта. Ящики засчитываются в число флаеров.', mustAdd:'Обвести участок', mustN:'Участок {n}', mustMb:'≈ {mb} ящиков', mustSum:'{n} · ≈ {mb} ящиков', mustDrawHint:'Ставьте точки на карте — их можно двигать', mustCorners:'{n} углов (мин. 3)', mustUndo:'Отменить', mustTooMany:'В обязательных участках ≈ {mb} ящиков, а флаеров только {f}. Увеличьте число флаеров или уменьшите участок.', mustDone:'Готово', handoverHint:'Добро пожаловать! Впишите своё имя, номер мобильного и города, где можете работать, и нажмите «Сохранить».', handoverPhone:'Ваш мобильный номер', e_phone_taken:'Этот номер уже зарегистрирован в FlyerMap.', e_phone_invalid:'Введите немецкий мобильный номер.', loginLink:'Ссылка для входа (передать)', loginLinkHint:'Кто откроет эту ссылку, войдёт в этот аккаунт. Отправляйте только тому, для кого аккаунт.',
   newUserQ:'Как вы будете пользоваться FlyerMap?', newUserWorker:'Я раздаю флаеры', newUserWorkerSub:'У вас есть код или ссылка от вашей фирмы.',
   newUserFirm:'Я регистрирую свою фирму', newUserFirmSub:'Вы планируете заказы и распределяете раздающих.',
   firmRegTitle:'Регистрация фирмы', firmRegHint:'Эти данные раздающие увидят в политике конфиденциальности: ваша фирма отвечает за их данные.', firmRegBtn:'Зарегистрировать фирму',
@@ -66,8 +66,8 @@ Object.assign(T.de, {
   zoneTitle:'Verteilgebiet', zoneAuto:'automatisch', zoneOwn:'selbst eingezeichnet',
   zoneHint:'Automatisch: ein kompaktes Gebiet rund um den Startpunkt. Gefällt es dir nicht, zeichne das Gebiet selbst ein – dann wird nur darin verteilt.',
   zoneHintOwn:'Es wird nur innerhalb des eingezeichneten Gebiets verteilt (und in den Pflichtgebieten).',
-  zoneDraw:'Gebiet selbst einzeichnen', zoneRedraw:'Neu einzeichnen', zoneBackAuto:'Wieder automatisch',
-  zoneDrawHint:'Tippe die Ecken deines Verteilgebiets auf die Karte',
+  zoneDraw:'Gebiet selbst einzeichnen', zoneRedraw:'Gebiet bearbeiten', zoneBackAuto:'Wieder automatisch',
+  zoneDrawHint:'Tippe Punkte um dein Verteilgebiet – Punkte lassen sich verschieben',
   zoneSmall:'Im eingezeichneten Gebiet sind nur ≈ {mb} Briefkästen, aber {f} Flyer. Größer zeichnen oder weniger Flyer:',
 });
 Object.assign(T.ru, {
@@ -79,8 +79,8 @@ Object.assign(T.ru, {
   zoneTitle:'Район раздачи', zoneAuto:'автоматически', zoneOwn:'нарисован вручную',
   zoneHint:'Автоматически: компактный район вокруг точки старта. Если не нравится — нарисуйте район сами, тогда раздача будет только в нём.',
   zoneHintOwn:'Раздача только внутри нарисованного района (и в обязательных участках).',
-  zoneDraw:'Нарисовать район самому', zoneRedraw:'Нарисовать заново', zoneBackAuto:'Снова автоматически',
-  zoneDrawHint:'Нажимайте на карту по углам своего района',
+  zoneDraw:'Нарисовать район самому', zoneRedraw:'Изменить район', zoneBackAuto:'Снова автоматически',
+  zoneDrawHint:'Ставьте точки вокруг района — их можно двигать',
   zoneSmall:'В нарисованном районе только ≈ {mb} ящиков, а флаеров {f}. Нарисуйте больше или уменьшите флаеры:',
 });
 // open routes: distributors take free routes of their company themselves (31.10.2026)
@@ -225,3 +225,6 @@ Object.assign(T.de, { mergeTasks:'Aufträge zusammenführen', mergeHint:'Routen,
 Object.assign(T.ru, { mergeTasks:'Объединить заказы', mergeHint:'Маршруты, рабочие дни, GPS-треки и работники выбранных заказов перейдут в «{title}». Флаеры суммируются. Можно отменить.', mergeGo:'Объединить', mergeNone:'Выберите хотя бы один заказ.', mergeQ:'Объединить {n} заказ(а) в «{title}»?', mergeDone:'Объединено заказов: {n}' });
 Object.assign(T.de, { adjust:'anpassen', flDoneManual:'Angabe vom {d}', stillWorking:'Arbeit läuft weiter', flDoneHint:'Wie viele Flyer sind wirklich verteilt (z. B. nach gezählten Paketen)? Leer lassen = Schätzung aus den GPS-Spuren.', flDoneAuto:'automatisch (GPS)', flDoneBad:'Bitte eine Zahl eingeben.' });
 Object.assign(T.ru, { adjust:'изменить', flDoneManual:'данные от {d}', stillWorking:'работа идёт дальше', flDoneHint:'Сколько флаеров реально роздано (например, по пересчитанным пачкам)? Пусто = оценка по GPS-трекам.', flDoneAuto:'автоматически (GPS)', flDoneBad:'Введите число.' });
+
+Object.assign(T.de, { shapeEdit:'Form bearbeiten' });
+Object.assign(T.ru, { shapeEdit:'Изменить форму' });

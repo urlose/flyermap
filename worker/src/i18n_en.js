@@ -105,7 +105,7 @@ T.en = {
   gps_wait:'Looking for GPS …', gps_ok:'GPS ±{m} m', gps_weak:'GPS inaccurate (±{m} m)', gps_stale:'GPS outdated', gps_denied:'No location access', gps_off:'Location is off',
   copy:'Copy', copied:'Copied',
   mustTitle:'Priority areas', mustHint:'Part of the flyers must be distributed here – you decide how many. They count towards the total; the rest goes around the start point as usual.',
-  mustAdd:'Draw an area', mustN:'Area {n}', mustMb:'≈ {mb} mailboxes', mustSum:'{n} · ≈ {mb} mailboxes', mustDrawHint:'Tap the corners of the area on the map', mustCorners:'{n} corners (min. 3)',
+  mustAdd:'Draw an area', mustN:'Area {n}', mustMb:'≈ {mb} mailboxes', mustSum:'{n} · ≈ {mb} mailboxes', mustDrawHint:'Tap points on the map – you can drag them', mustCorners:'{n} corners (min. 3)',
   mustUndo:'Undo', mustTooMany:'The priority areas have ≈ {mb} mailboxes, but there are only {f} flyers. Enter more flyers or make an area smaller.', mustDone:'Done',
   handoverHint:'Welcome! Please enter your name, your mobile number and the cities where you can work, then tap “Save”.', handoverPhone:'Your mobile number',
   e_phone_taken:'This number is already registered with FlyerMap.', e_phone_invalid:'Please enter a German mobile number.',
@@ -140,8 +140,8 @@ T.en = {
   zoneBig:'The drawn area has ≈ {mb} mailboxes, but only {f} flyers are planned.', zoneAll:'Deliver all {f}', panelHide:'Collapse', panelShow:'Expand',
   zoneTitle:'Distribution area', zoneAuto:'automatic', zoneOwn:'drawn by you',
   zoneHint:'Automatic: a compact area around the start point. If you don’t like it, draw the area yourself – then only that area gets flyers.',
-  zoneHintOwn:'Flyers only go inside the drawn area (and in the priority areas).', zoneDraw:'Draw the area yourself', zoneRedraw:'Draw again', zoneBackAuto:'Back to automatic',
-  zoneDrawHint:'Tap the corners of your distribution area on the map', zoneSmall:'The drawn area only has ≈ {mb} mailboxes, but there are {f} flyers. Draw it larger or use fewer flyers:',
+  zoneHintOwn:'Flyers only go inside the drawn area (and in the priority areas).', zoneDraw:'Draw the area yourself', zoneRedraw:'Edit area', zoneBackAuto:'Back to automatic',
+  zoneDrawHint:'Tap points around your area – you can drag them', zoneSmall:'The drawn area only has ≈ {mb} mailboxes, but there are {f} flyers. Draw it larger or use fewer flyers:',
   openRoutes:'Free routes', openHint:'Nobody is assigned here yet – you can take a route yourself.', stOpen:'Free',
   openDetailHint:'Nobody has this route yet. Choose your days and take it – the dispatcher sees it right away.', openRoute:'Free route', claim:'Take route', claimed:'Route taken',
   e_plan_taken:'Somebody else just took this route.', e_already_in_task:'You already have a route in this order.',
@@ -199,3 +199,5 @@ Object.assign(T.en, { nobodyLiveHint:'Nobody is on the way right now.', chipsAll
 Object.assign(T.en, { waLoginHint:'WhatsApp opens with a ready message – just send it. That confirms your number without SMS.', noWaYet:'Sign-in with WhatsApp is being set up. Until then, sign in with the login link from your admin.' });
 Object.assign(T.en, { mergeTasks:'Merge orders', mergeHint:'Routes, working days, GPS tracks and workers of the chosen orders move into “{title}”. Flyers are added up. Can be undone.', mergeGo:'Merge', mergeNone:'Choose at least one order.', mergeQ:'Merge {n} order(s) into “{title}”?', mergeDone:'{n} order(s) merged' });
 Object.assign(T.en, { adjust:'adjust', flDoneManual:'reported {d}', stillWorking:'work continues', flDoneHint:'How many flyers are really out (e.g. counted packs)? Leave empty = estimate from the GPS tracks.', flDoneAuto:'automatic (GPS)', flDoneBad:'Please enter a number.' });
+
+Object.assign(T.en, { shapeEdit:'Edit shape' });

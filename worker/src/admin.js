@@ -889,8 +889,13 @@ function viewCreate(edit){
     d.must.forEach((a, k) => tip(L.polygon(a.p, { color:MUST_COLOR, weight:3, dashArray:'8 6', fillOpacity:.12, interactive:false }).addTo(mustLayer), mName(a, k) + (a.n ? ' · ' + fmtN(a.n) : '')));
     if(d.drawing){
       const col = d.drawFor === 'zone' ? ZONE_COLOR : MUST_COLOR;
-      if(d.drawing.length > 1) L.polygon(d.drawing, { color:col, weight:2, dashArray:'4 4', fillOpacity:.08, interactive:false }).addTo(mustLayer);
-      d.drawing.forEach(q => L.circleMarker(q, { radius:6, color:'#fff', weight:2, fillColor:col, fillOpacity:1, interactive:false }).addTo(mustLayer));
+      const pg = L.polygon(d.drawing.length > 1 ? d.drawing : [], { color:col, weight:2, dashArray:'4 4', fillOpacity:.08, interactive:false }).addTo(mustLayer);
+      // every corner can be dragged; the shape follows live
+      d.drawing.forEach((q, i) => {
+        const mk = L.marker(q, { draggable:true, keyboard:false, zIndexOffset:1000, icon:L.divIcon({ className:'', iconSize:[22, 22], iconAnchor:[11, 11], html:`<div class="draw-pt" style="--c:${col}"></div>` }) }).addTo(mustLayer);
+        mk.on('drag', e => { const ll = e.target.getLatLng(); d.drawing[i] = [ll.lat, ll.lng]; pg.setLatLngs(d.drawing); });
+        mk.on('click', () => {});   // a tap on a corner does not add a new one
+      });
     }
   };
   // how many flyers go into a priority area (0 = every mailbox in it); resolves null when cancelled
@@ -907,8 +912,8 @@ function viewCreate(edit){
     mm.querySelector('#mNo').onclick = () => { mm.remove(); res(null); };
     mm.querySelector('#mOk').onclick = () => { const v = all.checked ? 0 : Math.max(50, Math.round(+inp.value) || 0); mm.remove(); res(v); };
   });
-  const drawMode = (on, kind) => {
-    d.drawing = on ? [] : null; if(on) d.drawFor = kind || 'must';
+  const drawMode = (on, kind, init, edit) => {
+    d.drawing = on ? (init || []).map(q => [q[0], q[1]]) : null; if(on){ d.drawFor = kind || 'must'; d.drawEdit = edit == null ? null : edit; }
     const ht = $('#cDrawT'); if(ht) ht.textContent = t(d.drawFor === 'zone' ? 'zoneDrawHint' : 'mustDrawHint');
     $('#cDraw').hidden = !on; $('#cSheet').hidden = on; const mt = document.querySelector('.map-top'); if(mt) mt.hidden = on; const pk = $('#cPick'); if(pk && on) pk.hidden = true; else updPick();
     m.getContainer().style.cursor = on ? 'crosshair' : '';
@@ -922,6 +927,7 @@ function viewCreate(edit){
     const pts = d.drawing.map(q => [+q[0].toFixed(6), +q[1].toFixed(6)]), kind = d.drawFor;
     drawMode(false);
     if(kind === 'zone'){ d.zone = pts; drawMust(); return recompute(); }
+    if(d.drawEdit != null && d.must[d.drawEdit]){ d.must[d.drawEdit] = { ...d.must[d.drawEdit], p:pts }; d.drawEdit = null; drawMust(); d.dirty = true; return recompute(); }
     const nm = t('areaN', { n:d.must.length + d.side.length + 1 });
     return addArea({ name:nm, drawn:true }, pts, true);
   };
@@ -963,7 +969,13 @@ function viewCreate(edit){
   };
   $('#cPick').onclick = () => { d.pick = !d.pick; updPick(); };
   m.on('click', e => {
-    if(d.drawing){ d.drawing.push([e.latlng.lat, e.latlng.lng]); updDraw(); drawMust(); return; }
+    if(d.drawing){
+      // a new point goes into the side of the shape it is closest to, so the outline never crosses itself
+      const q = [e.latlng.lat, e.latlng.lng], P = d.drawing;
+      if(P.length < 3) P.push(q);
+      else{ let bi = P.length, bc = Infinity; for(let i = 0; i < P.length; i++){ const a = P[i], b = P[(i + 1) % P.length], c = hav(a[0], a[1], q[0], q[1]) + hav(q[0], q[1], b[0], b[1]) - hav(a[0], a[1], b[0], b[1]); if(c < bc){ bc = c; bi = i + 1; } } P.splice(bi, 0, q); }
+      updDraw(); drawMust(); return;
+    }
     if(d.start && !d.pick) return;
     d.pick = false; d.place = null; const qi = $('#cSearch'); if(qi) qi.value = '';
     setStart(e.latlng.lat, e.latlng.lng, true);
@@ -1097,7 +1109,7 @@ function viewCreate(edit){
       ${d.start && !d.place ? `<p class="small muted" style="margin:4px 0 0">${esc(t('startOnMap'))}</p>` : ''}
       <label class="f">${esc(t('mainCity'))}</label><div class="note" style="margin:0">${esc(mainCity() || t('mainCityAuto'))}</div>
       <label class="f">${esc(t('sideTowns'))}</label><p class="small muted" style="margin:-2px 0 6px">${esc(t('sideTownsHint'))}</p>
-      ${d.must.length ? `<div class="chips" style="margin:0 0 8px">${d.must.map((a, k) => `<span class="chip">${d.split ? `<span>${esc(mName(a, k))}</span>` : `<button class="link" data-med="${k}">${esc(mName(a, k))} · ${esc(a.n ? fmtN(a.n) : t('mustAllShort'))}</button>`}<button class="link" data-mrm="${k}" aria-label="${esc(t('del'))}">✕</button></span>`).join('')}</div>` : ''}
+      ${d.must.length ? `<div class="chips" style="margin:0 0 8px">${d.must.map((a, k) => `<span class="chip">${d.split ? `<span>${esc(mName(a, k))}</span>` : `<button class="link" data-med="${k}">${esc(mName(a, k))} · ${esc(a.n ? fmtN(a.n) : t('mustAllShort'))}</button>`}${a.p && a.p.length > 2 ? `<button class="link" data-mpt="${k}" aria-label="${esc(t('shapeEdit'))}" title="${esc(t('shapeEdit'))}">✎</button>` : ''}<button class="link" data-mrm="${k}" aria-label="${esc(t('del'))}">✕</button></span>`).join('')}</div>` : ''}
       ${d.side.length ? `<div class="chips" style="margin:0 0 8px">${d.side.map((x, k) => `<span class="chip">${esc(x.name)} · ${esc(d.split ? t('sideOwnKm', { km:String(x.km).replace('.', ',') }) : t('sideOwn', { km:String(x.km).replace('.', ','), n:fmtN(x.flyers) }))}<button class="link" data-srm="${k}" aria-label="${esc(t('del'))}">✕</button></span>`).join('')}</div><p class="small muted" style="margin:-4px 0 8px">${esc(t('sideOwnHint'))}</p>` : ''}
       ${d.start ? sfTown('cTown1').html + `<button class="btn ghost small" id="cMustAdd" style="margin-top:8px">${ICONS.edit}${esc(t('drawOwn'))}</button>` : `<p class="small muted">${esc(t('sideNeedStart'))}</p>`}
       <label class="f" for="cQuota">${esc(t('quota'))}</label><input class="in" type="number" id="cQuota" min="200" step="100" value="${esc(saved.quota)}"><p class="small muted" style="margin:4px 0 0">${esc(t('quotaHours'))}</p><label class="check" style="margin-top:6px"><input type="checkbox" id="cNoQ" ${(saved.noQuota != null ? saved.noQuota : d.travel === 'car') ? 'checked' : ''}><span>${esc(t('noQuota'))}</span></label>
@@ -1176,7 +1188,7 @@ function viewCreate(edit){
     Object.values(towns).forEach(x => x.bind());
     if(addrSf){ addrSf.bind(); const ai = $('#cAddr'); if(ai && d.place) ai.value = d.place.name + (d.place.sub ? ', ' + d.place.sub : ''); }
     document.querySelectorAll('[data-srm]').forEach(b => b.onclick = () => { saved = keep(); d.side.splice(+b.dataset.srm, 1); recompute(); });
-    if($('#cZoneDraw')) $('#cZoneDraw').onclick = () => { saved = keep(); drawMode(true, 'zone'); };
+    if($('#cZoneDraw')) $('#cZoneDraw').onclick = () => { saved = keep(); drawMode(true, 'zone', d.zone); };
     if($('#cZoneAuto')) $('#cZoneAuto').onclick = () => { saved = keep(); d.zone = null; drawMust(); recompute(); };
     if($('#cZoneAll')) $('#cZoneAll').onclick = () => { saved = keep(); d.flyers += p.zone_mb - (d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0)); d.nAuto = true; recompute(); };
     if($('#cZoneFit')) $('#cZoneFit').onclick = () => { saved = keep(); d.flyers = Math.max(100, d.flyers - (d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0)) + Math.floor(p.zone_mb / 50) * 50); d.nAuto = true; recompute(); };
@@ -1184,6 +1196,7 @@ function viewCreate(edit){
       const k = +b.dataset.med, inf = p && p.must_info && p.must_info[k], n = await askMustN(d.must[k].n, inf ? inf.avail : 0);
       if(n === null) return; saved = keep(); d.must[k].n = n; drawMust(); recompute();
     });
+    document.querySelectorAll('[data-mpt]').forEach(b => b.onclick = () => { saved = keep(); const k = +b.dataset.mpt; drawMode(true, 'must', d.must[k].p, k); });
     document.querySelectorAll('[data-mrm]').forEach(b => b.onclick = () => { d.must.splice(+b.dataset.mrm, 1); drawMust(); recompute(); });
   }
   async function save(){
