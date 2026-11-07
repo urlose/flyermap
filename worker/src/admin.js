@@ -611,6 +611,8 @@ async function boxesAlong(tracks, exclude){
   return ct.count();
 }
 // pieces a distributor marked as not needed: grey, dashed (pieces the admin closed are only counted as done, not drawn)
+// parts of a route the admin closed as done: their mailboxes count as delivered (worker skips – dangerous, no access – do not)
+const adminDone = p => (p.skipped || []).filter(x => x && /^Admin/.test(x.by || '') && Array.isArray(x.pts)).map(x => x.pts);
 const byWorker = x => x && !/^Admin/.test(x.by || '');
 const workerSkips = p => ((p && p.skipped) || []).filter(byWorker);
 const drawSkips = (g, plans) => (plans || []).forEach(p => workerSkips(p).forEach(x => { if(x && x.pts && x.pts.length > 1) L.polyline(x.pts, { color:'#6B7280', weight:7, opacity:.85, dashArray:'3 9', lineCap:'round' }).bindTooltip(t('rvSkipped') + (x.by ? ' · ' + x.by : '') + (x.why ? ' · „' + x.why + '“' : '') + (x.at ? ' · ' + fmtDT(x.at) : '')).addTo(g); }));
@@ -730,6 +732,7 @@ async function viewTaskMap(id, back){
     const tr = p.path && p.path.length > 1 ? addSkips(Planner.makeTracker(p.path), p) : null, ct = p.boxes && p.boxes.length ? Planner.makeBoxCounter(p.boxes) : null;
     // all tracks of the order count: streets of this route walked by somebody else are done too
     for(const pts of tracks){ if(tr) tr.addTrack(pts); if(ct) ct.visitAll(pts); }
+    if(ct) adminDone(p).forEach(pts => ct.visitAll(pts));   // parts the admin closed as done (e.g. phone broken) count their mailboxes too
     const pct = tr ? tr.pct() : 0; doneM += pct * (p.length_m || 0) / 100; allM += p.length_m || 0; if(ct){ flAll += ct.count(); hasFl = true; }
     return { p, runs:tr ? tr.runs() : [], pct, fl:ct ? ct.count() : null, cps:tr ? checkpoints(p, i => tr.isDone(i)) : [] };
   });
@@ -1461,6 +1464,7 @@ async function viewTask(id){
     byPlan[p.id] = byPlan[p.id] || [];
     const tr = addSkips(Planner.makeTracker(p.path), p), ct = p.boxes && p.boxes.length ? Planner.makeBoxCounter(p.boxes) : null;
     allTracks.forEach(pts => { tr.addTrack(pts); if(ct) ct.visitAll(pts); });
+    if(ct) adminDone(p).forEach(pts => ct.visitAll(pts));
     PLAN_TR[p.id] = tr;
     // per day: done or how far; and what is still open (what a new worker gets)
     try{
