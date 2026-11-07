@@ -723,11 +723,13 @@ function cpAdmin(c, color, multi, plan, reload){
   const mk = cpMarker(c, color, multi), label = multi ? cpTag(c) : String(c.n);
   const closed = (plan.skipped || []).some(x => x && x.cp === cpTag(c));
   let hl = null;
-  mk.bindPopup(`<b>${esc(t('cpWord'))} ${esc(label)}</b><br><span class="small">${esc(t('cpPct', { p:c.pct }))}</span><div style="margin-top:8px">${
-    closed ? `<button class="btn ghost small" data-cpopen>${esc(t('cpReopen'))}</button>` : c.done ? '' : `<button class="btn primary small" data-cpclose>${esc(t('cpClose'))}</button>`}</div><div class="err" data-cperr></div>`);
+  mk.bindPopup(`<b>${esc(t('cpWord'))} ${esc(label)}</b><br><span class="small">${esc(t('cpPct', { p:c.pct }))}</span><div style="margin-top:6px">${
+    closed ? `<button class="btn ghost small" data-cpopen>${esc(t('cpReopen'))}</button>` : c.done ? '' : `<button class="btn primary small" data-cpclose>${esc(t('cpClose'))}</button>`}</div><div class="err" data-cperr></div>`, { className:'cp-pop', maxWidth:200, autoPan:false });
   mk.on('popupopen', e => {
     const m = mk._map; if(m && c.runs && c.runs.length){ hl = L.featureGroup(c.runs.map(r => L.polyline(r, { color:'#F59E0B', weight:10, opacity:.85, lineCap:'round', lineJoin:'round', interactive:false }))).addTo(m); }
     const el = e.popup.getElement(), err = el.querySelector('[data-cperr]');
+    // keep the section's streets visible: the small popup sits above the point, the streets below it
+    if(m){ const b = (hl ? hl.getBounds() : L.latLngBounds([c.at])).extend(c.at); m.fitBounds(b, { paddingTopLeft:[24, (el.offsetHeight || 90) + 40], paddingBottomRight:[24, 150], maxZoom:Math.max(m.getZoom(), 16), animate:true }); }
     const save = async fn => {
       const { data:fresh, error:e1 } = await sb.from('task_plans').select('skipped').eq('id', plan.id).maybeSingle(); if(e1 || !fresh){ err.textContent = errText(e1); return; }
       const { error } = await sb.from('task_plans').update({ skipped:fn(fresh.skipped || []) }).eq('id', plan.id); if(error){ err.textContent = errText(error); return; }

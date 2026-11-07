@@ -29,7 +29,7 @@ async function routeTaken(){
   await clearRoute(); stopDemoWalk(); keepAwake(false); await stopWatching(); await loadMe(); workerTab('tasks');
   const mo = modal(`<h2>${esc(t('takenT'))}</h2><p>${esc(t('takenQ'))}</p><button class="btn primary" data-n>${esc(t('ok'))}</button>`); mo.querySelector('[data-n]').onclick = () => mo.remove();
 }
-// the server paused a session that did not move for 45 minutes: this phone shows the pause, "Weiter" goes on
+// the server paused a session that did not move for 20 minutes: this phone shows the pause, "Weiter" goes on
 async function routeAutoPaused(at){
   const r = W.route; if(!r) return;
   W.queue = []; if(r.paused){ await saveRoute(); return; }   // paused here too: the pause / resume steps go through

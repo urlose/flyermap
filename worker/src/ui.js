@@ -95,13 +95,14 @@ export function shell(tab, html, opts = {}){
   $('#root').innerHTML = `<div class="shell">
     <main id="content" class="${opts.map ? 'content map-content' : 'content'}">${html}</main>
     <nav class="tabbar" role="tablist">
-      <span class="sb-brand"><span class="wm ${UI.wmShown ? '' : 'wm-in'}" aria-label="FlyerMap"><span aria-hidden="true"><i style="--i:0">F</i><i style="--i:1">l</i><i style="--i:2">y</i><i style="--i:3">e</i><i style="--i:4">r</i></span><span class="wm-b" aria-hidden="true"><i style="--i:5">M</i><i style="--i:6">a</i><i style="--i:7">p</i></span></span></span>
+      <span class="sb-brand"><a href="./" id="sbHome" class="wm ${UI.wmShown ? '' : 'wm-in'}" aria-label="FlyerMap"><span aria-hidden="true"><i style="--i:0">F</i><i style="--i:1">l</i><i style="--i:2">y</i><i style="--i:3">e</i><i style="--i:4">r</i></span><span class="wm-b" aria-hidden="true"><i style="--i:5">M</i><i style="--i:6">a</i><i style="--i:7">p</i></span></a></span>
       ${[['map', 'map', t('tabMap')], ['people', UI.role === 'admin' ? 'users' : 'person', peopleLabel], ['tasks', 'flag', t('tabTasks')], ...(UI.role === 'admin' ? [['stats', 'chart', t('tabStats')], ['settings', 'gear', t('tabSettings')]] : [])].map(([k, ic, lb]) =>
         `<button role="tab" class="tab ${k === tab ? 'on' : ''}" data-tab="${k}" aria-selected="${k === tab}">${ICONS[ic]}<span>${esc(lb)}</span></button>`).join('')}
       ${UI.role === 'admin' && UI.onLogout ? `<button class="tab tab-out" id="sbOut">${ICONS.logout}<span>${esc(t('logout'))}</span></button>` : ''}
     </nav>${opts.fab ? `<button class="fab" id="fab" aria-label="${esc(opts.fab)}" title="${esc(opts.fab)}">${ICONS.plus}</button>` : ''}</div>`;
   UI.wmShown = true;   // the letters rise in only on the first screen after loading
   document.querySelectorAll('.tab[data-tab]').forEach(b => b.onclick = () => UI.onTab && UI.onTab(b.dataset.tab));
+  const hm = document.getElementById('sbHome'); if(hm) hm.onclick = e => { e.preventDefault(); location.href = location.pathname + location.search; };   // logo: reload, start screen
   const so = document.getElementById('sbOut'); if(so) so.onclick = () => UI.onLogout();
 }
 export const topbar = (title, backFn, right = '') => `<header class="topbar ${backFn ? 'sub' : ''}">${backFn ? `<button class="icon-btn" id="tbBack" aria-label="${esc(t('back'))}">${ICONS.back}</button>` : ''}<h1>${esc(title)}</h1>${right ? `<div style="margin-left:auto;display:flex;gap:8px">${right}</div>` : ''}</header>`;
