@@ -1289,14 +1289,15 @@ function taskHours(plans, routes){
   PROG.h = plan ? Math.min(100, 100 * done / plan) : null; setTimeout(showProg);
   return esc(fmtHm(done)) + ' / ' + esc(fmtHm(plan)) + ' ' + esc(t('h')) + esc(brkTxt(brk));
 }
-// one progress figure of an order: the mean of working time (done / plan) and flyers handed out (if known)
-const PROG = { h:null, f:null };
+// one progress figure of an order: share of the routes walked or closed (else flyers, else working time)
+const PROG = { h:null, f:null, r:null };
 function showProg(){
   const el = $('#tProg'); if(!el) return;
-  const v = [PROG.h, PROG.f].filter(x => x != null); el.textContent = v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) + ' %' : '—';
+  // the walked/closed share of the routes is the real progress; working time against the plan only when no route can be measured
+  const v = PROG.r != null ? PROG.r : PROG.f != null ? PROG.f : PROG.h; el.textContent = v != null ? Math.round(v) + ' %' : '—';
 }
 async function viewTask(id){
-  PROG.h = PROG.f = null;
+  PROG.h = PROG.f = PROG.r = null; PROG._d = PROG._l = 0;
   const tk = A.tasks.find(x => x.id === id); if(!tk) return viewTasks();
   A.curTask = id;
   const [{ data:plans }, { data:routes }] = await Promise.all([sb.from('task_plans').select('*').eq('task_id', id).order('idx'), sb.from('routes').select('*').eq('task_id', id)]);
@@ -1460,12 +1461,13 @@ async function viewTask(id){
   }
   let flSum = 0, flHas = false;
   for(const p of plans || []){
-    if((!allTracks.length && !(p.skipped || []).length) || !p.path?.length) continue;
+    if((!allTracks.length && !(p.skipped || []).length) || !p.path?.length){ PROG._l = (PROG._l || 0) + (p.length_m || 0); continue; }
     byPlan[p.id] = byPlan[p.id] || [];
     const tr = addSkips(Planner.makeTracker(p.path), p), ct = p.boxes && p.boxes.length ? Planner.makeBoxCounter(p.boxes) : null;
     allTracks.forEach(pts => { tr.addTrack(pts); if(ct) ct.visitAll(pts); });
     if(ct) adminDone(p).forEach(pts => ct.visitAll(pts));
     PLAN_TR[p.id] = tr;
+    { const L = p.length_m || 0; PROG._d = (PROG._d || 0) + tr.pct() * L; PROG._l = (PROG._l || 0) + L; if(PROG._l) { PROG.r = PROG._d / PROG._l; showProg(); } }
     // per day: done or how far; and what is still open (what a new worker gets)
     try{
       const ds = p.days && p.days.length > 1 ? p.days : [{ minutes:p.minutes, length_m:p.length_m }], dp = p.days && p.days.length > 1 ? dayProgress(p, tr) : [tr.pct()];
