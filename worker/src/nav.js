@@ -203,7 +203,15 @@ export function checkpoints(plan, isDone, every){
       const target = m0 + (s + 0.5) * size; let j = d.i0; while(j < d.i1 && nav.cum[j + 1] < target) j++;
       const f = nav.cum[j + 1] > nav.cum[j] ? (target - nav.cum[j]) / (nav.cum[j + 1] - nav.cum[j]) : 0, a = path[j], b = path[Math.min(path.length - 1, j + 1)];
       const pct = cnt[s][1] ? Math.round(100 * cnt[s][0] / cnt[s][1]) : 0;
-      out.push({ day:k, n:s + 1, at:[a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f], pct, done:pct >= 80 });
+      // the streets of this section (pieces split at car/bus jumps) – to show it and to close it by hand
+      const s0 = m0 + s * size, s1 = m0 + (s + 1) * size, runs = []; let cur = [];
+      for(let i = d.i0; i <= d.i1; i++){
+        if(path[i][2] === 1 && cur.length){ if(cur.length > 1) runs.push(cur); cur = []; }
+        if(nav.cum[i] >= s0 - 1 && nav.cum[i] <= s1 + 1) cur.push([path[i][0], path[i][1]]);
+        else if(cur.length){ if(cur.length > 1) runs.push(cur); cur = []; }
+      }
+      if(cur.length > 1) runs.push(cur);
+      out.push({ day:k, n:s + 1, at:[a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f], pct, done:pct >= 80, runs });
     }
   });
   return out;

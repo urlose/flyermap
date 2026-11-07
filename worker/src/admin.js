@@ -1,7 +1,7 @@
 import L from 'leaflet';
 import Planner from '../../admin/planner.js';
 import { t, I } from './i18n.js';
-import { sb, store, $, esc, css, hav, fmtDist, fmtH, fmtHm, fmtN, fmtDay, fmtDT, ago, waLink, telLink, loopPath, deMobile, loc, reversePlace, placeArea } from './core.js';
+import { sb, store, $, esc, css, hav, fmtDist, fmtH, fmtHm, fmtN, fmtDay, fmtDT, ago, waLink, telLink, loopPath, deMobile, loc, reversePlace, placeArea, errText } from './core.js';
 import { groupIcon } from './ui.js';
 import { UI, ICONS, shell, setLoc, getLoc, plain, topbar, bindBack, makeMap, dot, labelIcon, fit, drawJumps, modal, confirmBox, toast, searchField, langSwitch, themeSwitch, statusPill, emptyState, avatar, every, personIcon } from './ui.js';
 import { legalLinks, bindLegal } from './legalview.js';
@@ -673,7 +673,7 @@ async function viewDayMap(routeId, back){
       // one layer: everything done on this route – this day, earlier days and colleagues alike
       { key:'done', label:runs.length || runsPrev.length ? t('rvDone') : '', add:g => [...runsPrev, ...runs, ...(pl ? offRoute(wr, [pl]) : [])].forEach(x => L.polyline(x, { color:GREEN_C(), weight:8, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g)) },
       { key:'skip', label:workerSkips(pl).length ? t('rvSkipped') : '', add:g => drawSkips(g, [pl]) },
-      { key:'cp', label:cps.length ? t('checkpoints') : '', add:g => cps.forEach(c => cpMarker(c, dayColor(col, c.day), (pl.days || []).length > 1).addTo(g)) },
+      { key:'cp', label:cps.length ? t('checkpoints') : '', add:g => cps.forEach(c => cpAdmin(c, dayColor(col, c.day), (pl.days || []).length > 1, pl, () => viewDayMap(routeId, back)).addTo(g)) },
       { key:'gps', label:ll.length > 1 ? t('rvGps') : '', add:g => {
         if(ll.length < 2) return;
         wr.forEach(a => { if(a.length > 1) gpsLine(g, a); }); sp.drive.forEach(a => driveLine(g, a));
@@ -716,6 +716,29 @@ function liveWorkers(g, tk, plans, showNames){
 // checkpoint: numbered point on the route (day.section with several days), green tick when 80 % of the section is walked
 export const cpMarker = (c, color, multi) => L.marker(c.at, { keyboard:false, zIndexOffset:500, title:t('cpTitle', { d:c.day + 1, n:c.n, p:c.pct }),
   icon:L.divIcon({ className:'', iconSize:[24, 24], iconAnchor:[12, 12], html:`<div class="cp ${c.done ? 'ok' : ''}" style="--c:${esc(color || '#2563EB')}">${c.done ? '✓' : (multi ? (c.day + 1) + '.' : '') + c.n}</div>` }) });
+// admin: tap a checkpoint → its streets light up, and it can be closed as done (or opened again if it was closed here)
+const cpTag = c => (c.day + 1) + '.' + c.n;
+function densify(run){ const out = [run[0]]; for(let i = 1; i < run.length; i++){ const a = run[i - 1], b = run[i], n = Math.max(1, Math.ceil(hav(a[0], a[1], b[0], b[1]) / 8)); for(let k = 1; k <= n; k++) out.push([+(a[0] + (b[0] - a[0]) * k / n).toFixed(6), +(a[1] + (b[1] - a[1]) * k / n).toFixed(6)]); } return out; }
+function cpAdmin(c, color, multi, plan, reload){
+  const mk = cpMarker(c, color, multi), label = multi ? cpTag(c) : String(c.n);
+  const closed = (plan.skipped || []).some(x => x && x.cp === cpTag(c));
+  let hl = null;
+  mk.bindPopup(`<b>${esc(t('cpWord'))} ${esc(label)}</b><br><span class="small">${esc(t('cpPct', { p:c.pct }))}</span><div style="margin-top:8px">${
+    closed ? `<button class="btn ghost small" data-cpopen>${esc(t('cpReopen'))}</button>` : c.done ? '' : `<button class="btn primary small" data-cpclose>${esc(t('cpClose'))}</button>`}</div><div class="err" data-cperr></div>`);
+  mk.on('popupopen', e => {
+    const m = mk._map; if(m && c.runs && c.runs.length){ hl = L.featureGroup(c.runs.map(r => L.polyline(r, { color:'#F59E0B', weight:10, opacity:.85, lineCap:'round', lineJoin:'round', interactive:false }))).addTo(m); }
+    const el = e.popup.getElement(), err = el.querySelector('[data-cperr]');
+    const save = async fn => {
+      const { data:fresh, error:e1 } = await sb.from('task_plans').select('skipped').eq('id', plan.id).maybeSingle(); if(e1 || !fresh){ err.textContent = errText(e1); return; }
+      const { error } = await sb.from('task_plans').update({ skipped:fn(fresh.skipped || []) }).eq('id', plan.id); if(error){ err.textContent = errText(error); return; }
+      mk.closePopup(); reload();
+    };
+    const bc = el.querySelector('[data-cpclose]'); if(bc) bc.onclick = () => { bc.disabled = true; save(sk => [...sk, ...c.runs.map(r => ({ at:new Date().toISOString(), by:'Admin', why:'Erledigt', cp:cpTag(c), pts:densify(r) }))]); };
+    const bo = el.querySelector('[data-cpopen]'); if(bo) bo.onclick = () => { bo.disabled = true; save(sk => sk.filter(x => !(x && x.cp === cpTag(c)))); };
+  });
+  mk.on('popupclose', () => { if(hl){ hl.remove(); hl = null; } });
+  return mk;
+}
 // a whole order: every route in its colour, what has been covered in green, the GPS tracks of all days
 async function viewTaskMap(id, back){
   const tk = A.tasks.find(x => x.id === id); if(!tk) return back();
@@ -763,7 +786,7 @@ async function viewTaskMap(id, back){
       { key:'gps', label:tracks.some(x => x.length > 1) ? t('rvGps') : '', on:false, add:g => { tracks.forEach(ll => { if(ll.length > 1) gpsLine(g, ll, 2.5); }); drives.forEach(ll => driveLine(g, ll, 2.5)); } },
       ...((plans || []).some(p => (p.path || []).some(q => q[2] === 1)) ? [{ key:'jumps', label:t({ car:'tripsCar', bike:'tripsBike', bus:'tripsBus' }[(tk.travel || (tk.bike ? 'bike' : 'bus'))]), add:g => (plans || []).forEach(p => drawJumps(g, p.path, (tk.travel || (tk.bike ? 'bike' : 'bus')))) }] : []),
       ...((plans || []).some(p => workerSkips(p).length) ? [{ key:'skip', label:t('rvSkipped'), add:g => drawSkips(g, plans) }] : []),
-      { key:'cp', label:t('checkpoints'), add:g => res.forEach(({ p, cps }) => cps.forEach(c => cpMarker(c, dayColor(p.color, c.day), (p.days || []).length > 1).addTo(g))) },
+      { key:'cp', label:t('checkpoints'), add:g => res.forEach(({ p, cps }) => cps.forEach(c => cpAdmin(c, dayColor(p.color, c.day), (p.days || []).length > 1, p, () => viewTaskMap(id, back)).addTo(g))) },
       { key:'live', label:t('rvLive'), add:g => { redrawLive = liveWorkers(g, tk, plans, () => names); } },
     ],
     back,
