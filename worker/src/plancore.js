@@ -196,7 +196,14 @@ export function createPlanService(cache){
       if(!G || gKey !== keyOf(start)){ stage('loadingArea'); await load(start, flyers, undefined, must, stage, stale, 'loadingArea', zone); }
       if(stale()) return { skipped:true };
       const hasZone = !!(zone && zone.length > 2);
-      let all = denseCores(hasZone ? Planner.zoneView(G, zone) : G, null);
+      // the main town (own drawn area): every street with mailboxes is walked – it is the order's main place; only the rest
+      // of the flyers goes to the best cores of the other places
+      let all;
+      if(hasZone){
+        const gz = Planner.zoneView(G, zone), ids = Planner.selectWithMust(G, start, 1e9, must, zone).ids;
+        const mb = ids.reduce((a, i) => a + gz.edges[i].mb, 0), len = ids.reduce((a, i) => a + gz.edges[i].len, 0);
+        all = ids.length ? [{ area:null, g:gz, ids, mb, len, park:start, forced:true }] : [];
+      }else all = denseCores(G, null);
       for(const c of (side || [])){
         stage('loadingSide'); const g = await sideGraph({ ...c, flyers:c.flyers || 3000 }, stage, stale); if(stale()) return { skipped:true };
         const z = c.zone && c.zone.length > 2 ? c.zone : null;
@@ -215,10 +222,10 @@ export function createPlanService(cache){
       const pieces = [];
       for(const c of all){
         const m = Math.ceil(Planner.routeMinutes(c.len * 1.35, c.mb) / K / MAXSPAN);
-        if(m <= 1){ pieces.push(c); continue; }
+        if(m <= 1){ if(c.forced) c.park = parkOf(c.g, c.ids); pieces.push(c); continue; }
         const pp = Planner.planFlyers(subGraph(c.g, c.ids), c.park, 1e9, m, { days:1, hoursPerDay:99 });
         for(const r of pp.routes){ const ids = (r.part || []).map(i => c.ids[i]); if(!ids.length) continue; const mb = ids.reduce((a, i) => a + c.g.edges[i].mb, 0); if(mb < 10) continue;
-          pieces.push({ area:c.area, g:c.g, ids, mb, len:ids.reduce((a, i) => a + c.g.edges[i].len, 0), park:parkOf(c.g, ids) }); }
+          pieces.push({ area:c.area, g:c.g, ids, mb, len:ids.reduce((a, i) => a + c.g.edges[i].len, 0), park:parkOf(c.g, ids), forced:c.forced }); }
         if(stale()) return { skipped:true };
       }
       all = pieces;
@@ -230,9 +237,9 @@ export function createPlanService(cache){
         if(stale()) return { skipped:true };
       }
       // best first until the flyers are reached (exact: also the next best ones until the number is covered)
-      all.sort((a, b) => b.score - a.score);
-      const chosen = []; let sum = 0;
-      for(const c of all){ if(sum >= flyers) break; if(!exact && sum >= 0.8 * flyers && c.score < 0.55 * sum / chosen.reduce((a, x) => a + x.work + CORE_PARK * x.routes.length, 0)) break; chosen.push(c); sum += c.mb; }
+      all.sort((a, b) => (b.forced ? 1 : 0) - (a.forced ? 1 : 0) || b.score - a.score);
+      const chosen = all.filter(c => c.forced); let sum = chosen.reduce((a, c) => a + c.mb, 0);
+      for(const c of all){ if(c.forced) continue; if(sum >= flyers) break; if(!exact && sum >= 0.8 * flyers && c.score < 0.55 * sum / chosen.reduce((a, x) => a + x.work + CORE_PARK * x.routes.length, 0)) break; chosen.push(c); sum += c.mb; }
       // names: "Speichersdorf 2" when a place has several cores; the main area keeps its streets' name
       const cnt = {}; chosen.forEach(c => { const k = c.area || ''; cnt[k] = (cnt[k] || 0) + 1; }); const seen = {};
       chosen.forEach(c => { const k = c.area || ''; seen[k] = (seen[k] || 0) + 1; c.name = (c.area || t0(c)) + (cnt[k] > 1 ? ' ' + seen[k] : ''); });
