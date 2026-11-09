@@ -171,8 +171,15 @@ export function drawJumps(g, path, bike){
     const a = [path[i - 1][0], path[i - 1][1]], b = [q[0], q[1]];
     const ln = L.polyline([a, b], { color:bike ? (css('--color-drive') || '#8B5CF6') : (css('--color-map-route-pending') || '#64748B'), weight:4, opacity:.9, dashArray:bike ? '6 6' : '2 9', lineCap:'round', interactive:false }).addTo(g);
     const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-    const mk = L.marker(mid, { icon:L.divIcon({ className:'', html:`<span class="jump-ic">${mode === 'car' ? '🚗' : mode === 'bike' ? '🚲' : '🚌'}</span>`, iconSize:[26, 26], iconAnchor:[13, 13] }), interactive:false, keyboard:false }).addTo(g);
-    bikeRoute(a, b, 'auto').then(pts => { if(pts && pts.length > 1){ ln.setLatLngs(pts); mk.setLatLng(pts[Math.floor(pts.length / 2)]); } }).catch(() => {});
+    const mk = L.marker(mid, { icon:L.divIcon({ className:'', html:`<span class="jump-ic">${mode === 'car' ? '🚗' : mode === 'bike' ? '🚲' : '🚌'}</span>`, iconSize:[26, 26], iconAnchor:[13, 13] }), keyboard:false }).addTo(g);
+    // hover / tap: how long the trip takes. First the planner's estimate (straight line × 1.3), then the road from Valhalla
+    const tip = (km, carMin) => {
+      const min = mode === 'car' ? (carMin != null ? carMin : km / 40 * 60 + 5) : mode === 'bike' ? km / 15 * 60 + 5 : 30;   // = plancore: car 40 km/h, bike 15 km/h, + 5 min; bus 30 min
+      return t(mode === 'bus' ? 'rideTipBus' : 'rideTip', { min:Math.max(1, Math.round(min)), km:(Math.round(km * 10) / 10).toLocaleString('de-DE') });
+    };
+    const kmLine = Math.hypot(b[0] - a[0], (b[1] - a[1]) * Math.cos(a[0] * Math.PI / 180)) * 111.32 * 1.3;
+    mk.bindTooltip(tip(kmLine), { direction:'top', offset:[0, -12] });
+    bikeRoute(a, b, 'auto').then(pts => { if(pts && pts.length > 1){ ln.setLatLngs(pts); mk.setLatLng(pts[Math.floor(pts.length / 2)]); if(pts.km) mk.setTooltipContent(tip(pts.km, pts.sec ? pts.sec / 60 : null)); } }).catch(() => {});
   });
 }
 export function fit(m, b, pad = 30){ try{ if(b && b.isValid()) m.fitBounds(b, { padding:[pad, pad], maxZoom:17, animate:false }); }catch{} }   // no zoom animation: leaving the screen mid-animation broke Leaflet

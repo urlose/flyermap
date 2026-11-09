@@ -203,3 +203,5 @@ Object.assign(T.en, { adjust:'adjust', flDoneManual:'reported {d}', stillWorking
 Object.assign(T.en, { shapeEdit:'Edit shape' });
 
 Object.assign(T.en, { routeFlyers:'≈ {n} flyers' });
+
+Object.assign(T.en, { rideTip:'≈ {min} min ride · {km} km', rideTipBus:'Bus / train ≈ {min} min · {km} km' });

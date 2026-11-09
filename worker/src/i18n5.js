@@ -231,3 +231,6 @@ Object.assign(T.ru, { shapeEdit:'Изменить форму' });
 
 Object.assign(T.de, { routeFlyers:'≈ {n} Flyer' });
 Object.assign(T.ru, { routeFlyers:'≈ {n} флаеров' });
+
+Object.assign(T.de, { rideTip:'≈ {min} Min. Fahrt · {km} km', rideTipBus:'Bus / Bahn ≈ {min} Min. · {km} km' });
+Object.assign(T.ru, { rideTip:'≈ {min} мин в пути · {km} км', rideTipBus:'Автобус / поезд ≈ {min} мин · {km} км' });

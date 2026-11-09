@@ -149,7 +149,7 @@ export async function bikeRoute(a, b, costing = 'auto'){
     const q = { locations:[{ lat:a[0], lon:a[1] }, { lat:b[0], lon:b[1] }], costing };
     const ctrl = new AbortController(); setTimeout(() => ctrl.abort(), 10000);
     const r = await fetch('https://valhalla1.openstreetmap.de/route?json=' + encodeURIComponent(JSON.stringify(q)), { signal:ctrl.signal });
-    if(r.ok){ const pts = (await r.json()).trip.legs.flatMap(l => decodePolyline6(l.shape)); if(pts.length > 1) out = pts; }
+    if(r.ok){ const tr = (await r.json()).trip, pts = tr.legs.flatMap(l => decodePolyline6(l.shape)); if(pts.length > 1){ out = pts; out.sec = tr.summary && tr.summary.time; out.km = tr.summary && tr.summary.length; } }
   }catch{}
   rideCache.set(k, out); return out;
 }
