@@ -147,20 +147,34 @@ const rideCache = new Map();
 let rideBusy = 0; const rideQueue = [];
 const rideSlot = () => new Promise(res => { if(rideBusy < 2){ rideBusy++; res(); } else rideQueue.push(res); });
 const rideFree = () => { const n = rideQueue.shift(); if(n) n(); else rideBusy--; };
+// Valhalla first (car, bike); when it does not answer (the public server is down now and then), the OSRM demo server draws
+// the road for the car. A server that failed is skipped for 5 minutes, so a map with many trips does not wait for each one.
+let valhallaDownUntil = 0;
+async function fetchJson(url, ms){ const ctrl = new AbortController(), tm = setTimeout(() => ctrl.abort(), ms); try{ const r = await fetch(url, { signal:ctrl.signal }); return { status:r.status, j:r.ok ? await r.json() : null }; }finally{ clearTimeout(tm); } }
+async function viaValhalla(a, b, costing){
+  const q = { locations:[{ lat:a[0], lon:a[1] }, { lat:b[0], lon:b[1] }], costing };
+  const { status, j } = await fetchJson('https://valhalla1.openstreetmap.de/route?json=' + encodeURIComponent(JSON.stringify(q)), 7000);
+  if(!j){ if(status === 429 || status >= 500) throw new Error('busy'); return null; }
+  const tr = j.trip, pts = tr.legs.flatMap(l => decodePolyline6(l.shape)); if(pts.length < 2) return null;
+  pts.sec = tr.summary && tr.summary.time; pts.km = tr.summary && tr.summary.length; return pts;
+}
+async function viaOsrm(a, b){
+  const { j } = await fetchJson(`https://router.project-osrm.org/route/v1/driving/${a[1]},${a[0]};${b[1]},${b[0]}?overview=full&geometries=polyline6`, 9000);
+  const rt = j && j.code === 'Ok' && j.routes && j.routes[0]; if(!rt) return null;
+  const pts = decodePolyline6(rt.geometry); if(pts.length < 2) return null;
+  pts.sec = rt.duration; pts.km = rt.distance / 1000; return pts;
+}
 export async function bikeRoute(a, b, costing = 'auto'){
   const k = costing + ':' + a.map(x => (+x).toFixed(5)).join(',') + '>' + b.map(x => (+x).toFixed(5)).join(',');
   if(rideCache.has(k)) return rideCache.get(k);
   const p = (async () => {
-    const q = { locations:[{ lat:a[0], lon:a[1] }, { lat:b[0], lon:b[1] }], costing };
     for(let attempt = 0; attempt < 3; attempt++){
       await rideSlot();
       try{
-        const ctrl = new AbortController(), tm = setTimeout(() => ctrl.abort(), 10000);
-        const r = await fetch('https://valhalla1.openstreetmap.de/route?json=' + encodeURIComponent(JSON.stringify(q)), { signal:ctrl.signal }); clearTimeout(tm);
-        if(r.ok){ const tr = (await r.json()).trip, pts = tr.legs.flatMap(l => decodePolyline6(l.shape)); if(pts.length > 1){ pts.sec = tr.summary && tr.summary.time; pts.km = tr.summary && tr.summary.length; return pts; } return null; }
-        if(r.status !== 429 && r.status < 500) return null;   // no road found: no retry
+        if(Date.now() > valhallaDownUntil){ try{ return await viaValhalla(a, b, costing); }catch{ valhallaDownUntil = Date.now() + 5 * 60000; } }
+        const o = await viaOsrm(a, b); if(o) return o;
       }catch{}finally{ rideFree(); }
-      await new Promise(res => setTimeout(res, 1200 * (attempt + 1)));   // busy server: wait and try again
+      await new Promise(res => setTimeout(res, 1200 * (attempt + 1)));   // both busy: wait and try again
     }
     return undefined;
   })();
