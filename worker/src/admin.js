@@ -765,12 +765,20 @@ async function viewTaskMap(id, back){
   const allBoxes = (plans || []).flatMap(p => p.boxes || []);
   const offRuns = offRoute(tracks, plans);
   const walked = (routes || []).reduce((a, r) => a + (r.distance_m || 0), 0), days = new Set((routes || []).map(dayKey)).size;
+  const manFl = tk.flyers_done != null, WCOLS = ['#2563EB', '#DB2777', '#059669', '#D97706', '#7C3AED', '#0891B2', '#DC2626', '#65A30D'];
+  const byWorker = (() => { const m = {}; (routes || []).forEach(r => { if(!r.worker_id) return; (m[r.worker_id] = m[r.worker_id] || { id:r.worker_id, m:0 }).m += r.distance_m || 0; });
+    const arr = Object.values(m).sort((a, b) => b.m - a.m), tot = arr.reduce((a, x) => a + x.m, 0);
+    let left = tk.flyers_done || 0; arr.forEach((x, i) => { x.fl = i === arr.length - 1 ? left : Math.round((tk.flyers_done || 0) * (tot ? x.m / tot : 1 / arr.length)); left -= x.fl;
+      const p = (plans || []).find(q => q.worker_id === x.id); x.color = p && p.color; });
+    return arr; })();
   let names = true, redrawLive = null;
   const opts = {
     title:tk.title, hasNames:true, onNames:v => { names = v; if(redrawLive) redrawLive(); },
     lines:[[tk.district, tk.city_name].filter(Boolean).join(', '), tk.work_date ? fmtDay(tk.work_date) : ''],
-    get stats(){ return [tk.flyers ? [t('flyers'), fmtN(tk.flyers)] : null, hasFl ? [t('rvFlyers'), '≈ ' + fmtN(flAll)] : null, [t('rvDist'), fmtDist(walked)], allM ? [t('rvDayShare2'), Math.round(100 * doneM / allM) + ' %'] : null, days ? [t('rvDays'), String(days)] : null]; },
-    get legend(){ return res.map(({ p, pct, fl }) => ({ color:p.color || '#2563EB', label:(p.worker_id ? nameOf(p.worker_id) : t('planRoute', { n:p.idx + 1 })), anonLabel:t('planRoute', { n:p.idx + 1 }), sub:pct + ' %' + (fl != null ? ' · ≈ ' + fmtN(fl) + ' ' + t('flyers') : '') })); },
+    get stats(){ return [tk.flyers ? [t('flyers'), fmtN(tk.flyers)] : null, manFl ? [t('rvFlyers'), '≈ ' + fmtN(tk.flyers_done)] : hasFl ? [t('rvFlyers'), '≈ ' + fmtN(flAll)] : null, [t('rvDist'), fmtDist(walked)], allM ? [t('rvDayShare2'), Math.round(100 * doneM / allM) + ' %'] : null, days ? [t('rvDays'), String(days)] : null]; },
+    // the admin entered the handed-out flyers: split them over everybody who walked, by kilometres
+    get legend(){ if(manFl) return byWorker.map((x, i) => ({ color:x.color || WCOLS[i % WCOLS.length], label:nameOf(x.id), anonLabel:t('planRoute', { n:i + 1 }), sub:fmtDist(x.m) + ' · ≈ ' + fmtN(x.fl) + ' ' + t('flyers') }));
+      return res.map(({ p, pct, fl }) => ({ color:p.color || '#2563EB', label:(p.worker_id ? nameOf(p.worker_id) : t('planRoute', { n:p.idx + 1 })), anonLabel:t('planRoute', { n:p.idx + 1 }), sub:pct + ' %' + (fl != null ? ' · ≈ ' + fmtN(fl) + ' ' + t('flyers') : '') })); },
     layers:[
       { key:'zone', on:false, add:g => { if(tk.zone_polygon) L.polygon(tk.zone_polygon, { color:css('--brand'), weight:2, fillOpacity:.05, interactive:false }).addTo(g); } },
       ...((tk.must_areas || []).length || (tk.side_towns || []).length ? [{ key:'must', label:t('sideTownsShort'), add:g => drawTowns(g, tk, 3) }] : []),
