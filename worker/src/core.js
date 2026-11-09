@@ -142,16 +142,31 @@ export async function loopPath(lat, lng, rot = Math.random() * 6.28, R = 380){
 
 // the road between two places of an order (Valhalla; any vehicle – car, bike or bus use the roads) – [[lat,lng]…]; null when not available
 const rideCache = new Map();
+// road between two points (car trips between places, bike, bus). The public Valhalla server answers only a few requests at
+// a time: requests are queued (2 at once) and retried, and a failure is not remembered – the next draw asks again.
+let rideBusy = 0; const rideQueue = [];
+const rideSlot = () => new Promise(res => { if(rideBusy < 2){ rideBusy++; res(); } else rideQueue.push(res); });
+const rideFree = () => { const n = rideQueue.shift(); if(n) n(); else rideBusy--; };
 export async function bikeRoute(a, b, costing = 'auto'){
-  const k = costing + ':' + a.map(x => (+x).toFixed(5)).join(',') + '>' + b.map(x => (+x).toFixed(5)).join(','); if(rideCache.has(k)) return rideCache.get(k);
-  let out = null;
-  try{
+  const k = costing + ':' + a.map(x => (+x).toFixed(5)).join(',') + '>' + b.map(x => (+x).toFixed(5)).join(',');
+  if(rideCache.has(k)) return rideCache.get(k);
+  const p = (async () => {
     const q = { locations:[{ lat:a[0], lon:a[1] }, { lat:b[0], lon:b[1] }], costing };
-    const ctrl = new AbortController(); setTimeout(() => ctrl.abort(), 10000);
-    const r = await fetch('https://valhalla1.openstreetmap.de/route?json=' + encodeURIComponent(JSON.stringify(q)), { signal:ctrl.signal });
-    if(r.ok){ const tr = (await r.json()).trip, pts = tr.legs.flatMap(l => decodePolyline6(l.shape)); if(pts.length > 1){ out = pts; out.sec = tr.summary && tr.summary.time; out.km = tr.summary && tr.summary.length; } }
-  }catch{}
-  rideCache.set(k, out); return out;
+    for(let attempt = 0; attempt < 3; attempt++){
+      await rideSlot();
+      try{
+        const ctrl = new AbortController(), tm = setTimeout(() => ctrl.abort(), 10000);
+        const r = await fetch('https://valhalla1.openstreetmap.de/route?json=' + encodeURIComponent(JSON.stringify(q)), { signal:ctrl.signal }); clearTimeout(tm);
+        if(r.ok){ const tr = (await r.json()).trip, pts = tr.legs.flatMap(l => decodePolyline6(l.shape)); if(pts.length > 1){ pts.sec = tr.summary && tr.summary.time; pts.km = tr.summary && tr.summary.length; return pts; } return null; }
+        if(r.status !== 429 && r.status < 500) return null;   // no road found: no retry
+      }catch{}finally{ rideFree(); }
+      await new Promise(res => setTimeout(res, 1200 * (attempt + 1)));   // busy server: wait and try again
+    }
+    return undefined;
+  })();
+  rideCache.set(k, p);   // both workers of a car share the same trips: one request for both
+  const out = await p; if(out === undefined) rideCache.delete(k);
+  return out || null;
 }
 
 export function normPhone(raw){
