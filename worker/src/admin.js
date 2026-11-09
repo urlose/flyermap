@@ -871,7 +871,8 @@ function viewCreate(edit){
   if(tkE && Array.isArray(tkE.work_area) && tkE.work_area.length > 2) d.zone = tkE.work_area;
   if(tkE) Object.assign(d, { flyers:tkE.flyers || 5000, hours:+tkE.work_hours || 7, quota:tkE.quota_m30 || 1500, days:tkE.work_days || 2, n:Math.max(1, edit.plans.length), nAuto:false });
   d.side = tkE && Array.isArray(tkE.side_towns) ? tkE.side_towns : [];
-  d.split = tkE ? (tkE.split || null) : 'even';   // new orders: total flyers shared evenly over all places; old orders keep their numbers
+  d.split = tkE ? (tkE.split || null) : 'even';
+  d.exact = !!tkE; d.mainAll = false;   // new orders: economical amount unless "exactly N"; whole main town on request   // new orders: total flyers shared evenly over all places; old orders keep their numbers
   d.travel = (tkE && tkE.travel) || (tkE && tkE.bike ? 'bike' : 'bus'); d.bike = d.travel !== 'bus';   // how the places of the order are reached   // far places of this order (own start, own day, reached by bus / train)
   // the start address (also typed in step 1 under "Hauptstadt"); the main town comes from it
   const pickAddr = (c, q) => { saved = keep(); d.place = c; d.mainCity = null; const txt = c.name + (c.sub ? ', ' + c.sub : ''); if(q) q.value = txt; const top = $('#cSearch'); if(top) top.value = txt; setStart(c.lat, c.lng); };
@@ -1043,7 +1044,7 @@ function viewCreate(edit){
     if(!d.loaded){ renderSheet(); return; }
     const tok = ++d.token, pr = progress(tok, false);
     let res = null;
-    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, quota:Math.max(200, Math.round(+saved.quota || 1500)), bike:d.bike, travel:d.travel, split:d.split, must:d.must, zone:d.zone, side:d.side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers, zone:x.p && x.p.length > 2 ? x.p : null, all:!!x.all })) }, pr.stage); }
+    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, quota:Math.max(200, Math.round(+saved.quota || 1500)), bike:d.bike, travel:d.travel, split:d.split, exact:d.exact, mainAll:d.mainAll, must:d.must, zone:d.zone, side:d.side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers, zone:x.p && x.p.length > 2 ? x.p : null, all:!!x.all })) }, pr.stage); }
     catch(e){ pr.stop(); if(tok !== d.token || !alive()) return; d.err = errText2(e); d.busy = false; toast(t('streetsFail', { e:d.err })); renderSheet(); return; }
     pr.stop();
     if(tok !== d.token || !alive() || !res || res.skipped) return;
@@ -1063,7 +1064,7 @@ function viewCreate(edit){
   // values typed in any step survive re-renders and step changes (only fields that are on screen are read)
   function saveDraft(){
     if(tkE || !d.start) return;
-    try{ localStorage.setItem(DRAFT_KEY, JSON.stringify({ at:Date.now(), saved, d:{ start:d.start, place:d.place, must:d.must, side:d.side, flyers:d.flyers, n:d.n, hours:d.hours, days:d.days, bike:d.bike, travel:d.travel, split:d.split, zone:d.zone, mainCity:d.mainCity } })); }catch{}
+    try{ localStorage.setItem(DRAFT_KEY, JSON.stringify({ at:Date.now(), saved, d:{ start:d.start, place:d.place, must:d.must, side:d.side, flyers:d.flyers, n:d.n, hours:d.hours, days:d.days, bike:d.bike, travel:d.travel, split:d.split, zone:d.zone, mainCity:d.mainCity, exact:d.exact, mainAll:d.mainAll } })); }catch{}
   }
   async function restoreDraft(){
     const x = readDraft(); if(!x || !x.d || !x.d.start) return;
@@ -1101,8 +1102,11 @@ function viewCreate(edit){
     const spOf = name => name && p && p.split && p.split.find(y => y.name === name);
     const fixedMb = p && p.split ? p.split.filter(x => x.all).reduce((a, x) => a + (x.cap || 0), 0) : 0;
     const spText = name => { const x = spOf(name); return x ? ' · ' + esc(x.cap != null ? t('shareOfMb', { n:fmtN(x.flyers), mb:fmtN(x.cap) }) : fmtN(x.flyers)) : ''; };
-    const allBtn = (name, on, kind, k) => { const x = spOf(name); if(!on && !(x && x.cap && x.flyers < x.cap)) return '';   // already gets all of them: no button
-      return `<button class="all-btn${on ? ' on' : ''}" data-all="${kind}:${k}" title="${esc(t(on ? 'allMbOffHint' : 'allMbHint'))}">${on ? '✓ ' + esc(t('allMbOn')) : esc(t('allMbBtn', { n:fmtN(x.cap) }))}</button>`; };
+    // chosen by hand only; before the first calculation without the number
+    const allBtn = (name, on, kind, k) => { const x = spOf(name); if(!on && x && x.cap && x.flyers >= x.cap) return '';   // already gets all of them: no button
+      return `<button class="all-btn${on ? ' on' : ''}" data-all="${kind}:${k}" title="${esc(t(on ? 'allMbOffHint' : 'allMbHint'))}">${on ? '✓ ' + esc(t('allMbOn')) : esc(x && x.cap ? t('allMbBtn', { n:fmtN(x.cap) }) : t('allMbPlain'))}</button>`; };
+    // flyers this plan really hands out: whole town or economical amount = the mailboxes of the plan, otherwise the number typed
+    const effFlyers = p && (d.mainAll || (p.eco && !d.exact)) ? Math.round(p.mailboxes) : d.flyers;
     if(!saved.title && title) saved.title = title;
     const cap = p ? Planner.capacity(p.routes, d.flyers, { hoursPerDay:d.hours, days:d.days }) : null;
     const totMin = p ? p.routes.reduce((s, r) => s + (r.minutes || 0), 0) : 0, oneDay = p && totMin / 60 <= d.hours && (d.n > 1 || d.days > 1);   // all of it fits into one working day of one person
@@ -1113,7 +1117,7 @@ function viewCreate(edit){
         ${dayLines(r.days, Planner.COLORS[i % 10])}
         ${withSelect ? `<select class="in small" data-r="${i}" aria-label="${esc(t('planRoute', { n:i + 1 }))}">${workerOptions(d.start.lat, d.start.lng, d.assign[i])}</select>` : ''}</div></div>`;
     const planBlock = () => p ? `${(p.side_failed || []).length ? `<div class="warnbox">${esc(t('sideFailed', { list:p.side_failed.join(', ') }))}</div>` : ''}${(p.bus || []).length ? `<div class="hint">${esc(t('busHint', { list:p.bus.map(x => x.name + ' (' + fmtDist(x.gap) + ')').join(', ') }))}</div>` : ''}${(p.side_info || []).length ? `<p class="small muted" style="margin:8px 0 0">${esc(p.side_info.map(x => x.name + ' → ' + t('planRoute', { n:x.worker + 1 })).join(' · '))}</p>` : ''}<p class="small muted" style="margin:10px 0 0">${esc(t('planSum', { mb:fmtN(p.mailboxes), km, h:fmtHm(p.routes.reduce((s, r) => s + r.minutes, 0)) }))}</p>
-        ${p.mailboxes < d.flyers * 0.95 ? `<p class="small err">${esc(t('areaSmall', { mb:fmtN(p.mailboxes) }))}</p>` : ''}
+        ${p.mailboxes < d.flyers * 0.95 && !d.mainAll && !(p.eco && !d.exact) ? `<p class="small err">${esc(t('areaSmall', { mb:fmtN(p.mailboxes) }))}</p>` : ''}
         <div class="${cap.ok ? 'hint' : 'warnbox'}">${cap.ok ? esc(needDays === 1 ? t('fitsOne') : t('fitsOk', { d:needDays })) : `${esc(t('tooBig', { h:cap.slowest.toFixed(1).replace('.', ','), lim:cap.limit, d:d.days }))} <button class="link" id="cReduce">${esc(t('reduceTo', { f:fmtN(cap.suggestedFlyers) }))}</button> ${esc(t('moreWorkers'))}`}</div>`
       : d.err ? `<p class="small err">${esc(t('streetsFail', { e:d.err }))}</p><button class="btn ghost small" id="cRetry">${ICONS.refresh}${esc(t('retryBtn'))}</button>` : `<p class="small muted" style="margin:10px 0 0">${esc(t('calculating'))}</p>`;
     let addrSf = null; const sfAddr = () => (addrSf = addrSf || searchField('cAddr', t('searchAddr'), pickAddr, { near:() => d.start ? [d.start.lat, d.start.lng] : null }));
@@ -1123,25 +1127,28 @@ function viewCreate(edit){
       <label class="f" for="cTitle">${esc(t('title'))}</label><input class="in" id="cTitle" value="${esc(title)}" autocomplete="off">
       <label class="f" for="cAddr">${esc(t('addrMain'))}</label>${sfAddr().html}
       ${d.start && !d.place ? `<p class="small muted" style="margin:4px 0 0">${esc(t('startOnMap'))}</p>` : ''}
-      <label class="f">${esc(t('mainCity'))}</label><div class="note" style="margin:0">${esc(mainCity() || t('mainCityAuto'))}</div>
+      <label class="f">${esc(t('mainCity'))}</label><div class="note" style="margin:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="grow">${esc(mainCity() || t('mainCityAuto'))}</span>${d.start && mainCity() ? `<button class="all-btn${d.mainAll ? ' on' : ''}" id="cMainAll" title="${esc(t('mainAllHint'))}">${d.mainAll ? '✓ ' + esc(t('mainAllOn', { mb:p && d.mainAll ? fmtN(Math.round(p.mailboxes)) : '…' })) : esc(t('mainAllBtn'))}</button>` : ''}</div>
       <label class="f">${esc(t('sideTowns'))}</label><p class="small muted" style="margin:-2px 0 6px">${esc(t('sideTownsHint'))}</p>
       ${d.must.length ? `<div class="chips" style="margin:0 0 8px">${d.must.map((a, k) => `<span class="chip">${d.split ? `<span>${esc(mName(a, k))}${spText(a.name)}</span>${allBtn(a.name, a.all, 'm', k)}` : `<button class="link" data-med="${k}">${esc(mName(a, k))} · ${esc(a.n ? fmtN(a.n) : t('mustAllShort'))}</button>`}${a.p && a.p.length > 2 ? `<button class="link" data-mpt="${k}" aria-label="${esc(t('shapeEdit'))}" title="${esc(t('shapeEdit'))}">✎</button>` : ''}<button class="link" data-mrm="${k}" aria-label="${esc(t('del'))}">✕</button></span>`).join('')}</div>` : ''}
       ${d.side.length ? `<div class="chips" style="margin:0 0 8px">${d.side.map((x, k) => `<span class="chip">${esc(x.name)} · ${esc(d.split ? t('sideOwnKm', { km:String(x.km).replace('.', ',') }) : t('sideOwn', { km:String(x.km).replace('.', ','), n:fmtN(x.flyers) }))}${d.split ? spText(x.name) + allBtn(x.name, x.all, 's', k) : ''}<button class="link" data-srm="${k}" aria-label="${esc(t('del'))}">✕</button></span>`).join('')}</div><p class="small muted" style="margin:-4px 0 8px">${esc(t('sideOwnHint'))}</p>` : ''}
       ${fixedMb > d.flyers ? `<div class="warnbox" style="margin:0 0 8px">${esc(t('allMbTooMany', { mb:fmtN(fixedMb), f:fmtN(d.flyers) }))} <button class="link" id="cAllFit">${esc(t('allMbRaise', { f:fmtN(Math.ceil(fixedMb / 50) * 50) }))}</button></div>` : ''}
       ${d.start ? sfTown('cTown1').html + `<button class="btn ghost small" id="cMustAdd" style="margin-top:8px">${ICONS.edit}${esc(t('drawOwn'))}</button>` : `<p class="small muted">${esc(t('sideNeedStart'))}</p>`}
       <label class="f" for="cQuota">${esc(t('quota'))}</label><input class="in" type="number" id="cQuota" min="200" step="100" value="${esc(saved.quota)}"><p class="small muted" style="margin:4px 0 0">${esc(t('quotaHours'))}</p><label class="check" style="margin-top:6px"><input type="checkbox" id="cNoQ" ${(saved.noQuota != null ? saved.noQuota : d.travel === 'car') ? 'checked' : ''}><span>${esc(t('noQuota'))}</span></label>
-      <label class="f" for="cTravel">${esc(t('travelLbl'))}</label><select class="in" id="cTravel">${['bus', 'bike', 'car'].map(v => `<option value="${v}" ${d.travel === v ? 'selected' : ''}>${esc(t('travel_' + v))}</option>`).join('')}</select><p class="small muted" style="margin:4px 0 0">${esc(t('travelHint'))}</p>`;
+      <label class="f">${esc(t('travelLbl'))}</label><div class="opt3" role="radiogroup">${[['car', '🚗'], ['bus', '🚌'], ['bike', '🚲']].map(([v, ic]) => `<button role="radio" aria-checked="${d.travel === v}" class="${d.travel === v ? 'on' : ''}" data-travel="${v}"><i>${d.travel === v ? '✓' : ''}</i><span>${ic} ${esc(t('travel_' + v))}</span></button>`).join('')}</div><p class="small muted" style="margin:4px 0 0">${esc(t('travelHint'))}</p>`;
     else if(d.step === 2) body = `
       <div class="steppers">
         <div><label class="f">${esc(t('flyersCount'))}</label><div class="stepper"><button data-s="f:-500" aria-label="−500">−</button><input id="cFly" type="number" inputmode="numeric" min="100" step="100" value="${d.flyers}"><button data-s="f:500" aria-label="+500">+</button></div></div>
         <div><label class="f">${esc(t('workersCount'))}</label><div class="stepper"><button data-s="n:-1" ${p ? '' : 'disabled'} aria-label="−1">−</button><b id="vN">${p ? d.n : '—'}</b><button data-s="n:1" ${p ? '' : 'disabled'} aria-label="+1">+</button></div></div>
       </div>
+      ${p && d.mainAll ? `<div class="hint">${esc(t('mainAllNote', { city:mainCity(), mb:fmtN(Math.round(p.mailboxes)) }))}</div>`
+        : p && p.eco && !d.exact ? `<div class="hint">${esc(t('ecoNote', { used:fmtN(Math.round(p.mailboxes)), asked:fmtN(d.flyers) }))} <button class="link" id="cExact">${esc(t('exactBtn', { f:fmtN(d.flyers) }))}</button></div>`
+        : p && d.exact && !tkE ? `<p class="small muted" style="margin:6px 0 0">${esc(t('exactOn', { f:fmtN(d.flyers) }))} <button class="link" id="cEco">${esc(t('ecoBtn'))}</button></p>` : ''}
       ${p && oneDay ? `<div class="hint">${esc(t('oneDayHint', { h:fmtHm(totMin) }))} <button class="link" id="cOneDay">${esc(t('applySug'))}</button></div>` : p && d.sug && d.sug !== d.n ? `<div class="hint">${esc(t('sugWorkers', { n:d.sug, d:d.days }))} <button class="link" id="cSug">${esc(t('applySug'))}</button></div>` : ''}
       ${planBlock()}
       <div class="must-box zone-box"><div class="sec-row" style="margin:0"><b>${esc(t('zoneTitle'))}</b><span class="small muted">${esc(d.zone ? t('zoneOwn') + (p && p.zone_mb != null ? ' · ' + t('mustMb', { mb:fmtN(p.zone_mb) }) : '') : t('zoneAuto'))}</span></div>
         <p class="small muted" style="margin:2px 0 8px">${esc(t(d.zone ? 'zoneHintOwn' : 'zoneHint'))}</p>
-        ${d.zone && p && p.zone_mb != null && p.zone_mb > (d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0)) * 1.05 ? `<div class="note" style="margin:0 0 8px">${esc(t('zoneBig', { mb:fmtN(p.zone_mb), f:fmtN((d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0))) }))} <button class="link" id="cZoneAll">${esc(t('zoneAll', { f:fmtN(p.zone_mb) }))}</button></div>` : ''}
-        ${d.zone && p && p.zone_mb != null && p.zone_mb < (d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0)) * 0.95 ? `<div class="warnbox" style="margin:0 0 8px">${esc(t('zoneSmall', { mb:fmtN(p.zone_mb), f:fmtN((d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0))) }))} <button class="link" id="cZoneFit">${esc(t('reduceTo', { f:fmtN(Math.max(100, Math.floor(p.zone_mb / 50) * 50)) }))}</button></div>` : ''}
+        ${d.zone && !d.mainAll && p && p.zone_mb != null && p.zone_mb > (d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0)) * 1.05 ? `<div class="note" style="margin:0 0 8px">${esc(t('zoneBig', { mb:fmtN(p.zone_mb), f:fmtN((d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0))) }))} <button class="link" id="cZoneAll">${esc(t('zoneAll', { f:fmtN(p.zone_mb) }))}</button></div>` : ''}
+        ${d.zone && !d.mainAll && p && p.zone_mb != null && p.zone_mb < (d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0)) * 0.95 ? `<div class="warnbox" style="margin:0 0 8px">${esc(t('zoneSmall', { mb:fmtN(p.zone_mb), f:fmtN((d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0))) }))} <button class="link" id="cZoneFit">${esc(t('reduceTo', { f:fmtN(Math.max(100, Math.floor(p.zone_mb / 50) * 50)) }))}</button></div>` : ''}
         <div class="tool-row"><button class="btn ghost small" id="cZoneDraw" ${d.start ? '' : 'disabled'}>${ICONS.edit}${esc(t(d.zone ? 'zoneRedraw' : 'zoneDraw'))}</button>${d.zone ? `<button class="btn ghost small" id="cZoneAuto">${esc(t('zoneBackAuto'))}</button>` : ''}</div></div>
       ${p && p.split ? `<div class="hint">${esc(t('splitHint', { list:p.split.map(x => (x.name || mainCity() || t('mainCity')) + ' ' + fmtN(x.flyers)).join(' · ') }))}</div>` : ''}
       ${p && !d.split && p.must_mb > d.flyers ? `<div class="warnbox" style="margin:8px 0">${esc(t('mustTooMany', { mb:fmtN(p.must_mb), f:fmtN(d.flyers) }))}</div>` : ''}
@@ -1157,7 +1164,7 @@ function viewCreate(edit){
       body = `<div class="review">
         <div><span>${esc(t('title'))}</span><b>${esc(saved.title || '—')}</b></div>
         <div><span>${esc(t('place'))}</span><b>${esc(d.place ? [d.place.district, d.place.city].filter(Boolean).join(', ') || d.place.name : (tkE ? [tkE.district, tkE.city_name].filter(Boolean).join(', ') : '—'))}</b></div>
-        <div><span>${esc(t('flyersCount'))}</span><b>${esc(fmtN(d.flyers))}${p ? ' · ' + esc(t('mbApprox', { n:fmtN(p.mailboxes) })) : ''}</b></div>
+        <div><span>${esc(t('flyersCount'))}</span><b>${esc(fmtN(effFlyers))}${p ? ' · ' + esc(t('mbApprox', { n:fmtN(p.mailboxes) })) : ''}</b></div>
         <div><span>${esc(t('workersCount'))}</span><b>${p ? p.routes.length : '—'} · ${esc(t('assignedN', { a:assigned, n:p ? p.routes.length : 0 }))}</b></div>
         <div><span>${esc(t('dist2'))}</span><b>${esc(km)} · ${esc(fmtHm(p ? p.routes.reduce((s, r) => s + r.minutes, 0) : 0))} ${esc(t('h'))}</b></div>
         <div><span>${esc(t('startDate'))}</span><b>${esc(saved.date ? fmtDay(saved.date) : t('noDate'))} · ${esc(String(d.hours).replace('.', ','))} ${esc(t('h'))}/${esc(t('dayShort'))}</b></div>
@@ -1194,7 +1201,17 @@ function viewCreate(edit){
     });
     if($('#cFly')) $('#cFly').onchange = () => { saved = keep(); d.flyers = Math.max(100, Math.round(num('#cFly', d.flyers))); d.nAuto = true; recompute(); };
     if($('#cQuota')) $('#cQuota').onchange = () => { saved = keep(); recompute(); };
-    if($('#cTravel')) $('#cTravel').onchange = e => { saved = keep(); d.travel = e.target.value; d.bike = d.travel !== 'bus'; recompute(); };
+    document.querySelectorAll('[data-travel]').forEach(b => b.onclick = () => { if(d.travel === b.dataset.travel) return; saved = keep(); d.travel = b.dataset.travel; d.bike = d.travel !== 'bus'; recompute(); });
+    if($('#cExact')) $('#cExact').onclick = () => { saved = keep(); d.exact = true; recompute(); };
+    if($('#cEco')) $('#cEco').onclick = () => { saved = keep(); d.exact = false; recompute(); };
+    // whole main town: its border becomes the distribution area and every mailbox in it gets a flyer
+    if($('#cMainAll')) $('#cMainAll').onclick = async () => {
+      saved = keep();
+      if(d.mainAll){ d.mainAll = false; d.zone = d.zoneBeforeAll || null; d.zoneBeforeAll = null; drawMust(); return recompute(); }
+      const b = $('#cMainAll'); b.disabled = true; toast(t('placeLoading'));
+      const { p:pts } = await placeArea({ name:mainCity(), lat:d.start.lat, lng:d.start.lng, kind:'town' }); if(!alive()) return;
+      d.zoneBeforeAll = d.zone; d.zone = pts; d.mainAll = true; drawMust(); recompute();
+    };
     if($('#cHours')) $('#cHours').onchange = () => { saved = keep(); d.hours = Math.max(1, Math.min(12, num('#cHours', 7))); recompute(); };
     const od = $('#cOneDay'); if(od) od.onclick = () => { saved = keep(); d.n = 1; d.days = 1; d.assign = {}; recompute(); };
     const sg = $('#cSug'); if(sg) sg.onclick = () => { saved = keep(); d.n = d.sug; d.assign = {}; recompute(); };
@@ -1209,7 +1226,7 @@ function viewCreate(edit){
     document.querySelectorAll('[data-all]').forEach(b => b.onclick = () => { saved = keep(); const [kind, k] = b.dataset.all.split(':'), x = (kind === 's' ? d.side : d.must)[+k]; if(!x) return; x.all = !x.all; d.dirty = true; drawMust(); recompute(); });
     if($('#cAllFit')) $('#cAllFit').onclick = () => { saved = keep(); d.flyers = Math.ceil(p.split.filter(x => x.all).reduce((a, x) => a + (x.cap || 0), 0) / 50) * 50; d.nAuto = true; recompute(); };
     if($('#cZoneDraw')) $('#cZoneDraw').onclick = () => { saved = keep(); drawMode(true, 'zone', d.zone); };
-    if($('#cZoneAuto')) $('#cZoneAuto').onclick = () => { saved = keep(); d.zone = null; drawMust(); recompute(); };
+    if($('#cZoneAuto')) $('#cZoneAuto').onclick = () => { saved = keep(); d.zone = null; d.mainAll = false; drawMust(); recompute(); };
     if($('#cZoneAll')) $('#cZoneAll').onclick = () => { saved = keep(); d.flyers += p.zone_mb - (d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0)); d.nAuto = true; recompute(); };
     if($('#cZoneFit')) $('#cZoneFit').onclick = () => { saved = keep(); d.flyers = Math.max(100, d.flyers - (d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0)) + Math.floor(p.zone_mb / 50) * 50); d.nAuto = true; recompute(); };
     document.querySelectorAll('[data-med]').forEach(b => b.onclick = async () => {
@@ -1230,7 +1247,7 @@ function viewCreate(edit){
       if(pl.split){ const by = new Map(pl.split.filter(x => x.name).map(x => [x.name, x.flyers])); d.must.forEach(a => { if(by.has(a.name)) a.n = by.get(a.name); }); d.side.forEach(x => { if(by.has(x.name)) x.flyers = by.get(x.name); }); }
       const row = { title:withCity(title, cityN), city_name:cityN, district:(d.place && d.place.district) || (tkE && tkE.district) || null, start_lat:d.start.lat, start_lng:d.start.lng,
         walk_minutes:15, zone_polygon:pl.zone, must_areas:d.must.length ? d.must.map(a => ({ p:a.p, n:a.n, name:a.name || undefined, c:a.c })) : null, side_towns:d.side.length ? d.side : null, bike:d.travel !== 'bus', travel:d.travel, split:d.split, work_area:d.zone || null, work_date:date, notes:(saved.notes || '').trim() || null, street_m:d.streetM || null,
-        flyers:d.flyers, quota_m30:quota, no_quota:saved.noQuota != null ? !!saved.noQuota : d.travel === 'car', work_days:d.days, work_hours:d.hours, est_mailboxes:pl.mailboxes, route_m:pl.routes.reduce((s, r) => s + r.length_m, 0) };
+        flyers:pl && (d.mainAll || (pl.eco && !d.exact)) ? Math.round(pl.mailboxes) : d.flyers, quota_m30:quota, no_quota:saved.noQuota != null ? !!saved.noQuota : d.travel === 'car', work_days:d.days, work_hours:d.hours, est_mailboxes:pl.mailboxes, route_m:pl.routes.reduce((s, r) => s + r.length_m, 0) };
       let tk, old = null;
       if(tkE){
         await loadLive(); if(A.live.some(r => r.task_id === tkE.id)) throw new Error(t('replanLive'));

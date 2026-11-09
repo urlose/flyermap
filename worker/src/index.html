@@ -251,6 +251,13 @@ h2.sec{font-size:18px;line-height:24px;font-weight:600;margin:24px 0 10px}
 /* chips & status */
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .chip{display:inline-flex;align-items:center;gap:6px;background:var(--color-surface-subtle);color:var(--color-text);border:1px solid transparent;border-radius:var(--radius-full);min-height:36px;padding:6px 8px 6px 12px;font-size:14px;line-height:20px;font-weight:500;white-space:nowrap}
+.note .all-btn,.must-box .all-btn{font:600 13px/1.2 var(--font-family);color:var(--color-primary);background:var(--color-primary-soft);border:0;border-radius:var(--radius-full);padding:7px 12px;min-height:32px;cursor:pointer}
+.note .all-btn.on{color:var(--color-on-primary);background:var(--color-primary)}
+.opt3{display:grid;grid-template-columns:1fr;gap:6px}
+.opt3 button{display:flex;align-items:center;gap:8px;min-height:44px;padding:8px 10px;border-radius:var(--radius-md);border:1px solid var(--color-border);background:var(--color-surface);color:var(--color-text);font:500 14px/1.2 var(--font-family);cursor:pointer;text-align:left}
+.opt3 button i{flex:none;width:20px;height:20px;border-radius:5px;border:2px solid var(--color-border-strong);display:grid;place-items:center;font-style:normal;font-size:13px;font-weight:800;line-height:1}
+.opt3 button.on{border-color:var(--color-primary);background:var(--color-primary-soft)}
+.opt3 button.on i{background:var(--color-primary);border-color:var(--color-primary);color:var(--color-on-primary)}
 .chip:has(.all-btn){white-space:normal;flex-wrap:wrap;row-gap:2px;border-radius:var(--radius-md);max-width:100%}
 .chip .all-btn{font:600 13px/1.2 var(--font-family);color:var(--color-primary);background:var(--color-primary-soft);border-radius:var(--radius-full);padding:5px 10px;min-height:28px;min-width:0;margin:0;white-space:nowrap}
 .chip .all-btn.on{color:var(--color-on-primary);background:var(--color-primary)}

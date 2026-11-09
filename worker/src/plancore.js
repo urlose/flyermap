@@ -76,6 +76,20 @@ export function createPlanService(cache){
     if(days.length > 1 && days[days.length - 1].minutes < 45){ const x = days.pop(), y = days[days.length - 1]; y.i1 = x.i1; ['minutes', 'mailboxes', 'street_m', 'length_m'].forEach(k => y[k] += x[k]); if(x.place) y.place = [...new Set([...(y.place || '').split(' + '), ...x.place.split(' + ')].filter(Boolean))].join(' + '); }
     return { path, steps, boxes, days, length_m, street_m, minutes, mailboxes };
   };
+  // economical amount: the area is grown in steps from 80 % to 100 % of the flyers. The largest step is kept whose extra streets
+  // (counted together from 80 %) cost at most ECO_K times the minutes per mailbox of the dense core – far, thin streets at the end
+  // are left out, so the plan may hand out fewer flyers (e.g. 9 000 of 10 000) for clearly fewer hours. "Exactly N" switches it off.
+  const ECO_K = 1.35;
+  const ecoFlyers = (start, F, must, zone) => {
+    const pts = [0.8, 0.85, 0.9, 0.95, 1].map(f => {
+      const sel = Planner.selectWithMust(G, start, Math.round(F * f), must, zone);
+      const len = sel.ids.reduce((a, i) => a + G.edges[i].len, 0);
+      return { mb:sel.mailboxes, min:Planner.routeMinutes(len * 1.35, sel.mailboxes) };
+    });
+    const base = pts[0].min / Math.max(1, pts[0].mb); let best = pts[0];
+    for(let i = 1; i < pts.length; i++){ const dm = pts[i].mb - pts[0].mb; if(dm <= 0 || (pts[i].min - pts[0].min) / dm <= ECO_K * base) best = pts[i]; }
+    return best.mb >= 0.97 * F ? F : Math.max(100, Math.round(best.mb / 50) * 50);   // nearly all: keep the exact number
+  };
   return {
     // map data around a new start point
     async load({ start, flyers, must, zone }, stage, stale){
@@ -86,7 +100,8 @@ export function createPlanService(cache){
       return info();
     },
     // plans the routes; loads a larger square first when the plan reaches the edge of what is loaded
-    async plan({ start, flyers, n, days, hours, must, zone, side, quota, bike, travel, split }, stage, stale){
+    async plan({ start, flyers, n, days, hours, must, zone, side, quota, bike, travel, split, exact, mainAll }, stage, stale){
+      const eco = !exact && !mainAll;
       travel = travel === 'bike' || travel === 'car' ? travel : (bike ? 'bike' : 'bus'); bike = travel !== 'bus';
       Planner.setPace(quota);   // hours from the order's quota (metres per 30 minutes)
       side = (side || []).filter(c => c && (c.flyers > 0 || split === 'even'));   // even split: a place added without a number gets its share below
@@ -123,7 +138,7 @@ export function createPlanService(cache){
         const capMain = Math.max(0, (G.usable != null ? G.usable : G.mailboxes) - capNear.reduce((a, b) => a + b, 0));
         const caps = [capMain, ...capNear, ...capFar], share = new Array(caps.length).fill(0);
         // a place marked "all mailboxes" gets exactly what it has; the rest of the flyers is shared out over the others
-        const fixed = new Set([...near.map((a, i) => a.all ? 1 + i : -1), ...side.map((c, i) => c.all ? 1 + near.length + i : -1)].filter(i => i > 0));
+        const fixed = new Set([mainAll ? 0 : -1, ...near.map((a, i) => a.all ? 1 + i : -1), ...side.map((c, i) => c.all ? 1 + near.length + i : -1)].filter(i => i >= 0));
         let rest = flyers; fixed.forEach(i => { share[i] = caps[i]; rest -= caps[i]; }); rest = Math.max(0, rest);
         let open = caps.map((_, i) => i).filter(i => !fixed.has(i));
         while(rest > 0 && open.length){   // water filling: equal shares, capped by what a place has
@@ -139,15 +154,15 @@ export function createPlanService(cache){
         side = side.filter(c => c.flyers > 0);
       }
       if(side.length){
-        const res = await this.planSide({ start, flyers, n, days, hours, must, zone, side, bike, travel }, stage, stale);
+        const res = await this.planSide({ start, flyers, n, days, hours, must, zone, side, bike, travel, eco, mainAll, mainShare:splitInfo ? splitInfo[0].flyers : null }, stage, stale);
         if(res && res.plan){ res.plan.bus = bus; res.plan.split = splitInfo; }
         return res;
       }
-      const resM = await this.planMain({ start, flyers, n, days, hours, must, zone }, stage, stale);
+      const resM = await this.planMain({ start, flyers, n, days, hours, must, zone, eco, mainAll }, stage, stale);
       if(resM && resM.plan) resM.plan.split = splitInfo;
       return resM;
     },
-    async planSide({ start, flyers, n, days, hours, must, zone, side, bike, travel }, stage, stale){
+    async planSide({ start, flyers, n, days, hours, must, zone, side, bike, travel, eco, mainAll, mainShare }, stage, stale){
 
         // each far place as one whole route (one worker)
         const far = [], failed = [];
@@ -160,10 +175,13 @@ export function createPlanService(cache){
           if(!r0 || !r0.path || r0.path.length < 2){ failed.push(c.name); continue; }   // no street with mailboxes inside its border: skip, tell the admin
           const { part, ...r } = r0; far.push({ c, r, min:r.minutes, mb:p.mailboxes });
         }
-        const mainFlyers = Math.max(100, flyers - far.reduce((s, x) => s + x.c.flyers, 0));
-        if(!far.length){ const r1 = await this.planMain({ start, flyers, n, days, hours, must, zone }, stage, stale); if(r1 && r1.plan) r1.plan.side_failed = failed; return r1; }
+        let mainFlyers = Math.max(100, flyers - far.reduce((s, x) => s + x.c.flyers, 0));
+        if(!far.length){ const r1 = await this.planMain({ start, flyers, n, days, hours, must, zone, eco, mainAll }, stage, stale); if(r1 && r1.plan) r1.plan.side_failed = failed; return r1; }
+        // economical: the main town's share is cut to what is worth walking (once, then fixed for the variants below)
+        let mainEco = null;
+        if(eco && !(zone && zone.length > 2)){ if(!G || gKey !== keyOf(start)){ stage('loadingArea'); await load(start, mainFlyers, undefined, must, stage, stale, 'loadingArea', zone); } const ef = ecoFlyers(start, mainFlyers, must, zone); if(ef < mainFlyers){ mainEco = { asked:mainFlyers, used:ef }; mainFlyers = ef; } }
         // main place: first with n parts; then the number of equal parts that shares the hours best together with the far places
-        let res = await this.planMain({ start, flyers:mainFlyers, n, days:1, hours, must, zone }, stage, stale);
+        let res = await this.planMain({ start, flyers:mainFlyers, n, days:1, hours, must, zone, mainAll }, stage, stale);
         if(!res || res.skipped) return res;
         const M = res.plan.routes.reduce((s, r) => s + r.minutes, 0);
         // 1) one tour through all far places from the start (like a navigation app): nearest next, then untangled (2-opt)
@@ -200,7 +218,8 @@ export function createPlanService(cache){
         const share = mains => { const bins = vparts.map(p => ({ min:p.reduce((s, x) => s + x.min, 0), mains:[], vill:p })); [...mains].sort((x, y) => y.minutes - x.minutes).forEach(r => { const b = bins.reduce((m, x) => x.min < m.min ? x : m, bins[0]); b.mains.push(r); b.min += r.minutes; }); return bins; };
         let bestK = n, bestMax = Infinity;
         for(let k = n; k <= 3 * n; k++){ const mx = Math.max(...share(Array.from({ length:k }, () => ({ minutes:M / k }))).map(b => b.min)); if(mx < bestMax - 15){ bestMax = mx; bestK = k; } }
-        if(bestK !== n){ stage('calculating'); const r2 = await this.planMain({ start, flyers:mainFlyers, n:bestK, days:1, hours, must, zone }, stage, stale); if(!r2 || r2.skipped) return r2; res = r2; }
+        if(bestK !== n){ stage('calculating'); const r2 = await this.planMain({ start, flyers:mainFlyers, n:bestK, days:1, hours, must, zone, mainAll }, stage, stale); if(!r2 || r2.skipped) return r2; res = r2; }
+        if(mainEco) res.plan.eco = mainEco;
         const bins = share(res.plan.routes).filter(b => b.mains.length || b.vill.length).map(b => ({ ...b, items:b.vill }));
         res.plan.routes = bins.map((b, k) => ({ idx:k, ...buildLine([...b.mains.map(r => ({ r, name:null })), ...b.vill.map(x => ({ r:x.far.r, name:x.far.c.name }))], hours, ride) }));
         res.plan.road_km = mat ? true : false;
@@ -211,7 +230,7 @@ export function createPlanService(cache){
         res.sug = Math.min(20, Planner.suggestWorkers(res.plan.routes.reduce((s, r) => s + r.minutes, 0), hours, days));
         return res;
     },
-    async planMain({ start, flyers, n, days, hours, must, zone }, stage, stale){
+    async planMain({ start, flyers, n, days, hours, must, zone, eco, mainAll }, stage, stale){
       if(!G || gKey !== keyOf(start)){ stage('loadingArea'); await load(start, flyers, undefined, must, stage, stale, 'loadingArea', zone); }
       if(stale()) return { skipped:true };
       // a mandatory area outside the loaded square: load a larger square first
@@ -225,11 +244,16 @@ export function createPlanService(cache){
         if(stale()) return { skipped:true };
       }
       stage('calculating');
+      // whole town: every mailbox inside its border; economical: only what is worth walking (see ecoFlyers)
+      let ecoInfo = null;
+      if(mainAll && hasZone) flyers = Math.max(100, Planner.selectWithMust(G, start, 1e9, must, zone).mailboxes);
+      else if(eco && !hasZone){ const ef = ecoFlyers(start, flyers, must, zone); if(ef < flyers){ ecoInfo = { asked:flyers, used:ef }; flyers = ef; } }
       const sel = Planner.selectWithMust(G, start, flyers, must, zone);
       const sug = Math.min(20, Planner.suggestWorkers(Planner.routeMinutes(sel.ids.reduce((s, i) => s + G.edges[i].len, 0) * 1.35, sel.mailboxes), hours, days));
       if(stale()) return { skipped:true };
       const plan = Planner.planFlyers(G, start, flyers, n, { days, hoursPerDay:hours, must, zone });
       plan.routes = plan.routes.map(({ part, ...r }) => r);   // street ids are only needed inside the planner
+      if(ecoInfo) plan.eco = ecoInfo;
       return { plan, sug, street_m:G.street_m };
     },
   };
