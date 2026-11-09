@@ -222,12 +222,11 @@ export function searchField(id, placeholder, onPick, { citiesOnly = false, near 
   const html = `<div class="sf" id="${id}W"><div class="searchbox"><span class="sb-ic">${ICONS.search}</span><input id="${id}" class="sb-in" placeholder="${esc(placeholder)}" autocomplete="off" autocorrect="off"></div><div id="${id}R" class="results hidden"></div></div>`;
   const bind = () => {
     const q = $('#' + id), r = $('#' + id + 'R'), w = $('#' + id + 'W'); let tm, ph = null, off;
-    // phone: a search inside the bottom panel moves to the top of the screen while typing, so the text and the
-    // suggestions are not hidden behind the keyboard / under the panel
-    const narrow = () => !window.matchMedia || window.matchMedia('(max-width:899px)').matches;
+    // a search inside the panel (phone: bottom sheet, PC: panel on the left) moves to the top of the screen while
+    // typing, so the text and the suggestions are never hidden behind the keyboard, the panel edge or its scrolling
     if(w && w.closest('.sheet')){
       q.addEventListener('focus', () => {
-        clearTimeout(off); if(!narrow() || w.classList.contains('float')) return;
+        clearTimeout(off); if(w.classList.contains('float')) return;
         ph = document.createElement('div'); ph.style.height = w.offsetHeight + 'px'; w.parentNode.insertBefore(ph, w);
         w.classList.add('float');
       });
