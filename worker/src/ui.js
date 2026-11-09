@@ -219,22 +219,9 @@ export function toast(text){
 
 /* ---------- search field with results ---------- */
 export function searchField(id, placeholder, onPick, { citiesOnly = false, near = null } = {}){
-  const html = `<div class="sf" id="${id}W"><div class="searchbox"><span class="sb-ic">${ICONS.search}</span><input id="${id}" class="sb-in" placeholder="${esc(placeholder)}" autocomplete="off" autocorrect="off"></div><div id="${id}R" class="results hidden"></div></div>`;
+  const html = `<div class="searchbox"><span class="sb-ic">${ICONS.search}</span><input id="${id}" class="sb-in" placeholder="${esc(placeholder)}" autocomplete="off" autocorrect="off"></div><div id="${id}R" class="results hidden"></div>`;
   const bind = () => {
-    const q = $('#' + id), r = $('#' + id + 'R'), w = $('#' + id + 'W'); let tm, ph = null, off;
-    // a search inside the panel (phone: bottom sheet, PC: panel on the left) moves to the top of the screen while
-    // typing, so the text and the suggestions are never hidden behind the keyboard, the panel edge or its scrolling
-    if(w && w.closest('.sheet')){
-      q.addEventListener('focus', () => {
-        clearTimeout(off); if(w.classList.contains('float')) return;
-        ph = document.createElement('div'); ph.style.height = w.offsetHeight + 'px'; w.parentNode.insertBefore(ph, w);
-        w.classList.add('float');
-      });
-      q.addEventListener('blur', () => { off = setTimeout(() => {   // later than the tap on a suggestion
-        if(!w.classList.contains('float')) return; w.classList.remove('float'); r.classList.add('hidden');
-        if(ph){ ph.remove(); ph = null; }
-      }, 250); });
-    }
+    const q = $('#' + id), r = $('#' + id + 'R'); let tm;
     q.addEventListener('input', () => {
       clearTimeout(tm); const v = q.value.trim();
       if(v.length < 2){ r.classList.add('hidden'); return; }

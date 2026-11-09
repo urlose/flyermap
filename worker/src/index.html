@@ -243,11 +243,6 @@ h2.sec{font-size:18px;line-height:24px;font-weight:600;margin:24px 0 10px}
 .sb-ic svg{width:20px;height:20px;fill:none;stroke:var(--color-text-secondary);stroke-width:2;stroke-linecap:round;display:block}
 .sb-in{flex:1;min-width:0;border:0;background:none;padding:0 10px;height:100%;font-size:16px}
 .sb-in::placeholder{color:var(--color-text-disabled)}
-/* search field of the panel while typing: on top of everything at the top of the screen (phone: full width; PC: over the left panel) */
-.sf.float{position:fixed;z-index:1300;left:12px;right:12px;top:calc(var(--st) + 10px)}
-.sf.float .searchbox{box-shadow:var(--shadow-lg);border-color:var(--color-primary);background:var(--color-surface-elevated)}
-.sf.float .results{max-height:42vh;overflow:auto}
-@media (min-width:900px){ .sf.float{left:16px;right:auto;width:min(440px,calc(100% - 32px))} .sf.float .results{max-height:65vh} }
 .results{background:var(--color-surface-elevated);border:1px solid var(--color-border);border-radius:var(--radius-md);margin-top:6px;overflow:hidden;box-shadow:var(--shadow-md);position:relative;z-index:30}
 .res{display:block;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--color-border);padding:12px 14px;min-height:var(--touch-target)}
 .res:last-child{border-bottom:0}.res:active{background:var(--color-surface-subtle)}
@@ -340,6 +335,8 @@ button.kpi{cursor:pointer}button.kpi.on{border-color:var(--color-primary);backgr
 .leaflet-control-attribution a{color:var(--color-text-secondary)}
 .map-top{position:absolute;z-index:500;left:12px;right:12px;top:calc(var(--st) + 10px);display:flex;gap:8px;align-items:flex-start}
 .map-top .icon-btn,.map-btn{box-shadow:var(--shadow-md);border-color:transparent;background:var(--color-surface-elevated)}
+.map-top:focus-within,.map-top:has(.results:not(.hidden)){z-index:1300}   /* suggestions of the top search lie over the panel (phone and PC), not under it */
+.map-top .results{max-height:min(60vh,520px);overflow:auto}
 .map-top .searchbox{box-shadow:var(--shadow-md);border-color:transparent;background:var(--color-surface-elevated)}
 .map-btn{position:absolute;z-index:500;right:12px;top:calc(var(--st) + 12px);border-radius:50%}
 .ahead-dot{width:12px;height:12px;box-sizing:border-box;background:#fff;border:3px solid var(--color-primary);border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.35)}
