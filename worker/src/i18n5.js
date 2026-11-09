@@ -234,3 +234,6 @@ Object.assign(T.ru, { routeFlyers:'≈ {n} флаеров' });
 
 Object.assign(T.de, { rideTip:'≈ {min} Min. Fahrt · {km} km', rideTipBus:'Bus / Bahn ≈ {min} Min. · {km} km' });
 Object.assign(T.ru, { rideTip:'≈ {min} мин в пути · {km} км', rideTipBus:'Автобус / поезд ≈ {min} мин · {km} км' });
+
+Object.assign(T.de, { shareOfMb:'{n} von {mb} Briefk.', allMbBtn:'Alle {n} nehmen', allMbOn:'alle Briefkästen', allMbHint:'Jeder Briefkasten in diesem Ort bekommt einen Flyer; die übrigen Flyer teilen sich die anderen Orte', allMbOffHint:'Wieder gleichmäßig aufteilen', allMbTooMany:'Die Orte mit „alle Briefkästen“ haben ≈ {mb} Briefkästen, aber der Auftrag hat nur {f} Flyer.', allMbRaise:'Flyer auf {f} erhöhen' });
+Object.assign(T.ru, { shareOfMb:'{n} из {mb} ящ.', allMbBtn:'Взять все {n}', allMbOn:'все ящики', allMbHint:'Флаер в каждый ящик этого места; остальные флаеры делятся между другими местами', allMbOffHint:'Снова делить поровну', allMbTooMany:'В местах «все ящики» ≈ {mb} ящиков, а в заказе только {f} флаеров.', allMbRaise:'Увеличить флаеры до {f}' });

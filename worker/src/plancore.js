@@ -102,7 +102,7 @@ export function createPlanService(cache){
           const gap = a && a.name && a.p && a.p.length > 2 ? Planner.emptyGap(G, start, a.p) : 0;
           if(gap > (bike ? EMPTY_GAP_BIKE : EMPTY_GAP)){
             const ctr = a.c || a.p.reduce((x, q) => [x[0] + q[0] / a.p.length, x[1] + q[1] / a.p.length], [0, 0]);   // town centre when known
-            side.push({ name:a.name, lat:ctr[0], lng:ctr[1], flyers:a.n || 1000, zone:a.p }); bus.push({ name:a.name, gap });
+            side.push({ name:a.name, lat:ctr[0], lng:ctr[1], flyers:a.n || 1000, zone:a.p, all:!!a.all }); bus.push({ name:a.name, gap });
           }else keepMust.push(a);
         }
         must = keepMust;
@@ -122,16 +122,20 @@ export function createPlanService(cache){
         }
         const capMain = Math.max(0, (G.usable != null ? G.usable : G.mailboxes) - capNear.reduce((a, b) => a + b, 0));
         const caps = [capMain, ...capNear, ...capFar], share = new Array(caps.length).fill(0);
-        let rest = flyers, open = caps.map((_, i) => i);
+        // a place marked "all mailboxes" gets exactly what it has; the rest of the flyers is shared out over the others
+        const fixed = new Set([...near.map((a, i) => a.all ? 1 + i : -1), ...side.map((c, i) => c.all ? 1 + near.length + i : -1)].filter(i => i > 0));
+        let rest = flyers; fixed.forEach(i => { share[i] = caps[i]; rest -= caps[i]; }); rest = Math.max(0, rest);
+        let open = caps.map((_, i) => i).filter(i => !fixed.has(i));
         while(rest > 0 && open.length){   // water filling: equal shares, capped by what a place has
           const each = rest / open.length, full = open.filter(i => caps[i] - share[i] <= each);
           if(!full.length){ open.forEach(i => { share[i] += each; }); rest = 0; break; }
           full.forEach(i => { rest -= caps[i] - share[i]; share[i] = caps[i]; }); open = open.filter(i => !full.includes(i));
         }
         const r50 = x => Math.max(0, Math.round(x / 50) * 50);
-        near.forEach((a, i) => { a.n = Math.max(50, r50(share[1 + i])); });
-        side.forEach((c, i) => { c.flyers = r50(share[1 + near.length + i]); });
-        splitInfo = [{ name:null, flyers:r50(share[0]) }, ...near.map(a => ({ name:a.name, flyers:a.n })), ...side.map(c => ({ name:c.name, flyers:c.flyers }))];
+        const shr = i => fixed.has(i) ? Math.round(share[i]) : r50(share[i]);
+        near.forEach((a, i) => { a.n = a.all ? 0 : Math.max(50, shr(1 + i)); });   // 0 = every mailbox in the area
+        side.forEach((c, i) => { c.flyers = shr(1 + near.length + i); });
+        splitInfo = [{ name:null, flyers:r50(share[0]), cap:Math.round(capMain) }, ...near.map((a, i) => ({ name:a.name, flyers:shr(1 + i), cap:Math.round(capNear[i]), all:!!a.all })), ...side.map((c, i) => ({ name:c.name, flyers:c.flyers, cap:Math.round(capFar[i]), all:!!c.all }))];
         side = side.filter(c => c.flyers > 0);
       }
       if(side.length){

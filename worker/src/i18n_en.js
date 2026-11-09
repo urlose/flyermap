@@ -205,3 +205,5 @@ Object.assign(T.en, { shapeEdit:'Edit shape' });
 Object.assign(T.en, { routeFlyers:'≈ {n} flyers' });
 
 Object.assign(T.en, { rideTip:'≈ {min} min ride · {km} km', rideTipBus:'Bus / train ≈ {min} min · {km} km' });
+
+Object.assign(T.en, { shareOfMb:'{n} of {mb} mailb.', allMbBtn:'Take all {n}', allMbOn:'all mailboxes', allMbHint:'Every mailbox in this place gets a flyer; the other places share the rest', allMbOffHint:'Share evenly again', allMbTooMany:'The places set to "all mailboxes" have ≈ {mb} mailboxes, but the order only has {f} flyers.', allMbRaise:'Raise flyers to {f}' });
