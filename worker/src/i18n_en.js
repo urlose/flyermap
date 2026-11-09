@@ -201,3 +201,5 @@ Object.assign(T.en, { mergeTasks:'Merge orders', mergeHint:'Routes, working days
 Object.assign(T.en, { adjust:'adjust', flDoneManual:'reported {d}', stillWorking:'work continues', flDoneHint:'How many flyers are really out (e.g. counted packs)? Leave empty = estimate from the GPS tracks.', flDoneAuto:'automatic (GPS)', flDoneBad:'Please enter a number.' });
 
 Object.assign(T.en, { shapeEdit:'Edit shape' });
+
+Object.assign(T.en, { routeFlyers:'≈ {n} flyers' });

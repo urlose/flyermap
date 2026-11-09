@@ -228,3 +228,6 @@ Object.assign(T.ru, { adjust:'изменить', flDoneManual:'данные от
 
 Object.assign(T.de, { shapeEdit:'Form bearbeiten' });
 Object.assign(T.ru, { shapeEdit:'Изменить форму' });
+
+Object.assign(T.de, { routeFlyers:'≈ {n} Flyer' });
+Object.assign(T.ru, { routeFlyers:'≈ {n} флаеров' });
