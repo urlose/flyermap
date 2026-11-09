@@ -51,11 +51,13 @@ export function createPlanService(cache){
     return bins;
   };
   // one worker's line from its pieces (routes of the planner); pieces: [{ r, name|null }] in walking order
-  const buildLine = (pieces, hours, rideMin) => {
-    const path = [], steps = [], boxes = [], segMin = [], segMb = [], segSt = [], place = [];
+  // breaks (optional): indices of the pieces that start a new day (workers travelling together cut their days at the same place)
+  const buildLine = (pieces, hours, rideMin, breaks) => {
+    const path = [], steps = [], boxes = [], segMin = [], segMb = [], segSt = [], place = [], cutAt = new Set();
     let length_m = 0, street_m = 0, minutes = 0, mailboxes = 0;
-    for(const { r, name } of pieces){
+    for(const [pi, { r, name }] of pieces.entries()){
       const L = path.length, jump = !!name && L > 0;
+      if(breaks && breaks.has(pi) && L > 0) cutAt.add(L);
       const tot = r.path.slice(1).reduce((s, q, j) => s + segLen(r.path[j], q), 0) || 1;
       r.path.forEach((q, j) => {   // a jump costs the ride: bike ≈ 15 km/h + 5 min, bus 30 min
         path.push(j === 0 && jump ? [q[0], q[1], 1] : [q[0], q[1]]);
@@ -69,12 +71,36 @@ export function createPlanService(cache){
     const lim = hours * 60, days = []; let i0 = 0, t = 0, mb = 0, st = 0, ln = 0, pl = new Set();
     const close = i1 => { days.push({ i0, i1, minutes:Math.round(t), mailboxes:Math.round(mb), street_m:Math.round(st), length_m:Math.round(ln), place:[...pl].filter(Boolean).join(' + ') || undefined }); i0 = i1; t = 0; mb = 0; st = 0; ln = 0; pl = new Set(); };
     for(let i = 1; i < path.length; i++){
-      if(t >= lim && t > 0) close(i - 1);
+      if(breaks ? cutAt.has(i) && t > 0 : t >= lim && t > 0) close(i - 1);
       t += segMin[i]; mb += segMb[i]; st += segSt[i]; ln += path[i][2] === 1 ? 0 : segLen(path[i - 1], path[i]); pl.add(place[i]);
     }
     if(t > 0 || !days.length) close(path.length - 1);
-    if(days.length > 1 && days[days.length - 1].minutes < 45){ const x = days.pop(), y = days[days.length - 1]; y.i1 = x.i1; ['minutes', 'mailboxes', 'street_m', 'length_m'].forEach(k => y[k] += x[k]); if(x.place) y.place = [...new Set([...(y.place || '').split(' + '), ...x.place.split(' + ')].filter(Boolean))].join(' + '); }
+    if(!breaks && days.length > 1 && days[days.length - 1].minutes < 45){ const x = days.pop(), y = days[days.length - 1]; y.i1 = x.i1; ['minutes', 'mailboxes', 'street_m', 'length_m'].forEach(k => y[k] += x[k]); if(x.place) y.place = [...new Set([...(y.place || '').split(' + '), ...x.place.split(' + ')].filter(Boolean))].join(' + '); }
     return { path, steps, boxes, days, length_m, street_m, minutes, mailboxes };
+  };
+  // ---- dense cores (Ortskerne) ----
+  // Streets with many mailboxes per km, joined by short links, form a core; hamlets, scattered houses and the roads between
+  // villages drop out. Each core is walked on foot from one parking point, between cores everybody drives.
+  const CORE_T = 25, CORE_MIN = 40, CORE_PARK = 8;   // mailboxes per km of street, smallest core, minutes to park per core
+  const denseCores = (g, area) => {
+    const n = g.pts.length, uf = Int32Array.from({ length:n }, (_, i) => i), f = x => { while(uf[x] !== x){ uf[x] = uf[uf[x]]; x = uf[x]; } return x; };
+    const dense = e => e.mb > 0 && (e.len <= 80 || e.mb * 1000 / e.len >= CORE_T), dn = new Uint8Array(n);
+    g.edges.forEach(e => { if(dense(e)){ uf[f(e.a)] = f(e.b); dn[e.a] = 1; dn[e.b] = 1; } });
+    const link = e => !dense(e) && e.len <= 60 && dn[e.a] && dn[e.b];   // a short piece between two dense streets joins them
+    g.edges.forEach(e => { if(link(e)) uf[f(e.a)] = f(e.b); });
+    const cl = new Map();
+    g.edges.forEach((e, i) => { if(!dense(e) && !link(e)) return; const k = f(e.a); let c = cl.get(k); if(!c) cl.set(k, c = { area, ids:[], mb:0, len:0 }); c.ids.push(i); c.mb += e.mb; c.len += e.len; });
+    return [...cl.values()].filter(c => c.mb >= CORE_MIN).map(c => {
+      let la = 0, lo = 0, w = 0; for(const i of c.ids){ const e = g.edges[i]; la += (g.pts[e.a][0] + g.pts[e.b][0]) / 2 * e.len; lo += (g.pts[e.a][1] + g.pts[e.b][1]) / 2 * e.len; w += e.len; }
+      const ctr = [la / w, lo / w]; let best = -1, bd = Infinity;   // parking point: the junction of the core nearest to its middle
+      for(const i of c.ids) for(const v of [g.edges[i].a, g.edges[i].b]){ const d = segLen(ctr, g.pts[v]); if(d < bd){ bd = d; best = v; } }
+      return { ...c, g, park:[g.pts[best][0], g.pts[best][1]] };
+    });
+  };
+  const subGraph = (g, ids) => {
+    const edges = ids.map(i => g.edges[i]), adj = g.pts.map(() => []);
+    edges.forEach((e, i) => { adj[e.a].push({ e:i, to:e.b }); if(e.a !== e.b) adj[e.b].push({ e:i, to:e.a }); });
+    return { pts:g.pts, edges, adj, zoned:true };
   };
   // economical amount: the area is grown in steps from 80 % to 100 % of the flyers. The largest step is kept whose extra streets
   // (counted together from 80 %) cost at most ECO_K times the minutes per mailbox of the dense core – far, thin streets at the end
@@ -100,8 +126,9 @@ export function createPlanService(cache){
       return info();
     },
     // plans the routes; loads a larger square first when the plan reaches the edge of what is loaded
-    async plan({ start, flyers, n, days, hours, must, zone, side, quota, bike, travel, split, exact, mainAll }, stage, stale){
+    async plan({ start, flyers, n, days, hours, must, zone, side, quota, bike, travel, split, exact, mainAll, cores, together }, stage, stale){
       const eco = !exact && !mainAll;
+      if(cores) return this.planCores({ start, flyers, n, hours, must, zone, side, travel, together, exact }, stage, stale);
       travel = travel === 'bike' || travel === 'car' ? travel : (bike ? 'bike' : 'bus'); bike = travel !== 'bus';
       Planner.setPace(quota);   // hours from the order's quota (metres per 30 minutes)
       side = (side || []).filter(c => c && (c.flyers > 0 || split === 'even'));   // even split: a place added without a number gets its share below
@@ -161,6 +188,81 @@ export function createPlanService(cache){
       const resM = await this.planMain({ start, flyers, n, days, hours, must, zone, eco, mainAll }, stage, stale);
       if(resM && resM.plan) resM.plan.split = splitInfo;
       return resM;
+    },
+    // only the dense cores of the main area and of every place; cores are taken best first (mailboxes per hour incl. parking)
+    // until the flyers are reached; one tour by car through all of them. together: everybody in one car – every core is shared
+    // out among the workers, everybody visits the cores in the same order and the days end at the same core for all.
+    async planCores({ start, flyers, n, hours, must, zone, side, travel, together, exact }, stage, stale){
+      if(!G || gKey !== keyOf(start)){ stage('loadingArea'); await load(start, flyers, undefined, must, stage, stale, 'loadingArea', zone); }
+      if(stale()) return { skipped:true };
+      const hasZone = !!(zone && zone.length > 2);
+      let all = denseCores(hasZone ? Planner.zoneView(G, zone) : G, null);
+      for(const c of (side || [])){
+        stage('loadingSide'); const g = await sideGraph({ ...c, flyers:c.flyers || 3000 }, stage, stale); if(stale()) return { skipped:true };
+        const z = c.zone && c.zone.length > 2 ? c.zone : null;
+        all = all.concat(denseCores(z ? Planner.zoneView(g, z) : g, c.name));
+      }
+      if(!all.length) return { plan:{ routes:[], mailboxes:0, zone:[], cores:[] }, sug:n };
+      stage('calculating');
+      const K = together ? n : 1;
+      // a big core (a whole town) is cut into pieces of at most ~1.5 hours per person, each with its own parking point,
+      // so nobody walks a long way out from one car park; pieces of the same town stay neighbours in the tour
+      const MAXSPAN = Math.min(90, hours * 60 * 0.25), parkOf = (g, ids) => {
+        let la = 0, lo = 0, w = 0; for(const i of ids){ const e = g.edges[i]; la += (g.pts[e.a][0] + g.pts[e.b][0]) / 2 * e.len; lo += (g.pts[e.a][1] + g.pts[e.b][1]) / 2 * e.len; w += e.len; }
+        const ctr = [la / w, lo / w]; let best = -1, bd = Infinity; for(const i of ids) for(const v of [g.edges[i].a, g.edges[i].b]){ const d = segLen(ctr, g.pts[v]); if(d < bd){ bd = d; best = v; } }
+        return [g.pts[best][0], g.pts[best][1]];
+      };
+      const pieces = [];
+      for(const c of all){
+        const m = Math.ceil(Planner.routeMinutes(c.len * 1.35, c.mb) / K / MAXSPAN);
+        if(m <= 1){ pieces.push(c); continue; }
+        const pp = Planner.planFlyers(subGraph(c.g, c.ids), c.park, 1e9, m, { days:1, hoursPerDay:99 });
+        for(const r of pp.routes){ const ids = (r.part || []).map(i => c.ids[i]); if(!ids.length) continue; const mb = ids.reduce((a, i) => a + c.g.edges[i].mb, 0); if(mb < 10) continue;
+          pieces.push({ area:c.area, g:c.g, ids, mb, len:ids.reduce((a, i) => a + c.g.edges[i].len, 0), park:parkOf(c.g, ids) }); }
+        if(stale()) return { skipped:true };
+      }
+      all = pieces;
+      for(const c of all){
+        const p = Planner.planFlyers(subGraph(c.g, c.ids), c.park, 1e9, Math.max(1, Math.min(K, Math.floor(c.mb / 30))), { days:1, hoursPerDay:99 });
+        c.routes = p.routes.map(({ part, ...r }) => r); c.mb = p.mailboxes;
+        c.work = c.routes.reduce((a, r) => a + r.minutes, 0); c.span = Math.max(...c.routes.map(r => r.minutes));
+        c.score = c.mb / (c.work + CORE_PARK * c.routes.length);
+        if(stale()) return { skipped:true };
+      }
+      // best first until the flyers are reached (exact: also the next best ones until the number is covered)
+      all.sort((a, b) => b.score - a.score);
+      const chosen = []; let sum = 0;
+      for(const c of all){ if(sum >= flyers) break; if(!exact && sum >= 0.8 * flyers && c.score < 0.55 * sum / chosen.reduce((a, x) => a + x.work + CORE_PARK * x.routes.length, 0)) break; chosen.push(c); sum += c.mb; }
+      // names: "Speichersdorf 2" when a place has several cores; the main area keeps its streets' name
+      const cnt = {}; chosen.forEach(c => { const k = c.area || ''; cnt[k] = (cnt[k] || 0) + 1; }); const seen = {};
+      chosen.forEach(c => { const k = c.area || ''; seen[k] = (seen[k] || 0) + 1; c.name = (c.area || t0(c)) + (cnt[k] > 1 ? ' ' + seen[k] : ''); });
+      function t0(c){ const r = c.routes[0], st = (r.steps || []).find(x => x[2]); return st ? st[2] : 'Kern'; }
+      // tour by car from the start: nearest next, then untangled (2-opt)
+      let tour = [], left = chosen.slice(), at = start;
+      while(left.length){ let bi = 0; left.forEach((x, i) => { if(segLen(at, x.park) < segLen(at, left[bi].park)) bi = i; }); const x = left.splice(bi, 1)[0]; tour.push(x); at = x.park; }
+      const tl = tr => tr.reduce((a, x, i) => a + segLen(i ? tr[i - 1].park : start, x.park), 0);
+      for(let improved = true, guard = 0; improved && guard < 60; guard++){ improved = false;
+        for(let i = 0; i < tour.length - 1; i++) for(let j = i + 1; j < tour.length; j++){ const c2 = [...tour.slice(0, i), ...tour.slice(i, j + 1).reverse(), ...tour.slice(j + 1)]; if(tl(c2) < tl(tour) - 1){ tour = c2; improved = true; } } }
+      let mat = null; const mPts = [start, ...tour.map(x => x.park)];
+      if(travel !== 'bus' && mPts.length <= 50){ stage('loadingSide'); mat = await roadMatrix(mPts, travel === 'car' ? 'auto' : 'bicycle'); if(stale()) return { skipped:true }; }
+      const ride = (a, b) => { if(travel === 'bus') return TRAVEL_MIN; const i = mPts.findIndex(q => q === a || (q[0] === a[0] && q[1] === a[1])), j = mPts.findIndex(q => q === b || (q[0] === b[0] && q[1] === b[1])); const road = mat && i >= 0 && j >= 0 && mat[i][j] != null ? mat[i][j] : segLen(a, b) * 1.3; return 5 + road / SPEED[travel === 'car' ? 'car' : 'bike']; };
+      let routes;
+      if(together){
+        // the car leaves a core when the slowest has finished; a new day starts before the core that does not fit any more
+        const breaks = new Set(); let tday = 0;
+        tour.forEach((c, k) => { const add = (k ? ride(tour[k - 1].park, c.park) : 0) + c.span; if(k && tday + add > hours * 60 + 20){ breaks.add(k); tday = c.span; } else tday += add; });
+        routes = Array.from({ length:n }, (_, w) => buildLine(tour.filter(c => c.routes[w]).map(c => ({ r:c.routes[w], name:c.name })), hours, (a, b) => ride(a, b), new Set([...breaks].map(k => tour.slice(0, k).filter(c => c.routes[w]).length)))).map((r, i) => ({ idx:i, ...r }));
+        // a small core done by one person only: the other waits – the days still end at the same core for everybody
+      }else{
+        const vill = []; { let prev = start; tour.forEach(x => { vill.push({ min:x.work + ride(prev, x.park), x }); prev = x.park; }); }
+        const P2 = [0]; vill.forEach(v => P2.push(P2[P2.length - 1] + v.min)); const parts = []; let from = 0;
+        for(let w = 0; w < n; w++){ const goal = P2[P2.length - 1] * (w + 1) / n; let to = from; while(to < vill.length && (w === n - 1 || P2[to + 1] - vill[to].min / 2 <= goal)) to++; parts.push(vill.slice(from, to)); from = to; }
+        routes = parts.filter(p => p.length).map((p, i) => ({ idx:i, ...buildLine(p.map(v => ({ r:v.x.routes[0], name:v.x.name })), hours, (a, b) => ride(a, b)) }));
+      }
+      const plan = { routes, mailboxes:Math.round(sum), zone:[], cores:tour.map(c => ({ name:c.name, mb:Math.round(c.mb), c:c.park, min:Math.round(c.span) })), road_km:!!mat, side_info:[], side_failed:[], must_mb:0, must_info:[] };
+      plan.capacity = Planner.capacity(routes, flyers);
+      if(!exact && sum < flyers) plan.eco = { asked:flyers, used:Math.round(sum) };
+      return { plan, sug:n, street_m:Math.round(chosen.reduce((a, c) => a + c.len, 0)) };
     },
     async planSide({ start, flyers, n, days, hours, must, zone, side, bike, travel, eco, mainAll, mainShare }, stage, stale){
 
