@@ -1385,6 +1385,9 @@ async function viewTask(id){
   A.curTask = id;
   const [{ data:plans }, { data:routes }] = await Promise.all([sb.from('task_plans').select('*').eq('task_id', id).order('idx'), sb.from('routes').select('*').eq('task_id', id)]);
   const walked = (routes || []).reduce((s, r) => s + r.distance_m, 0);
+  // mailboxes and distance of the whole order = all its routes (joined orders: every place, not only the first one)
+  const livePl = (plans || []).filter(p => p.status !== 'declined');
+  const estMb = livePl.length ? livePl.reduce((s, p) => s + (p.mailboxes || 0), 0) : tk.est_mailboxes, routeM = livePl.length ? livePl.reduce((s, p) => s + (p.length_m || 0), 0) : tk.route_m;
   const invite = w => t('invite', { name:w.name, title:tk.title, date:tk.work_date ? ', ' + fmtDay(tk.work_date) : '' });
   shell('tasks', `${topbar(tk.title, true)}
     <div class="pad">
@@ -1392,8 +1395,8 @@ async function viewTask(id){
       <div class="info">
         <div><span>${esc(t('place'))}</span><b>${esc([tk.district, tk.city_name].filter(Boolean).join(', ') || '—')}</b></div>
         <div><span>${esc(t('date'))}</span><b>${esc(fmtDay(tk.work_date))}</b></div>
-        ${tk.flyers ? `<div><span>${esc(t('flyers'))}</span><b>${esc(fmtN(tk.flyers))} · ${esc(t('mbApprox', { n:fmtN(tk.est_mailboxes || 0) }))}</b></div>` : ''}
-        ${tk.route_m ? `<div><span>${esc(t('dist2'))}</span><b>${esc(fmtDist(tk.route_m))}</b></div>` : ''}
+        ${tk.flyers ? `<div><span>${esc(t('flyers'))}</span><b>${esc(fmtN(tk.flyers))} · ${esc(t('mbApprox', { n:fmtN(estMb || 0) }))}</b></div>` : ''}
+        ${routeM ? `<div><span>${esc(t('dist2'))}</span><b>${esc(fmtDist(routeM))}</b></div>` : ''}
         ${tk.quota_m30 ? `<div><span>${esc(t('quotaInfo'))}</span><b>${fmtN(tk.quota_m30)} m / 30 ${esc(t('min'))}</b></div>` : ''}
         ${(tk.travel && tk.travel !== 'bus') || tk.bike ? `<div><span>${esc(t('travelLbl'))}</span><b>${esc(t('travel_' + (tk.travel || 'bike')))}</b></div>` : ''}
         ${(tk.side_towns || []).length ? `<div><span>${esc(t('sideTitle'))}</span><b>${esc(tk.side_towns.map(x => x.name + ' (' + fmtN(x.flyers) + ')').join(', '))}</b></div>` : ''}
