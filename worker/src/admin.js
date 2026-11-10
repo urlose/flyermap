@@ -1419,7 +1419,11 @@ async function viewTask(id){
       ${(() => { const by = {}; (plans || []).forEach(p => { if(p.worker_id) (by[p.worker_id] = by[p.worker_id] || []).push(p); });
         return Object.entries(by).filter(([, ps]) => ps.length > 1).map(([wid, ps]) => { const w = wById(wid);
           return `<div class="hint" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="grow">${esc(t('mergeHint', { n:w ? w.name : '?', k:ps.length }))}</span><button class="btn primary small" data-merge="${wid}">${ICONS.route}${esc(t('mergeBtn'))}</button></div>`; }).join(''); })()}
-      ${(plans || []).length ? plans.map(p => { const w = wById(p.worker_id); return `<div class="route-row"><span class="swatch" style="background:${esc(p.color || '#2563EB')}"></span>
+      ${(plans || []).length ? (() => {
+        // routes being walked right now come first (newest start on top), the rest keeps the route order
+        const liveAt = p => Math.max(0, ...(routes || []).filter(r => r.plan_id === p.id && !r.ended_at).map(r => +new Date(r.started_at)));
+        return plans.slice().sort((a, b) => (liveAt(b) > 0) - (liveAt(a) > 0) || liveAt(b) - liveAt(a) || a.idx - b.idx);
+      })().map(p => { const w = wById(p.worker_id); return `<div class="route-row"><span class="swatch" style="background:${esc(p.color || '#2563EB')}"></span>
         <div class="grow"><b>${esc(t('planRoute', { n:p.idx + 1 }))} <span class="muted" id="pp${p.idx}"></span></b>
         <span>${esc(t('routeLine', { km:fmtDist(p.length_m), h:fmtHm(p.minutes || 0), mb:fmtN(p.mailboxes || 0) }))}${(() => { const fl = (p.boxes || []).reduce((a, b) => a + (+b[2] || 0), 0); return fl && fl !== (p.mailboxes || 0) ? ' · <b>' + esc(t('routeFlyers', { n:fmtN(fl) })) + '</b>' : ''; })()}</span>
         ${dayLines(p.days, p.color, p.idx)}<span class="small" id="prest${p.idx}" style="font-weight:600"></span><button class="link small hidden" id="pred${p.idx}" data-reday="${p.id}" style="align-self:flex-start">${ICONS.calendar}${esc(t('redayBtn'))}</button>
