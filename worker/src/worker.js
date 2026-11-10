@@ -19,6 +19,17 @@ const GREEN_C = () => css('--color-map-route-completed') || '#16A34A';   // done
 export const W = { gps:{ state:'wait', acc:null, at:0 }, canAdmin:false, token:null, me:null, route:null, queue:[], track:[], busy:false, watcherId:null, focus:null, tracker:null, counter:null, prev:null, sim:null, flushFailed:false, hooks:{} };
 const tasks = () => (W.me && W.me.tasks) || [];
 const openRoutes = () => (W.me && W.me.open) || [];   // routes of the company nobody has yet: can be taken
+// joined orders: one person has several routes (zones) in one order – all of them are shown, the person picks the order
+const multiZone = tk => !!(tk && Array.isArray(tk.plans) && tk.plans.length > 1);
+const allPlans = () => tasks().flatMap(x => multiZone(x) ? x.plans : x.plan ? [x.plan] : []);
+const zoneTask = (base, p) => ({ ...base, plans:null, others:null, plan:p, title:p.place || base.title, district:p.place ? null : base.district, city_name:p.place || base.city_name, _zone:true, _base:base });
+// the summary of all zones of an order (list card): status "new" while one zone still waits for an answer
+function zoneSum(tk){
+  if(!multiZone(tk)) return tk.plan;
+  const ps = tk.plans, sum = k => ps.reduce((a, p) => a + (+p[k] || 0), 0);
+  return { length_m:sum('length_m'), minutes:sum('minutes'), mailboxes:sum('mailboxes'), work_dates:[...new Set(ps.flatMap(p => p.work_dates || []))],
+    status:ps.some(p => p.status === 'offered') ? 'offered' : ps.every(p => p.status === 'done') ? 'done' : 'accepted' };
+}
 
 /* ================= sync ================= */
 // this phone's own id: a session belongs to one phone, another phone of the same account takes it over only on purpose
@@ -84,13 +95,13 @@ export async function loadMe(){
 let preloading = null;
 function preloadMaps(){
   if(preloading) return;
-  const ps = tasks().map(x => x.plan).filter(p => p && p.status === 'accepted' && p.path && p.path.length > 1);
+  const ps = allPlans().filter(p => p && p.status === 'accepted' && p.path && p.path.length > 1);
   preloading = (async () => { for(const p of ps){ try{ await prefetchRoute(p.path, p.id + ':' + p.path.length); }catch{} } })().finally(() => { preloading = null; });
 }
 // pieces marked "not needed" (by a colleague on the same route or by the admin) reach a running route too
 function syncSkips(){
   const pl = W.route && !W.route.endedAt && W.route.task && W.route.task.plan; if(!pl) return;
-  const fresh = (((W.me && W.me.tasks) || []).find(x => x.plan && x.plan.id === pl.id) || {}).plan;
+  const fresh = allPlans().find(p => p.id === pl.id);
   if(!fresh || !Array.isArray(fresh.skipped) || fresh.skipped.length === (pl.skipped || []).length) return;
   pl.skipped = fresh.skipped; saveRoute(); W.tracker = null;
   if(document.getElementById('navSkip') || document.getElementById('nav')) viewTracking(); else ensureTracker();
@@ -216,6 +227,7 @@ async function startHereOrAsk(task, plan, prev){
 }
 export async function beginRoute(task){
   if(!await locationNote(W.me, async v => { await rpc('ack_privacy', { p_token:W.token, p_version:v }); if(W.me){ W.me.privacy_version = v; await store.set('me', W.me); } })) return;
+  if(task && (task._base || task.plans || task.others || task._zone)){ const { _base, _zone, plans, others, ...rest } = task; task = rest; }   // a zone of a joined order: only this zone goes along (the route is kept on the phone)
   const plan = task && task.plan;
   // start at the start point, or right where an open part of an unfinished day is (no walk back to the start)
   let prev = null; if(plan && plan.id){ try{ prev = await rpc('plan_progress', { p_token:W.token, p_plan_id:plan.id }); }catch{} }
@@ -325,17 +337,17 @@ const dayList = pl => (pl && pl.work_dates || []).map(d => String(d).slice(0, 10
 const stClass = p => !p ? '' : p.status === 'open' ? 'info' : p.status === 'accepted' ? '' : p.status === 'declined' ? 'bad' : p.status === 'done' ? 'ok' : 'warn';
 const accClass = p => ({ '':'acc-info', bad:'acc-bad', ok:'acc-ok', warn:'acc-warn' }[stClass(p)] || 'acc-neutral');
 const stLabel = p => !p ? '' : p.status === 'open' ? t('stOpen') : p.status === 'accepted' ? t('stAccepted') : p.status === 'declined' ? t('stDeclined') : p.status === 'done' ? t('stDone') : t('stNew');
-function taskDates(tk){ const d = dayList(tk.plan); return d.length ? d.map(fmtDay).join(', ') : fmtDay(tk.work_date); }
+function taskDates(tk){ const d = dayList(zoneSum(tk)); return d.length ? d.map(fmtDay).join(', ') : fmtDay(tk.work_date); }
 function viewTasks(){
   const list = tasks(), open = openRoutes(), unread = ((W.me && W.me.inbox) || []).filter(n => !n.read).length;
-  const nNew = list.filter(x => x.plan && x.plan.status === 'offered').length, nAcc = list.filter(x => x.plan && x.plan.status === 'accepted').length;
+  const nNew = list.filter(x => x.plan && zoneSum(x).status === 'offered').length, nAcc = list.filter(x => x.plan && zoneSum(x).status === 'accepted').length;
   shell('tasks', `${topbar(t('myTasks'), null, `<button class="icon-btn" id="rf" aria-label="${esc(t('refresh'))}">${ICONS.refresh}</button><button class="icon-btn" id="bell" aria-label="${esc(t('inbox'))}" style="position:relative">${ICONS.bell}${unread ? `<span class="badge">${unread}</span>` : ''}</button>`)}
     <div class="pad">
       ${list.length ? `<div class="kpis two"><div class="kpi k-warn"><b>${nNew}</b><span>${esc(t('kNew'))}</span></div><div class="kpi k-info"><b>${nAcc}</b><span>${esc(t('stAccepted'))}</span></div></div>` : ''}
-      ${list.length ? list.map((tk, i) => `<button class="card acc ${accClass(tk.plan)} task-card" data-i="${i}">
+      ${list.length ? list.map((tk, i) => { const pv = zoneSum(tk); return `<button class="card acc ${accClass(pv)} task-card" data-i="${i}">
         <div class="tc-main"><b>${esc(tk.title)}</b>
-        <div class="tc-meta"><i>${ICONS.calendar}${esc(taskDates(tk))}</i>${tk.district || tk.city_name ? `<i>${ICONS.pin}${esc([tk.district, tk.city_name].filter(Boolean).join(', '))}</i>` : ''}${tk.plan ? `<i>${ICONS.route}${esc(fmtDist(tk.plan.length_m))} · ${esc(fmtHm(tk.plan.minutes || 0))} ${esc(t('h'))}</i><i>${ICONS.mail}${esc(fmtN(tk.plan.mailboxes || 0))}</i>` : ''}</div>
-        ${tk.plan ? statusPill(stClass(tk.plan) || 'info', stLabel(tk.plan)) : ''}</div>${ICONS.chevron}</button>`).join('')
+        <div class="tc-meta"><i>${ICONS.calendar}${esc(taskDates(tk))}</i>${multiZone(tk) ? `<i>${ICONS.map}${esc(t('zonesN', { n:tk.plans.length }))}</i>` : tk.district || tk.city_name ? `<i>${ICONS.pin}${esc([tk.district, tk.city_name].filter(Boolean).join(', '))}</i>` : ''}${pv ? `<i>${ICONS.route}${esc(fmtDist(pv.length_m))} · ${esc(fmtHm(pv.minutes || 0))} ${esc(t('h'))}</i><i>${ICONS.mail}${esc(fmtN(pv.mailboxes || 0))}</i>` : ''}</div>
+        ${pv ? statusPill(stClass(pv) || 'info', stLabel(pv)) : ''}</div>${ICONS.chevron}</button>`; }).join('')
         : emptyState(t('noTasks'), 'flag')}
       ${open.length ? `<h2 class="sec">${esc(t('openRoutes'))} <span class="muted small">(${open.length})</span></h2><p class="small muted" style="margin-top:-6px">${esc(t('openHint'))}</p>
         ${open.map((tk, i) => `<button class="card acc acc-info task-card open-card" data-o="${i}">
@@ -381,7 +393,15 @@ function drawTaskBase(m, task, dayIdx, dim){
   return { b, planLine };
 }
 
+// after a change: the same screen again with the fresh data (a zone of a joined order stays that zone)
+function reopenTask(task){
+  const fresh = tasks().find(x => x.id === task.id);
+  if(task._zone && fresh && multiZone(fresh)){ const p = fresh.plans.find(q => q.id === task.plan.id); return p ? viewTaskDetail(zoneTask(fresh, p)) : viewZones(fresh); }
+  viewTaskDetail(fresh || task);
+}
 function viewTaskDetail(task){
+  if(multiZone(task) && !task._zone) return viewZones(task);
+  if(task._zone) W.focus = task;
   const me = W.me || {}, plan = task.plan, hrs = task.work_hours || 7;
   const need = plan ? (plan.days_left > 0 ? plan.days_left : plan.days && plan.days.length > 1 ? plan.days.length : Math.max(1, Math.ceil((plan.minutes || 0) / 60 / hrs))) : 1;   // the planned days decide (7,3 h days must not ask for a third date)
   const today = new Date().toISOString().slice(0, 10), addDays = (d, n) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
@@ -390,8 +410,9 @@ function viewTaskDetail(task){
   shell('tasks', `${topbar(st === 'open' ? t('openRoute') : t('yourTask'), true)}
     <div class="pad">
       <div class="sec-row" style="margin-top:4px"><h2>${esc(task.title)}</h2>${plan ? statusPill(stClass(plan) || 'info', stLabel(plan)) : ''}</div>
+      ${task._zone ? `<p class="small muted" style="margin:-4px 0 10px">${esc(t('zoneOf', { n:task._base.plans.findIndex(p => p.id === plan.id) + 1, k:task._base.plans.length }))} · ${esc(task._base.title)}</p>` : ''}
       <div class="info">
-        <div><span>${esc(t('route'))}</span><b>${esc(task.title)}</b></div>
+        <div><span>${esc(t('route'))}</span><b>${esc(task._zone ? task._base.title : task.title)}</b></div>
         <div><span>${esc(t('place'))}</span><b>${esc([task.district, task.city_name].filter(Boolean).join(', ') || '—')}</b></div>
         <div><span>${esc(t('dates'))}</span><b>${esc(taskDates(task))}</b></div>
         ${plan ? `<div><span>${esc(t('mailboxes'))}</span><b>${esc(t('mbApprox', { n:fmtN(plan.mailboxes || 0) }))}</b></div>
@@ -415,10 +436,11 @@ function viewTaskDetail(task){
       ${(!plan || st === 'accepted') ? `<button class="btn primary big" id="go">${ICONS.play}<span>${esc(t('startRoute'))}</span></button>` : ''}
       <div class="rr-btns" id="dirRow"><a class="btn ghost" id="dirG" target="_blank" rel="noopener" href="${esc((task.bike ? rideLink(task) : gTransit)(task.start_lat, task.start_lng))}">${ICONS.pin}${esc(t(task.bike ? rideTxt(task) : 'directions'))}</a><a class="btn ghost" id="dirA" target="_blank" rel="noopener" href="${esc(aTransit(task.start_lat, task.start_lng))}">${ICONS.map}${esc(t('appleMaps'))}</a></div>
     </div>`); setLoc('task/' + task.id);
-  bindBack(() => workerTab('tasks'));
+  bindBack(() => task._zone ? viewZones(tasks().find(x => x.id === task.id) || task._base) : workerTab('tasks'));
   if(st === 'open'){ const p0 = document.querySelector('.sec-row'); if(p0) p0.insertAdjacentHTML('afterend', `<p class="small muted" style="margin:-4px 0 10px">${esc(t('planRoute', { n:plan.idx + 1 }))}</p>`); }
   const m = makeMap($('#tdMap'), [task.start_lat, task.start_lng], 14, { dragging:true });
   const { b, planLine } = drawTaskBase(m, task); fit(m, b, 16);
+  if(task._zone) (task._base.others || []).filter(o => o.place && o.place === plan.place && o.path && o.path.length > 1).forEach(o => L.polyline(Planner.pathRuns(o.path), { color:'#64748B', weight:3, opacity:.45, dashArray:'4 6', interactive:false }).addTo(m));   // the colleague's part of the same place, faded
   if(st !== 'open') drawCoverage(m, task, planLine ? [planLine] : []);
   if($('#go')) $('#go').onclick = () => beginRoute(task);
   if($('#tdBig')) $('#tdBig').onclick = () => bigRouteMap(task, null);
@@ -442,7 +464,7 @@ function viewTaskDetail(task){
     const dates = [...document.querySelectorAll('[data-cday]')].map(i => i.value).filter(Boolean);
     if(dates.length < need || new Set(dates).size !== dates.length){ $('#chgErr').textContent = t('e_date_required'); return; }
     $('#chgSave').disabled = true;
-    try{ await rpc('respond_plan', { p_token:W.token, p_plan_id:plan.id, p_accept:true, p_dates:dates.sort() }); await loadMe(); toast(t('saved')); viewTaskDetail(tasks().find(x => x.id === task.id) || task); }
+    try{ await rpc('respond_plan', { p_token:W.token, p_plan_id:plan.id, p_accept:true, p_dates:dates.sort() }); await loadMe(); toast(t('saved')); reopenTask(task); }
     catch(e){ $('#chgErr').textContent = errText(e); $('#chgSave').disabled = false; }
   };
   if($('#acc')) $('#acc').onclick = async () => {
@@ -450,7 +472,7 @@ function viewTaskDetail(task){
     if(dates.length < need || new Set(dates).size !== dates.length){ $('#accErr').textContent = t('e_date_required'); return; }
     if(!await commitDialog(rpc, W.token)) return;
     $('#acc').disabled = true;
-    try{ await rpc('respond_plan', { p_token:W.token, p_plan_id:plan.id, p_accept:true, p_dates:dates.sort() }); await loadMe(); toast(t('stAccepted')); viewTaskDetail(tasks().find(x => x.id === task.id) || task); }
+    try{ await rpc('respond_plan', { p_token:W.token, p_plan_id:plan.id, p_accept:true, p_dates:dates.sort() }); await loadMe(); toast(t('stAccepted')); reopenTask(task); }
     catch(e){ $('#accErr').textContent = errText(e); $('#acc').disabled = false; }
   };
   if($('#claim')) $('#claim').onclick = async () => {
@@ -469,6 +491,97 @@ function viewTaskDetail(task){
   if($('#dec')) $('#dec').onclick = async () => {
     if(!await confirmBox(t('declineQ'), t('declineText'), t('decline'), true)) return;
     try{ await rpc('respond_plan', { p_token:W.token, p_plan_id:plan.id, p_accept:false, p_dates:[] }); await loadMe(); workerTab('tasks'); }catch(e){ $('#accErr').textContent = errText(e); }
+  };
+}
+
+/* ================= joined orders: all zones ================= */
+const ZONE_COLORS = ['#2563EB', '#EA580C', '#16A34A', '#9333EA', '#DC2626', '#0891B2', '#CA8A04', '#DB2777', '#4F46E5', '#65A30D', '#0D9488', '#B45309'];
+const zoneOrders = {};   // task id -> plan ids in the order the person wants (kept on the phone)
+function zonesOrdered(tk){
+  const ps = tk.plans.slice(), saved = zoneOrders[tk.id];
+  const first = p => dayList(p)[0] || '9999';
+  ps.sort((a, b) => first(a) < first(b) ? -1 : first(a) > first(b) ? 1 : a.idx - b.idx);
+  if(saved){ const pos = id => { const i = saved.indexOf(id); return i < 0 ? 1e6 : i; }; ps.sort((a, b) => pos(a.id) - pos(b.id)); }
+  return ps;
+}
+// the zone to go on with: the accepted one with the nearest working day from today on, else the first accepted one in the own order
+function nextZone(tk){
+  const today = new Date().toISOString().slice(0, 10), ps = zonesOrdered(tk).filter(p => p.status === 'accepted');
+  const up = ps.filter(p => dayList(p).some(d => d >= today)).sort((a, b) => (dayList(a).find(d => d >= today) < dayList(b).find(d => d >= today) ? -1 : 1));
+  const p = up[0] || ps[0]; return p ? zoneTask(tk, p) : null;
+}
+async function viewZones(task){
+  if(!(task.id in zoneOrders)){ try{ zoneOrders[task.id] = await store.get('zo:' + task.id) || null; }catch{ zoneOrders[task.id] = null; } }
+  const ps = zonesOrdered(task), sum = zoneSum(task), others = task.others || [], hrs = task.work_hours || 7;
+  const today = new Date().toISOString().slice(0, 10), tomorrow = (() => { const x = new Date(); x.setDate(x.getDate() + 1); return x.toISOString().slice(0, 10); })();
+  const nOffered = ps.filter(p => p.status === 'offered').length, col = k => ZONE_COLORS[k % ZONE_COLORS.length];
+  shell('tasks', `${topbar(t('zonesTitle'), true)}
+    <div class="pad">
+      <div class="sec-row" style="margin-top:4px"><h2>${esc(task.title)}</h2>${statusPill(stClass(sum) || 'info', stLabel(sum))}</div>
+      <div class="kpis"><div class="kpi k-info"><b>${ps.length}</b><span>${esc(t('zonesMine'))}</span></div><div class="kpi"><b>${esc(fmtN(sum.mailboxes))}</b><span>${esc(t('mailboxes'))}</span></div><div class="kpi"><b>${esc(fmtHm(sum.minutes))}</b><span>${esc(t('h'))}</span></div></div>
+      <p class="small muted" style="margin-top:-4px">${esc(t('zonesHint'))}</p>
+      <div class="mapbox zones-map" id="zMap"></div>
+      <div class="zones-legend small">${others.length ? `<span><i class="zl-line"></i>${esc(t('zonesMine'))}</span><span><i class="zl-other"></i>${esc(t('zonesOther'))}${[...new Set(others.map(o => o.who).filter(Boolean))].length ? ': ' + esc([...new Set(others.map(o => o.who).filter(Boolean))].join(', ')) : ''}</span>` : ''}</div>
+      <button class="btn ghost small" id="zBig" style="margin-top:4px">${ICONS.expand}${esc(t('zonesBig'))}</button>
+      <div class="zone-list">${ps.map((p, k) => `<div class="zone-row">
+        <span class="zn" style="background:${col(k)}">${k + 1}</span>
+        <button class="zr-main" data-open="${p.id}"><b>${esc(p.place || t('planRoute', { n:p.idx + 1 }))}</b>
+          <span class="zr-meta">${esc(fmtDist(p.length_m))} · ${esc(fmtHm(p.minutes || 0))} ${esc(t('h'))} · ${ICONS.mail}${esc(fmtN(p.mailboxes || 0))}</span>
+          <span class="zr-st">${statusPill(stClass(p) || 'info', stLabel(p))}${dayList(p).length ? ` <span class="muted">${esc(dayList(p).map(fmtDay).join(', '))}</span>` : ''} <i id="zp${p.id}"></i></span></button>
+        <div class="zr-mv"><button class="icon-btn" data-up="${k}" aria-label="${esc(t('zoneUp'))}" ${k ? '' : 'disabled'}>↑</button><button class="icon-btn" data-down="${k}" aria-label="${esc(t('zoneDown'))}" ${k < ps.length - 1 ? '' : 'disabled'}>↓</button></div>
+      </div>`).join('')}</div>
+      ${nOffered ? `<h2 class="sec">${esc(t('zonesAll'))}</h2><p class="small muted" style="margin-top:-6px">${esc(t('zonesAllHint', { h:String(hrs).replace('.', ',') }))}</p>
+        <div class="dates"><label><span>${esc(t('zonesFrom'))}</span><input class="in" type="date" id="zFrom" min="${today}" value="${String(task.work_date || '').slice(0, 10) >= today ? String(task.work_date).slice(0, 10) : tomorrow}"></label></div>
+        <button class="btn primary" id="zAcc">${esc(t('zonesAll'))}</button><div class="err" id="zErr"></div>` : ''}
+    </div>`); setLoc('task/' + task.id);
+  bindBack(() => workerTab('tasks'));
+  const open = id => { const p = task.plans.find(q => q.id === id); if(p) viewTaskDetail(zoneTask(task, p)); };
+  document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => open(b.dataset.open));
+  const move = async (k, d) => { const ids = ps.map(p => p.id); [ids[k], ids[k + d]] = [ids[k + d], ids[k]]; zoneOrders[task.id] = ids; try{ await store.set('zo:' + task.id, ids); }catch{} const y = scrollY; await viewZones(task); scrollTo(0, y); };
+  document.querySelectorAll('[data-up]').forEach(b => b.onclick = () => move(+b.dataset.up, -1));
+  document.querySelectorAll('[data-down]').forEach(b => b.onclick = () => move(+b.dataset.down, 1));
+  // the map: the colleagues' routes faded below, the own zones in their colour with the number of the own order
+  const m = makeMap($('#zMap'), [task.start_lat, task.start_lng], 12, { dragging:true }), b = L.latLngBounds([]);
+  others.forEach(o => { if(o.path && o.path.length > 1){ const l = L.polyline(Planner.pathRuns(o.path), { color:'#64748B', weight:3, opacity:.45, dashArray:'4 6', lineJoin:'round' }).addTo(m); l.bindTooltip(esc([o.who, o.place].filter(Boolean).join(' · ')), { sticky:true }); b.extend(l.getBounds()); } });
+  ps.forEach((p, k) => {
+    if(!p.path || p.path.length < 2) return;
+    const l = L.polyline(Planner.pathRuns(p.path), { color:col(k), weight:4, opacity:.9, lineJoin:'round' }).addTo(m); b.extend(l.getBounds());
+    l.bindTooltip(esc((k + 1) + ' · ' + (p.place || '')), { sticky:true }); l.on('click', () => open(p.id));
+    const c = l.getBounds().getCenter();
+    L.marker(c, { icon:L.divIcon({ className:'zone-pin', html:`<span style="background:${col(k)}">${k + 1}</span>`, iconSize:[26, 26], iconAnchor:[13, 13] }), keyboard:false }).on('click', () => open(p.id)).addTo(m);
+  });
+  if(b.isValid()) fit(m, b, 30);
+  $('#zBig').onclick = () => openMapView({
+    title:task.title, lines:[t('zonesN', { n:ps.length })],
+    stats:[[t('routeLen'), fmtDist(sum.length_m)], [t('duration'), fmtHm(sum.minutes || 0) + ' ' + t('h')], [t('mailboxes'), fmtN(sum.mailboxes || 0)]],
+    legend:ps.map((p, k) => ({ color:col(k), label:(k + 1) + ' · ' + (p.place || ''), sub:fmtDist(p.length_m) + ' · ' + fmtN(p.mailboxes || 0) })),
+    layers:[...(others.length ? [{ key:'oth', label:t('zonesOther'), add:g => others.forEach(o => o.path && o.path.length > 1 && L.polyline(Planner.pathRuns(o.path), { color:'#64748B', weight:3, opacity:.5, dashArray:'4 6' }).addTo(g)) }] : []),
+      ...ps.map((p, k) => ({ key:'z' + k, label:(k + 1) + ' · ' + (p.place || ''), add:g => { if(p.path && p.path.length > 1){ L.polyline(Planner.pathRuns(p.path), { color:'#fff', weight:8, opacity:.9 }).addTo(g); L.polyline(Planner.pathRuns(p.path), { color:col(k), weight:5, opacity:.95 }).addTo(g); } } }))],
+    back:() => viewZones(tasks().find(x => x.id === task.id) || task),
+  });
+  // how far every accepted zone is already walked (by anybody), one after the other
+  (async () => { for(const p of ps){ if(p.status !== 'accepted' || !p.path || p.path.length < 2) continue; try{
+    const prev = await rpc('plan_progress', { p_token:W.token, p_plan_id:p.id }); const el = document.getElementById('zp' + p.id); if(!el) return;
+    const tr = addSkips(Planner.makeTracker(p.path), p); tr.addTrack(prev || []); const pc = tr.pct(); if(pc) el.innerHTML = pc >= 95 ? statusPill('ok', t('stDone')) : '· ' + pc + '%';
+  }catch{} } })();
+  // accept all waiting zones at once: the days follow the own order, filled up to the working hours of a day
+  if($('#zAcc')) $('#zAcc').onclick = async () => {
+    const from = $('#zFrom').value; if(!from){ $('#zErr').textContent = t('e_date_required'); return; }
+    if(!await commitDialog(rpc, W.token)) return;
+    const cap = hrs * 60, add = (d, n) => { const x = new Date(d + 'T12:00:00'); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
+    let day = 0, used = 0; const todo = [];
+    for(const p of ps){
+      if(p.status !== 'offered') continue;
+      const mins = p.minutes || 0, nd = p.days && p.days.length > 1 ? p.days.length : Math.max(1, Math.ceil(mins / 60 / hrs));
+      if(used > 0 && (nd > 1 || used + mins > cap * 1.1)){ day++; used = 0; }
+      todo.push([p, Array.from({ length:nd }, (_, i) => add(from, day + i))]);
+      if(nd > 1){ day += nd; used = 0; } else used += mins;
+    }
+    $('#zAcc').disabled = true; $('#zErr').textContent = '';
+    let ok = 0;
+    for(const [p, dates] of todo){ try{ await rpc('respond_plan', { p_token:W.token, p_plan_id:p.id, p_accept:true, p_dates:dates }); ok++; }catch(e){ $('#zErr').textContent = errText(e); } }
+    await loadMe(); if(ok) toast(t('zonesAccepted', { n:ok }));
+    viewZones(tasks().find(x => x.id === task.id) || task);
   };
 }
 
@@ -495,7 +608,8 @@ function bigRouteMap(task, dayIdx){
 
 function viewMap(){
   if(W.route && !W.route.endedAt) return viewTracking();
-  const task = W.focus || tasks().find(x => x.plan && x.plan.status === 'accepted') || tasks().find(x => !x.plan) || null;
+  const acc = tasks().find(x => (multiZone(x) ? x.plans : x.plan ? [x.plan] : []).some(p => p.status === 'accepted'));
+  const task = (W.focus && tasks().some(x => x.id === W.focus.id) ? W.focus : null) || (acc && multiZone(acc) ? nextZone(acc) : acc) || tasks().find(x => !x.plan) || null;
   shell('map', `<div id="fullMap" class="fullmap"></div>
     <div class="float-card">${task ? `
       <div class="fc-head"><div><b>${esc(task.title)}</b><span>${esc([fmtDay(task.work_date), planInfo(task)].join(' · '))}</span></div></div>
