@@ -1407,6 +1407,12 @@ async function viewTask(id){
       <div class="mapbox" id="tMap"></div>
       <div class="rinfo-row"><span>${statusPill(...taskState(tk))}</span><button class="btn ghost small" id="tBig">${ICONS.expand}${esc(t('rvBig'))}</button></div>
       <h2 class="sec">${esc(t('routesOf'))}</h2>
+      ${(() => { // joined orders: every colour appears several times – one person for all routes of a colour
+        const cols = []; (plans || []).forEach(p => { if(p.color && !cols.includes(p.color)) cols.push(p.color); });
+        if(!plans || cols.length === plans.length) return '';
+        return `<div class="card colorassign"><b>${esc(t('byColorTitle'))}</b><p class="small muted" style="margin:2px 0 8px">${esc(t('byColorHint'))}</p>${cols.map(c => {
+          const ps = plans.filter(p => p.color === c), ws = [...new Set(ps.map(p => p.worker_id || ''))], cur = ws.length === 1 ? ws[0] : null;
+          return `<div class="ca-row"><span class="ca-dot" style="background:${c}"></span><span class="small">${esc(t('byColorN', { n:ps.length }))}</span><select class="in small" data-color="${c}">${cur == null ? `<option value="__" selected>${esc(t('byColorMixed'))}</option>` : ''}${workerOptions(tk.start_lat, tk.start_lng, cur)}</select></div>`; }).join('')}</div>`; })()}
       ${(() => { const by = {}; (plans || []).forEach(p => { if(p.worker_id) (by[p.worker_id] = by[p.worker_id] || []).push(p); });
         return Object.entries(by).filter(([, ps]) => ps.length > 1).map(([wid, ps]) => { const w = wById(wid);
           return `<div class="hint" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><span class="grow">${esc(t('mergeHint', { n:w ? w.name : '?', k:ps.length }))}</span><button class="btn primary small" data-merge="${wid}">${ICONS.route}${esc(t('mergeBtn'))}</button></div>`; }).join(''); })()}
@@ -1437,20 +1443,29 @@ async function viewTask(id){
   L.marker([tk.start_lat, tk.start_lng], { icon:dot('pin-start', 24) }).addTo(m);
   liveWorkers(L.layerGroup().addTo(m), tk, plans, () => true);
   fit(m, b, 16);
-  document.querySelectorAll('[data-plan]').forEach(sel => sel.onchange = async () => {
-    const wid = sel.value || null, p = plans.find(x => x.id === sel.dataset.plan);
+  const assignPlan = async (p, wid) => {
     // a new worker takes over the rest of the route: progress stays with the plan
     // the successor only picks dates for the days that are not done yet
     let left = null; const tr = PLAN_TR[p.id];
     if(tr && p.days && p.days.length > 1){ try{ left = Math.max(1, dayProgress(p, tr).filter(x => x < 95).length); }catch{} }
     const { error } = await sb.from('task_plans').update({ worker_id:wid, status:'offered', work_dates:[], accepted_at:null, days_left:left }).eq('id', p.id);
-    if(error){ toast(error.message); return; }
+    if(error){ toast(error.message); return false; }
     // the previous worker no longer sees the order (his km, hours and tracks stay saved with the route)
     if(p.worker_id && p.worker_id !== wid && !plans.some(x => x.id !== p.id && x.worker_id === p.worker_id)) await sb.from('task_workers').delete().eq('task_id', id).eq('worker_id', p.worker_id);
     if(wid){
       await sb.from('task_workers').upsert({ task_id:id, worker_id:wid }, { onConflict:'task_id,worker_id', ignoreDuplicates:true });
       await notifyAssigned(tk, { ...p, worker_id:wid });
     }
+    p.worker_id = wid; return true;
+  };
+  document.querySelectorAll('[data-plan]').forEach(sel => sel.onchange = async () => {
+    const p = plans.find(x => x.id === sel.dataset.plan); if(!p) return;
+    if(await assignPlan(p, sel.value || null)){ await loadTasks(); toast(t('saved')); viewTask(id); }
+  });
+  // one person for all routes of a colour (orders that were joined)
+  document.querySelectorAll('[data-color]').forEach(sel => sel.onchange = async () => {
+    if(sel.value === '__') return; const wid = sel.value || null; sel.disabled = true;
+    for(const p of plans.filter(x => x.color === sel.dataset.color)) if((p.worker_id || null) !== wid && !await assignPlan(p, wid)) break;
     await loadTasks(); toast(t('saved')); viewTask(id);
   });
   // one worker on several routes of the order: the routes become one (days after each other, progress and sessions stay)

@@ -245,3 +245,5 @@ Object.assign(T.de, { coresSmall:'Die dichten Ortskerne haben zusammen nur ≈ {
 Object.assign(T.ru, { coresSmall:'В плотных центрах всего ≈ {mb} ящиков. Для большего числа флаеров добавьте ещё места.' });
 Object.assign(T.de, { firstBtn:'Hier beginnen', firstOn:'Tour beginnt hier', firstHint:'Die Tour startet in diesem Ort, danach geht es auf dem kürzesten Weg weiter' });
 Object.assign(T.ru, { firstBtn:'Начать здесь', firstOn:'Маршрут начинается здесь', firstHint:'Маршрут начинается в этом месте, дальше — кратчайшим путём' });
+Object.assign(T.de, { byColorTitle:'Nach Farbe einteilen', byColorHint:'Eine Person bekommt alle Routen dieser Farbe – in allen zusammengeführten Aufträgen.', byColorN:'{n} Routen', byColorMixed:'— verschieden —' });
+Object.assign(T.ru, { byColorTitle:'Назначить по цвету', byColorHint:'Один человек получает все маршруты этого цвета — во всех объединённых заказах.', byColorN:'{n} маршр.', byColorMixed:'— разные —' });
