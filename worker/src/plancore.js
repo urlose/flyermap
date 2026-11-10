@@ -126,9 +126,9 @@ export function createPlanService(cache){
       return info();
     },
     // plans the routes; loads a larger square first when the plan reaches the edge of what is loaded
-    async plan({ start, flyers, n, days, hours, must, zone, side, quota, bike, travel, split, exact, mainAll, cores, together }, stage, stale){
+    async plan({ start, flyers, n, days, hours, must, zone, side, quota, bike, travel, split, exact, mainAll, cores, together, first }, stage, stale){
       const eco = !exact && !mainAll;
-      if(cores) return this.planCores({ start, flyers, n, hours, must, zone, side, travel, together, exact }, stage, stale);
+      if(cores) return this.planCores({ start, flyers, n, hours, must, zone, side, travel, together, exact, first }, stage, stale);
       travel = travel === 'bike' || travel === 'car' ? travel : (bike ? 'bike' : 'bus'); bike = travel !== 'bus';
       Planner.setPace(quota);   // hours from the order's quota (metres per 30 minutes)
       side = (side || []).filter(c => c && (c.flyers > 0 || split === 'even'));   // even split: a place added without a number gets its share below
@@ -192,7 +192,7 @@ export function createPlanService(cache){
     // only the dense cores of the main area and of every place; cores are taken best first (mailboxes per hour incl. parking)
     // until the flyers are reached; one tour by car through all of them. together: everybody in one car – every core is shared
     // out among the workers, everybody visits the cores in the same order and the days end at the same core for all.
-    async planCores({ start, flyers, n, hours, must, zone, side, travel, together, exact }, stage, stale){
+    async planCores({ start, flyers, n, hours, must, zone, side, travel, together, exact, first }, stage, stale){
       if(!G || gKey !== keyOf(start)){ stage('loadingArea'); await load(start, flyers, undefined, must, stage, stale, 'loadingArea', zone); }
       if(stale()) return { skipped:true };
       const hasZone = !!(zone && zone.length > 2);
@@ -239,17 +239,27 @@ export function createPlanService(cache){
       // best first until the flyers are reached (exact: also the next best ones until the number is covered)
       all.sort((a, b) => (b.forced ? 1 : 0) - (a.forced ? 1 : 0) || b.score - a.score);
       const chosen = all.filter(c => c.forced); let sum = chosen.reduce((a, c) => a + c.mb, 0);
-      for(const c of all){ if(c.forced) continue; if(sum >= flyers) break; if(!exact && sum >= 0.8 * flyers && c.score < 0.55 * sum / chosen.reduce((a, x) => a + x.work + CORE_PARK * x.routes.length, 0)) break; chosen.push(c); sum += c.mb; }
+      // places that already carry a number of flyers (a saved order) get at most that many; the main town the rest
+      const capOf = {}; let capSum = 0;
+      for(const c of (side || [])) if(c.flyers > 0){ capOf[c.name] = c.flyers; capSum += c.flyers; }
+      if(capSum && capSum < flyers) capOf[''] = flyers - capSum;
+      const got = {}; chosen.forEach(c => { const k = c.area || ''; got[k] = (got[k] || 0) + c.mb; });
+      for(const c of all){ if(c.forced) continue; if(sum >= flyers) break;
+        const k = c.area || ''; if(capSum && capOf[k] != null && (got[k] || 0) + c.mb > capOf[k] * 1.1 + 30) continue;
+        got[k] = (got[k] || 0) + c.mb; if(!exact && sum >= 0.8 * flyers && c.score < 0.55 * sum / chosen.reduce((a, x) => a + x.work + CORE_PARK * x.routes.length, 0)) break; chosen.push(c); sum += c.mb; }
       // names: "Speichersdorf 2" when a place has several cores; the main area keeps its streets' name
       const cnt = {}; chosen.forEach(c => { const k = c.area || ''; cnt[k] = (cnt[k] || 0) + 1; }); const seen = {};
       chosen.forEach(c => { const k = c.area || ''; seen[k] = (seen[k] || 0) + 1; c.name = (c.area || t0(c)) + (cnt[k] > 1 ? ' ' + seen[k] : ''); });
       function t0(c){ const r = c.routes[0], st = (r.steps || []).find(x => x[2]); return st ? st[2] : 'Kern'; }
       // tour by car from the start: nearest next, then untangled (2-opt)
-      let tour = [], left = chosen.slice(), at = start;
+      // first: the tour begins in this place (its core nearest to the start), the rest follows from there
+      let tour = [], left = chosen.slice(), at = start, origin = start;
+      const firstCores = first ? left.filter(c => (c.area || '') === first) : [];
+      if(firstCores.length){ const f0 = firstCores.reduce((b, c) => segLen(start, c.park) < segLen(start, b.park) ? c : b); left.splice(left.indexOf(f0), 1); tour.push(f0); at = f0.park; }
       while(left.length){ let bi = 0; left.forEach((x, i) => { if(segLen(at, x.park) < segLen(at, left[bi].park)) bi = i; }); const x = left.splice(bi, 1)[0]; tour.push(x); at = x.park; }
-      const tl = tr => tr.reduce((a, x, i) => a + segLen(i ? tr[i - 1].park : start, x.park), 0);
+      const tl = tr => tr.reduce((a, x, i) => a + segLen(i ? tr[i - 1].park : origin, x.park), 0), i0 = firstCores.length ? 1 : 0;
       for(let improved = true, guard = 0; improved && guard < 60; guard++){ improved = false;
-        for(let i = 0; i < tour.length - 1; i++) for(let j = i + 1; j < tour.length; j++){ const c2 = [...tour.slice(0, i), ...tour.slice(i, j + 1).reverse(), ...tour.slice(j + 1)]; if(tl(c2) < tl(tour) - 1){ tour = c2; improved = true; } } }
+        for(let i = i0; i < tour.length - 1; i++) for(let j = i + 1; j < tour.length; j++){ const c2 = [...tour.slice(0, i), ...tour.slice(i, j + 1).reverse(), ...tour.slice(j + 1)]; if(tl(c2) < tl(tour) - 1){ tour = c2; improved = true; } } }
       let mat = null; const mPts = [start, ...tour.map(x => x.park)];
       if(travel !== 'bus' && mPts.length <= 50){ stage('loadingSide'); mat = await roadMatrix(mPts, travel === 'car' ? 'auto' : 'bicycle'); if(stale()) return { skipped:true }; }
       const ride = (a, b) => { if(travel === 'bus') return TRAVEL_MIN; const i = mPts.findIndex(q => q === a || (q[0] === a[0] && q[1] === a[1])), j = mPts.findIndex(q => q === b || (q[0] === b[0] && q[1] === b[1])); const road = mat && i >= 0 && j >= 0 && mat[i][j] != null ? mat[i][j] : segLen(a, b) * 1.3; return 5 + road / SPEED[travel === 'car' ? 'car' : 'bike']; };

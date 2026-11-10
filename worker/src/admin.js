@@ -872,7 +872,7 @@ function viewCreate(edit){
   if(tkE) Object.assign(d, { flyers:tkE.flyers || 5000, hours:+tkE.work_hours || 7, quota:tkE.quota_m30 || 1500, days:tkE.work_days || 2, n:Math.max(1, edit.plans.length), nAuto:false });
   d.side = tkE && Array.isArray(tkE.side_towns) ? tkE.side_towns : [];
   d.split = tkE ? (tkE.split || null) : 'even';
-  d.exact = !!tkE; d.mainAll = false; d.cores = !!(tkE && tkE.cores); d.together = !!(tkE && tkE.together);   // new orders: economical amount unless "exactly N"; whole main town on request   // new orders: total flyers shared evenly over all places; old orders keep their numbers
+  d.exact = !!tkE; d.mainAll = false; d.cores = !!(tkE && tkE.cores); d.together = !!(tkE && tkE.together); d.first = (tkE && tkE.first_place) || null;   // new orders: economical amount unless "exactly N"; whole main town on request   // new orders: total flyers shared evenly over all places; old orders keep their numbers
   d.travel = (tkE && tkE.travel) || (tkE && tkE.bike ? 'bike' : 'bus'); d.bike = d.travel !== 'bus';   // how the places of the order are reached   // far places of this order (own start, own day, reached by bus / train)
   // the start address (also typed in step 1 under "Hauptstadt"); the main town comes from it
   const pickAddr = (c, q) => { saved = keep(); d.place = c; d.mainCity = null; const txt = c.name + (c.sub ? ', ' + c.sub : ''); if(q) q.value = txt; const top = $('#cSearch'); if(top) top.value = txt; setStart(c.lat, c.lng); };
@@ -1044,7 +1044,7 @@ function viewCreate(edit){
     if(!d.loaded){ renderSheet(); return; }
     const tok = ++d.token, pr = progress(tok, false);
     let res = null;
-    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, quota:Math.max(200, Math.round(+saved.quota || 1500)), bike:d.bike, travel:d.travel, split:d.split, exact:d.exact, mainAll:d.mainAll, cores:d.cores && d.travel === 'car', together:d.cores && d.travel === 'car' && d.together, must:d.must, zone:d.zone, side:d.side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers, zone:x.p && x.p.length > 2 ? x.p : null, all:!!x.all })) }, pr.stage); }
+    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, quota:Math.max(200, Math.round(+saved.quota || 1500)), bike:d.bike, travel:d.travel, split:d.split, exact:d.exact, mainAll:d.mainAll, cores:d.cores && d.travel === 'car', together:d.cores && d.travel === 'car' && d.together, first:d.cores && d.travel === 'car' ? d.first : null, must:d.must, zone:d.zone, side:d.side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers, zone:x.p && x.p.length > 2 ? x.p : null, all:!!x.all })) }, pr.stage); }
     catch(e){ pr.stop(); if(tok !== d.token || !alive()) return; d.err = errText2(e); d.busy = false; toast(t('streetsFail', { e:d.err })); renderSheet(); return; }
     pr.stop();
     if(tok !== d.token || !alive() || !res || res.skipped) return;
@@ -1066,7 +1066,7 @@ function viewCreate(edit){
   // values typed in any step survive re-renders and step changes (only fields that are on screen are read)
   function saveDraft(){
     if(tkE || !d.start) return;
-    try{ localStorage.setItem(DRAFT_KEY, JSON.stringify({ at:Date.now(), saved, d:{ start:d.start, place:d.place, must:d.must, side:d.side, flyers:d.flyers, n:d.n, hours:d.hours, days:d.days, bike:d.bike, travel:d.travel, split:d.split, zone:d.zone, mainCity:d.mainCity, exact:d.exact, mainAll:d.mainAll, cores:d.cores, together:d.together } })); }catch{}
+    try{ localStorage.setItem(DRAFT_KEY, JSON.stringify({ at:Date.now(), saved, d:{ start:d.start, place:d.place, must:d.must, side:d.side, flyers:d.flyers, n:d.n, hours:d.hours, days:d.days, bike:d.bike, travel:d.travel, split:d.split, zone:d.zone, mainCity:d.mainCity, exact:d.exact, mainAll:d.mainAll, cores:d.cores, together:d.together, first:d.first } })); }catch{}
   }
   async function restoreDraft(){
     const x = readDraft(); if(!x || !x.d || !x.d.start) return;
@@ -1132,7 +1132,7 @@ function viewCreate(edit){
       <label class="f">${esc(t('mainCity'))}</label><div class="note" style="margin:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="grow">${esc(mainCity() || t('mainCityAuto'))}</span>${d.start && mainCity() ? `<button class="all-btn${d.mainAll ? ' on' : ''}" id="cMainAll" title="${esc(t('mainAllHint'))}">${d.mainAll ? '✓ ' + esc(t('mainAllOn', { mb:p && d.mainAll ? fmtN(Math.round(p.mailboxes)) : '…' })) : esc(t('mainAllBtn'))}</button>` : ''}</div>
       <label class="f">${esc(t('sideTowns'))}</label><p class="small muted" style="margin:-2px 0 6px">${esc(t('sideTownsHint'))}</p>
       ${d.must.length ? `<div class="chips" style="margin:0 0 8px">${d.must.map((a, k) => `<span class="chip">${d.split ? `<span>${esc(mName(a, k))}${spText(a.name)}</span>${allBtn(a.name, a.all, 'm', k)}` : `<button class="link" data-med="${k}">${esc(mName(a, k))} · ${esc(a.n ? fmtN(a.n) : t('mustAllShort'))}</button>`}${a.p && a.p.length > 2 ? `<button class="link" data-mpt="${k}" aria-label="${esc(t('shapeEdit'))}" title="${esc(t('shapeEdit'))}">✎</button>` : ''}<button class="link" data-mrm="${k}" aria-label="${esc(t('del'))}">✕</button></span>`).join('')}</div>` : ''}
-      ${d.side.length ? `<div class="chips" style="margin:0 0 8px">${d.side.map((x, k) => `<span class="chip">${esc(x.name)} · ${esc(d.split ? t('sideOwnKm', { km:String(x.km).replace('.', ',') }) : t('sideOwn', { km:String(x.km).replace('.', ','), n:fmtN(x.flyers) }))}${d.split ? spText(x.name) + allBtn(x.name, x.all, 's', k) : ''}<button class="link" data-srm="${k}" aria-label="${esc(t('del'))}">✕</button></span>`).join('')}</div><p class="small muted" style="margin:-4px 0 8px">${esc(t('sideOwnHint'))}</p>` : ''}
+      ${d.side.length ? `<div class="chips" style="margin:0 0 8px">${d.side.map((x, k) => `<span class="chip">${esc(x.name)} · ${esc(d.split ? t('sideOwnKm', { km:String(x.km).replace('.', ',') }) : t('sideOwn', { km:String(x.km).replace('.', ','), n:fmtN(x.flyers) }))}${d.split ? spText(x.name) + allBtn(x.name, x.all, 's', k) : ''}${d.cores && d.travel === 'car' ? `<button class="all-btn${d.first === x.name ? ' on' : ''}" data-first="${k}" title="${esc(t('firstHint'))}">${d.first === x.name ? '✓ ' + esc(t('firstOn')) : '▶ ' + esc(t('firstBtn'))}</button>` : ''}<button class="link" data-srm="${k}" aria-label="${esc(t('del'))}">✕</button></span>`).join('')}</div><p class="small muted" style="margin:-4px 0 8px">${esc(t('sideOwnHint'))}</p>` : ''}
       ${fixedMb > d.flyers ? `<div class="warnbox" style="margin:0 0 8px">${esc(t('allMbTooMany', { mb:fmtN(fixedMb), f:fmtN(d.flyers) }))} <button class="link" id="cAllFit">${esc(t('allMbRaise', { f:fmtN(Math.ceil(fixedMb / 50) * 50) }))}</button></div>` : ''}
       ${d.start ? sfTown('cTown1').html + `<button class="btn ghost small" id="cMustAdd" style="margin-top:8px">${ICONS.edit}${esc(t('drawOwn'))}</button>` : `<p class="small muted">${esc(t('sideNeedStart'))}</p>`}
       <label class="f" for="cQuota">${esc(t('quota'))}</label><input class="in" type="number" id="cQuota" min="200" step="100" value="${esc(saved.quota)}"><p class="small muted" style="margin:4px 0 0">${esc(t('quotaHours'))}</p><label class="check" style="margin-top:6px"><input type="checkbox" id="cNoQ" ${(saved.noQuota != null ? saved.noQuota : d.travel === 'car') ? 'checked' : ''}><span>${esc(t('noQuota'))}</span></label>
@@ -1207,6 +1207,7 @@ function viewCreate(edit){
     if($('#cFly')) $('#cFly').onchange = () => { saved = keep(); d.flyers = Math.max(100, Math.round(num('#cFly', d.flyers))); d.nAuto = true; recompute(); };
     if($('#cQuota')) $('#cQuota').onchange = () => { saved = keep(); recompute(); };
     document.querySelectorAll('[data-travel]').forEach(b => b.onclick = () => { if(d.travel === b.dataset.travel) return; saved = keep(); d.travel = b.dataset.travel; d.bike = d.travel !== 'bus'; recompute(); });
+    document.querySelectorAll('[data-first]').forEach(b => b.onclick = () => { saved = keep(); const x = d.side[+b.dataset.first]; if(!x) return; d.first = d.first === x.name ? null : x.name; recompute(); });
     if($('#cCores')) $('#cCores').onchange = e => { saved = keep(); d.cores = e.target.checked; recompute(); };
     if($('#cTogether')) $('#cTogether').onchange = e => { saved = keep(); d.together = e.target.checked; recompute(); };
     if($('#cExact')) $('#cExact').onclick = () => { saved = keep(); d.exact = true; recompute(); };
@@ -1253,7 +1254,7 @@ function viewCreate(edit){
       const cityN = mainCity() || null;
       if(pl.split){ const by = new Map(pl.split.filter(x => x.name).map(x => [x.name, x.flyers])); d.must.forEach(a => { if(by.has(a.name)) a.n = by.get(a.name); }); d.side.forEach(x => { if(by.has(x.name)) x.flyers = by.get(x.name); }); }
       const row = { title:withCity(title, cityN), city_name:cityN, district:(d.place && d.place.district) || (tkE && tkE.district) || null, start_lat:d.start.lat, start_lng:d.start.lng,
-        walk_minutes:15, zone_polygon:pl.zone, must_areas:d.must.length ? d.must.map(a => ({ p:a.p, n:a.n, name:a.name || undefined, c:a.c })) : null, side_towns:d.side.length ? d.side : null, bike:d.travel !== 'bus', travel:d.travel, split:d.split, cores:!!(d.cores && d.travel === 'car'), together:!!(d.cores && d.travel === 'car' && d.together), work_area:d.zone || null, work_date:date, notes:(saved.notes || '').trim() || null, street_m:d.streetM || null,
+        walk_minutes:15, zone_polygon:pl.zone, must_areas:d.must.length ? d.must.map(a => ({ p:a.p, n:a.n, name:a.name || undefined, c:a.c })) : null, side_towns:d.side.length ? d.side : null, bike:d.travel !== 'bus', travel:d.travel, split:d.split, cores:!!(d.cores && d.travel === 'car'), together:!!(d.cores && d.travel === 'car' && d.together), first_place:d.cores && d.travel === 'car' && d.first && d.side.some(x => x.name === d.first) ? d.first : null, work_area:d.zone || null, work_date:date, notes:(saved.notes || '').trim() || null, street_m:d.streetM || null,
         flyers:pl && (d.mainAll || (pl.eco && !d.exact) || (pl.cores && pl.mailboxes < d.flyers)) ? Math.round(pl.mailboxes) : d.flyers, quota_m30:quota, no_quota:saved.noQuota != null ? !!saved.noQuota : d.travel === 'car', work_days:d.days, work_hours:d.hours, est_mailboxes:pl.mailboxes, route_m:pl.routes.reduce((s, r) => s + r.length_m, 0) };
       let tk, old = null;
       if(tkE){

@@ -243,3 +243,5 @@ Object.assign(T.de, { coresLbl:'Nur dichte Ortskerne', coresHint:'Verteilt wird 
 Object.assign(T.ru, { coresLbl:'Только плотные центры деревень', coresHint:'Раздаём только там, где много ящиков рядом. Хутора, отдельные дома и пешие переходы из деревни в деревню выпадают — между центрами едут на машине.', togetherLbl:'Все едут вместе в одной машине', togetherHint:'Каждый центр делится между всеми, все едут в одном порядке и заканчивают день в одном месте.', coresSum:'{n} центров · ≈ {mb} ящиков' });
 Object.assign(T.de, { coresSmall:'Die dichten Ortskerne haben zusammen nur ≈ {mb} Briefkästen. Für mehr Flyer weitere Orte hinzufügen.' });
 Object.assign(T.ru, { coresSmall:'В плотных центрах всего ≈ {mb} ящиков. Для большего числа флаеров добавьте ещё места.' });
+Object.assign(T.de, { firstBtn:'Hier beginnen', firstOn:'Tour beginnt hier', firstHint:'Die Tour startet in diesem Ort, danach geht es auf dem kürzesten Weg weiter' });
+Object.assign(T.ru, { firstBtn:'Начать здесь', firstOn:'Маршрут начинается здесь', firstHint:'Маршрут начинается в этом месте, дальше — кратчайшим путём' });
