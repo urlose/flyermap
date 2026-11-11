@@ -40,12 +40,12 @@ async function routeTaken(){
   await clearRoute(); stopDemoWalk(); keepAwake(false); await stopWatching(); await loadMe(); workerTab('tasks');
   const mo = modal(`<h2>${esc(t('takenT'))}</h2><p>${esc(t('takenQ'))}</p><button class="btn primary" data-n>${esc(t('ok'))}</button>`); mo.querySelector('[data-n]').onclick = () => mo.remove();
 }
-// the server paused a session that did not move for 20 minutes: this phone shows the pause, "Weiter" goes on
+// the server paused a session that did not move for 10 minutes: this phone shows the pause; walking on (or "Weiter") goes on
 async function routeAutoPaused(at){
   const r = W.route; if(!r) return;
   W.queue = []; if(r.paused){ await saveRoute(); return; }   // paused here too: the pause / resume steps go through
-  r.paused = true; r.pausedAt = Math.min(Date.now(), at || Date.now());
-  await stopWatching(); keepAwake(false); await saveRoute();
+  r.paused = true; r.pausedAt = Math.min(Date.now(), at || Date.now()); r.autoPaused = true;
+  keepAwake(false); await saveRoute(); startWatching();
   if(UI.tab === 'map') viewTracking();
   toast(t('autoPaused', { t:new Date(r.pausedAt).toLocaleTimeString(I.lang, { hour:'2-digit', minute:'2-digit' }) }));
 }
@@ -126,8 +126,16 @@ function ensureTracker(){
   }
 }
 function onLocation(lat, lng, acc, time, sim){
-  if(!W.route || W.route.endedAt || W.route.paused) return;
+  if(!W.route || W.route.endedAt) return;
   if(W.sim && !sim) return;
+  // automatic pause: as soon as the person walks on (more than MOVE_M from where they stood) the working time goes on by itself
+  if(W.route.paused){
+    if(!W.route.autoPaused || (acc != null && acc > 35)) return;
+    const st = W.route.stillPos || W.track[W.track.length - 1];
+    if(st && hav(st[0], st[1], lat, lng) <= MOVE_M) return;
+    autoResume(Math.min(Date.now(), time || Date.now()), lat, lng);
+  }
+  if(acc == null || acc <= 50){ const sp = W.route.stillPos; if(!sp || hav(sp[0], sp[1], lat, lng) > STILL_M){ W.route.stillPos = [lat, lng]; W.route.stillAt = time || Date.now(); } }
   W.gps.at = Date.now(); W.gps.acc = acc == null ? null : Math.round(acc);
   if(acc != null && acc > 50){ setGps('weak'); return; }
   setGps('ok');
@@ -253,14 +261,36 @@ function nextDay(plan, prev){
 // a pause under an hour counts exactly, from an hour on in full hours (1:15 → 1 h); a running pause is not working time
 const workMs = () => { const r = W.route; return Math.max(0, (r.paused ? r.pausedAt : Date.now()) - r.startedAt - ((r.breakMs || 0) < 3600e3 ? (r.breakMs || 0) : Math.floor(r.breakMs / 3600e3) * 3600e3)); };
 function pace30(){ const now = Date.now(); let s = 0; for(let i = W.track.length - 1; i > 0; i--){ const a = W.track[i-1], b = W.track[i]; if(now - b[2] > 30 * 60e3) break; if(b[2] - a[2] > 90e3) continue; s += hav(a[0], a[1], b[0], b[1]); } return s; }
+// standing still for 10 minutes = pause from the moment the person stopped (the time standing is not working time)
+const STILL_MIN = 10, STILL_M = 40, MOVE_M = 60;
+async function autoPause(){
+  const r = W.route; if(!r || r.paused || r.endedAt || W.sim) return;
+  const since = Math.max(r.stillAt || r.startedAt, r.resumedAt || 0, r.startedAt);
+  if(Date.now() - since < STILL_MIN * 60e3) return;
+  r.paused = true; r.pausedAt = since; r.autoPaused = true; (r.ops = r.ops || []).push({ k:'pause', t:since });
+  W.queue = W.queue.filter(p => Date.parse(p.t) < since);   // the standing around after that is not sent
+  keepAwake(false); await saveRoute(); flush();
+  if(UI.tab === 'map') viewTracking();
+  toast(t('autoPaused', { t:new Date(since).toLocaleTimeString(I.lang, { hour:'2-digit', minute:'2-digit' }) }));
+}
+setInterval(autoPause, 30e3);
+async function autoResume(at, lat, lng){
+  const r = W.route; if(!r || !r.paused) return;
+  at = Math.max(at, r.pausedAt);
+  r.breakMs = (r.breakMs || 0) + (at - r.pausedAt); r.paused = false; r.pausedAt = null; r.autoPaused = false; r.resumedAt = at;
+  r.stillPos = [lat, lng]; r.stillAt = at; (r.ops = r.ops || []).push({ k:'resume', t:at });
+  keepAwake(true); await saveRoute(); flush();
+  if(UI.tab === 'map') viewTracking();
+  toast(t('autoResumed'));
+}
 async function pauseRoute(){
   const r = W.route; if(!r || r.paused) return;
-  stopDemoWalk(); r.paused = true; r.pausedAt = Date.now(); (r.ops = r.ops || []).push({ k:'pause', t:r.pausedAt });
+  stopDemoWalk(); r.paused = true; r.pausedAt = Date.now(); r.autoPaused = false; (r.ops = r.ops || []).push({ k:'pause', t:r.pausedAt });
   await stopWatching(); keepAwake(false); await saveRoute(); flush(); viewTracking();
 }
 async function resumeRoute(){
   const r = W.route; if(!r || !r.paused) return;
-  const now = Date.now(); r.breakMs = (r.breakMs || 0) + (now - r.pausedAt); r.paused = false; r.pausedAt = null; (r.ops = r.ops || []).push({ k:'resume', t:now });
+  const now = Date.now(); r.breakMs = (r.breakMs || 0) + (now - r.pausedAt); r.paused = false; r.pausedAt = null; r.autoPaused = false; r.resumedAt = now; r.stillAt = now; r.stillPos = null; (r.ops = r.ops || []).push({ k:'resume', t:now });
   await saveRoute(); await startWatching(); flush(); viewTracking();
 }
 async function finishRoute(){
@@ -635,7 +665,7 @@ function viewTracking(){
       <div class="stats"><div><span>${esc(t('netTime'))} · ${esc(t('today'))}</span><b id="sT">0:00</b></div><div><span>${esc(t('dist'))} · ${esc(t('today'))}</span><b id="sD">0 m</b></div>${W.counter ? `<div><span>${esc(t('flyersEst'))}</span><b id="sF">0</b></div>` : hasPlan ? `<div><span>${esc(t('progress'))}</span><b id="sP">0%</b></div>` : ''}</div>
       ${hasPlan ? `<div class="bar"><i id="sBar"></i></div>${W.counter ? `<p class="small muted" style="margin:6px 0 0" id="sFl"></p>` : ''}` : ''}
       ${quota && !paused ? `<div class="quota" id="quota"><i></i><span id="quotaTxt"></span></div>` : ''}
-      ${hasPlan && !paused ? `<p class="small muted" style="margin:6px 0 10px">${esc(t('followLine'))}</p>` : '<div style="height:8px"></div>'}
+      ${hasPlan && !paused ? `<p class="small muted" style="margin:6px 0 10px">${esc(t('followLine'))}</p>` : paused && W.route.autoPaused ? `<p class="small muted" style="margin:6px 0 10px">${esc(t('autoPauseHint'))}</p>` : '<div style="height:8px"></div>'}
       ${!paused ? `<button class="btn primary" id="nextDay" hidden></button>` : ''}
       ${paused ? `<button class="btn primary" id="resume">${esc(t('resumeBtn'))}</button>` : `<button class="btn ghost" id="pause">${esc(t('pause'))}</button>`}
       <button class="btn danger" id="stop">${esc(t('stop'))}</button>
@@ -938,7 +968,7 @@ export async function bootWorker(){
   UI.role = 'worker'; UI.onTab = workerTab;
   if(W.route && !W.route.endedAt){
     const pid = W.route.planId; if(pid && !W.prev){ try{ W.prev = await rpc('plan_progress', { p_token:W.token, p_plan_id:pid }); }catch{} }
-    workerTab('map'); if(!W.route.paused) startWatching(); flush(); loadMe(); return true;
+    workerTab('map'); if(!W.route.paused || W.route.autoPaused) startWatching(); flush(); loadMe(); return true;
   }
   const [lk, lid] = getLoc().split('/');   // after a reload: the screen the worker was on
   workerTab(lk === 'map' || lk === 'people' ? lk : 'tasks'); flush(); await loadMe();
