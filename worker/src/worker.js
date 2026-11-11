@@ -62,6 +62,7 @@ export async function flush(){
         const res = await rpc('push_points2', { p_token:W.token, p_route_id:r.id, p_points:batch });
         if(res && res.state === 'taken'){ after = () => routeTaken(); throw 'stop'; }
         if(res && res.state === 'paused'){ after = () => routeAutoPaused(Date.parse(res.paused_at)); throw 'stop'; }
+        if(res && res.near) warnTogether(res.near);
         W.queue.splice(0, batch.length); await store.set('queue', W.queue);
       }
     };
@@ -262,11 +263,31 @@ function nextDay(plan, prev){
 const workMs = () => { const r = W.route; return Math.max(0, (r.paused ? r.pausedAt : Date.now()) - r.startedAt - ((r.breakMs || 0) < 3600e3 ? (r.breakMs || 0) : Math.floor(r.breakMs / 3600e3) * 3600e3)); };
 function pace30(){ const now = Date.now(); let s = 0; for(let i = W.track.length - 1; i > 0; i--){ const a = W.track[i-1], b = W.track[i]; if(now - b[2] > 30 * 60e3) break; if(b[2] - a[2] > 90e3) continue; s += hav(a[0], a[1], b[0], b[1]); } return s; }
 // standing still for 10 minutes = pause from the moment the person stopped (the time standing is not working time)
-const STILL_MIN = 10, STILL_M = 40, MOVE_M = 60;
+const STILL_MIN = 10, STILL_WARN = 8, STILL_M = 40, MOVE_M = 60;
+// a warning that stays until it is read (the phone vibrates, it may be in the pocket)
+function warnBox(title, text, okTxt, onOk){
+  try{ navigator.vibrate && navigator.vibrate([300, 150, 300]); }catch{}
+  document.querySelectorAll('.modal.warn-box').forEach(m => m.remove());
+  const m = modal(`<h2>${esc(title)}</h2><p>${esc(text)}</p><button class="btn primary" data-ok>${esc(okTxt || t('ok'))}</button>`); m.classList.add('warn-box');
+  m.querySelector('[data-ok]').onclick = () => { m.remove(); onOk && onOk(); };
+  return m;
+}
+// walking right next to a colleague: they get told before the time counts only once
+function warnTogether(name){
+  if(Date.now() - (W.togetherWarned || 0) < 15 * 60e3) return;
+  W.togetherWarned = Date.now();
+  warnBox(t('togetherT'), t('togetherQ', { n:name }));
+}
 async function autoPause(){
   const r = W.route; if(!r || r.paused || r.endedAt || W.sim) return;
   const since = Math.max(r.stillAt || r.startedAt, r.resumedAt || 0, r.startedAt);
+  // 2 minutes before: a warning; "Ich arbeite noch" gives another 10 minutes (a big house with many mailboxes)
+  if(Date.now() - since >= STILL_WARN * 60e3 && r.stillWarned !== since){
+    r.stillWarned = since; saveRoute();
+    warnBox(t('stillT'), t('stillQ', { m:STILL_MIN - STILL_WARN }), t('stillWork'), () => { if(W.route && !W.route.paused){ W.route.stillAt = Date.now(); W.route.stillWarned = null; saveRoute(); } });
+  }
   if(Date.now() - since < STILL_MIN * 60e3) return;
+  document.querySelectorAll('.modal.warn-box').forEach(m => m.remove());
   r.paused = true; r.pausedAt = since; r.autoPaused = true; (r.ops = r.ops || []).push({ k:'pause', t:since });
   W.queue = W.queue.filter(p => Date.parse(p.t) < since);   // the standing around after that is not sent
   keepAwake(false); await saveRoute(); flush();

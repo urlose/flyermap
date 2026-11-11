@@ -344,7 +344,8 @@ const dayKey = r => new Date(r.started_at).toLocaleDateString('sv-SE');   // loc
 // a pause counts in full hours only (1:15 → 1 h, 0:40 → 0): the rest is working time
 // pause of a day: under an hour it counts exactly, from an hour on in full hours (1:15 → 1 h)
 const pauseFull = sec => (sec || 0) < 3600 ? Math.round((sec || 0) / 60) : Math.floor(sec / 3600) * 60;   // minutes
-const rawMin = r => ((r.ended_at ? new Date(r.ended_at) : Date.now()) - new Date(r.started_at)) / 60000 + (r.adj_s || 0) / 60;
+// minus the time walked together with a colleague on the colleague's route (together_s, counted there)
+const rawMin = r => ((r.ended_at ? new Date(r.ended_at) : Date.now()) - new Date(r.started_at)) / 60000 + (r.adj_s || 0) / 60 - (r.together_s || 0) / 60;
 const workMin = r => r._min != null ? r._min : Math.max(0, rawMin(r) - pauseFull(r.break_s));
 // several sessions of one person on one day (Feierabend + start again, app restarted …) are one working day:
 // one line, one map, distances and times added up. id = first session (newest first lists stay newest first).
@@ -352,8 +353,8 @@ function mergeDays(routes){
   const groups = new Map();
   for(const r of routes || []){
     const k = r.worker_id + '|' + dayKey(r); let g = groups.get(k);
-    if(!g){ g = { ...r, ids:[], _routes:[], distance_m:0, break_s:0, _min:0, _raw:0 }; groups.set(k, g); }
-    g.ids.push(r.id); g._routes.push(r); g.distance_m += r.distance_m || 0; g.break_s += r.break_s || 0; g._raw += rawMin(r); g._min = Math.max(0, g._raw - pauseFull(g.break_s));
+    if(!g){ g = { ...r, ids:[], _routes:[], distance_m:0, break_s:0, together_s:0, _min:0, _raw:0 }; groups.set(k, g); }
+    g.ids.push(r.id); g._routes.push(r); g.distance_m += r.distance_m || 0; g.break_s += r.break_s || 0; g.together_s += r.together_s || 0; g._raw += rawMin(r); g._min = Math.max(0, g._raw - pauseFull(g.break_s));
     if(new Date(r.started_at) < new Date(g.started_at)) g.started_at = r.started_at;
     if(!r.ended_at) g.ended_at = null; else if(g.ended_at && new Date(r.ended_at) > new Date(g.ended_at)) g.ended_at = r.ended_at;
     if(!g.place && r.place) g.place = r.place; if(!g.plan_id && r.plan_id) g.plan_id = r.plan_id;
@@ -376,7 +377,7 @@ const filterOn = f => !!(f.from || f.to || f.place);
 // pause of a working day in minutes (also a pause that is running right now)
 const brkMin = r => pauseFull(r.break_s);
 const brkTxt = min => min >= 1 ? ' · ' + t('pauseLbl') + ' ' + fmtHm(min) + ' ' + t('h') : '';
-const dayLine = (r, cls) => `<button class="row-line rbtn ${cls || ''}" data-r="${r.id}" data-w="${r.worker_id}"><div class="rb-main"><b>${esc(new Date(r.started_at).toLocaleDateString(loc(), { weekday:'short', day:'2-digit', month:'2-digit', year:'2-digit' }))} · ${esc(hhmm(r.started_at))}–${esc(r.ended_at ? hhmm(r.ended_at) : t('active'))}</b><small data-place="${r.id}">${esc(placeTxt(r) || '…')}</small></div><span>${esc(fmtDist(r.distance_m || 0))} · ${esc(fmtHm(workMin(r)) + ' ' + t('h') + brkTxt(brkMin(r)))}</span></button>`;
+const dayLine = (r, cls) => `<button class="row-line rbtn ${cls || ''}" data-r="${r.id}" data-w="${r.worker_id}"><div class="rb-main"><b>${esc(new Date(r.started_at).toLocaleDateString(loc(), { weekday:'short', day:'2-digit', month:'2-digit', year:'2-digit' }))} · ${esc(hhmm(r.started_at))}–${esc(r.ended_at ? hhmm(r.ended_at) : t('active'))}</b><small data-place="${r.id}">${esc(placeTxt(r) || '…')}</small></div><span>${esc(fmtDist(r.distance_m || 0))} · ${esc(fmtHm(workMin(r)) + ' ' + t('h') + brkTxt(brkMin(r)))}${r.together_s >= 60 ? `<em class="tg-badge">${esc(t('togetherBadge', { m:Math.round(r.together_s / 60) }))}</em>` : ''}</span></button>`;
 const daysSum = list => list.length ? t(list.length === 1 ? 'daysSum1' : 'daysSum', { n:list.length, km:fmtDist(list.reduce((a, r) => a + (r.distance_m || 0), 0)), h:fmtHm(list.reduce((a, r) => a + workMin(r), 0)) }) : '';
 // days without an order (or whose order was deleted): name the place from the first GPS point, once, and keep it
 async function fillPlaces(list, done){
@@ -462,7 +463,7 @@ async function viewPeople(){
     document.querySelectorAll('.wc-days .rbtn').forEach(b => b.onclick = () => viewDayMap(b.dataset.r, viewPeople));
   };
   $('#wQ').oninput = render; render();
-  sb.from('routes').select('id,worker_id,task_id,plan_id,started_at,ended_at,distance_m,break_s,adj_s,place,task_title').order('started_at', { ascending:false }).limit(2000)
+  sb.from('routes').select('id,worker_id,task_id,plan_id,started_at,ended_at,distance_m,break_s,adj_s,together_s,place,task_title').order('started_at', { ascending:false }).limit(2000)
     .then(({ data }) => { if(!document.getElementById('dFilter')) return; days = mergeDays(data || []); render(); fillPlaces(days, () => { if(document.getElementById('dFilter')) render(); }); });
 }
 
@@ -659,13 +660,29 @@ async function viewDayMap(routeId, back){
     cps = checkpoints(pl, i => trAll.isDone(i));
     if(pl.boxes && pl.boxes.length && ll.length > 1){ const ct = Planner.makeBoxCounter(pl.boxes); wr.forEach(a => ct.visitAll(a)); fl = ct.count(); }
   }
+  // walked together with a colleague on the colleague's route: that time is not counted here (the admin can count it anyway)
+  const { data:tg } = await sb.from('route_together').select('route_id,other_route_id,from_t,to_t,seconds,undone').in('route_id', [...ids]);
+  let tgNote = '', tgAction = null;
+  if((tg || []).length){
+    const { data:orr } = await sb.from('routes').select('id,worker_id').in('id', [...new Set(tg.map(x => x.other_route_id))]);
+    const who = [...new Set(tg.map(x => nameOf(((orr || []).find(o => o.id === x.other_route_id) || {}).worker_id)).filter(Boolean))].join(', ');
+    const undone = tg.every(x => x.undone), sec = tg.reduce((a, x) => a + x.seconds, 0);
+    tgNote = t(undone ? 'togetherNoteUndone' : 'togetherNote', { n:who, m:Math.round(sec / 60), t:tg.map(x => hhmm(x.from_t) + '–' + hhmm(x.to_t)).join(', ') });
+    tgAction = { label:t(undone ? 'togetherRedo' : 'togetherUndo'), run:async () => {
+      for(const id of ids){ const { error } = await sb.rpc('together_undo', { p_route:id, p_undo:!undone }); if(error){ toast(errText(error)); return; } }
+      const nv = undone ? sec : 0, delta = nv - (r.together_s || 0);
+      r.together_s = nv; (r._routes || []).forEach(x => { x.together_s = tg.filter(y => y.route_id === x.id).reduce((a, y) => a + (undone ? y.seconds : 0), 0); });
+      if(r._min != null){ r._raw -= delta / 60; r._min = Math.max(0, r._raw - pauseFull(r.break_s)); }
+      viewDayMap(routeId, back);
+    } };
+  }
   // every house along the track counts (also outside the route); the planned boxes only when the map squares are not available
   const d0 = new Date(r.started_at);
-  const dm = openMapView({
+  const dm = openMapView({ action:tgAction,
     title:nameOf(r.worker_id), anonTitle:t('rvDistributor'), hasNames:true,
     lines:[d0.toLocaleDateString(loc(), { weekday:'long', day:'2-digit', month:'2-digit', year:'numeric' }) + ' · ' + hhmm(r.started_at) + '–' + (r.ended_at ? hhmm(r.ended_at) : t('active')), placeTxt(r)],
     get stats(){ return [[t('rvDist'), fmtDist(r.distance_m || 0)], [t('rvWork'), fmtHm(workMin(r)) + ' ' + t('h')], brkMin(r) >= 1 ? [t('pauseLbl'), fmtHm(brkMin(r)) + ' ' + t('h')] : null, fl != null ? [t('rvFlyers'), '≈ ' + fmtN(fl)] : null, pct != null ? [t('rvDayShare'), pct + ' %'] : null, pctAll != null ? [t('rvDayShare2'), pctAll + ' %'] : null]; },
-    note:r.track_deleted_at ? t('trackDeleted') : (ll.length < 2 ? t('rvNoTrack') : ''),
+    note:[r.track_deleted_at ? t('trackDeleted') : (ll.length < 2 ? t('rvNoTrack') : ''), tgNote].filter(Boolean).join(' '),
     layers:[
       { key:'plan', label:pl ? t('rvPlan') : '', on:!!pl, add:g => { if(!pl || !pl.path || pl.path.length < 2) return;
         const ds = (pl.days || []).length > 1 ? pl.days : [{ i0:0, i1:pl.path.length - 1 }];

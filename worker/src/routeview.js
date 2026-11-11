@@ -8,7 +8,7 @@ import { cleanup, makeMap, ICONS } from './ui.js';
 
 const VS = { names:true };   // remembered while the app is open
 
-// opts: { title, anonTitle, lines:[text], stats:[[label, value]], legend:[{ color, label, anonLabel, sub }], note,
+// opts: { title, anonTitle, lines:[text], stats:[[label, value]], legend:[{ color, label, anonLabel, sub }], note, action:{ label, run },
 //         layers:[{ key, label, on, add(group, L) }], back }
 export function openMapView(opts){
   cleanup();
@@ -31,7 +31,9 @@ export function openMapView(opts){
       ${(opts.lines || []).filter(Boolean).map(l => `<div class="rv-line">${esc(l)}</div>`).join('')}
       ${(opts.stats || []).length ? `<div class="rv-stats">${opts.stats.filter(s => s && s[1] != null && s[1] !== '').map(([k, v]) => `<div><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}</div>` : ''}
       ${(opts.legend || []).length ? `<div class="rv-legend">${opts.legend.map(x => `<div class="lg"><i style="background:${esc(x.color)}"></i><b>${esc(n ? x.label : (x.anonLabel || x.label))}</b>${x.sub ? `<span>${esc(x.sub)}</span>` : ''}</div>`).join('')}</div>` : ''}
-      ${opts.note ? `<div class="rv-note">${esc(opts.note)}</div>` : ''}`;
+      ${opts.note ? `<div class="rv-note">${esc(opts.note)}</div>` : ''}
+      ${opts.action ? `<button class="btn ghost small rv-act" id="rvAct">${esc(opts.action.label)}</button>` : ''}`;
+    if(opts.action) $('#rvAct').onclick = () => opts.action.run();
   };
   const fitAll = () => {
     if(!bounds.isValid() || !$('#rvCard')) return;   // the view may already be closed
