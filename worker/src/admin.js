@@ -108,7 +108,7 @@ const forPoint = (lat, lng) => A.workers.map(w => ({ w, ...distTo(w, lat, lng) }
 function pace(w){
   const r = A.live.find(x => x.worker_id === w.id); if(!r) return { cls:'', label:'' };
   if(r.paused_at) return { cls:'pause', label:t('onPause') };
-  const tk = A.tasks.find(x => x.id === r.task_id), quota = (tk && tk.quota_m30) || 1500; if(tk && tk.no_quota) return { cls:'', label:'' };
+  const tk = A.tasks.find(x => x.id === r.task_id), quota = (tk && tk.quota_m30) || 2000; if(tk && tk.no_quota) return { cls:'', label:'' };
   const wm = (Date.now() - new Date(r.started_at) - (r.break_s || 0) * 1000) / 60000; if(wm < 8) return { cls:'', label:'' };
   const need = quota * Math.min(30, wm) / 30;
   if(r.last30_m > quota * 3) return { cls:'warn', label:t('quotaHigh') };
@@ -866,10 +866,10 @@ const readDraft = () => { try{ const x = JSON.parse(localStorage.getItem(DRAFT_K
 const clearDraft = () => { try{ localStorage.removeItem(DRAFT_KEY); }catch{} };
 function viewCreate(edit){
   const tkE = edit && edit.tk;   // editing an existing task: same screen, prefilled, saves over the old routes
-  const d = { start:null, place:null, flyers:10000, n:2, nAuto:false, hours:7, quota:1500, days:2, g:null, plan:null, assign:{}, err:null, token:0, must:[], zone:null, drawing:null, drawFor:'must' };
+  const d = { start:null, place:null, flyers:10000, n:2, nAuto:false, hours:7, quota:2000, days:2, g:null, plan:null, assign:{}, err:null, token:0, must:[], zone:null, drawing:null, drawFor:'must' };
   if(tkE && Array.isArray(tkE.must_areas)) d.must = tkE.must_areas.map(mArea).filter(a => a.p.length > 2);
   if(tkE && Array.isArray(tkE.work_area) && tkE.work_area.length > 2) d.zone = tkE.work_area;
-  if(tkE) Object.assign(d, { flyers:tkE.flyers || 5000, hours:+tkE.work_hours || 7, quota:tkE.quota_m30 || 1500, days:tkE.work_days || 2, n:Math.max(1, edit.plans.length), nAuto:false });
+  if(tkE) Object.assign(d, { flyers:tkE.flyers || 5000, hours:+tkE.work_hours || 7, quota:tkE.quota_m30 || 2000, days:tkE.work_days || 2, n:Math.max(1, edit.plans.length), nAuto:false });
   d.side = tkE && Array.isArray(tkE.side_towns) ? tkE.side_towns : [];
   d.split = tkE ? (tkE.split || null) : 'even';
   d.exact = !!tkE; d.mainAll = false; d.cores = !!(tkE && tkE.cores); d.together = !!(tkE && tkE.together); d.first = (tkE && tkE.first_place) || null;   // new orders: economical amount unless "exactly N"; whole main town on request   // new orders: total flyers shared evenly over all places; old orders keep their numbers
@@ -1044,7 +1044,7 @@ function viewCreate(edit){
     if(!d.loaded){ renderSheet(); return; }
     const tok = ++d.token, pr = progress(tok, false);
     let res = null;
-    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, quota:Math.max(200, Math.round(+saved.quota || 1500)), bike:d.bike, travel:d.travel, split:d.split, exact:d.exact, mainAll:d.mainAll, cores:d.cores && d.travel === 'car', together:d.cores && d.travel === 'car' && d.together, first:d.cores && d.travel === 'car' ? d.first : null, must:d.must, zone:d.zone, side:d.side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers, zone:x.p && x.p.length > 2 ? x.p : null, all:!!x.all })) }, pr.stage); }
+    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, quota:Math.max(200, Math.round(+saved.quota || 2000)), bike:d.bike, travel:d.travel, split:d.split, exact:d.exact, mainAll:d.mainAll, cores:d.cores && d.travel === 'car', together:d.cores && d.travel === 'car' && d.together, first:d.cores && d.travel === 'car' ? d.first : null, must:d.must, zone:d.zone, side:d.side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers, zone:x.p && x.p.length > 2 ? x.p : null, all:!!x.all })) }, pr.stage); }
     catch(e){ pr.stop(); if(tok !== d.token || !alive()) return; d.err = errText2(e); d.busy = false; toast(t('streetsFail', { e:d.err })); renderSheet(); return; }
     pr.stop();
     if(tok !== d.token || !alive() || !res || res.skipped) return;
@@ -1087,7 +1087,7 @@ function viewCreate(edit){
     return k;
   }
   function restore(k){ if($('#cTitle')) $('#cTitle').value = k.title || ''; if($('#cDate')) $('#cDate').value = k.date || ''; if($('#cNotes')) $('#cNotes').value = k.notes || ''; if($('#cQuota')) $('#cQuota').value = k.quota; }
-  let saved = tkE ? { title:tkE.title, date:tkE.work_date ? String(tkE.work_date).slice(0, 10) : '', notes:tkE.notes || '', quota:tkE.quota_m30 || 1500, noQuota:!!tkE.no_quota } : { title:'', date:'', notes:'', quota:1500 };
+  let saved = tkE ? { title:tkE.title, date:tkE.work_date ? String(tkE.work_date).slice(0, 10) : '', notes:tkE.notes || '', quota:tkE.quota_m30 || 2000, noQuota:!!tkE.no_quota } : { title:'', date:'', notes:'', quota:2000 };
   // five steps on top of the live map: 1 start · 2 route · 3 time · 4 workers · 5 review. Planning keeps running underneath.
   const STEPS = ['wzStart', 'wzRoute', 'wzTime', 'wzTeam', 'wzReview'];
   d.step = tkE ? 2 : 1;
@@ -1173,7 +1173,7 @@ function viewCreate(edit){
         <div><span>${esc(t('workersCount'))}</span><b>${p ? p.routes.length : '—'} · ${esc(t('assignedN', { a:assigned, n:p ? p.routes.length : 0 }))}</b></div>
         <div><span>${esc(t('dist2'))}</span><b>${esc(km)} · ${esc(fmtHm(p ? p.routes.reduce((s, r) => s + r.minutes, 0) : 0))} ${esc(t('h'))}</b></div>
         <div><span>${esc(t('startDate'))}</span><b>${esc(saved.date ? fmtDay(saved.date) : t('noDate'))} · ${esc(String(d.hours).replace('.', ','))} ${esc(t('h'))}/${esc(t('dayShort'))}</b></div>
-        <div><span>${esc(t('quota'))}</span><b>${esc(fmtN(+saved.quota || 1500))} m / 30 ${esc(t('min'))}</b></div>
+        <div><span>${esc(t('quota'))}</span><b>${esc(fmtN(+saved.quota || 2000))} m / 30 ${esc(t('min'))}</b></div>
         ${d.side.length ? `<div><span>${esc(t('sideTitle'))}</span><b>${esc(d.side.map(x => x.name + ' (' + fmtN(x.flyers) + ')').join(', '))}</b></div>` : ''}
         <div><span>${esc(t('zoneTitle'))}</span><b>${esc(d.zone ? t('zoneOwn') : t('zoneAuto'))}</b></div>
         ${d.must.length ? `<div><span>${esc(t('mustTitle'))}</span><b>${esc((d.must.some(a => a.name) ? d.must.map((a, k) => mName(a, k)).join(', ') + ' · ' : '') + t('mustSum', { n:d.must.length, mb:fmtN((p && p.must_mb) || 0) }))}</b></div>` : ''}
@@ -1250,7 +1250,7 @@ function viewCreate(edit){
     const title = (saved.title || '').trim(); if(!title){ goStep(1); toast(t('needTitle')); return; }
     $('#cSave').disabled = true; $('#cSave').classList.add('loading');
     try{
-      const pl = d.plan, quota = Math.max(200, Math.round(+saved.quota || 1500)), date = saved.date || null;
+      const pl = d.plan, quota = Math.max(200, Math.round(+saved.quota || 2000)), date = saved.date || null;
       const cityN = mainCity() || null;
       if(pl.split){ const by = new Map(pl.split.filter(x => x.name).map(x => [x.name, x.flyers])); d.must.forEach(a => { if(by.has(a.name)) a.n = by.get(a.name); }); d.side.forEach(x => { if(by.has(x.name)) x.flyers = by.get(x.name); }); }
       const row = { title:withCity(title, cityN), city_name:cityN, district:(d.place && d.place.district) || (tkE && tkE.district) || null, start_lat:d.start.lat, start_lng:d.start.lng,
@@ -1320,7 +1320,7 @@ function editTaskSheet(tk, plans, routes){
   const mo = modal(`<h2>${esc(t('editTask'))}</h2>
     <label class="f">${esc(t('title'))}</label><input class="in" id="eTitle" value="${esc(tk.title)}">
     <div class="steppers"><div><label class="f">${esc(t('startDate'))}</label><input class="in" type="date" id="eDate" value="${esc(day)}"></div><div><label class="f">${esc(t('hoursDay'))}</label><input class="in" type="number" id="eHours" min="1" max="12" step="0.5" value="${+tk.work_hours || 7}"></div></div>
-    <label class="f">${esc(t('quota'))}</label><input class="in" type="number" id="eQuota" min="200" step="100" value="${tk.quota_m30 || 1500}">
+    <label class="f">${esc(t('quota'))}</label><input class="in" type="number" id="eQuota" min="200" step="100" value="${tk.quota_m30 || 2000}">
     <label class="f" for="eTravel">${esc(t('travelLbl'))}</label><select class="in" id="eTravel">${['bus', 'bike', 'car'].map(v => `<option value="${v}" ${(tk.travel || (tk.bike ? 'bike' : 'bus')) === v ? 'selected' : ''}>${esc(t('travel_' + v))}</option>`).join('')}</select>
     <label class="f">${esc(t('note'))}</label><textarea class="in" id="eNotes">${esc(tk.notes || '')}</textarea>
     <button class="btn primary" id="eSave" style="margin-top:12px">${esc(t('save'))}</button>
@@ -1329,11 +1329,11 @@ function editTaskSheet(tk, plans, routes){
   mo.querySelector('#eClose').onclick = () => mo.remove();
   mo.querySelector('#eSave').onclick = async () => {
     const title = mo.querySelector('#eTitle').value.trim(); if(!title){ mo.querySelector('#eErr').textContent = t('needTitle'); return; }
-    const { error } = await sb.from('tasks').update({ title:withCity(title, tk.city_name), work_date:mo.querySelector('#eDate').value || null, work_hours:Math.max(1, Math.min(12, parseFloat(mo.querySelector('#eHours').value) || 7)), quota_m30:Math.max(200, Math.round(+mo.querySelector('#eQuota').value || 1500)), notes:mo.querySelector('#eNotes').value.trim() || null, bike:mo.querySelector('#eTravel').value !== 'bus', travel:mo.querySelector('#eTravel').value }).eq('id', tk.id);
+    const { error } = await sb.from('tasks').update({ title:withCity(title, tk.city_name), work_date:mo.querySelector('#eDate').value || null, work_hours:Math.max(1, Math.min(12, parseFloat(mo.querySelector('#eHours').value) || 7)), quota_m30:Math.max(200, Math.round(+mo.querySelector('#eQuota').value || 2000)), notes:mo.querySelector('#eNotes').value.trim() || null, bike:mo.querySelector('#eTravel').value !== 'bus', travel:mo.querySelector('#eTravel').value }).eq('id', tk.id);
     if(error){ mo.querySelector('#eErr').textContent = error.message; return; }
     // new quota → the hours of the routes follow (route length ÷ quota × 30 min), no new planning needed
-    const q = Math.max(200, Math.round(+mo.querySelector('#eQuota').value || 1500));
-    if(q !== (tk.quota_m30 || 1500)) for(const p of plans || []){
+    const q = Math.max(200, Math.round(+mo.querySelector('#eQuota').value || 2000));
+    if(q !== (tk.quota_m30 || 2000)) for(const p of plans || []){
       const mm = (len, mb) => Math.round((len || 0) / q * 30 + (mb || 0) * 5 / 60);   // walking at the quota + 5 s per mailbox (as the planner)
       await sb.from('task_plans').update({ minutes:mm(p.length_m, p.mailboxes), days:Array.isArray(p.days) ? p.days.map(x => ({ ...x, minutes:mm(x.length_m, x.mailboxes) })) : p.days }).eq('id', p.id);
     }
@@ -1645,7 +1645,7 @@ async function demoCreate(msg){
   const pl = Planner.planFlyers(g, start, DEMO_TASK.flyers, 3, { days:2, hoursPerDay:7 });
   const today = new Date().toISOString().slice(0, 10), tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
   const { data:tk, error } = await sb.from('tasks').insert({ title:DEMO_TASK.title, city_name:DEMO_TASK.city, district:DEMO_TASK.district, start_lat:DEMO_TASK.lat, start_lng:DEMO_TASK.lng, walk_minutes:15, zone_polygon:pl.zone, work_date:today,
-    notes:DEMO_TASK.notes[I.lang] || DEMO_TASK.notes.de, created_by:A.user.id, street_m:g.street_m, flyers:DEMO_TASK.flyers, quota_m30:1500, work_days:2, work_hours:7, est_mailboxes:pl.mailboxes, route_m:pl.routes.reduce((x, r) => x + r.length_m, 0) }).select().single();
+    notes:DEMO_TASK.notes[I.lang] || DEMO_TASK.notes.de, created_by:A.user.id, street_m:g.street_m, flyers:DEMO_TASK.flyers, quota_m30:2000, work_days:2, work_hours:7, est_mailboxes:pl.mailboxes, route_m:pl.routes.reduce((x, r) => x + r.length_m, 0) }).select().single();
   if(error) throw error;
   const r = await sb.from('task_plans').insert(pl.routes.map((x, i) => ({ task_id:tk.id, idx:i, worker_id:rows[i].id, color:Planner.COLORS[i], path:x.path, length_m:x.length_m, street_m:x.street_m, mailboxes:x.mailboxes, boxes:x.boxes, minutes:x.minutes, days:x.days, steps:x.steps, status:'accepted', work_dates:[today, tomorrow] })));
   if(r.error) throw r.error;
