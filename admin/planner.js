@@ -561,10 +561,18 @@
     }
     return out;
   }
+  // GPS points from this moment on are counted by direction (see markDir); days walked before stay as they were counted
+  const DIR_FROM = Date.parse('2026-11-12T23:00:00Z');
   // tracker keeps a sampled plan and marks samples near walked points; tol in meters
   function makeTracker(path, tol){
     tol = tol || 25;
     const samples = densifyPath(path, 8), done = new Uint8Array(samples.length);
+    // direction of the route at every sample (unit vector in metres, null next to a jump) – for the direction rule
+    const KY = R * RAD, KX = Math.cos((samples.length ? samples[0][0] : 51) * RAD) * R * RAD;
+    const sdir = samples.map((q, i) => {
+      const a = i > 0 && q[2] !== 1 ? samples[i - 1] : q, b = i < samples.length - 1 && samples[i + 1][2] !== 1 ? samples[i + 1] : q;
+      const dx = (b[1] - a[1]) * KX, dy = (b[0] - a[0]) * KY, l = Math.hypot(dx, dy); return l > 0.5 ? [dx / l, dy / l] : null;
+    });
     const cell = 0.0004, grid = new Map(), key = (la, lo) => Math.floor(la / cell) + ':' + Math.floor(lo / cell);
     samples.forEach((p, i) => { const k = key(p[0], p[1]); if(!grid.has(k)) grid.set(k, []); grid.get(k).push(i); });
     let count = 0;
@@ -576,7 +584,58 @@
       }
       return changed;
     }
-    function markLine(a, b){ // also fill between sparse track points
+    // Direction rule (new days): a street counts only where the walker goes ALONG it. A sample is done when it lies beside
+    // the walked piece a→b (≤ tol to the side, at most 8 m ahead of b and not behind a) and the route runs there in the walking direction
+    // (either way, ≤ 50°), or when the walker passed right over it (≤ CLOSE m). So at a crossing the side streets stay open,
+    // and the end of a street is done only when the walker really gets there.
+    const CLOSE = 6, ALONG = 8, COS = Math.cos(50 * RAD), AGREE = Math.cos(35 * RAD);
+    // the walking direction is taken over the last ≥ 20 m (single GPS steps are noisy). It counts when the last ≥ 8 m go
+    // the same way (≤ 35°) – then the whole straight piece of ≥ 20 m is marked. While turning (or standing) only what the
+    // walker passes right over counts; the piece after a corner is caught up as soon as 20 m of the new street are walked.
+    let hist = [];
+    function markDir(a, b){
+      if(!hist.length || hist[hist.length - 1][0] !== a[0] || hist[hist.length - 1][1] !== a[1]) hist = [a];
+      hist.push(b); if(hist.length > 40) hist.shift();
+      const vec = (p, q) => { const x = (q[1] - p[1]) * KX, y = (q[0] - p[0]) * KY; return [x, y, Math.hypot(x, y)]; };
+      let long = null, short = null, from = a;
+      for(let k = hist.length - 2; k >= 0; k--){
+        const v = vec(hist[k], b); if(v[2] > 80) break;
+        if(!short && v[2] >= 8) short = v;
+        if(v[2] >= 20){ long = v; from = hist[k]; break; }
+      }
+      let dir = null;
+      if(long && short && (long[0] * short[0] + long[1] * short[1]) / (long[2] * short[2]) >= AGREE) dir = [long[0] / long[2], long[1] / long[2]]; else from = a;
+      const v = vec(from, b), vx = v[0], vy = v[1], len = v[2];
+      const seen = new Set(), n = Math.min(50, Math.max(1, Math.ceil(len / 10))); let ch = false; const hit = [];
+      for(let s = 0; s <= n; s++){
+        const p = [from[0] + (b[0] - from[0]) * s / n, from[1] + (b[1] - from[1]) * s / n], cy = Math.floor(p[0] / cell), cx = Math.floor(p[1] / cell);
+        for(let dy = -1; dy <= 1; dy++) for(let dx = -1; dx <= 1; dx++){
+          const k = (cy + dy) + ':' + (cx + dx); if(seen.has(k)) continue; seen.add(k);
+          const list = grid.get(k); if(!list) continue;
+          for(const i of list){
+            if(done[i]) continue;
+            const px = (samples[i][1] - from[1]) * KX, py = (samples[i][0] - from[0]) * KY;
+            const al = len > 0 ? (px * vx + py * vy) / len : 0, t = Math.max(0, Math.min(len, al));
+            const dC = Math.hypot(px - (len > 0 ? vx / len * t : 0), py - (len > 0 ? vy / len * t : 0));
+            let ok = dC <= CLOSE;
+            if(!ok && dir && dC <= tol && al >= -2 && al <= len + ALONG && sdir[i]) ok = Math.abs(dir[0] * sdir[i][0] + dir[1] * sdir[i][1]) >= COS;
+            if(ok){ done[i] = 1; count++; ch = true; hit.push(i); }
+          }
+        }
+      }
+      // one or two samples left open between walked ones (the corner of a turn, where the direction is in between): closed
+      const cont = (i, j) => samples[j][2] !== 1 && dist(samples[i], samples[j]) <= 12;
+      for(const i of hit) for(const sgn of [-1, 1]) for(let g = 1; g <= 2; g++){
+        const j = i + sgn * (g + 1); if(j < 0 || j >= samples.length || !done[j]) continue;
+        let fine = true; for(let x = Math.min(i, j); x < Math.max(i, j); x++) if(!cont(x, x + 1)){ fine = false; break; }
+        if(fine) for(let x = Math.min(i, j) + 1; x < Math.max(i, j); x++) if(!done[x]){ done[x] = 1; count++; }
+        break;
+      }
+      return ch;
+    }
+    const isNew = p => (p[2] || 0) >= DIR_FROM;
+    function markLine(a, b){ // also fill between sparse track points; points with a time from DIR_FROM on: direction rule
+      if(isNew(b)) return markDir(a, b);
       const d = dist(a, b), n = Math.min(50, Math.max(1, Math.ceil(d / 10))); let ch = false;
       for(let k = 0; k <= n; k++) ch = mark([a[0] + (b[0]-a[0]) * k/n, a[1] + (b[1]-a[1]) * k/n]) || ch;
       return ch;
@@ -602,23 +661,26 @@
       let ch = false;
       for(let i = 0; i < pts.length; i++){
         const d = i ? dist(pts[i-1], pts[i]) : 0;
-        ch = (i && d < 120 ? markLine(pts[i-1], pts[i]) : (i ? fillGap(pts[i-1], pts[i]) : false) | mark(pts[i])) || ch;
+        ch = (i && d < 120 ? markLine(pts[i-1], pts[i]) : (i ? fillGap(pts[i-1], pts[i]) : false) | (isNew(pts[i]) ? markDir(pts[i], pts[i]) : mark(pts[i]))) || ch;
       }
       return ch;
     }
+    const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    const straight = (i, j) => { const a = sdir[i], b = sdir[j]; return !a || !b || a[0] * b[0] + a[1] * b[1] >= 0.7; };
     function runs(){ // covered stretches as polylines
       const out = []; let cur = null;
       for(let i = 0; i < samples.length; i++){
         const jump = samples[i][2] === 1;   // never draw a line across a jump to another place
         if(jump && cur){ out.push(cur); cur = null; }
-        if(done[i]){ if(!cur){ cur = []; if(i && !jump) cur.push(samples[i-1]); } cur.push(samples[i]); }
-        else if(cur){ cur.push(samples[i]); out.push(cur); cur = null; }
+        // the line reaches half-way to the open neighbour, but not around a corner (no stub into a side street)
+        if(done[i]){ if(!cur){ cur = []; if(i && !jump && straight(i - 1, i)) cur.push(mid(samples[i-1], samples[i])); } cur.push(samples[i]); }
+        else if(cur){ if(!jump && straight(i - 1, i)) cur.push(mid(samples[i], samples[i-1])); out.push(cur); cur = null; }
       }
       if(cur) out.push(cur);
       return out;
     }
     function nextIndex(){ for(let i = 0; i < samples.length; i++) if(!done[i]) return i; return -1; }
-    return { samples, mark, markLine, fillGap, addTrack, runs, nextIndex, isDone:i => !!done[i], pct: () => samples.length ? Math.round(100 * count / samples.length) : 0 };
+    return { samples, mark, markLine, fillGap, addTrack, runs, nextIndex, isDone:i => !!done[i], doneCount:() => count, pct: () => samples.length ? Math.round(100 * count / samples.length) : 0 };
   }
 
   /* ---------- mailboxes (estimated from OSM buildings) ---------- */
@@ -937,10 +999,10 @@
     const P = (pts || []).map(p => Array.isArray(p) ? p : [p.lat, p.lng, +new Date(p.t)]), walk = [], drive = [];
     let w = [], dr = [];
     for(let i = 0; i < P.length; i++){
-      const b = P[i]; if(!i){ w.push([b[0], b[1]]); continue; }
+      const b = P[i]; if(!i){ w.push([b[0], b[1], b[2]]); continue; }
       const a = P[i-1], d = dist(a, b), dt = ((b[2] || 0) - (a[2] || 0)) / 1000;
       if(d > 30 && dt > 0 && d / dt > DRIVE_MS){ if(w.length) walk.push(w); w = []; if(!dr.length) dr.push([a[0], a[1]]); dr.push([b[0], b[1]]); }
-      else { if(dr.length){ drive.push(dr); dr = []; } if(!w.length) w.push([a[0], a[1]]); w.push([b[0], b[1]]); }
+      else { if(dr.length){ drive.push(dr); dr = []; } if(!w.length) w.push([a[0], a[1], a[2]]); w.push([b[0], b[1], b[2]]); }
     }
     if(w.length) walk.push(w); if(dr.length > 1) drive.push(dr);
     return { walk, drive, driveM:drive.reduce((s, r) => s + r.reduce((x, q, k) => x + (k ? dist(r[k-1], q) : 0), 0), 0) };
@@ -1206,6 +1268,6 @@
     return partition(g, start, n).map((part, k) => ({ idx:k, ...planPart(g, part, start) }));
   }
 
-  const api = { setTileStamp, setPace, denseEntry, pathRuns, emptyGap, tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, makeBoxCounter, walkRuns, DRIVE_MS, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
+  const api = { setTileStamp, setPace, denseEntry, pathRuns, emptyGap, tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, DIR_FROM, makeBoxCounter, walkRuns, DRIVE_MS, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
   if(typeof module !== 'undefined' && module.exports) module.exports = api; else root.Planner = api;
 })(typeof window !== 'undefined' ? window : globalThis);

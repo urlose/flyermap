@@ -676,6 +676,26 @@ input[type=date].in::-webkit-date-and-time-value{text-align:left;min-height:1.4e
 @media (min-width:900px){.zr-mv{flex-direction:row}.zr-mv .icon-btn{height:40px}}
 .rv-act{margin-top:8px;width:auto}
 .tg-badge{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;font-size:11px;font-style:normal;font-weight:600;background:rgba(234,88,12,.14);color:#EA580C;white-space:nowrap}
+/* the route on the walker's maps: legend, direction arrows, checkpoints in their order */
+.rt-legend{display:flex;flex-direction:column;gap:6px;margin:8px 0 4px;font-size:13px;line-height:1.3;color:var(--color-text-secondary)}
+.rt-legend span{display:flex;align-items:flex-start;gap:8px}
+.rl{flex:none;width:26px;height:6px;border-radius:3px;margin-top:5px;box-shadow:0 0 0 1.5px #fff,0 0 0 2px rgba(0,0,0,.12)}
+.rl-today{background:#2563EB}.rl-done{background:var(--color-map-route-completed,#16A34A)}.rl-missed{background:#EA580C}.rl-later{background:#64748B;opacity:.6;height:4px;margin-top:6px}
+.rl-cp{width:18px;height:18px;margin:0 4px;border-radius:50%;background:#2563EB;box-shadow:0 0 0 2px #fff,0 0 0 3px rgba(0,0,0,.15)}
+.rt-left{margin:4px 0 0}
+.float-card .rt-legend{margin:0 0 10px}
+.float-card.mini .rt-legend,.float-card.mini .rt-left{display:none}
+.rt-arrow{width:16px;height:16px;line-height:0}.rt-arrow svg{width:16px;height:16px;fill:var(--c,#fff);stroke:rgba(15,23,42,.55);stroke-width:1;stroke-linejoin:round}
+.wcp{box-sizing:border-box;width:100%;height:100%;border-radius:50%;display:flex;align-items:center;justify-content:center;font:700 11px/1 var(--font-family);box-shadow:0 1px 4px rgba(0,0,0,.35);cursor:pointer}
+.wcp.wait{background:#fff;border:2px solid #94A3B8;color:#475569}
+.wcp.ok{background:#16A34A;border:2px solid #fff;color:#fff;font-size:11px}
+.wcp.next{background:#2563EB;border:3px solid #fff;color:#fff;font-size:15px;animation:wcpPulse 1.8s ease-out infinite}
+@keyframes wcpPulse{0%{box-shadow:0 1px 4px rgba(0,0,0,.35),0 0 0 0 rgba(37,99,235,.55)}100%{box-shadow:0 1px 4px rgba(0,0,0,.35),0 0 0 14px rgba(37,99,235,0)}}
+@media (prefers-reduced-motion:reduce){.wcp.next{animation:none}}
+.map-btn2{top:calc(var(--st) + 64px);font-weight:700;font-size:18px}
+.lg-pop{position:absolute;z-index:600;right:12px;top:calc(var(--st) + 116px);width:min(300px,calc(100vw - 24px));padding:12px 14px;border-radius:var(--radius-lg);background:var(--color-surface-elevated);box-shadow:var(--shadow-md);font-size:13px}
+.lg-pop b{display:block;margin-bottom:4px;font-size:14px}
+.lg-pop .rt-legend{margin:4px 0 0}
 </style>
 </head>
 <body>

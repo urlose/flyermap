@@ -2,8 +2,8 @@ import L from 'leaflet';
 import { registerPlugin } from '@capacitor/core';
 import { App } from '@capacitor/app';
 import Planner from '../../admin/planner.js';
-import { makeNav, dayProgress, nearestOpen, rerouteDay, stepsFromPath, checkpoints, addSkips } from './nav.js';
-import { cpMarker } from './admin.js';
+import { makeNav, dayProgress, nearestOpen, rerouteDay, stepsFromPath, checkpoints, addSkips, openStraight } from './nav.js';
+import { drawPieces, legendHtml, arrowsAlong, drawCps, showCp, ROUTE_C } from './routedraw.js';
 import { openMapView } from './routeview.js';
 import { locationNote, legalLinks, bindLegal } from './legalview.js';
 import { setLegalFirm } from './legal.js';
@@ -120,7 +120,7 @@ function routeTask(){ return W.route && W.route.task; }
 function ensureTracker(){
   const p = routeTask() && routeTask().plan;
   if(p && p.path && p.path.length > 1 && !W.tracker){
-    W.tracker = addSkips(Planner.makeTracker(p.path), p); if(W.prev) W.tracker.addTrack(W.prev); W.tracker.addTrack(W.track.map(x => [x[0], x[1]]));
+    W.tracker = addSkips(Planner.makeTracker(p.path), p); if(W.prev) W.tracker.addTrack(W.prev); W.tracker.addTrack(W.track);
   }
   if(p && p.boxes && p.boxes.length && !W.counter){
     W.counter = Planner.makeBoxCounter(p.boxes); if(W.prev) W.counter.visitAll(W.prev); W.counter.visitAll(W.track.map(x => [x[0], x[1]]));
@@ -151,7 +151,7 @@ function onLocation(lat, lng, acc, time, sim){
   }
   // driving or riding between villages (faster than 14 km/h): no flyers then – streets passed do not count as done
   const riding = !!last && sim !== 'first' && (time - last[2]) > 0 && hav(last[0], last[1], lat, lng) > 30 && hav(last[0], last[1], lat, lng) / ((time - last[2]) / 1000) > Planner.DRIVE_MS;   // > 14 km/h: car, bus, bike
-  if(W.tracker && !riding){ if(last && sim !== 'first'){ const g = hav(last[0], last[1], lat, lng); if(g < 120) W.tracker.markLine([last[0], last[1]], [lat, lng]); else { W.tracker.fillGap([last[0], last[1]], [lat, lng]); W.tracker.mark([lat, lng]); } } else W.tracker.mark([lat, lng]); }   // a long gap (screen was off) counts only along the route
+  if(W.tracker && !riding){ if(last && sim !== 'first'){ const g = hav(last[0], last[1], lat, lng); if(g < 120) W.tracker.markLine(last, [lat, lng, time]); else { W.tracker.fillGap([last[0], last[1]], [lat, lng]); W.tracker.addTrack([[lat, lng, time]]); } } else W.tracker.addTrack([[lat, lng, time]]); }   // a long gap (screen was off) counts only along the route
   if(W.counter && !riding){ if(last && sim !== 'first') W.counter.visitLine([last[0], last[1]], [lat, lng]); else W.counter.visit(lat, lng); }
   W.track.push([lat, lng, time]);
   W.queue.push({ t:new Date(time).toISOString(), lat:+lat.toFixed(6), lng:+lng.toFixed(6), acc: acc == null ? null : Math.round(acc) });
@@ -429,19 +429,33 @@ async function drawCoverage(m, task, below){
     below && below.forEach(l => l.bringToFront());
   }catch{}
 }
+// the route of a task on a map: every street once, coloured by what is left (see routedraw.js). At first nothing counts as
+// walked; redraw(tracker, day) paints the real state as soon as the progress is known.
 function drawTaskBase(m, task, dayIdx, dim){
   let b = L.latLngBounds([[task.start_lat, task.start_lng]]);
   if(task.zone_polygon){ const z = L.polygon(task.zone_polygon, { color:css('--brand'), weight:2, fillOpacity:.06, interactive:false }).addTo(m); b = z.getBounds(); }
-  let planLine = null; const pl = task.plan;
+  let planLine = null, redraw = () => null; const pl = task.plan;
   if(pl && pl.path && pl.path.length > 1){
-    const col = pl.color || '#2563EB', days = pl.days && pl.days.length > 1 ? pl.days : null;
-    if(days){   // several working days: today's loop is drawn strong, the other days faded (alternating dashes tell them apart)
-      planLine = L.featureGroup(days.map((d, k) => { const on = dayIdx == null || dayIdx === k; return L.polyline(Planner.pathRuns(pl.path.slice(d.i0, d.i1 + 1)), { color:col, weight:on ? (dim ? 4 : 5) : 3, opacity:on ? (dim ? .35 : .8) : (dim ? .15 : .3), dashArray:k % 2 ? '9 7' : null, lineJoin:'round' }).addTo(m); }));
-    }else planLine = L.polyline(pl.path, { color:col, weight:dim ? 4 : 5, opacity:dim ? .35 : .75, lineJoin:'round' }).addTo(m);
-    b = planLine.getBounds(); drawJumps(m, pl.path, task.travel || (task.bike ? 'bike' : 'bus'));
+    planLine = L.featureGroup().addTo(m);
+    redraw = (tr, day) => drawPieces(planLine, pl, tr || addSkips(Planner.makeTracker(pl.path), pl), day == null ? (dayIdx || 0) : day, dim);
+    redraw(null); b = L.latLngBounds(pl.path.map(q => [q[0], q[1]])); drawJumps(m, pl.path, task.travel || (task.bike ? 'bike' : 'bus'));
   }
   L.marker([task.start_lat, task.start_lng], { icon:dot('pin-start', 24) }).addTo(m);
-  return { b, planLine };
+  return { b, planLine, redraw };
+}
+// a map before the start (order page, map tab): what is walked already, the checkpoints of the day that comes next, the legend
+function showTaskProgress(m, task, base, legendEl, then){
+  const plan = task.plan; if(!plan || !plan.path || plan.path.length < 2) return;
+  const cpLayer = L.layerGroup().addTo(m), cpHl = L.layerGroup().addTo(m), cpState = {};
+  const paint = prev => {
+    const tr = addSkips(Planner.makeTracker(plan.path), plan); tr.addTrack(prev || []);
+    const pc = dayProgress(plan, tr), k = Math.max(0, pc.findIndex(p => p < 95)), p = base.redraw(tr, k);
+    drawCps(cpLayer, plan, tr, k, (c, n) => showCp(m, cpHl, c, n, false), cpState);
+    if(legendEl && p) legendEl.innerHTML = legendHtml(p, (plan.days || []).length > 1) + (p.m.done > 50 ? `<p class="small muted rt-left">${esc(t('lgLeft', { d:fmtDist(p.m.today + p.m.missed) }))}${p.m.missed > 30 ? ' · ' + esc(t('lgMissed', { d:fmtDist(p.m.missed) })) : ''}</p>` : '');
+    then && then(tr, prev);
+  };
+  paint(null);
+  rpc('plan_progress', { p_token:W.token, p_plan_id:plan.id }).then(paint).catch(() => {});
 }
 
 // after a change: the same screen again with the fresh data (a zone of a joined order stays that zone)
@@ -474,6 +488,7 @@ function viewTaskDetail(task){
       </div>
       ${plan && plan.days && plan.days.length > 1 ? `<h2 class="sec">${esc(t('route'))}:</h2><div class="info">${plan.days.map((d, k) => `<div class="day-row" data-dbig="${k}" role="button" tabindex="0"><span>${esc(t('dayN', { n:k + 1 }) + (d.place ? ' · ' + d.place : ''))}${dayList(plan)[k] ? ' · ' + esc(fmtDay(dayList(plan)[k])) : ''}</span><b>${esc(t('routeLine', { km:fmtDist(d.length_m), h:fmtHm(d.minutes || 0), mb:fmtN(d.mailboxes || 0) }))} <i id="dp${k}"></i></b></div>`).join('')}</div>` : ''}
       <div class="mapbox" id="tdMap"></div>
+      <div id="tdLegend"></div>
       ${plan && plan.path && plan.path.length > 1 ? `<button class="btn ghost small" id="tdBig" style="margin-top:8px">${ICONS.expand}${esc(t('rvBig'))}</button>` : ''}
       ${plan ? '' : `<p class="note">${esc(t('noPlan'))}</p>`}
       ${plan && st === 'open' ? `<p class="hint">${esc(t('openDetailHint'))}</p>` : ''}
@@ -490,15 +505,14 @@ function viewTaskDetail(task){
   bindBack(() => task._zone ? viewZones(tasks().find(x => x.id === task.id) || task._base) : workerTab('tasks'));
   if(st === 'open'){ const p0 = document.querySelector('.sec-row'); if(p0) p0.insertAdjacentHTML('afterend', `<p class="small muted" style="margin:-4px 0 10px">${esc(t('planRoute', { n:plan.idx + 1 }))}</p>`); }
   const m = makeMap($('#tdMap'), [task.start_lat, task.start_lng], 14, { dragging:true });
-  const { b, planLine } = drawTaskBase(m, task); fit(m, b, 16);
+  const base = drawTaskBase(m, task), { b } = base; fit(m, b, 16);
   if(task._zone) (task._base.others || []).filter(o => o.place && o.place === plan.place && o.path && o.path.length > 1).forEach(o => L.polyline(Planner.pathRuns(o.path), { color:'#64748B', weight:3, opacity:.45, dashArray:'4 6', interactive:false }).addTo(m));   // the colleague's part of the same place, faded
-  if(st !== 'open') drawCoverage(m, task, planLine ? [planLine] : []);
   if($('#go')) $('#go').onclick = () => beginRoute(task);
   if($('#tdBig')) $('#tdBig').onclick = () => bigRouteMap(task, null);
   document.querySelectorAll('[data-dbig]').forEach(r => { r.onclick = () => bigRouteMap(task, +r.dataset.dbig); r.onkeydown = e => { if(e.key === 'Enter') bigRouteMap(task, +r.dataset.dbig); }; });
   if(plan && plan.path && plan.path.length > 1 && st !== 'declined'){   // what of the route is already walked (by anybody) and what is still open
-    rpc('plan_progress', { p_token:W.token, p_plan_id:plan.id }).then(prev => {
-      const tr = addSkips(Planner.makeTracker(plan.path), plan); tr.addTrack(prev || []);
+    showTaskProgress(m, task, base, $('#tdLegend'), (tr, prev) => {
+      if(!prev) return;
       const multi = plan.days && plan.days.length > 1, ds = multi ? plan.days : [{ minutes:plan.minutes, length_m:plan.length_m }], dp = multi ? dayProgress(plan, tr) : [tr.pct()];
       const part = (k, v) => v * (dp[k] >= 95 ? 0 : 1 - (dp[k] || 0) / 100);
       const restMin = ds.reduce((a, d, k) => a + part(k, d.minutes || 0), 0), restM = ds.reduce((a, d, k) => a + part(k, d.length_m || 0), 0);
@@ -507,7 +521,7 @@ function viewTaskDetail(task){
       const pc = dayProgress(plan, tr); pc.forEach((p, k) => { const el = $('#dp' + k); if(el) el.innerHTML = p >= 95 ? statusPill('ok', t('stDone')) : p ? '· ' + p + '%' : ''; });
       const next = pc.findIndex(p => p < 95), go = $('#go');
       if(next >= 0 && plan.days[next]){ const q = plan.path[plan.days[next].i0]; if(q){ const g = $('#dirG'), a = $('#dirA'); if(g) g.href = (task.bike ? rideLink(task) : gTransit)(q[0], q[1]); if(a) a.href = aTransit(q[0], q[1]); } } if(go && next >= 0) go.querySelector('span').textContent = t(pc[next] >= 3 ? 'contDayN' : 'startDayN', { n:next + 1 });
-    }).catch(() => {});
+    });
   }
   if($('#cnPlan')) $('#cnPlan').onclick = async () => { if(await cancelDialog(rpc, W.token, plan.id, [...dayList(plan)].sort()[0])){ await loadMe(); workerTab('tasks'); } };
   if($('#chgDates')) $('#chgDates').onclick = () => { $('#chgBox').hidden = !$('#chgBox').hidden; };
@@ -664,11 +678,12 @@ function viewMap(){
   shell('map', `<div id="fullMap" class="fullmap"></div>
     <div class="float-card">${task ? `
       <div class="fc-head"><div><b>${esc(task.title)}</b><span>${esc([fmtDay(task.work_date), planInfo(task)].join(' · '))}</span></div></div>
+      <div id="mapLegend"></div>
       <button class="btn primary big" id="go">${ICONS.play}${esc(t('startRoute'))}</button>` : `
       <p class="muted" style="margin:0 0 10px">${esc(t('noActive'))}</p><button class="btn ghost" id="toTasks">${ICONS.flag}${esc(t('openTasks'))}</button>`}
     </div>`, { map:true });
   const m = makeMap($('#fullMap'), task ? [task.start_lat, task.start_lng] : null, 14);
-  if(task){ const { b, planLine } = drawTaskBase(m, task); fit(m, b, 40); drawCoverage(m, task, planLine ? [planLine] : []); $('#go').onclick = () => beginRoute(task); }
+  if(task){ const base = drawTaskBase(m, task); fit(m, base.b, 40); showTaskProgress(m, task, base, $('#mapLegend')); $('#go').onclick = () => beginRoute(task); }
   else { $('#toTasks').onclick = () => workerTab('tasks'); if(navigator.geolocation) navigator.geolocation.getCurrentPosition(p => { try{ m.setView([p.coords.latitude, p.coords.longitude], 15); L.marker([p.coords.latitude, p.coords.longitude], { icon:dot('me-dot', 20) }).addTo(m); }catch{} }, () => {}); }
 }
 
@@ -677,6 +692,7 @@ function viewTracking(){
   const hasPlan = !!W.tracker, paused = !!W.route.paused, quota = task && !task.no_quota && task.quota_m30;
   shell('map', `<div id="fullMap" class="fullmap"></div>
     <button class="icon-btn map-btn" id="recenter" aria-label="center">${ICONS.locate}</button>
+    ${hasPlan ? `<button class="icon-btn map-btn map-btn2" id="lgBtn" aria-label="${esc(t('lgTitle'))}">?</button><div class="lg-pop" id="lgPop" hidden><b>${esc(t('lgTitle'))}</b><div id="lgBody"></div></div>` : ''}
     ${hasPlan ? `<div class="nav" id="nav"><div class="nav-ic" id="navIc"></div><div class="nav-tx"><b id="navMain"></b><span id="navSub"></span><button class="nav-skip" id="navSkip">${esc(t('skipBtn'))}</button></div><a class="nav-ext" id="navExt" target="_blank" rel="noopener" aria-label="${esc(t('navExt'))}">${ICONS.map}</a></div>
       <div class="nav-transit" id="navTr" hidden><b id="navTrT"></b><div class="rr-btns"><a class="btn primary small" id="navTrG" target="_blank" rel="noopener">${esc(t('busTrain'))}</a><a class="btn ghost small" id="navTrA" target="_blank" rel="noopener">${esc(t('appleMaps'))}</a></div><a class="link small" id="navTrW" target="_blank" rel="noopener">${esc(t('onFoot'))}</a></div>` : ''}
     <div class="float-card ${W.mapFull ? 'mini' : ''}">
@@ -704,6 +720,20 @@ function viewTracking(){
   const dayIdx = nav ? W.route.dayIdx : null;
   // guidance: the plan of the day, or – after the walker took their own way – the rest of the day in a new order
   let guide = nav, gDay = dayIdx, rerouted = false, lastRR = 0, rerouteToast = false, back = 0, rrGen = 0;
+  // The street is not walked to its end: the walker came up to an open piece that lies straight ahead on the same street,
+  // turned around and walks away from it. Then the guidance first leads to the end of that street (no new point to go to
+  // before that) – until the piece is walked, handed in as not needed, or the walker is more than 150 m away.
+  let miss = null, missOn = null;
+  const checkMiss = (lat, lng) => {
+    if(!W.tracker || !nav){ missOn = null; return; }
+    const c = openStraight(W.tracker.samples, i => W.tracker.isDone(i), i => nav.dayAt(nav.posOf[i]) === (dayIdx || 0), lat, lng);
+    if(!c || c.d > 150){ miss = null; missOn = null; return; }
+    if(!miss || miss.key !== c.key){ miss = { key:c.key, minD:c.d }; missOn = null; }
+    miss.minD = Math.min(miss.minD, c.d);
+    if(missOn){ missOn = c; return; }
+    const h = heading(); if(h == null || miss.minD > 25 || c.d < miss.minD + 12) return;
+    if(Math.sin(h * Math.PI / 180) * c.dir[0] + Math.cos(h * Math.PI / 180) * c.dir[1] < -0.5){ missOn = c; try{ navigator.vibrate && navigator.vibrate([200, 100, 200]); }catch{} }
+  };
   const reroute = (lat, lng) => {
     if(!nav || Date.now() - lastRR < 6000) return false;
     lastRR = Date.now();
@@ -722,26 +752,28 @@ function viewTracking(){
     }
     return false;
   };
-  if(task){ const base = drawTaskBase(m, task, dayIdx, !!nav); if(!last) fit(m, base.b, 40); drawCoverage(m, task, []); }
+  let base = null; if(task){ base = drawTaskBase(m, task, dayIdx, !!nav); if(!last) fit(m, base.b, 40); }
   const doneLayer = L.layerGroup().addTo(m);
   // the next ~400 m of the route bright and thick, the rest of the day faded: the walker sees where to go now
   const aheadLayer = L.layerGroup().addTo(m), aheadCol = (plan && plan.color) || '#2563EB';
   const drawAhead = () => {
     if(!guide) return; aheadLayer.clearLayers();
+    if(missOn) return;   // first the street the walker is on to its end – no new point to go to before that
     const pts = guide.ahead(gDay, AHEAD_M); if(pts.length < 2) return;
     L.polyline(pts, { color:'#fff', weight:11, opacity:.9, lineJoin:'round', lineCap:'round', interactive:false }).addTo(aheadLayer);
     L.polyline(pts, { color:aheadCol, weight:7, opacity:1, lineJoin:'round', lineCap:'round', interactive:false }).addTo(aheadLayer);
+    arrowsAlong(aheadLayer, pts, 55, '#fff');
     L.marker(pts[pts.length - 1], { icon:dot('ahead-dot', 12), interactive:false }).addTo(aheadLayer);
   };
-  const trackLine = L.polyline(W.track.map(p => [p[0], p[1]]), { color:css('--route'), weight:3, opacity:.8 }).addTo(m);
+  const trackLine = L.polyline(W.track.map(p => [p[0], p[1]]), { color:css('--route'), weight:2, opacity:.45, interactive:false }).addTo(m);
   // "not needed": the open piece the guidance leads to next (a road without houses, houses already served from another
   // street, no access) is marked as skipped – after a confirmation, visible for the admin – and the route goes on without it
   const skipLayer = L.layerGroup().addTo(m);
   const skipNext = async () => {
     if(!guide || !W.tracker || !plan) return;
     const S = W.tracker.samples, day = dayIdx || 0, ok = i => !W.tracker.isDone(i) && (!nav || nav.dayAt(nav.posOf[i]) === day);
-    let seed = -1;
-    for(const a of guide.ahead(gDay, 600)){
+    let seed = missOn ? missOn.seed : -1;
+    if(seed < 0) for(const a of guide.ahead(gDay, 600)){
       let bd = 14; for(let i = 0; i < S.length; i++){ const q = S[i]; if(Math.abs(q[0] - a[0]) > 0.0002 || !ok(i)) continue; const d = hav(a[0], a[1], q[0], q[1]); if(d < bd){ bd = d; seed = i; } }
       if(seed >= 0) break;
     }
@@ -758,20 +790,28 @@ function viewTracking(){
     if(why == null) return;
     try{ await rpc('skip_part', { p_token:W.token, p_plan_id:plan.id, p_pts:pts, p_why:why }); }catch(e){ toast(errText(e)); return; }
     (plan.skipped = plan.skipped || []).push({ pts, why }); saveRoute();
-    W.tracker.addTrack(pts); lastRR = 0;
+    W.tracker.addTrack(pts); lastRR = 0; miss = null; missOn = null;
     const me = W.track[W.track.length - 1]; if(me) reroute(me[0], me[1]);
     drawDone(); drawAhead(); updateNav(); tgt = null; sendTarget(); toast(t('skipDone'));
   };
   if($('#navSkip')) $('#navSkip').onclick = e => { e.preventDefault(); skipNext(); };
+  if($('#lgBtn')){
+    const pop = $('#lgPop'), show = on => { pop.hidden = !on; if(on){ const nv = $('#nav'), bt = $('#lgBtn').getBoundingClientRect().bottom; pop.style.top = Math.round(Math.max(bt, nv ? nv.getBoundingClientRect().bottom : 0) + 8) + 'px'; } };
+    $('#lgBtn').onclick = () => show(pop.hidden); pop.onclick = () => show(false);
+    store.get('lgSeen').then(v => { if(!v && $('#lgPop')){ show(true); store.set('lgSeen', 1); setTimeout(() => { if($('#lgPop')) show(false); }, 12000); } }).catch(() => {});
+  }
   let meMarker = null; view.follow = true;
   m.on('dragstart', () => { view.follow = false; });
   $('#recenter').onclick = () => { view.follow = true; const l = W.track[W.track.length - 1]; if(l) followTo([l[0], l[1]], 17, true); };
-  const cpLayer = L.layerGroup().addTo(m);
+  const cpLayer = L.layerGroup().addTo(m), cpHl = L.layerGroup().addTo(m), cpState = {};
+  let piecesAt = 0, piecesPct = -1, pieces = null;
   const drawDone = () => {
-    if(!W.tracker) return; doneLayer.clearLayers();
-    // checkpoints of today's day: what is finished, what is still open
-    cpLayer.clearLayers(); if(plan && plan.path) checkpoints(plan, i => W.tracker.isDone(i)).filter(c => c.day === (dayIdx || 0)).forEach(c => cpMarker(c, plan.color, false).addTo(cpLayer));
-    W.tracker.runs().forEach(r => L.polyline(r, { color:GREEN_C(), weight:7, opacity:.95, lineJoin:'round' }).addTo(doneLayer));
+    if(!W.tracker) return;
+    // the route in its colours (done · today · left out); only painted again when something was walked, at most every 2.5 s
+    const sig = W.tracker.doneCount ? W.tracker.doneCount() : W.tracker.pct();
+    if(base && plan && plan.path && sig !== piecesPct && Date.now() - piecesAt > 2500){ piecesPct = sig; piecesAt = Date.now(); pieces = base.redraw(W.tracker, dayIdx || 0); const lb = $('#lgBody'); if(lb && pieces) lb.innerHTML = legendHtml(pieces, nav && nav.days.length > 1); }
+    // checkpoints of today's day in their order: done ones small, the next one big; a tap shows the route of the checkpoint
+    if(plan && plan.path) drawCps(cpLayer, plan, W.tracker, dayIdx || 0, (c, n) => { view.follow = false; showCp(m, cpHl, c, n, false); }, cpState);
     const p = W.tracker.pct(), sp = $('#sP'); if(sp) sp.textContent = p + '%'; const bar = $('#sBar'); if(bar) bar.style.width = p + '%';
     checkDayEnd();
   };
@@ -843,7 +883,11 @@ function viewTracking(){
     if(!guide || !$('#nav')) return;
     const n = guide.next(gDay), s = n.step[1], multi = nav.days.length > 1;
     let main, sub = '', icon, left = null; approachTo = null;
-    if(lastOff > 60){
+    if(missOn){
+      const me = W.track[W.track.length - 1]; approachTo = [missOn.far[0], missOn.far[1]];
+      main = t('navFinish', { d:fmtDist(me ? hav(me[0], me[1], approachTo[0], approachTo[1]) : missOn.len) }); sub = t('navFinishSub'); icon = ICONS.pin;
+    }
+    else if(lastOff > 60){
       // away from the route (e.g. the route begins a few streets from the start point): lead the walker to the place where
       // the route goes on, with a dashed line on the map and the walking directions behind the map button
       const j = Math.min(guide.path.length - 1, Math.max(0, Math.round(guide.pos))), tgt = guide.path[j], me = W.track[W.track.length - 1];
@@ -893,13 +937,15 @@ function viewTracking(){
   view.update = (lat, lng) => {
     trackLine.addLatLng([lat, lng]); view.me(lat, lng);
     if(nav){
+      checkMiss(lat, lng);
       const mAt = q => guide.cum[Math.max(0, Math.min(guide.cum.length - 1, Math.floor(q)))], before = mAt(guide.pos);
       lastOff = guide.locate(lat, lng).off;
       // own way: off the guided line but on an open street of the day, a jump far ahead along the line (the walker does a later
       // part first), or the end of the line reached while streets of the day are still open
       const n = guide.next(gDay), moved = mAt(guide.pos) - before, jumped = moved > 250;
       back = lastOff <= 30 ? Math.max(0, back - moved) : back;   // walking the line against its direction adds up
-      if((lastOff > 30 && onOpenStreet(lat, lng)) || jumped || back > 60 || (n.lastOfDay && leftOfDay())){ if(reroute(lat, lng)){ back = 0; lastOff = guide.locate(lat, lng).off; } }
+      if(missOn){ /* first the end of this street */ }
+      else if((lastOff > 30 && onOpenStreet(lat, lng)) || jumped || back > 60 || (n.lastOfDay && leftOfDay())){ if(reroute(lat, lng)){ back = 0; lastOff = guide.locate(lat, lng).off; } }
       updateNav(); drawAhead(); drawApproach(); sendTarget();
     }
     if(view.follow) followTo([lat, lng], m.getZoom() < 16 ? 17 : null);   // first fix after the start: close up

@@ -121,10 +121,15 @@ export function rerouteDay(plan, dayIdx, isDone, here, head){
   const ids = new Map(), pts = [], key = p => p[0].toFixed(6) + ',' + p[1].toFixed(6);
   const vid = path.map(p => { const k = key(p); let i = ids.get(k); if(i === undefined){ i = pts.length; ids.set(k, i); pts.push(p); } return i; });
   // open[j]: segment j (path[j] → path[j+1]) still needs walking. A few unmarked metres at a corner (GPS) do not count:
-  // at least 3 samples (~24 m) and half of the segment must be open – otherwise the walker would be sent back for nothing
-  const nS = new Uint16Array(path.length), nO = new Uint16Array(path.length), open = new Uint8Array(path.length);
-  for(let i = 0; i < base.posOf.length; i++){ const j = Math.min(path.length - 2, Math.max(0, Math.ceil(base.posOf[i] - 1e-9) - 1)); nS[j]++; if(!isDone(i)) nO[j]++; }
-  for(let j = 0; j < path.length - 1; j++) open[j] = nO[j] >= Math.max(3, nS[j] * 0.5) ? 1 : 0;
+  // at least 3 samples (~24 m) and half of the segment must be open – otherwise the walker would be sent back for nothing.
+  // A piece of 40 m in a row (5 samples) is open in any case: the end of a long street that was not walked to its end.
+  const nS = new Uint16Array(path.length), nO = new Uint16Array(path.length), open = new Uint8Array(path.length), rowMax = new Uint16Array(path.length);
+  let row = 0, rowJ = -1;
+  for(let i = 0; i < base.posOf.length; i++){
+    const j = Math.min(path.length - 2, Math.max(0, Math.ceil(base.posOf[i] - 1e-9) - 1)); nS[j]++;
+    if(!isDone(i)){ nO[j]++; row = rowJ === j ? row + 1 : 1; rowJ = j; if(row > rowMax[j]) rowMax[j] = row; } else { row = 0; rowJ = -1; }
+  }
+  for(let j = 0; j < path.length - 1; j++) open[j] = nO[j] >= Math.max(3, nS[j] * 0.5) || rowMax[j] >= 5 ? 1 : 0;
   const E = [], byKey = new Map(), adj = pts.map(() => []);
   for(let j = 0; j < path.length - 1; j++){
     const a = vid[j], b = vid[j + 1]; if(a === b || path[j + 1][2] === 1) continue;   // a jump to a far place is no street
@@ -222,4 +227,69 @@ export function addSkips(tr, plan){
   if(!tr || !plan) return tr;
   for(const s of plan.skipped || []) if(s && Array.isArray(s.pts) && s.pts.length > 1) tr.addTrack(s.pts);
   return tr;
+}
+
+// The street the walker is on goes on, but is not walked there yet: the open piece (≥ 3 samples, about 24 m, in a row) that lies straight
+// along the route from where the walker is (up to 200 m away, no turn in between). Used to notice that somebody turns
+// around before the end of a street: { d: metres to its beginning, near, far, dir:[x, y] unit vector near→far, seed, key }.
+// samples = tracker.samples (8 m steps), isDone(i), ok(i): sample belongs to what is walked now (the working day)
+export function openStraight(samples, isDone, ok, lat, lng){
+  const kx = Math.cos(lat * RAD) * R * RAD, ky = R * RAD, n = samples.length;
+  const vec = (a, b) => { const x = (b[1] - a[1]) * kx, y = (b[0] - a[0]) * ky, l = Math.hypot(x, y); return l > 0.3 ? [x / l, y / l, l] : null; };
+  const step = (i, j) => j >= 0 && j < n && samples[Math.max(i, j)][2] !== 1 ? vec(samples[i], samples[j]) : null;
+  let best = null;
+  for(let i = 0; i < n; i++){
+    const q = samples[i]; if(!isDone(i) || Math.abs(q[0] - lat) > 0.0003) continue;
+    const dHere = Math.hypot((q[1] - lng) * kx, (q[0] - lat) * ky); if(dHere > 20) continue;
+    for(const sg of [-1, 1]){
+      const d0 = step(i, i + sg); if(!d0 || d0[2] > 12) continue;
+      let j = i + sg, prev = i, guard = 0, fine = true;
+      const straight = (a, b) => { const v = step(a, b); return v && v[2] <= 12 && v[0] * d0[0] + v[1] * d0[1] >= 0.77; };   // ≤ 40° off the direction it began with
+      while(fine && guard++ < 25 && isDone(j)){ prev = j; j += sg; fine = straight(prev, j); }
+      if(!fine || isDone(j) || !ok(j)) continue;
+      let end = j, len = 1; while(len < 60 && straight(end, end + sg) && !isDone(end + sg) && ok(end + sg)){ end += sg; len++; }
+      if(len < 3) continue;   // less than ~24 m: GPS, or the last house is reached
+      const near = samples[j], far = samples[end], d = Math.hypot((near[1] - lng) * kx, (near[0] - lat) * ky);
+      if(d > 200) continue;
+      if(!best || d < best.d) best = { d, near, far, dir:[d0[0], d0[1]], seed:j, key:far[0].toFixed(5) + ',' + far[1].toFixed(5), len:len * 8 };
+    }
+  }
+  return best;
+}
+
+// What is left of a route, in tidy pieces for the map. Every piece of street is drawn once (a street walked up and down is
+// one line, not two on top of each other) and belongs to one group:
+//   done   – walked (or handed in as not needed)
+//   today  – open, belongs to the working day `cur`
+//   missed – open and left behind: of an earlier day, or a short piece (≤ 480 m) between streets that are already done
+//   later  – open, belongs to a later day
+// Returns { done, today, missed, later } as lists of lines, and the open metres per group.
+export function routePieces(plan, tracker, cur){
+  const S = tracker.samples, n = S.length, nav = makeNav(plan), cls = new Uint8Array(n);   // 0 done · 1 later · 2 missed · 3 today
+  cur = cur == null ? 0 : cur;
+  const cont = i => i > 0 && S[i][2] !== 1 && hv(S[i - 1], S[i]) <= 12;
+  for(let i = 0; i < n; i++){ if(tracker.isDone(i)) continue; const k = nav.dayAt(nav.posOf[i]); cls[i] = k < cur ? 2 : k > cur ? 1 : 3; }
+  // holes of the day: open runs with walked street before and after
+  for(let i = 0; i < n; i++){
+    if(cls[i] !== 3) continue;
+    let e = i; while(e + 1 < n && cls[e + 1] === 3 && cont(e + 1)) e++;
+    // "walked" means 70 m of street on that side (9 samples) – a crossing the walker passed is marked too, but it does not
+    // make the side street next to it a hole
+    const wal = (x, sg) => { for(let g = 0; g < 9; g++){ const y = x + sg * g; if(y < 0 || y >= n || cls[y] !== 0 || (g && !cont(sg > 0 ? y : y + 1))) return false; } return true; };
+    const before = i > 0 && cont(i) && wal(i - 1, -1), after = e + 1 < n && cont(e + 1) && wal(e + 1, 1), len = e - i + 1;
+    if(before && after && len <= 60) for(let x = i; x <= e; x++) cls[x] = len <= 2 ? 0 : 2;   // one or two samples: GPS, not a missed piece
+    i = e;
+  }
+  // every piece of street once: the group that matters most wins (today > missed > later > done)
+  const key = (a, b) => { const x = ((a[0] + b[0]) / 2).toFixed(5) + ',' + ((a[1] + b[1]) / 2).toFixed(5); return x; };
+  const top = new Map(), segC = i => Math.max(cls[i - 1], cls[i]) === 0 ? 0 : (cls[i] || cls[i - 1]);
+  for(let i = 1; i < n; i++){ if(!cont(i)) continue; const k = key(S[i - 1], S[i]), c = segC(i); if(!top.has(k) || top.get(k) < c) top.set(k, c); }
+  const out = [[], [], [], []], m = [0, 0, 0, 0], used = new Set(); let line = null, lc = -1;
+  for(let i = 1; i < n; i++){
+    const k = cont(i) ? key(S[i - 1], S[i]) : null, c = k == null ? -1 : top.get(k);
+    if(k == null || used.has(k)){ line = null; lc = -1; continue; }
+    used.add(k); m[c] += hv(S[i - 1], S[i]);
+    if(line && lc === c) line.push([S[i][0], S[i][1]]); else { line = [[S[i - 1][0], S[i - 1][1]], [S[i][0], S[i][1]]]; lc = c; out[c].push(line); }
+  }
+  return { done:out[0], later:out[1], missed:out[2], today:out[3], m:{ done:m[0], later:m[1], missed:m[2], today:m[3] } };
 }
