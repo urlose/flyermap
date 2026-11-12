@@ -334,7 +334,7 @@ function viewLive(){
     if(!fitted){ if(pl) refit(); else autoFit(); }
   };
   tickFn = tick; radRow();
-  tick(); every(A.demo ? 3000 : 6000, tick);
+  tick(); every(A.demo ? 3000 : 4000, tick);
 }
 
 /* ---------- MITARBEITER: admin profile + team ---------- */
@@ -724,7 +724,7 @@ function liveWorkers(g, tk, plans, showNames){
     });
   };
   draw();
-  every(15000, async () => {
+  every(4000, async () => {
     try{ await Promise.all([loadWorkers(), loadLive()]); draw(); }catch{}
   });
   return draw;

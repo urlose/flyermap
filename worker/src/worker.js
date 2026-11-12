@@ -84,7 +84,7 @@ export async function flush(){
   }finally{ W.busy = false; updateSync(); }
   if(after) await after();
 }
-setInterval(flush, 8000);
+setInterval(flush, 4000);
 
 export async function loadMe(){
   try{ W.me = await rpc('worker_me', { p_token:W.token }); await store.set('me', W.me); setLegalFirm(W.me && W.me.company); if(!W.ctAsked){ W.ctAsked = true; contractGate(rpc, W.token); } }
