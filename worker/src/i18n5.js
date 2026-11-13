@@ -265,3 +265,5 @@ Object.assign(T.de, { helpInbox:'Hilfe-Meldungen', helpInboxN:'{n} offen', helpI
 Object.assign(T.ru, { helpInbox:'Обращения работников', helpInboxN:'открыто: {n}', helpInboxNone:'Обращений нет.', helpFrom:'от {n}', helpOpenTask:'Открыть заказ', helpWhere:'Место при отправке', helpAnswerPh:'Ответ работнику (необязательно)', helpClose:'Отметить как готово', helpAnswerTitle:'Ответ на твоё обращение', helpShowDone:'Показать готовые' });
 Object.assign(T.de, { navProblem:'Problem melden', navFinishSub:'Erst bis zum Ende, dann geht es weiter' });
 Object.assign(T.ru, { navProblem:'Сообщить о проблеме', navFinishSub:'Сначала до конца, потом дальше' });
+Object.assign(T.de, { rvLoading:'GPS-Spuren werden geladen …' });
+Object.assign(T.ru, { rvLoading:'Загружаются GPS-треки …' });
