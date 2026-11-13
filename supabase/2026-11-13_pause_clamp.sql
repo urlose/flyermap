@@ -10,3 +10,18 @@ create or replace function public.resume_route(p_token uuid, p_route_id uuid, p_
 declare w workers; v_at timestamptz := least(coalesce(p_at, now()), now());
 begin w := _worker(p_token);
   update routes set break_s = break_s + greatest(0, extract(epoch from (least(v_at, coalesce(ended_at, v_at)) - greatest(paused_at, started_at)))::int), paused_at = null, auto_paused = false where id = p_route_id and worker_id = w.id and paused_at is not null; end $$;
+
+-- Later the same day: the app also sent the same pause/resume pair twice, so one pause was taken off twice.
+-- The time of the last resume is kept, and a later pause cannot start before it (a repeated pair adds nothing).
+alter table public.routes add column if not exists resumed_at timestamptz;
+create or replace function public.pause_route(p_token uuid, p_route_id uuid, p_at timestamptz default null) returns void language plpgsql security definer set search_path to 'public' as $$
+declare w workers;
+begin w := _worker(p_token);
+  update routes set paused_at = coalesce(paused_at, greatest(least(coalesce(p_at, now()), now()), started_at, coalesce(resumed_at, started_at))) where id = p_route_id and worker_id = w.id and ended_at is null; end $$;
+
+create or replace function public.resume_route(p_token uuid, p_route_id uuid, p_at timestamptz default null) returns void language plpgsql security definer set search_path to 'public' as $$
+declare w workers; v_at timestamptz := least(coalesce(p_at, now()), now());
+begin w := _worker(p_token);
+  update routes set break_s = break_s + greatest(0, extract(epoch from (least(v_at, coalesce(ended_at, v_at)) - greatest(paused_at, started_at)))::int),
+    resumed_at = greatest(coalesce(resumed_at, started_at), least(v_at, coalesce(ended_at, v_at)), paused_at), paused_at = null, auto_paused = false
+    where id = p_route_id and worker_id = w.id and paused_at is not null; end $$;
