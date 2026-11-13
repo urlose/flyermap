@@ -3,6 +3,7 @@ import { registerPlugin } from '@capacitor/core';
 import { App } from '@capacitor/app';
 import Planner from '../../admin/planner.js';
 import { makeNav, dayProgress, nearestOpen, rerouteDay, stepsFromPath, checkpoints, addSkips, openStraight } from './nav.js';
+import { REASONS, faqFor } from './help.js';
 import { drawPieces, legendHtml, arrowsAlong, drawCps, showCp, ROUTE_C } from './routedraw.js';
 import { openMapView } from './routeview.js';
 import { locationNote, legalLinks, bindLegal } from './legalview.js';
@@ -392,7 +393,7 @@ function taskDates(tk){ const d = dayList(zoneSum(tk)); return d.length ? d.map(
 function viewTasks(){
   const list = tasks(), open = openRoutes(), unread = ((W.me && W.me.inbox) || []).filter(n => !n.read).length;
   const nNew = list.filter(x => x.plan && zoneSum(x).status === 'offered').length, nAcc = list.filter(x => x.plan && zoneSum(x).status === 'accepted').length;
-  shell('tasks', `${topbar(t('myTasks'), null, `<button class="icon-btn" id="rf" aria-label="${esc(t('refresh'))}">${ICONS.refresh}</button><button class="icon-btn" id="bell" aria-label="${esc(t('inbox'))}" style="position:relative">${ICONS.bell}${unread ? `<span class="badge">${unread}</span>` : ''}</button>`)}
+  shell('tasks', `${topbar(t('myTasks'), null, `<button class="icon-btn" id="helpBtn" aria-label="${esc(t('needHelp'))}">?</button><button class="icon-btn" id="rf" aria-label="${esc(t('refresh'))}">${ICONS.refresh}</button><button class="icon-btn" id="bell" aria-label="${esc(t('inbox'))}" style="position:relative">${ICONS.bell}${unread ? `<span class="badge">${unread}</span>` : ''}</button>`)}
     <div class="pad">
       ${list.length ? `<div class="kpis two"><div class="kpi k-warn"><b>${nNew}</b><span>${esc(t('kNew'))}</span></div><div class="kpi k-info"><b>${nAcc}</b><span>${esc(t('stAccepted'))}</span></div></div>` : ''}
       ${list.length ? list.map((tk, i) => { const pv = zoneSum(tk); return `<button class="card acc ${accClass(pv)} task-card" data-i="${i}">
@@ -410,7 +411,7 @@ function viewTasks(){
     </div>`);
   document.querySelectorAll('.task-card[data-i]').forEach(b => b.onclick = () => viewTaskDetail(list[+b.dataset.i]));
   document.querySelectorAll('.task-card[data-o]').forEach(b => b.onclick = () => viewTaskDetail(open[+b.dataset.o]));
-  $('#bell').onclick = viewInbox;
+  $('#bell').onclick = viewInbox; $('#helpBtn').onclick = () => viewHelp(null, () => workerTab('tasks'));
   $('#free').onclick = () => beginRoute(null);
   $('#rf').onclick = async () => { const b = $('#rf'); b.disabled = true; b.style.opacity = .5; try{ await loadMe(); }catch{ toast(t('netErr')); } viewTasks(); };
 }
@@ -489,6 +490,7 @@ function viewTaskDetail(task){
       ${plan && plan.days && plan.days.length > 1 ? `<h2 class="sec">${esc(t('route'))}:</h2><div class="info">${plan.days.map((d, k) => `<div class="day-row" data-dbig="${k}" role="button" tabindex="0"><span>${esc(t('dayN', { n:k + 1 }) + (d.place ? ' · ' + d.place : ''))}${dayList(plan)[k] ? ' · ' + esc(fmtDay(dayList(plan)[k])) : ''}</span><b>${esc(t('routeLine', { km:fmtDist(d.length_m), h:fmtHm(d.minutes || 0), mb:fmtN(d.mailboxes || 0) }))} <i id="dp${k}"></i></b></div>`).join('')}</div>` : ''}
       <div class="mapbox" id="tdMap"></div>
       <div id="tdLegend"></div>
+      ${plan && st !== 'open' ? `<button class="link" id="tdHelp" style="margin:2px 0 10px">${esc(t('helpRouteLink'))}</button>` : ''}
       ${plan && plan.path && plan.path.length > 1 ? `<button class="btn ghost small" id="tdBig" style="margin-top:8px">${ICONS.expand}${esc(t('rvBig'))}</button>` : ''}
       ${plan ? '' : `<p class="note">${esc(t('noPlan'))}</p>`}
       ${plan && st === 'open' ? `<p class="hint">${esc(t('openDetailHint'))}</p>` : ''}
@@ -508,6 +510,7 @@ function viewTaskDetail(task){
   const base = drawTaskBase(m, task), { b } = base; fit(m, b, 16);
   if(task._zone) (task._base.others || []).filter(o => o.place && o.place === plan.place && o.path && o.path.length > 1).forEach(o => L.polyline(Planner.pathRuns(o.path), { color:'#64748B', weight:3, opacity:.45, dashArray:'4 6', interactive:false }).addTo(m));   // the colleague's part of the same place, faded
   if($('#go')) $('#go').onclick = () => beginRoute(task);
+  if($('#tdHelp')) $('#tdHelp').onclick = () => viewHelp(plan.id, () => viewTaskDetail(task));
   if($('#tdBig')) $('#tdBig').onclick = () => bigRouteMap(task, null);
   document.querySelectorAll('[data-dbig]').forEach(r => { r.onclick = () => bigRouteMap(task, +r.dataset.dbig); r.onkeydown = e => { if(e.key === 'Enter') bigRouteMap(task, +r.dataset.dbig); }; });
   if(plan && plan.path && plan.path.length > 1 && st !== 'declined'){   // what of the route is already walked (by anybody) and what is still open
@@ -556,6 +559,58 @@ function viewTaskDetail(task){
   if($('#dec')) $('#dec').onclick = async () => {
     if(!await confirmBox(t('declineQ'), t('declineText'), t('decline'), true)) return;
     try{ await rpc('respond_plan', { p_token:W.token, p_plan_id:plan.id, p_accept:false, p_dates:[] }); await loadMe(); workerTab('tasks'); }catch(e){ $('#accErr').textContent = errText(e); }
+  };
+}
+
+/* ================= help: frequent questions, report a problem with a route ================= */
+// planId: the route the report is about is chosen already (from the order page / while walking); back: where "back" leads
+async function viewHelp(planId, back){
+  const plans = tasks().flatMap(tk => (multiZone(tk) ? tk.plans : tk.plan ? [tk.plan] : []).filter(p => p.status !== 'declined').map(p => ({ id:p.id, label:[tk.title, multiZone(tk) ? p.place : ''].filter(Boolean).join(' · ') })));
+  const live = W.route && !W.route.endedAt && W.route.task && W.route.task.plan ? W.route.task.plan.id : null, pre = planId || live || (plans.length === 1 ? plans[0].id : '');
+  const faq = faqFor(I.lang);
+  shell(UI.tab || 'tasks', `${topbar(t('needHelp'), true)}
+    <div class="pad help">
+      <h2 class="sec" style="margin-top:4px">${esc(t('helpFaq'))}</h2>
+      <div class="faq">${faq.map(f => `<details><summary>${esc(f.q)}</summary><p>${esc(f.a)}</p></details>`).join('')}</div>
+      <h2 class="sec" id="hpForm">${esc(t('helpProblem'))}</h2>
+      <p class="small muted" style="margin-top:-6px">${esc(t('helpProblemSub'))}</p>
+      <div class="card" style="display:block">
+        <label class="f" for="hpPlan" style="margin-top:0">${esc(t('helpWhich'))}</label>
+        <select class="in" id="hpPlan"><option value="">${esc(t('helpNoRoute'))}</option>${plans.map(p => `<option value="${p.id}" ${p.id === pre ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}</select>
+        <label class="f">${esc(t('helpReason'))}</label>
+        <div class="reasons" role="radiogroup">${REASONS.map(r => `<button type="button" class="chip" role="radio" aria-checked="false" data-r="${r}">${esc(t('hr_' + r))}</button>`).join('')}</div>
+        <label class="f" for="hpText">${esc(t('helpText'))}</label>
+        <textarea class="in" id="hpText" rows="3" maxlength="1000" placeholder="${esc(t('helpTextPh'))}"></textarea>
+        <button class="btn primary" id="hpSend" style="margin-top:12px">${esc(t('helpSend'))}</button><div class="err" id="hpErr" role="alert"></div>
+      </div>
+      <h2 class="sec">${esc(t('helpMine'))}</h2>
+      <div id="hpMine"><p class="small muted">…</p></div>
+    </div>`); setLoc('help');
+  bindBack(back || (() => workerTab('tasks')));
+  let reason = '';
+  document.querySelectorAll('.reasons .chip').forEach(b => b.onclick = () => { reason = b.dataset.r; document.querySelectorAll('.reasons .chip').forEach(x => { const on = x === b; x.classList.toggle('on', on); x.setAttribute('aria-checked', on); }); $('#hpErr').textContent = ''; });
+  if(planId) setTimeout(() => { const el = $('#hpForm'); if(el) el.scrollIntoView({ block:'start' }); }, 50);
+  const mine = async () => {
+    const box = $('#hpMine'); if(!box) return;
+    try{
+      const list = await rpc('my_help', { p_token:W.token }); if(!$('#hpMine')) return;
+      box.innerHTML = (list || []).length ? list.map(h => `<div class="notif ${h.status === 'open' ? 'new' : ''}"><b>${esc(t('hr_' + h.reason) === 'hr_' + h.reason ? h.reason : t('hr_' + h.reason))}</b> ${statusPill(h.status === 'open' ? 'warn' : 'ok', t(h.status === 'open' ? 'helpOpen' : 'helpDone'))}
+        <span class="muted small" style="display:block">${esc([h.title, new Date(h.created_at).toLocaleString(I.lang, { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })].filter(Boolean).join(' · '))}</span>
+        ${h.body ? `<p style="margin:6px 0 0">${esc(h.body)}</p>` : ''}${h.answer ? `<p class="help-answer"><b>${esc(t('helpAnswer'))}:</b> ${esc(h.answer)}</p>` : ''}</div>`).join('') : `<p class="small muted">${esc(t('helpNone'))}</p>`;
+    }catch{ box.innerHTML = `<p class="small muted">${esc(t('helpNone'))}</p>`; }
+  };
+  mine();
+  $('#hpSend').onclick = async () => {
+    const text = $('#hpText').value.trim();
+    if(!reason){ $('#hpErr').textContent = t('helpPickReason'); return; }
+    if(reason === 'other' && text.length < 5){ $('#hpErr').textContent = t('helpWriteText'); return; }
+    const me = W.route && !W.route.endedAt && W.track.length ? W.track[W.track.length - 1] : null;
+    $('#hpSend').disabled = true; $('#hpErr').textContent = '';
+    try{
+      await rpc('help_request', { p_token:W.token, p_plan_id:$('#hpPlan').value || null, p_reason:reason, p_text:text, p_lat:me ? me[0] : null, p_lng:me ? me[1] : null });
+      toast(t('helpSent')); $('#hpText').value = ''; reason = ''; document.querySelectorAll('.reasons .chip').forEach(x => { x.classList.remove('on'); x.setAttribute('aria-checked', false); }); mine();
+    }catch(e){ $('#hpErr').textContent = errText(e); }
+    if($('#hpSend')) $('#hpSend').disabled = false;
   };
 }
 
@@ -708,6 +763,7 @@ function viewTracking(){
       <button class="btn danger" id="stop">${esc(t('stop'))}</button>
       ${W.sim ? `<button class="btn ghost" id="demo">${esc(t('demoStop'))}</button>` : ''}
       <div class="sync" id="sync"></div>
+      <button class="link help-link" id="trHelp">${esc(t('needHelp'))}</button>
     </div>`, { map:true });
   if(!paused) keepAwake(true);
   const last = W.track[W.track.length - 1];
@@ -795,6 +851,7 @@ function viewTracking(){
     drawDone(); drawAhead(); updateNav(); tgt = null; sendTarget(); toast(t('skipDone'));
   };
   if($('#navSkip')) $('#navSkip').onclick = e => { e.preventDefault(); skipNext(); };
+  if($('#trHelp')) $('#trHelp').onclick = () => viewHelp(plan ? plan.id : null, () => workerTab('map'));
   if($('#lgBtn')){
     const pop = $('#lgPop'), show = on => { pop.hidden = !on; if(on){ const nv = $('#nav'), bt = $('#lgBtn').getBoundingClientRect().bottom; pop.style.top = Math.round(Math.max(bt, nv ? nv.getBoundingClientRect().bottom : 0) + 8) + 'px'; } };
     $('#lgBtn').onclick = () => show(pop.hidden); pop.onclick = () => show(false);
@@ -990,6 +1047,7 @@ function viewProfile(){
     <div class="pad">
       <div class="person-row big">${avatar(me.name)}<div><b>${esc(me.name || '')}</b><span>${esc(/^\+490000/.test(me.phone || '') ? t('noPhoneYet') : (me.phone || ''))}</span>${me.company && me.company.name && !/^\[/.test(me.company.name) ? `<span>${esc(t('myFirm'))}: ${esc(me.company.name)}</span>` : ''}</div></div>
       ${hand ? `<div class="hint">${esc(t('handoverHint'))}</div>` : ''}
+      <button class="btn ghost" id="pHelp" style="margin-top:14px">${ICONS.chat}${esc(t('needHelp'))}</button>
       <div class="card" style="display:block;margin-top:16px">
         <label class="f" for="pName" style="margin-top:0">${esc(t('name'))}</label><input class="in" id="pName" value="${esc(nameVal)}" autocomplete="name">
         <button class="btn ghost small hidden" id="pWa" style="margin:0 0 10px">${ICONS.chat}${esc(t('waConfirm'))}</button>
@@ -1007,6 +1065,7 @@ function viewProfile(){
       ${legalLinks()}
     </div>`);
   cp.bind(); bindLegal(viewProfile);
+  $('#pHelp').onclick = () => viewHelp(null, () => workerTab('people'));
   $('#pOffers').onchange = async e => { const on = e.target.checked; try{ await rpc('set_offers', { p_token:W.token, p_on:on }); if(W.me) W.me.offers_ok = on; await store.set('me', W.me); toast(t('saved')); }catch(err){ e.target.checked = !on; toast(errText(err)); } };
   store.get('theme').then(v => { W.theme = v; document.querySelectorAll('[data-theme-set]').forEach(b => { const on = b.dataset.themeSet === (v || 'system'); b.classList.toggle('on', on); b.setAttribute('aria-checked', on); }); });
   sb.rpc('wa_enabled').then(({ data }) => { const b = $('#pWa'); if(data && b){ b.classList.remove('hidden'); b.onclick = async () => { const r = await waVerify(W.token, () => workerTab('people')); if(r && r.state === 'phone'){ await loadMe(); toast(t('waPhoneOk', { p:r.phone })); workerTab('people'); } }; } }).catch(() => {});

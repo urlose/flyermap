@@ -696,6 +696,30 @@ input[type=date].in::-webkit-date-and-time-value{text-align:left;min-height:1.4e
 .lg-pop{position:absolute;z-index:600;right:12px;top:calc(var(--st) + 116px);width:min(300px,calc(100vw - 24px));padding:12px 14px;border-radius:var(--radius-lg);background:var(--color-surface-elevated);box-shadow:var(--shadow-md);font-size:13px}
 .lg-pop b{display:block;margin-bottom:4px;font-size:14px}
 .lg-pop .rt-legend{margin:4px 0 0}
+/* help: frequent questions and problem reports */
+.faq details{border:1px solid var(--color-border);border-radius:var(--radius-lg);background:var(--color-surface);margin-bottom:8px;overflow:hidden}
+.faq summary{cursor:pointer;padding:13px 40px 13px 14px;font-weight:600;font-size:15px;line-height:1.35;list-style:none;position:relative}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{content:'+';position:absolute;right:14px;top:10px;font-size:20px;font-weight:400;color:var(--color-text-secondary)}
+.faq details[open] summary::after{content:'–'}
+.faq details p{margin:0;padding:0 14px 14px;font-size:14px;line-height:1.5;color:var(--color-text-secondary)}
+.reasons{display:flex;flex-wrap:wrap;gap:8px}
+.reasons .chip{cursor:pointer;text-align:left}
+.help textarea.in{resize:vertical;min-height:84px;font:inherit}
+.help-answer{margin:8px 0 0;padding:8px 10px;border-radius:var(--radius-md,10px);background:rgba(22,163,74,.1);font-size:14px}
+.help-link{display:block;margin:10px auto 0;font-size:13px}
+.float-card.mini .help-link{display:none}
+.help-box{display:flex;align-items:center;gap:10px;width:100%;margin:0 0 12px;padding:12px 14px;border-radius:var(--radius-lg);border:1px solid rgba(234,88,12,.4);background:rgba(234,88,12,.1);color:inherit;font:inherit;font-weight:600;text-align:left;cursor:pointer}
+.help-box .cnt{margin-left:auto;padding:2px 9px;border-radius:999px;background:#EA580C;color:#fff;font-size:12px}
+.help-item{display:block;border:1px solid var(--color-border);border-radius:var(--radius-lg);background:var(--color-surface);padding:14px;margin-bottom:10px}
+.help-item.done{opacity:.7}
+.help-item .hi-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.help-item .hi-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.help-item .hi-acts .btn{width:auto;flex:1 1 180px}
+.help-item textarea.in{margin-top:10px;min-height:64px;font:inherit;resize:vertical}
+@media (min-width:900px){.faq,.help .card,#hpMine{max-width:760px}}
+.reasons .chip.on{background:var(--color-primary);color:#fff;border-color:var(--color-primary)}
+.reasons .chip{white-space:normal;border-radius:var(--radius-md,12px);padding-top:8px;padding-bottom:8px}
 </style>
 </head>
 <body>

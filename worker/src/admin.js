@@ -842,6 +842,35 @@ function taskMatches(tk){
 const taskLive = tk => tk.status === 'open' && (A.live || []).some(r => r.task_id === tk.id && !r.paused_at);
 const taskState = tk => tk.status === 'cancelled' ? ['cancel', t('stCancelled')] : tk.status !== 'open' ? ['done', t('stDoneTask')] : taskLive(tk) ? ['live', t('stLive')] : (tk.task_workers || []).length ? ['info', t('stPlanned')] : ['neutral', t('stNoWorkers')];
 const accOf = k => ({ done:'acc-ok', cancel:'acc-bad', ok:'acc-ok', live:'acc-ok', info:'acc-info', warn:'acc-warn', bad:'acc-bad', neutral:'acc-neutral' }[k]);
+/* ================= reports of the walkers: problem with a route ================= */
+// the table may be missing on an older database: then there is simply no box
+async function loadHelp(){ try{ const { data, error } = await sb.from('help_requests').select('*').order('created_at', { ascending:false }).limit(60); return error ? [] : (data || []); }catch{ return []; } }
+async function viewHelpInbox(showDone){
+  const all = await loadHelp(), list = all.filter(h => showDone || h.status === 'open'), nDone = all.length - all.filter(h => h.status === 'open').length;
+  const when = d => new Date(d).toLocaleString(I.lang, { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+  const rs = r => t('hr_' + r) === 'hr_' + r ? r : t('hr_' + r);
+  shell('tasks', `${topbar(t('helpInbox'), true)}
+    <div class="pad">
+      ${list.length ? list.map(h => { const tk = A.tasks.find(x => x.id === h.task_id); return `<div class="help-item ${h.status === 'open' ? '' : 'done'}" data-id="${h.id}">
+        <div class="hi-head"><b>${esc(rs(h.reason))}</b>${statusPill(h.status === 'open' ? 'warn' : 'ok', t(h.status === 'open' ? 'helpOpen' : 'helpDone'))}</div>
+        <span class="muted small">${esc([t('helpFrom', { n:nameOf(h.worker_id) || '?' }), tk ? tk.title : '', when(h.created_at)].filter(Boolean).join(' · '))}</span>
+        ${h.body ? `<p style="margin:8px 0 0">${esc(h.body)}</p>` : ''}
+        ${h.answer ? `<p class="help-answer"><b>${esc(t('helpAnswer'))}:</b> ${esc(h.answer)}</p>` : ''}
+        <div class="hi-acts">${tk ? `<button class="btn ghost small" data-task="${tk.id}">${ICONS.flag}${esc(t('helpOpenTask'))}</button>` : ''}${h.lat != null ? `<a class="btn ghost small" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${(+h.lat).toFixed(6)},${(+h.lng).toFixed(6)}">${ICONS.pin}${esc(t('helpWhere'))}</a>` : ''}</div>
+        ${h.status === 'open' ? `<textarea class="in" rows="2" maxlength="1000" placeholder="${esc(t('helpAnswerPh'))}"></textarea><div class="hi-acts"><button class="btn primary small" data-close="${h.id}">${ICONS.check}${esc(t('helpClose'))}</button></div>` : ''}
+      </div>`; }).join('') : emptyState(t('helpInboxNone'), 'inbox')}
+      ${!showDone && nDone ? `<button class="link" id="hiDone">${esc(t('helpShowDone'))} (${nDone})</button>` : ''}
+    </div>`); setLoc('help');
+  bindBack(() => adminTab('tasks'));
+  if($('#hiDone')) $('#hiDone').onclick = () => viewHelpInbox(true);
+  document.querySelectorAll('[data-task]').forEach(b => b.onclick = () => viewTask(b.dataset.task));
+  document.querySelectorAll('[data-close]').forEach(b => b.onclick = async () => {
+    const box = b.closest('.help-item'), ans = box.querySelector('textarea').value.trim(); b.disabled = true;
+    const { error } = await sb.rpc('help_resolve', { p_id:b.dataset.close, p_answer:ans, p_title:t('helpAnswerTitle') });
+    if(error){ b.disabled = false; toast(errText(error)); return; }
+    toast(t('saved')); viewHelpInbox(showDone);
+  });
+}
 function viewTasks(){
   const opts = k => [...new Set(A.tasks.map(x => x[k]).filter(Boolean))].sort();
   const sel = (id, label, list, cur) => `<div><label class="f" for="${id}">${esc(label)}</label><select class="in small" id="${id}"><option value="">${esc(t('fAll'))}</option>${list.map(v => `<option ${v === cur ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></div>`;
@@ -854,6 +883,7 @@ function viewTasks(){
   const firmTodo = A.company && A.company.id && !A.company.master && (!firmComplete(A.company) || !avvOk(A.company));
   shell('tasks', `${topbar(t('tasks'), null, `<button class="btn primary small desk-only" id="tNew">${ICONS.plus}${esc(t('createTask'))}</button>`)}
     <div class="pad">
+      <div id="helpBox"></div>
       ${firmTodo ? `<button class="warnbox firm-todo" id="firmTodo">${esc(!firmComplete(A.company) ? t('firmMissing') : t('firmAvvMissing'))} ›</button>` : ''}
       <div class="kpis">${[['open', 'k-info', nOpen, t('fOpen')], ['live', 'k-ok', nLive, t('stLive')], ['done', 'k-neutral', nDone, t('fDone')], ['all', 'k-neutral', A.tasks.length, t('fAll')]].map(([k, c, n, l]) => `<button class="kpi ${c} ${f.status === k ? 'on' : ''}" data-st="${f.status === k && k !== 'open' ? 'open' : k}" aria-pressed="${f.status === k}"><b>${n}</b><span>${esc(l)}</span></button>`).join('')}</div>
       <details class="filters" ${nf ? 'open' : ''}><summary>${ICONS.search}${esc(t('filter'))}${nf ? `<span class="cnt">${nf}</span>` : ''}</summary><div class="f-body">
@@ -865,6 +895,9 @@ function viewTasks(){
   $('#fab').onclick = () => viewCreate(); if($('#tNew')) $('#tNew').onclick = () => viewCreate();
   if($('#create')) $('#create').onclick = () => viewCreate();
   if($('#firmTodo')) $('#firmTodo').onclick = () => { A.focusFirm = true; adminTab('settings'); };
+  // reports of the walkers ("need help"): a box on top while there are any
+  loadHelp().then(list => { const box = $('#helpBox'); if(!box || !list.length) return; const n = list.filter(h => h.status === 'open').length;
+    box.innerHTML = `<button class="help-box" id="helpOpen">${ICONS.chat}<span>${esc(t('helpInbox'))}</span>${n ? `<span class="cnt">${esc(t('helpInboxN', { n }))}</span>` : ''}</button>`; $('#helpOpen').onclick = () => viewHelpInbox(); });
   const again = () => viewTasks();
   document.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { f.status = b.dataset.st; again(); });
   $('#fCity').onchange = e => { f.city = e.target.value; again(); }; $('#fDist').onchange = e => { f.district = e.target.value; again(); };
