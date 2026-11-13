@@ -106,7 +106,7 @@ function syncSkips(){
   const fresh = allPlans().find(p => p.id === pl.id);
   if(!fresh || !Array.isArray(fresh.skipped) || fresh.skipped.length === (pl.skipped || []).length) return;
   pl.skipped = fresh.skipped; saveRoute(); W.tracker = null;
-  if(document.getElementById('navSkip') || document.getElementById('nav')) viewTracking(); else ensureTracker();
+  if(document.getElementById('nav')) viewTracking(); else ensureTracker();
 }
 export async function forceLogout(msg){
   await stopWatching(); stopDemoWalk();
@@ -748,7 +748,7 @@ function viewTracking(){
   shell('map', `<div id="fullMap" class="fullmap"></div>
     <button class="icon-btn map-btn" id="recenter" aria-label="center">${ICONS.locate}</button>
     ${hasPlan ? `<button class="icon-btn map-btn map-btn2" id="lgBtn" aria-label="${esc(t('lgTitle'))}">?</button><div class="lg-pop" id="lgPop" hidden><b>${esc(t('lgTitle'))}</b><div id="lgBody"></div></div>` : ''}
-    ${hasPlan ? `<div class="nav" id="nav"><div class="nav-ic" id="navIc"></div><div class="nav-tx"><b id="navMain"></b><span id="navSub"></span><button class="nav-skip" id="navSkip">${esc(t('skipBtn'))}</button></div><a class="nav-ext" id="navExt" target="_blank" rel="noopener" aria-label="${esc(t('navExt'))}">${ICONS.map}</a></div>
+    ${hasPlan ? `<div class="nav" id="nav"><div class="nav-ic" id="navIc"></div><div class="nav-tx"><b id="navMain"></b><span id="navSub"></span><button class="nav-skip" id="navHelp">${esc(t('navProblem'))}</button></div><a class="nav-ext" id="navExt" target="_blank" rel="noopener" aria-label="${esc(t('navExt'))}">${ICONS.map}</a></div>
       <div class="nav-transit" id="navTr" hidden><b id="navTrT"></b><div class="rr-btns"><a class="btn primary small" id="navTrG" target="_blank" rel="noopener">${esc(t('busTrain'))}</a><a class="btn ghost small" id="navTrA" target="_blank" rel="noopener">${esc(t('appleMaps'))}</a></div><a class="link small" id="navTrW" target="_blank" rel="noopener">${esc(t('onFoot'))}</a></div>` : ''}
     <div class="float-card ${W.mapFull ? 'mini' : ''}">
       <div class="fc-row">${paused ? `<span class="rec paused">${esc(t('pauseRunning'))}</span><b id="sPause">0:00</b>` : `<span class="rec">${esc(t('recording'))}</span><span class="gps" id="gps" role="status"></span>`}
@@ -822,35 +822,8 @@ function viewTracking(){
     L.marker(pts[pts.length - 1], { icon:dot('ahead-dot', 12), interactive:false }).addTo(aheadLayer);
   };
   const trackLine = L.polyline(W.track.map(p => [p[0], p[1]]), { color:css('--route'), weight:2, opacity:.45, interactive:false }).addTo(m);
-  // "not needed": the open piece the guidance leads to next (a road without houses, houses already served from another
-  // street, no access) is marked as skipped – after a confirmation, visible for the admin – and the route goes on without it
-  const skipLayer = L.layerGroup().addTo(m);
-  const skipNext = async () => {
-    if(!guide || !W.tracker || !plan) return;
-    const S = W.tracker.samples, day = dayIdx || 0, ok = i => !W.tracker.isDone(i) && (!nav || nav.dayAt(nav.posOf[i]) === day);
-    let seed = missOn ? missOn.seed : -1;
-    if(seed < 0) for(const a of guide.ahead(gDay, 600)){
-      let bd = 14; for(let i = 0; i < S.length; i++){ const q = S[i]; if(Math.abs(q[0] - a[0]) > 0.0002 || !ok(i)) continue; const d = hav(a[0], a[1], q[0], q[1]); if(d < bd){ bd = d; seed = i; } }
-      if(seed >= 0) break;
-    }
-    if(seed < 0){ toast(t('skipNone')); return; }
-    const near = (i, j) => hav(S[i][0], S[i][1], S[j][0], S[j][1]) <= 20;
-    let i0 = seed, i1 = seed;
-    while(i1 + 1 < S.length && i1 - i0 < 90 && ok(i1 + 1) && near(i1, i1 + 1)) i1++;
-    while(i0 > 0 && i1 - i0 < 90 && ok(i0 - 1) && near(i0 - 1, i0)) i0--;
-    const pts = S.slice(i0, i1 + 1).map(q => [+q[0].toFixed(6), +q[1].toFixed(6)]); if(pts.length < 2){ toast(t('skipNone')); return; }
-    skipLayer.clearLayers(); L.polyline(pts, { color:css('--color-map-marker-error') || '#DC2626', weight:9, opacity:.85, dashArray:'4 10', lineCap:'round', interactive:false }).addTo(skipLayer);
-    view.follow = false; try{ m.fitBounds(L.latLngBounds(pts), { padding:[60, 60], maxZoom:17 }); }catch{}
-    const why = await reasonBox(t('skipQ'), t('skipText', { d:fmtDist(pts.length * 8) }), t('skipYes'), WHY_CHOICES());
-    skipLayer.clearLayers(); view.follow = true;
-    if(why == null) return;
-    try{ await rpc('skip_part', { p_token:W.token, p_plan_id:plan.id, p_pts:pts, p_why:why }); }catch(e){ toast(errText(e)); return; }
-    (plan.skipped = plan.skipped || []).push({ pts, why }); saveRoute();
-    W.tracker.addTrack(pts); lastRR = 0; miss = null; missOn = null;
-    const me = W.track[W.track.length - 1]; if(me) reroute(me[0], me[1]);
-    drawDone(); drawAhead(); updateNav(); tgt = null; sendTarget(); toast(t('skipDone'));
-  };
-  if($('#navSkip')) $('#navSkip').onclick = e => { e.preventDefault(); skipNext(); };
+  // the walker no longer drops a piece of the route alone ("not needed"): a problem is reported to the admin, who decides
+  if($('#navHelp')) $('#navHelp').onclick = e => { e.preventDefault(); viewHelp(plan ? plan.id : null, () => workerTab('map')); };
   if($('#trHelp')) $('#trHelp').onclick = () => viewHelp(plan ? plan.id : null, () => workerTab('map'));
   if($('#lgBtn')){
     const pop = $('#lgPop'), show = on => { pop.hidden = !on; if(on){ const nv = $('#nav'), bt = $('#lgBtn').getBoundingClientRect().bottom; pop.style.top = Math.round(Math.max(bt, nv ? nv.getBoundingClientRect().bottom : 0) + 8) + 'px'; } };
