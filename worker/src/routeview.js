@@ -9,7 +9,11 @@ import { cleanup, makeMap, ICONS } from './ui.js';
 const VS = { names:true };   // remembered while the app is open
 
 // opts: { title, anonTitle, lines:[text], stats:[[label, value]], legend:[{ color, label, anonLabel, sub }], note, action:{ label, run },
-//         layers:[{ key, label, on, add(group, L) }], back }
+//         layers:[{ key, label, on, add(group, L), focus(map) }], back,
+//         view:{ center, zoom, on:{ key:bool } } – open exactly as it was (after a change that draws the map again) }
+// A layer with focus(): a tap on its button moves the map there (e.g. to where the people are right now); a second tap
+// right after that switches the layer off. The map is returned with rvFill(key) (draw a layer again when its data came
+// later), rvRefresh() (info card), rvTools() and rvState() (the view to hand over as opts.view).
 export function openMapView(opts){
   cleanup();
   $('#root').innerHTML = `<div class="rv" id="rv">
@@ -23,8 +27,10 @@ export function openMapView(opts){
   for(const ly of opts.layers || []){
     const g = L.featureGroup(); ly.add(g, L);
     try{ const b = g.getBounds(); if(b.isValid()) bounds.extend(b); }catch{}
-    groups[ly.key] = g; if(ly.on !== false) g.addTo(m);
+    groups[ly.key] = g; const keep = opts.view && opts.view.on && ly.key in opts.view.on ? opts.view.on[ly.key] : null;
+    if(keep == null ? ly.on !== false : keep) g.addTo(m);
   }
+  const focusAt = {};
   const card = () => {
     const n = VS.names;
     $('#rvCard').innerHTML = `<b class="rv-title">${esc(n ? opts.title : (opts.anonTitle || opts.title))}</b>
@@ -44,14 +50,21 @@ export function openMapView(opts){
     $('#rvTools').innerHTML = (opts.layers || []).filter(l => l.label).map(l => `<button class="chip ${m.hasLayer(groups[l.key]) ? 'on' : ''}" data-ly="${l.key}">${esc(l.label)}</button>`).join('')
       + (opts.hasNames ? `<button class="chip ${VS.names ? 'on' : ''}" id="rvNames">${esc(t('rvNames'))}</button>` : '')
       + `<button class="chip" id="rvFit">${esc(t('rvFit'))}</button><button class="chip" id="rvClean">${esc(t('rvOnlyMap'))}</button>`;
-    document.querySelectorAll('[data-ly]').forEach(b => b.onclick = () => { const g = groups[b.dataset.ly]; if(m.hasLayer(g)) m.removeLayer(g); else g.addTo(m); tools(); });
+    document.querySelectorAll('[data-ly]').forEach(b => b.onclick = () => {
+      const k = b.dataset.ly, g = groups[k], ly = (opts.layers || []).find(l => l.key === k), on = m.hasLayer(g);
+      if(ly && ly.focus && !(on && Date.now() - (focusAt[k] || 0) < 4000)){ if(!on) g.addTo(m); if(ly.focus(m)){ focusAt[k] = Date.now(); tools(); return; } if(!on){ tools(); return; } }
+      if(on) m.removeLayer(g); else g.addTo(m); tools();
+    });
     const nb = $('#rvNames'); if(nb) nb.onclick = () => { VS.names = !VS.names; card(); tools(); opts.onNames && opts.onNames(VS.names); };
     $('#rvFit').onclick = fitAll;
     $('#rvClean').onclick = () => { const r = $('#rv'); r.classList.toggle('clean'); $('#rvClean').textContent = r.classList.contains('clean') ? t('rvShowInfo') : t('rvOnlyMap'); setTimeout(() => m.invalidateSize(), 50); };
   };
   card(); tools(); opts.onNames && opts.onNames(VS.names);
   m.rvRefresh = () => { if($('#rvCard')) card(); };   // values computed later (in the background) refresh the info card
+  m.rvTools = () => { if($('#rvTools')) tools(); };
+  m.rvFill = key => { const g = groups[key], ly = (opts.layers || []).find(l => l.key === key); if(!g || !ly || !$('#rvMap')) return; g.clearLayers(); ly.add(g, L); };
+  m.rvState = () => ({ center:m.getCenter(), zoom:m.getZoom(), on:Object.fromEntries(Object.keys(groups).map(k => [k, m.hasLayer(groups[k])])) });
   $('#rvBack').onclick = opts.back;
-  setTimeout(fitAll, 80);
+  if(opts.view && opts.view.center) m.setView(opts.view.center, opts.view.zoom, { animate:false }); else setTimeout(fitAll, 80);
   return m;
 }

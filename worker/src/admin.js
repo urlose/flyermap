@@ -96,6 +96,12 @@ async function loadAll(){
   A.companies = A.company && A.company.master ? ((await sb.from('companies').select('id,name')).data || []) : [];
 }
 const coName = id => { if(!A.companies || A.companies.length < 2) return ''; const c = A.companies.find(x => x.id === id); return c ? (/^\[/.test(c.name) ? '—' : c.name) : ''; };
+// the GPS points of a finished route do not change any more: kept while the app is open, so a map opens at once the second time
+const PTS = new Map();
+async function routePoints(r){
+  if(r.ended_at && PTS.has(r.id)) return PTS.get(r.id);
+  const p = await fetchPoints(r.id); if(r.ended_at){ PTS.set(r.id, p); if(PTS.size > 80) PTS.delete(PTS.keys().next().value); } return p;
+}
 async function fetchPoints(routeId){
   let all = [], from = 0;
   for(;;){ const { data, error } = await sb.from('route_points').select('t,lat,lng').eq('route_id', routeId).order('t').range(from, from + 999); if(error) throw error; all = all.concat(data); if(data.length < 1000) break; from += 1000; }
@@ -638,7 +644,7 @@ function hueShift(hex, deg){
 export const dayColor = (c, k) => { c = String(c || '#2563EB').toUpperCase(); return !k ? c : k === 1 ? (DAY2[c] || hueShift(c, 150)) : ['#7C3AED', '#78350F', '#0F766E', '#BE185D'][(k - 2) % 4]; };
 const nameOf = id => (wById(id) || {}).name || '—';
 // one working day of one worker: walked GPS track, planned route, the planned streets covered that day
-async function viewDayMap(routeId, back){
+async function viewDayMap(routeId, back, keep){
   let r = A.dayGroups && A.dayGroups.get(routeId);
   if(!r){ const { data } = await sb.from('routes').select('*').eq('id', routeId).maybeSingle(); if(!data) return back(); r = data; }
   const ids = new Set(r.ids || [r.id]);
@@ -678,7 +684,7 @@ async function viewDayMap(routeId, back){
   }
   // every house along the track counts (also outside the route); the planned boxes only when the map squares are not available
   const d0 = new Date(r.started_at);
-  const dm = openMapView({ action:tgAction,
+  const dm = openMapView({ view:keep, action:tgAction,
     title:nameOf(r.worker_id), anonTitle:t('rvDistributor'), hasNames:true,
     lines:[d0.toLocaleDateString(loc(), { weekday:'long', day:'2-digit', month:'2-digit', year:'numeric' }) + ' · ' + hhmm(r.started_at) + '–' + (r.ended_at ? hhmm(r.ended_at) : t('active')), placeTxt(r)],
     get stats(){ return [[t('rvDist'), fmtDist(r.distance_m || 0)], [t('rvWork'), fmtHm(workMin(r)) + ' ' + t('h')], brkMin(r) >= 1 ? [t('pauseLbl'), fmtHm(brkMin(r)) + ' ' + t('h')] : null, fl != null ? [t('rvFlyers'), '≈ ' + fmtN(fl)] : null, pct != null ? [t('rvDayShare'), pct + ' %'] : null, pctAll != null ? [t('rvDayShare2'), pctAll + ' %'] : null]; },
@@ -694,7 +700,7 @@ async function viewDayMap(routeId, back){
         wr.forEach(a => { if(a.length > 1) gpsLine(g, a); }); sp.drive.forEach(a => driveLine(g, a));
         L.marker(ll[0], { icon:dot('start-dot', 16) }).addTo(g); L.marker(ll[ll.length - 1], { icon:dot(r.ended_at ? 'end-dot' : 'me-dot', r.ended_at ? 16 : 20) }).addTo(g); } },
       { key:'skip', label:workerSkips(pl).length ? t('rvSkipped') : '', add:g => drawSkips(g, [pl]) },
-      { key:'cp', label:cps.length ? t('checkpoints') : '', on:false, add:g => cps.forEach(c => cpAdmin(c, dayColor(col, c.day), (pl.days || []).length > 1, pl, () => viewDayMap(routeId, back)).addTo(g)) },
+      { key:'cp', label:cps.length ? t('checkpoints') : '', on:false, add:g => cps.forEach(c => cpAdmin(c, dayColor(col, c.day), (pl.days || []).length > 1, pl, () => viewDayMap(routeId, back, dm.rvState())).addTo(g)) },
     ],
     back,
   });
@@ -712,12 +718,13 @@ function navTarget(g, w, color, label){
 // Refreshed every 15 s while the map is open. showNames(): false when the admin has hidden names (for screenshots).
 function liveWorkers(g, tk, plans, showNames){
   const draw = () => {
-    g.clearLayers();
+    g.clearLayers(); draw.pts = [];
     (plans || []).forEach(p => {
       const w = p.worker_id && wById(p.worker_id); if(!w || w.last_lat == null || !w.last_seen) return;
       const age = Date.now() - new Date(w.last_seen).getTime(); if(age > 12 * 36e5) return;
       const run = (A.live || []).find(r => r.worker_id === w.id && (r.task_id === tk.id || r.plan_id === p.id)), fresh = run && !run.paused_at && age < 3 * 60e3;
       const label = (showNames() ? w.name : t('planRoute', { n:p.idx + 1 })) + ' · ' + (run && run.paused_at ? t('onPause') : ago(w.last_seen));
+      draw.pts.push({ at:[w.last_lat, w.last_lng], live:!!run });
       L.marker([w.last_lat, w.last_lng], { zIndexOffset:2000, keyboard:false, icon:L.divIcon({ className:'', iconSize:[22, 22], iconAnchor:[11, 11],
         html:`<div class="live-pin ${fresh ? 'on' : 'old'}" style="--c:${esc(p.color || '#2563EB')}"><i></i><span>${esc(label)}</span></div>` }) }).addTo(g);
       if(run && !run.paused_at) navTarget(g, w, p.color || '#2563EB', showNames() ? w.name : t('planRoute', { n:p.idx + 1 }));
@@ -758,28 +765,33 @@ function cpAdmin(c, color, multi, plan, reload){
   return mk;
 }
 // a whole order: every route in its colour, what has been covered in green, the GPS tracks of all days
-async function viewTaskMap(id, back){
+async function viewTaskMap(id, back, keep){
   const tk = A.tasks.find(x => x.id === id); if(!tk) return back();
   const [{ data:plans }, { data:routes }] = await Promise.all([sb.from('task_plans').select('*').eq('task_id', id).order('idx'), sb.from('routes').select('*').eq('task_id', id)]);
-  const split = (await Promise.all((routes || []).map(r => r.track_deleted_at ? [] : fetchPoints(r.id).catch(() => [])))).map(p => Planner.walkRuns(p));
-  const tracks = split.flatMap(x => x.walk), drives = split.flatMap(x => x.drive);
-  const byPlan = {}, trackCol = {};
-  (routes || []).forEach((r, i) => {
-    const pid = r.plan_id || ((plans || []).find(p => p.worker_id === r.worker_id) || {}).id; if(!pid) return;
-    (byPlan[pid] = byPlan[pid] || []).push(...split[i].walk); trackCol[i] = ((plans || []).find(p => p.id === pid) || {}).color;
-  });
-  let doneM = 0, allM = 0, flAll = 0, hasFl = false;
-  const res = (plans || []).map(p => {
-    const tr = p.path && p.path.length > 1 ? addSkips(Planner.makeTracker(p.path), p) : null, ct = p.boxes && p.boxes.length ? Planner.makeBoxCounter(p.boxes) : null;
-    // all tracks of the order count: streets of this route walked by somebody else are done too
-    for(const pts of tracks){ if(tr) tr.addTrack(pts); if(ct) ct.visitAll(pts); }
-    if(ct) adminDone(p).forEach(pts => ct.visitAll(pts));   // parts the admin closed as done (e.g. phone broken) count their mailboxes too
-    const pct = tr ? tr.pct() : 0; doneM += pct * (p.length_m || 0) / 100; allM += p.length_m || 0; if(ct){ flAll += ct.count(); hasFl = true; }
-    return { p, runs:tr ? tr.runs() : [], pct, fl:ct ? ct.count() : null, cps:tr ? checkpoints(p, i => tr.isDone(i)) : [] };
-  });
-  // houses along a route's tracks outside every planned route count for that route like planned ones
+  // The map opens at once with the plan and where the people are; the GPS points (many, for every day of the order) are
+  // loaded behind it – then what is done, the tracks and the checkpoints are filled in.
+  let tracks = [], drives = [], byPlan = {}, res = [], offRuns = [], doneM = 0, allM = 0, flAll = 0, hasFl = false, loading = true;
   const allBoxes = (plans || []).flatMap(p => p.boxes || []);
-  const offRuns = offRoute(tracks, plans);
+  const compute = split => {
+    tracks = split.flatMap(x => x.walk); drives = split.flatMap(x => x.drive); byPlan = {}; doneM = 0; allM = 0; flAll = 0; hasFl = false;
+    (routes || []).forEach((r, i) => {
+      const pid = r.plan_id || ((plans || []).find(p => p.worker_id === r.worker_id) || {}).id; if(!pid || !split[i]) return;
+      (byPlan[pid] = byPlan[pid] || []).push(...split[i].walk);
+    });
+    res = (plans || []).map(p => {
+      const tr = p.path && p.path.length > 1 ? addSkips(Planner.makeTracker(p.path), p) : null, ct = p.boxes && p.boxes.length ? Planner.makeBoxCounter(p.boxes) : null;
+      // all tracks of the order count: streets of this route walked by somebody else are done too
+      for(const pts of tracks){ if(tr) tr.addTrack(pts); if(ct) ct.visitAll(pts); }
+      if(ct) adminDone(p).forEach(pts => ct.visitAll(pts));   // parts the admin closed as done (e.g. phone broken) count their mailboxes too
+      const pct = tr ? tr.pct() : 0; doneM += pct * (p.length_m || 0) / 100; allM += p.length_m || 0; if(ct){ flAll += ct.count(); hasFl = true; }
+      return { p, runs:tr ? tr.runs() : [], pct, fl:ct ? ct.count() : null, cps:tr ? checkpoints(p, i => tr.isDone(i)) : [] };
+    });
+    // houses along a route's tracks outside every planned route count for that route like planned ones
+    offRuns = offRoute(tracks, plans);
+  };
+  const cached = (routes || []).every(r => r.track_deleted_at || (r.ended_at && PTS.has(r.id)));
+  const loadSplit = async () => (await Promise.all((routes || []).map(r => r.track_deleted_at ? [] : routePoints(r).catch(() => [])))).map(p => Planner.walkRuns(p));
+  if(cached){ compute(await loadSplit()); loading = false; } else compute([]);
   const walked = (routes || []).reduce((a, r) => a + (r.distance_m || 0), 0), days = new Set((routes || []).map(dayKey)).size;
   const manFl = tk.flyers_done != null, WCOLS = ['#2563EB', '#DB2777', '#059669', '#D97706', '#7C3AED', '#0891B2', '#DC2626', '#65A30D'];
   const byWorker = (() => { const m = {}; (routes || []).forEach(r => { if(!r.worker_id) return; (m[r.worker_id] = m[r.worker_id] || { id:r.worker_id, m:0 }).m += r.distance_m || 0; });
@@ -787,8 +799,9 @@ async function viewTaskMap(id, back){
     let left = tk.flyers_done || 0; arr.forEach((x, i) => { x.fl = i === arr.length - 1 ? left : Math.round((tk.flyers_done || 0) * (tot ? x.m / tot : 1 / arr.length)); left -= x.fl;
       const p = (plans || []).find(q => q.worker_id === x.id); x.color = p && p.color; });
     return arr; })();
-  let names = true, redrawLive = null;
+  let names = true, redrawLive = null, m = null;
   const opts = {
+    view:keep, get note(){ return loading ? t('rvLoading') : ''; },
     title:tk.title, hasNames:true, onNames:v => { names = v; if(redrawLive) redrawLive(); },
     lines:[[tk.district, tk.city_name].filter(Boolean).join(', '), tk.work_date ? fmtDay(tk.work_date) : ''],
     get stats(){ return [tk.flyers ? [t('flyers'), fmtN(tk.flyers)] : null, manFl ? [t('rvFlyers'), '≈ ' + fmtN(tk.flyers_done)] : hasFl ? [t('rvFlyers'), '≈ ' + fmtN(flAll)] : null, [t('rvDist'), fmtDist(walked)], allM ? [t('rvDayShare2'), Math.round(100 * doneM / allM) + ' %'] : null, days ? [t('rvDays'), String(days)] : null]; },
@@ -813,12 +826,20 @@ async function viewTaskMap(id, back){
         tracks.forEach(ll => { if(ll.length > 1) gpsLine(g, ll, 2.5); }); drives.forEach(ll => driveLine(g, ll, 2.5)); } },
       ...((plans || []).some(p => (p.path || []).some(q => q[2] === 1)) ? [{ key:'jumps', label:t({ car:'tripsCar', bike:'tripsBike', bus:'tripsBus' }[(tk.travel || (tk.bike ? 'bike' : 'bus'))]), add:g => (plans || []).forEach(p => drawJumps(g, p.path, (tk.travel || (tk.bike ? 'bike' : 'bus')))) }] : []),
       ...((plans || []).some(p => workerSkips(p).length) ? [{ key:'skip', label:t('rvSkipped'), add:g => drawSkips(g, plans) }] : []),
-      { key:'cp', label:t('checkpoints'), on:false, add:g => res.forEach(({ p, cps }) => cps.forEach(c => cpAdmin(c, dayColor(p.color, c.day), (p.days || []).length > 1, p, () => viewTaskMap(id, back)).addTo(g))) },
-      { key:'live', label:t('rvLive'), add:g => { redrawLive = liveWorkers(g, tk, plans, () => names); } },
+      { key:'cp', label:t('checkpoints'), on:false, add:g => res.forEach(({ p, cps }) => cps.forEach(c => cpAdmin(c, dayColor(p.color, c.day), (p.days || []).length > 1, p, () => viewTaskMap(id, back, m && m.rvState())).addTo(g))) },
+      // a tap on "Wo gerade" moves the map to the people: the ones walking right now, else the last known positions
+      { key:'live', label:t('rvLive'), add:g => { redrawLive = liveWorkers(g, tk, plans, () => names); },
+        focus:mp => { const all = (redrawLive && redrawLive.pts) || [], pts = (all.some(x => x.live) ? all.filter(x => x.live) : all).map(x => x.at); if(!pts.length) return false;
+          if(pts.length === 1) mp.setView(pts[0], Math.max(mp.getZoom(), 17), { animate:true }); else mp.fitBounds(L.latLngBounds(pts), { padding:[70, 70], maxZoom:17, animate:true }); return true; } },
     ],
     back,
   };
-  const m = openMapView(opts);
+  m = openMapView(opts);
+  if(loading){
+    const mine = m; try{ compute(await loadSplit()); }catch{}
+    loading = false; if(!$('#rvMap') || mine !== m) return;
+    ['done', 'cp', 'skip'].forEach(k => m.rvFill(k)); m.rvRefresh(); m.rvTools();
+  }
   // houses along tracks outside the planned routes: counted in the background, the map is already open
   Promise.all(res.map(x => boxesAlong(byPlan[x.p.id] || [], allBoxes).catch(() => null))).then(extra => {
     let ch = false; (extra || []).forEach((n, k) => { if(n){ res[k].fl = (res[k].fl || 0) + n; flAll += n; hasFl = true; ch = true; } });
