@@ -205,6 +205,12 @@ export function createPlanService(cache){
         const gz = Planner.zoneView(G, zone), ids = Planner.selectWithMust(G, start, 1e9, must, zone).ids;
         const mb = ids.reduce((a, i) => a + gz.edges[i].mb, 0), len = ids.reduce((a, i) => a + gz.edges[i].len, 0);
         all = ids.length ? [{ area:null, g:gz, ids, mb, len, park:start, forced:true }] : [];
+      }else if(exact){
+        // "exactly N": the main town is walked completely like a normal order (every street worth walking, up to N);
+        // only what is still missing comes from the dense cores of the other places
+        const ids = Planner.selectForFlyers(G, start, flyers).ids;
+        const mb = ids.reduce((a, i) => a + G.edges[i].mb, 0), len = ids.reduce((a, i) => a + G.edges[i].len, 0);
+        all = ids.length ? [{ area:null, g:G, ids, mb, len, park:start, forced:true }] : [];
       }else all = denseCores(G, null);
       for(const c of (side || [])){
         stage('loadingSide'); const g = await sideGraph({ ...c, flyers:c.flyers || 3000 }, stage, stale); if(stale()) return { skipped:true };
