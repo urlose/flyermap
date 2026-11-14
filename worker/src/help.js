@@ -13,7 +13,7 @@ const FAQ = {
     { q:'Die Flyer reichen nicht / ich habe zu viele übrig', a:'Melde es unten über „Problem mit der Route“ mit dem Grund „Flyer reichen nicht“ und schreib dazu, wie viele ungefähr fehlen oder übrig sind. Lauf solange weiter, wie die Flyer reichen.', k:'flyer reichen nicht übrig zu wenig zu viele' },
     { q:'Darf ich die Reihenfolge selbst ändern?', a:'Ja. Lauf die Straßen so, wie es für dich passt – die App plant den Rest neu. Bei Aufträgen mit mehreren Zonen stellst du die Reihenfolge der Zonen mit ↑ ↓ selbst ein. Wichtig ist nur: jede Straße bis zum Ende.', k:'reihenfolge ändern eigener weg zone' },
     { q:'Der Akku ist schnell leer', a:'GPS braucht Strom. Nimm eine Powerbank mit, mach den Bildschirm aus (die Aufzeichnung läuft weiter) und schließe andere Apps. Die Karte muss nicht die ganze Zeit offen sein.', k:'akku batterie leer strom' },
-    { q:'Wie beende ich den Tag richtig?', a:'Tippe auf „Beenden“. Offene Straßen bleiben für den nächsten Arbeitstag markiert und werden beim nächsten Start zuerst gezeigt. Vergiss nicht, vorher die Pause zu beenden, falls sie noch läuft.', k:'beenden tag fertig ende' },
+    { q:'Wie beende ich den Tag richtig?', a:'Tippe auf „Feierabend“. Offene Straßen bleiben für den nächsten Arbeitstag markiert und werden beim nächsten Start zuerst gezeigt. Vergiss nicht, vorher die Pause zu beenden, falls sie noch läuft.', k:'beenden tag fertig ende' },
     { q:'Ich brauche die neueste Version der App', a:'Android: die neueste „FlyerMap.apk“ vom Admin-Link laden und installieren (die alte Version wird ersetzt, du bleibst angemeldet). iPhone: die neue Version kommt über den Link vom Admin.', k:'version update aktualisieren apk' },
   ],
   ru: [
