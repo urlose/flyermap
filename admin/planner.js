@@ -760,7 +760,7 @@
         const d = Math.hypot(x - (ax + t * dx), y - (ay + t * dy));
         if(d < bd){ bd = d; best = ei; }
       }
-      if(best < 0 || bd > maxSnap){ dropped += b.n; continue; }
+      if(best < 0 || bd > (b.snap || maxSnap)){ dropped += b.n; continue; }
       const e = g.edges[best]; e.mb += b.n; e.boxes.push([+b.lat.toFixed(6), +b.lng.toFixed(6), b.n]); used += b.n;
     }
     g.mailboxes = used; g.dropped_mb = dropped;
@@ -1028,6 +1028,34 @@
     g.street_m = Math.round(g.edges.reduce((s, e) => s + e.len, 0));
     return g;
   }
+  // Census 2022 (Zensus, households per 100 m cell) lifts our own estimate where it is clearly too low: old town centres often
+  // have houses without house number or levels, which our rules count as sheds (0) or as one mailbox. Per cell: if the census
+  // has more households than we count, the missing ones go to our houses in that cell (in proportion), or to the cell centre
+  // when we have no house there. Where we count more than the census, nothing is lowered (small cells are hidden for privacy).
+  // census = { cellOf(lat, lng) -> [cx, cy], centre(cx, cy) -> [lat, lng], households(list of [cx, cy]) -> Promise<Map "cx,cy" -> n> }
+  async function censusFill(buildings, box, census){
+    const las = box.map(p => p[0]), los = box.map(p => p[1]);
+    const c0 = census.cellOf(Math.min(...las), Math.min(...los)), c1 = census.cellOf(Math.max(...las), Math.max(...los)), c2 = census.cellOf(Math.min(...las), Math.max(...los)), c3 = census.cellOf(Math.max(...las), Math.min(...los));
+    const x0 = Math.min(c0[0], c1[0], c2[0], c3[0]), x1 = Math.max(c0[0], c1[0], c2[0], c3[0]), y0 = Math.min(c0[1], c1[1], c2[1], c3[1]), y1 = Math.max(c0[1], c1[1], c2[1], c3[1]);
+    const H = await census.households(x0, y0, x1, y1);
+    if(!H || !H.size) return buildings;
+    const own = new Map(); buildings.forEach((b, i) => { const c = census.cellOf(b.lat, b.lng), k = c[0] + ',' + c[1]; let l = own.get(k); if(!l) own.set(k, l = []); l.push(i); });
+    const out = buildings.map(b => ({ ...b })); let added = 0;
+    for(const [k, h] of H){
+      const [cx, cy] = k.split(',').map(Number); if(cx < x0 || cx > x1 || cy < y0 || cy > y1) continue;
+      const idx = own.get(k) || [], ours = idx.reduce((a, i) => a + out[i].n, 0), miss = h - ours;
+      if(miss <= 0) continue;
+      const [la, lo] = census.centre(cx, cy);
+      if(la < Math.min(...las) || la > Math.max(...las) || lo < Math.min(...los) || lo > Math.max(...los)) continue;
+      if(!idx.length){ out.push({ lat:la, lng:lo, n:miss, census:true, snap:110 }); added += miss; continue; }   // cell centre: the houses may be up to ~70 m from it
+      // in proportion to what we already count (a big house gets more), largest remainder so that the sum is exact
+      const share = idx.map(i => ({ i, x:miss * out[i].n / ours })); let left = miss;
+      share.forEach(s => { const f = Math.floor(s.x); out[s.i].n += f; left -= f; s.r = s.x - f; });
+      share.sort((a, b) => b.r - a.r); for(let j = 0; j < left; j++) out[share[j % share.length].i].n += 1;
+      added += miss;
+    }
+    out.added = added; return out;
+  }
   // main entry: streets + buildings around the start; grows the radius until enough mailboxes exist.
   // opt: { cache, radius, must, tiles (Map kept between calls), progress(done, total), stale(), fetchImpl }
   async function loadForFlyers(start, flyers, opt){
@@ -1042,7 +1070,9 @@
       // squares reach beyond the radius: only the square around the start is used (keeps planning fast and the radius logic exact)
       const dLat = r / 111320, dLng = r / (111320 * Math.cos(start[0] * RAD)), box = [[start[0] - dLat, start[1] - dLng], [start[0] - dLat, start[1] + dLng], [start[0] + dLat, start[1] + dLng], [start[0] + dLat, start[1] - dLng]];
       const g = largestComponent(buildGraph(m.osm, box));
-      attachBuildings(g, m.buildings.filter(b => Math.abs(b.lat - start[0]) <= dLat && Math.abs(b.lng - start[1]) <= dLng));
+      let bl = m.buildings.filter(b => Math.abs(b.lat - start[0]) <= dLat && Math.abs(b.lng - start[1]) <= dLng);
+      if(opt.census){ try{ bl = await censusFill(bl, box, opt.census); }catch(e){ /* census is optional: keep our own estimate */ } }
+      attachBuildings(g, bl);
       g.radius = r; g.street_m = Math.round(g.edges.reduce((s, e) => s + e.len, 0)); last = g;
       g.usable = selectForFlyers(g, start, 1e9).mailboxes;   // what is really worth walking (poor spurs excluded)
       g.reach = selectWithMust(g, start, flyers, opt.must, opt.zone).reach_m;
@@ -1268,6 +1298,6 @@
     return partition(g, start, n).map((part, k) => ({ idx:k, ...planPart(g, part, start) }));
   }
 
-  const api = { setTileStamp, setPace, denseEntry, pathRuns, emptyGap, tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, DIR_FROM, makeBoxCounter, walkRuns, DRIVE_MS, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
+  const api = { censusFill, setTileStamp, setPace, denseEntry, pathRuns, emptyGap, tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, DIR_FROM, makeBoxCounter, walkRuns, DRIVE_MS, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
   if(typeof module !== 'undefined' && module.exports) module.exports = api; else root.Planner = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -2,6 +2,8 @@
 // Runs inside a Web Worker (planworker.js) so the screen never freezes; the same code is the fallback on the main thread.
 // The street graph stays here between calls: changing flyers / workers / hours only re-plans, it does not reload the map.
 import Planner from '../../admin/planner.js';
+import { censusSource } from './zensus.js';
+const census = censusSource();   // Zensus 2022 lifts the mailbox estimate where our own rules count too few (old town centres)
 
 export function createPlanService(cache){
   let G = null, gKey = '';
@@ -10,7 +12,7 @@ export function createPlanService(cache){
   const info = () => G ? { radius:G.radius, usable:G.usable, mailboxes:G.mailboxes, street_m:G.street_m } : null;
   const load = async (start, flyers, radius, must, stage, stale, key, zone) => {
     if(tiles.size > 150) tiles.clear();
-    G = await Planner.loadForFlyers(start, flyers, { cache, radius, must, zone, tiles, stale,
+    G = await Planner.loadForFlyers(start, flyers, { cache, radius, must, zone, tiles, stale, census,
       progress:(done, total) => { if(stage && total > 1) stage((key || 'loadingArea') + '|' + done + '|' + total); } });
     gKey = keyOf(start);
   };
@@ -19,7 +21,7 @@ export function createPlanService(cache){
   const sideGraph = async (c, stage, stale) => {
     const z = c.zone && c.zone.length > 2 ? c.zone : null, k = keyOf([c.lat, c.lng]) + ':' + (z ? 'z' + z.length + ',' + z[0].join(',') : c.flyers); if(sideG.has(k)) return sideG.get(k);
     if(sideG.size > 6) sideG.clear();
-    const g = await Planner.loadForFlyers([c.lat, c.lng], c.flyers, { cache, tiles, stale, zone:z, progress:(done, total) => { if(stage && total > 1) stage('loadingSide|' + done + '|' + total); } });
+    const g = await Planner.loadForFlyers([c.lat, c.lng], c.flyers, { cache, tiles, stale, zone:z, census, progress:(done, total) => { if(stage && total > 1) stage('loadingSide|' + done + '|' + total); } });
     sideG.set(k, g); return g;
   };
   // ---- far places of the order (bus / train) ----

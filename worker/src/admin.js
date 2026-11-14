@@ -11,7 +11,7 @@ window.addEventListener('fm-open-task', e => viewTask(e.detail, () => viewStats(
 import { makePlanEngine, setStampClient, tileStamp } from './planengine.js';
 import { openMapView } from './routeview.js';
 import { checkpoints, addSkips, dayProgress, makeNav } from './nav.js';
-import { compare as zensusCompare, diffPct as zensusDiff } from './zensus.js';
+import { compare as zensusCompare, diffPct as zensusDiff, townsAround } from './zensus.js';
 // census line: official households next to our mailbox estimate; more than 25 % apart is marked
 const zensusHtml = c => { const d = zensusDiff(c); return d == null ? '' : `${esc(t('zLine', { hh:fmtN(c.households) }))} · <i class="zd ${Math.abs(d) > 25 ? 'err' : ''}" >${esc(t('zDiff', { d:(d > 0 ? '+' : d < 0 ? '−' : '±') + Math.abs(d) }))}</i>`; };
 const zensusOfPlan = new WeakMap();
@@ -1162,6 +1162,26 @@ function viewCreate(edit){
     if(d.plan.cores) d.days = Math.max(1, ...d.plan.routes.map(r => (r.days || []).length));   // village cores: the days follow from the tour
     if(tkE && !d.prefilled){ d.prefilled = true; edit.plans.forEach(p => { if(p.worker_id && p.idx < d.plan.routes.length) d.assign[p.idx] = p.worker_id; }); }
     draw(); renderSheet();
+    if(d.exact && !tkE && !d.autoTried && !d.side.length && !d.zone && !(d.must || []).length && d.plan.mailboxes < d.flyers * 0.95) autoTour(tok);
+  }
+  // "exactly N" and the area around the start is too small: the nearest towns (found in the census) are added and the order
+  // becomes a tour by car through their dense cores, until the flyers are covered. Tried once; places can be removed afterwards.
+  async function autoTour(tok){
+    d.autoTried = true;
+    const need = d.flyers - d.plan.mailboxes; let towns = [];
+    try{ towns = await townsAround(d.start.lat, d.start.lng, 6500, 30000); }catch{ return; }
+    if(tok !== d.token || !alive()) return;
+    const pick = []; let got = 0;
+    for(const c of towns){ if(got >= need * 1.15 || pick.length >= 8) break; pick.push(c); got += c.households * 0.75; }   // the dense cores hold about 3/4 of a place
+    if(!pick.length){ toast(t('autoTourNone')); return; }
+    const names = await Promise.all(pick.map(c => reversePlace(c.lat, c.lng).then(n => n ? n.split(', ').pop() : null).catch(() => null)));
+    if(tok !== d.token || !alive()) return;
+    const used = new Set();
+    pick.forEach((c, i) => { let nm = names[i] || t('areaN', { n:i + 1 }); if(used.has(nm)) nm += ' ' + (i + 1); used.add(nm);
+      d.side.push({ name:nm, lat:c.lat, lng:c.lng, p:null, flyers:c.households, km:Math.round(c.dist / 100) / 10, auto:true }); });
+    d.travel = 'car'; d.cores = true; d.dirty = true;
+    toast(t('autoTourOn', { n:pick.length, names:[...used].join(', ') }));
+    recompute();
   }
   function draw(){
     zoneLayer.clearLayers(); planLayer.clearLayers();
@@ -1321,7 +1341,7 @@ function viewCreate(edit){
     document.querySelectorAll('[data-first]').forEach(b => b.onclick = () => { saved = keep(); const x = d.side[+b.dataset.first]; if(!x) return; d.first = d.first === x.name ? null : x.name; recompute(); });
     if($('#cCores')) $('#cCores').onchange = e => { saved = keep(); d.cores = e.target.checked; recompute(); };
     if($('#cTogether')) $('#cTogether').onchange = e => { saved = keep(); d.together = e.target.checked; recompute(); };
-    if($('#cExact')) $('#cExact').onclick = () => { saved = keep(); d.exact = true; recompute(); };
+    if($('#cExact')) $('#cExact').onclick = () => { saved = keep(); d.exact = true; d.autoTried = false; recompute(); };
     if($('#cEco')) $('#cEco').onclick = () => { saved = keep(); d.exact = false; recompute(); };
     // whole main town: its border becomes the distribution area and every mailbox in it gets a flyer
     if($('#cMainAll')) $('#cMainAll').onclick = async () => {
