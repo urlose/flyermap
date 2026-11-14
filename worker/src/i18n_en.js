@@ -222,3 +222,4 @@ Object.assign(T.en, { needHelp:'Need help?', helpFaq:'Frequent questions', helpP
 Object.assign(T.en, { helpInbox:'Help reports', helpInboxN:'{n} open', helpInboxNone:'No reports.', helpFrom:'from {n}', helpOpenTask:'Open order', helpWhere:'Position when reported', helpAnswerPh:'Answer to the worker (optional)', helpClose:'Mark as done', helpAnswerTitle:'Answer to your report', helpShowDone:'Show done ones' });
 Object.assign(T.en, { navProblem:'Report a problem' });
 Object.assign(T.en, { rvLoading:'Loading the GPS tracks …' });
+Object.assign(T.en, { daysNoOrder:'Without an order' });

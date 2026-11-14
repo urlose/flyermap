@@ -267,3 +267,5 @@ Object.assign(T.de, { navProblem:'Problem melden', navFinishSub:'Erst bis zum En
 Object.assign(T.ru, { navProblem:'Сообщить о проблеме', navFinishSub:'Сначала до конца, потом дальше' });
 Object.assign(T.de, { rvLoading:'GPS-Spuren werden geladen …' });
 Object.assign(T.ru, { rvLoading:'Загружаются GPS-треки …' });
+Object.assign(T.de, { daysNoOrder:'Ohne Auftrag' });
+Object.assign(T.ru, { daysNoOrder:'Без заказа' });

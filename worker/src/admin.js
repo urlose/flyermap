@@ -563,7 +563,11 @@ ${/^\+490000/.test(w.phone || '') && !/^\+4900000000/.test(w.phone || '') ? `<di
   const renderDays = () => {
     const list = useFilter ? all.filter(r => dayMatches(r, f)) : all;
     $('#wDaysSum').innerHTML = esc(daysSum(list)) + (useFilter ? ` · ${esc(t('filtered'))} <button class="link" id="wAll">${esc(t('showAllDays'))}</button>` : '');
-    $('#wDays').innerHTML = list.map(r => dayLine(r)).join('') || `<p class="muted small">${esc(t(all.length ? 'noDaysRange' : 'noDays'))}</p>`;
+    // the days are grouped by order (newest order first): which order, which days, and the sum of each order
+    const grp = new Map();
+    for(const r of list){ const k = r.task_id || ''; if(!grp.has(k)) grp.set(k, []); grp.get(k).push(r); }
+    const ordName = (k, rs) => { if(!k) return t('daysNoOrder'); const tk = (A.tasks || []).find(x => x.id === k); return (tk && tk.title) || (rs.find(x => x.task_title) || {}).task_title || t('daysNoOrder'); };
+    $('#wDays').innerHTML = [...grp].map(([k, rs]) => `<section class="wd-grp"><div class="wd-head"><b>${ICONS.flag}<span>${esc(ordName(k, rs))}</span></b><small>${esc(daysSum(rs))}</small></div>${rs.map(r => dayLine(r)).join('')}</section>`).join('') || `<p class="muted small">${esc(t(all.length ? 'noDaysRange' : 'noDays'))}</p>`;
     document.querySelectorAll('#wDays .rbtn').forEach(b => b.onclick = () => { const r = all.find(x => x.id === b.dataset.r); if(r){ showRoute(r); wm.getContainer().scrollIntoView({ behavior:'smooth', block:'center' }); } });
     const wa = $('#wAll'); if(wa) wa.onclick = () => { useFilter = false; renderDays(); };
     return list;
