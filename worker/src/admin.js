@@ -423,7 +423,7 @@ async function viewPeople(){
   const nLive = A.workers.filter(isLive).length;
   shell('people', `${topbar(t('tabPeople'))}
     <div class="pad">
-      <div class="kpis two"><div class="kpi k-info"><b>${A.workers.length}</b><span>${esc(t('kTotal'))}</span></div><div class="kpi k-ok"><b>${nLive}</b><span>${esc(t('stLive'))}</span></div></div>
+      <div class="kpis two"><button class="kpi k-info on" id="kAll" aria-pressed="true"><b>${A.workers.length}</b><span>${esc(t('kTotal'))}</span></button><button class="kpi k-ok" id="kLive" aria-pressed="false"><b>${nLive}</b><span>${esc(t('stLive'))}</span></button></div>
       <div class="card filter-card">
         <div class="fc-grid">
           <div><label class="f" for="wQ">${esc(t('fWho'))}</label><div class="searchbox"><span class="sb-ic">${ICONS.search}</span><input id="wQ" class="sb-in" placeholder="${esc(t('searchNamePhone'))}"></div></div>
@@ -446,6 +446,9 @@ async function viewPeople(){
   sf.bind();
   if($('#poolBox')) $('#poolBox').addEventListener('toggle', async () => { if($('#poolBox').open && !$('#poolBox').dataset.done){ $('#poolBox').dataset.done = 1; $('#poolList').innerHTML = await poolHtml(); } });
   let days = [];   // all working days (newest first), loaded below
+  let liveOnly = false;   // tile "Unterwegs": only the people recording a route right now
+  const setLive = v => { liveOnly = v; $('#kAll').classList.toggle('on', !v); $('#kLive').classList.toggle('on', v); $('#kAll').setAttribute('aria-pressed', String(!v)); $('#kLive').setAttribute('aria-pressed', String(v)); render(); if(v) $('#wList').scrollIntoView({ behavior:'smooth', block:'nearest' }); };
+  $('#kAll').onclick = () => setLive(false); $('#kLive').onclick = () => setLive(!liveOnly);
   const render = () => {
     const places = [...new Set(days.map(r => r.place).filter(Boolean))].sort(); if(f.place && !places.includes(f.place)) f.place = '';
     $('#dFilter').innerHTML = dayFilterHtml(f, places); bindDayFilter(f, render);
@@ -456,6 +459,7 @@ async function viewPeople(){
     if(on) list = list.filter(x => byW.has(x.w.id));
     if(place) list = list.filter(x => x.km <= zoneKm(x.w)).sort((a, b) => a.km - b.km);
     if(q) list = list.filter(x => (x.w.name + ' ' + x.w.phone).toLowerCase().includes(q));
+    if(liveOnly) list = list.filter(x => isLive(x.w));
     const shown = on ? list.flatMap(x => byW.get(x.w.id)) : [];
     $('#wList').innerHTML = (on ? `<div class="hint">${esc(shown.length ? t('workedSum', { w:list.length, d:daysSum(shown) }) : t('noDaysRange'))}</div>` : '') +
       (place ? `<div class="hint">${esc(t('canReach', { n:list.length, city:place.name }))} <button class="link" id="wClr">${esc(t('reset'))}</button></div>` : '') +
@@ -463,7 +467,7 @@ async function viewPeople(){
         <div class="grow"><b>${esc(w.name)} ${okBadge(w.id)}</b>${shortLine(w.id) ? `<span>${esc(shortLine(w.id))}</span>` : ''}<span>${coName(w.company_id) ? esc(coName(w.company_id)) + ' · ' : ''}${esc((w.cities || []).map(c => c.name).join(', '))}${km != null ? ' · ' + Math.round(km) + ' km' : ''} · ${esc(t('zoneChip', { n:w.zone_minutes }))}</span><span>${isLive(w) ? statusPill('live', t('stLive')) : esc(t('lastActive', { a:ago(w.last_seen) }))}</span></div>${ICONS.chevron}</button>
         ${on ? `<div class="wc-days">${byW.get(w.id).map(r => dayLine(r)).join('')}</div>` : ''}
         <div class="wc-act"><a class="btn ghost small" href="${telLink(w.phone)}">${ICONS.phone}${esc(t('call'))}</a><a class="btn ghost small" target="_blank" rel="noopener" href="${waLink(w.phone)}">${ICONS.chat}WhatsApp</a></div></div>`).join('')
-       : on ? '' : emptyState(A.workers.length ? t('notFound') : t('noWorkers'), A.workers.length ? 'search' : 'users'));
+       : on ? '' : emptyState(liveOnly ? t('nobodyLiveHint') : A.workers.length ? t('notFound') : t('noWorkers'), A.workers.length ? 'search' : 'users'));
     const clr = $('#wClr'); if(clr) clr.onclick = () => { place = null; $('#wCity').value = ''; render(); };
     document.querySelectorAll('.wc-main').forEach(b => b.onclick = () => viewWorker(b.dataset.id));
     document.querySelectorAll('.wc-days .rbtn').forEach(b => b.onclick = () => viewDayMap(b.dataset.r, viewPeople));
