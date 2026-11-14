@@ -226,3 +226,4 @@ Object.assign(T.en, { daysNoOrder:'Without an order' });
 Object.assign(T.en, { zLabel:'Census 2022', zLine:'{hh} households', zDiff:'our estimate {d} %', zHint:'Official households along the routes, as of 2022' });
 Object.assign(T.en, { helpAutoAnswer:'Automatic answer' });
 Object.assign(T.en, { routeLineW:'{km} · {mb} mailboxes', dayHintW:'Planned: {n} working day(s)' });
+Object.assign(T.en, { botTitle:"Suggestion from Claude", botWriting:"Claude is writing a suggestion …", botFailed:"No suggestion", botForAdmin:"for you", botNote:"Note", botTake:"Use", botRedo:"Write again", botTitleSet:"Help bot (Claude)", botOn:"Suggestions from Claude for reports", botHint:"Claude writes a suggested answer for every open report. Nothing reaches the worker until you send the answer yourself.", botRules:"Your rules for Claude", botRulesPh:"e.g. If a gate is closed, leave the piece out. Questions about money and hours always to me." });

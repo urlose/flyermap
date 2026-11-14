@@ -488,6 +488,14 @@ function viewSettings(){
       ${A.company && A.company.master ? `<button class="btn ghost small" id="tMaster" style="margin-top:8px;width:auto">${ICONS.users}${esc(t('master'))}</button>` : ''}
       ${A.company && A.company.id ? firmCardHtml(A.company) : ''}
       ${A.company && A.company.id ? adminContractHtml() : ''}
+      ${A.company && A.company.id ? `<h2 class="sec">${esc(t('botTitleSet'))}</h2>
+      <div class="card" style="display:block" id="botCard">
+        <label class="check"><input type="checkbox" id="botOn"><span><b>${esc(t('botOn'))}</b></span></label>
+        <p class="small muted" style="margin:6px 0 12px">${esc(t('botHint'))}</p>
+        <label class="f" for="botRules">${esc(t('botRules'))}</label>
+        <textarea class="in" id="botRules" rows="5" maxlength="4000" placeholder="${esc(t('botRulesPh'))}"></textarea>
+        <button class="btn primary small" id="botSave" style="margin-top:10px;width:auto">${esc(t('save'))}</button>
+      </div>` : ''}
       <h2 class="sec">${esc(t('accountSettings'))}</h2>
       <div class="card" style="display:block">
         <div class="person-row" style="padding-top:0">${avatar()}<div><b>${esc(A.user?.phone ? '+' + A.user.phone.replace(/^\+/, '') : (A.user?.email || ''))}</b><span>${esc(t('admin'))}</span></div></div>
@@ -501,6 +509,10 @@ function viewSettings(){
     </div>`);
   store.get('theme').then(v => { A.theme = v; document.querySelectorAll('[data-theme-set]').forEach(b => { const on = b.dataset.themeSet === (v || 'system'); b.classList.toggle('on', on); b.setAttribute('aria-checked', on); }); });
   bindLegal(viewSettings);
+  if($('#botCard')){
+    sb.rpc('get_bot').then(({ data }) => { if(!data || !$('#botOn')) return; $('#botOn').checked = !!data.enabled; $('#botRules').value = data.rules || ''; });
+    $('#botSave').onclick = async () => { const { error } = await sb.rpc('set_bot', { p_enabled:$('#botOn').checked, p_rules:$('#botRules').value }); if(error){ toast(errText(error)); return; } A.bot = $('#botOn').checked; toast(t('saved')); };
+  }
   if(A.company && A.company.id) bindAdminContract();
   if(A.company && A.company.id) bindFirmCard(A.company, c => { A.company = { ...c, master:A.company.master }; viewSettings(); });
   if($('#tMaster')) $('#tMaster').onclick = () => viewMaster(viewSettings);
@@ -878,7 +890,17 @@ const accOf = k => ({ done:'acc-ok', cancel:'acc-bad', ok:'acc-ok', live:'acc-ok
 /* ================= reports of the walkers: problem with a route ================= */
 // the table may be missing on an older database: then there is simply no box
 async function loadHelp(){ try{ const { data, error } = await sb.from('help_requests').select('*').order('created_at', { ascending:false }).limit(60); return error ? [] : (data || []); }catch{ return []; } }
+// Claude writes a suggested answer (edge function help-bot); nothing reaches the worker until the admin sends it
+async function botDraft(id, force){ try{ await sb.functions.invoke('help-bot', { body:{ id, force:!!force } }); }catch{} }
+function botDraftHtml(h){
+  if(!h.bot_at) return `<div class="bot-draft wait"><b>${ICONS.chat}${esc(t('botTitle'))}</b><span class="muted small">${esc(t('botWriting'))}</span></div>`;
+  if(h.bot_action === 'error') return `<div class="bot-draft"><b>${ICONS.chat}${esc(t('botTitle'))}</b><span class="muted small">${esc(t('botFailed'))}${h.bot_note ? ' · ' + esc(h.bot_note) : ''}</span><div class="hi-acts"><button class="btn ghost small" data-redo="${h.id}">${esc(t('botRedo'))}</button></div></div>`;
+  return `<div class="bot-draft ${h.bot_action === 'admin' ? 'esc' : ''}"><b>${ICONS.chat}${esc(t('botTitle'))}${h.bot_action === 'admin' ? ` <span class="pill warn">${esc(t('botForAdmin'))}</span>` : ''}</b>
+    <p>${esc(h.bot_draft || '')}</p>${h.bot_note ? `<span class="muted small">${esc(t('botNote'))}: ${esc(h.bot_note)}</span>` : ''}
+    <div class="hi-acts"><button class="btn ghost small" data-take="${h.id}">${ICONS.edit}${esc(t('botTake'))}</button><button class="btn ghost small" data-redo="${h.id}">${esc(t('botRedo'))}</button></div></div>`;
+}
 async function viewHelpInbox(showDone){
+  if(A.bot == null){ try{ const { data } = await sb.rpc('get_bot'); A.bot = !!(data && data.enabled); }catch{ A.bot = false; } }
   const all = await loadHelp(), list = all.filter(h => showDone || h.status === 'open'), nDone = all.length - all.filter(h => h.status === 'open').length;
   const when = d => new Date(d).toLocaleString(I.lang, { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
   const rs = r => t('hr_' + r) === 'hr_' + r ? r : t('hr_' + r);
@@ -890,6 +912,7 @@ async function viewHelpInbox(showDone){
         ${h.body ? `<p style="margin:8px 0 0">${esc(h.body)}</p>` : ''}
         ${h.answer ? `<p class="help-answer"><b>${esc(t(h.auto ? 'helpAutoAnswer' : 'helpAnswer'))}:</b> ${esc(h.answer)}</p>` : ''}
         <div class="hi-acts">${tk ? `<button class="btn ghost small" data-task="${tk.id}">${ICONS.flag}${esc(t('helpOpenTask'))}</button>` : ''}${h.lat != null ? `<a class="btn ghost small" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${(+h.lat).toFixed(6)},${(+h.lng).toFixed(6)}">${ICONS.pin}${esc(t('helpWhere'))}</a>` : ''}</div>
+        ${h.status === 'open' && A.bot ? botDraftHtml(h) : ''}
         ${h.status === 'open' ? `<textarea class="in" rows="2" maxlength="1000" placeholder="${esc(t('helpAnswerPh'))}"></textarea><div class="hi-acts"><button class="btn primary small" data-close="${h.id}">${ICONS.check}${esc(t('helpClose'))}</button></div>` : ''}
       </div>`; }).join('') : emptyState(t('helpInboxNone'), 'inbox')}
       ${!showDone && nDone ? `<button class="link" id="hiDone">${esc(t('helpShowDone'))} (${nDone})</button>` : ''}
@@ -897,6 +920,10 @@ async function viewHelpInbox(showDone){
   bindBack(() => adminTab('tasks'));
   if($('#hiDone')) $('#hiDone').onclick = () => viewHelpInbox(true);
   document.querySelectorAll('[data-task]').forEach(b => b.onclick = () => viewTask(b.dataset.task));
+  // Claude's draft: take it over into the answer box (the admin still sends it), or have it written again
+  document.querySelectorAll('[data-take]').forEach(b => b.onclick = () => { const box = b.closest('.help-item'), h = all.find(x => x.id === b.dataset.take); if(h){ box.querySelector('textarea').value = h.bot_draft || ''; box.querySelector('textarea').focus(); } });
+  document.querySelectorAll('[data-redo]').forEach(b => b.onclick = async () => { b.disabled = true; await botDraft(b.dataset.redo, true); viewHelpInbox(showDone); });
+  if(A.bot){ const miss = list.filter(h => h.status === 'open' && !h.bot_at).slice(0, 5); if(miss.length) Promise.all(miss.map(h => botDraft(h.id, false))).then(() => { if(location.hash === '#help') viewHelpInbox(showDone); }); }
   document.querySelectorAll('[data-close]').forEach(b => b.onclick = async () => {
     const box = b.closest('.help-item'), ans = box.querySelector('textarea').value.trim(); b.disabled = true;
     const { error } = await sb.rpc('help_resolve', { p_id:b.dataset.close, p_answer:ans, p_title:t('helpAnswerTitle') });
