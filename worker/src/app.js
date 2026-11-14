@@ -7,7 +7,7 @@ import './i18n_en.js';
 import { store, NATIVE } from './core.js';
 import { UI, applyTheme, initOffline } from './ui.js';
 import { W, bootWorker, workerTab, acceptToken } from './worker.js';
-import { A, bootAdmin, adminTab } from './admin.js';
+import { adminHooks, loadAdmin } from './adminload.js';
 import { viewLogin, switchRole, viewJoinLink } from './auth.js';
 
 // language switch anywhere
@@ -15,17 +15,17 @@ document.addEventListener('click', async e => {
   const b = e.target.closest('[data-lang]'); if(!b) return;
   I.lang = b.dataset.lang; document.documentElement.lang = I.lang; await store.set('lang', I.lang);
   if(UI.role === 'worker') workerTab(UI.tab || 'tasks');
-  else if(UI.role === 'admin') adminTab(UI.tab || 'tasks');
+  else if(UI.role === 'admin') (await loadAdmin()).adminTab(UI.tab || 'tasks');
   else viewLogin();
 });
 
 W.hooks.loggedIn = () => bootWorker();
 W.hooks.loggedOut = viewLogin;
 W.hooks.switchRole = switchRole;
-A.hooks.loggedOut = viewLogin;
-A.hooks.switchRole = switchRole;
+adminHooks.loggedOut = viewLogin;
+adminHooks.switchRole = switchRole;
 // admin opens the worker view of a test worker without any SMS login (the admin session stays, so "switch to admin" works)
-A.hooks.openWorkerToken = async token => { await store.set('canAdmin', true); await acceptToken(token); };
+adminHooks.openWorkerToken = async token => { await store.set('canAdmin', true); await acceptToken(token); };
 
 // light / dark / system theme anywhere (applied at once, no re-render needed)
 document.addEventListener('click', async e => {
@@ -51,7 +51,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener && matchMedia('(pref
   let neu = null; try{ neu = new URL(location.href).searchParams.get('neu'); if(neu) history.replaceState(null, '', location.pathname); }catch{}
   if(neu && /^[A-Za-z0-9]{4,16}$/.test(neu)){ const role0 = await store.get('role'); if(!(await store.get('token')) || role0 === 'admin') return viewJoinLink(neu); }
   const role = await store.get('role');
-  if(role === 'admin' && await bootAdmin()) return;
+  if(role === 'admin'){ let ok = false; try{ ok = await (await loadAdmin()).bootAdmin(); }catch{} if(ok) return; }
   if(role !== 'admin' && await bootWorker()) return;
   viewLogin();
 })();

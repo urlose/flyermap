@@ -88,8 +88,33 @@ export async function flush(){
 }
 setInterval(flush, 4000);
 
+// "my orders" from the server. The heavy parts of a route (path, boxes, steps) are sent only when the phone does not have
+// them yet: the phone tells which routes it keeps ({ id: hash }), unchanged ones come back marked "_same" and are filled in
+// from the copy on the phone. An older server (no worker_me2) answers the old way.
+const HEAVY = ['path', 'boxes', 'steps'];
+function mePlans(me){
+  const out = [], add = p => { if(p && typeof p === 'object' && p.id) out.push(p); };
+  for(const tk of (me && me.tasks) || []){ add(tk.plan); (Array.isArray(tk.plans) ? tk.plans : []).forEach(add); (Array.isArray(tk.others) ? tk.others : []).forEach(add); }
+  for(const tk of (me && me.open) || []) add(tk.plan);
+  return out;
+}
+async function fetchMe(){
+  const old = W.me || await store.get('me'), known = {}, have = {};
+  for(const p of mePlans(old)) if(p._h && !p._same){ known[p.id] = p._h; have[p.id] = p; }
+  let me;
+  try{ me = await rpc('worker_me2', { p_token:W.token, p_known:known }); }
+  catch(e){ if(e.message === 'invalid_token' || e.message === 'net') throw e; return rpc('worker_me', { p_token:W.token }); }
+  let missing = false;
+  for(const p of mePlans(me)){
+    if(!p._same) continue;
+    const src = have[p.id]; if(!src || src._h !== p._h){ missing = true; break; }
+    for(const k of HEAVY) if(k in src) p[k] = src[k];
+    delete p._same;
+  }
+  return missing ? rpc('worker_me2', { p_token:W.token, p_known:{} }) : me;   // should not happen: then everything once more, complete
+}
 export async function loadMe(){
-  try{ W.me = await rpc('worker_me', { p_token:W.token }); await store.set('me', W.me); setLegalFirm(W.me && W.me.company); if(!W.ctAsked){ W.ctAsked = true; const working = !!(W.route && !W.route.endedAt); contractGate(rpc, W.token, { must:!working, logout:() => forceLogout() }).then(ok => { if(ok) introOnce(() => !W.canAdmin && !(W.route && !W.route.endedAt)); }); } }
+  try{ W.me = await fetchMe(); await store.set('me', W.me); setLegalFirm(W.me && W.me.company); if(!W.ctAsked){ W.ctAsked = true; const working = !!(W.route && !W.route.endedAt); contractGate(rpc, W.token, { must:!working, logout:() => forceLogout() }).then(ok => { if(ok) introOnce(() => !W.canAdmin && !(W.route && !W.route.endedAt)); }); } }
   catch(e){ if(e.message === 'invalid_token') return forceLogout(t('e_invalid_token')); W.me = W.me || await store.get('me'); return; }
   syncSkips();
   preloadMaps();

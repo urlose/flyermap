@@ -3,7 +3,11 @@ import { mkdirSync, copyFileSync, cpSync, writeFileSync } from 'node:fs';
 mkdirSync('www', { recursive: true });
 // the route planner runs in a Web Worker: bundled first and embedded as a string (started from a Blob, works in every WebView)
 const pw = await build({ entryPoints: ['src/planworker.js'], bundle: true, minify: true, format: 'iife', target: 'safari15', write: false });
-await build({ entryPoints: ['src/app.js'], bundle: true, minify: true, format: 'iife', target: 'safari15', outfile: 'www/app.js', define: { __PLANWORKER__: JSON.stringify(pw.outputFiles[0].text) } });
+// ES modules with code splitting: app.js (login + distributor) and, loaded on demand, the admin part with the planner (c/admin-….js)
+import { rmSync, readdirSync } from 'node:fs';
+rmSync('www/c', { recursive: true, force: true });
+await build({ entryPoints: ['src/app.js'], bundle: true, minify: true, format: 'esm', splitting: true, target: 'safari15', outdir: 'www', entryNames: '[name]', chunkNames: 'c/[name]-[hash]', define: { __PLANWORKER__: JSON.stringify(pw.outputFiles[0].text) } });
+const CHUNKS = readdirSync('www/c').filter(f => !f.startsWith('admin-')).map(f => './c/' + f);   // the admin part is not put on a distributor's phone in advance (it is kept once it was opened)
 // app.js?v=<content hash>: a new version is loaded right away instead of an old copy from the browser cache
 { const { readFileSync, writeFileSync } = await import('fs'); const { createHash } = await import('crypto');
   const v = createHash('sha1').update(readFileSync('www/app.js')).digest('hex').slice(0, 10);
@@ -21,7 +25,7 @@ writeFileSync('www/manifest.json', JSON.stringify({ name:'FlyerMap', short_name:
 // service worker (web app only): the app opens without signal; the page itself always comes fresh when there is signal
 { const { readFileSync } = await import('fs'); const { createHash } = await import('crypto');
   const v = createHash('sha1').update(readFileSync('www/app.js')).update(readFileSync('www/index.html')).digest('hex').slice(0, 10);
-  const shell = ['./', './index.html', readFileSync('www/index.html', 'utf8').match(/src="(app\.js\?v=[^"]+)"/)[1], './leaflet.css', './icon.png', './manifest.json',
+  const shell = ['./', './index.html', readFileSync('www/index.html', 'utf8').match(/src="(app\.js\?v=[^"]+)"/)[1], './leaflet.css', './icon.png', './manifest.json', ...CHUNKS,
     ...['latin', 'latin-ext', 'cyrillic', 'cyrillic-ext'].map(f => `./fonts/onest-${f}-wght-normal.woff2`)];
   writeFileSync('www/sw.js', `const SHELL = 'fm-shell-${v}', FILES = ${JSON.stringify(shell)};
 self.addEventListener('install', e => e.waitUntil(caches.open(SHELL).then(c => c.addAll(FILES)).then(() => self.skipWaiting())));
