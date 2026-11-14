@@ -12,6 +12,8 @@ const TX = {
     commitT:'Verbindlich zusagen?', commitX:'Mit deiner Zusage verpflichtest du dich, diese Route an den gewählten Tagen vollständig zu verteilen.',
     free:h => `Kostenlos absagen: bis ${h} Std. vor Beginn des ersten Tags (08:00).`, pen:p => `Danach ohne wichtigen Grund (z. B. Krankheit): Vertragsstrafe ${p} pro Tag.`,
     commit:'Verbindlich zusagen', back:'Zurück', read:'Rahmenvertrag lesen', close:'Schließen',
+    sumT:'Das Wichtigste in Kürze', bind:'Jede Zusage zu einem Auftrag ist verbindlich: Du verteilst die Route an den gewählten Tagen vollständig.', out:'Abmelden',
+    note:(h, p) => `Deine Zusage ist verbindlich. Kostenlos absagen: bis ${h} Std. vor Beginn des ersten Tags` + (p ? `, danach Vertragsstrafe ${p} pro Tag.` : '.'),
     cancel:'Absagen', cancelT:'Route absagen', reason:'Grund (Pflicht)', reasonPh:'z. B. krank, Termin …', reasonNeed:'Bitte einen Grund angeben.',
     lateW:p => `Achtung: Die kostenlose Absagefrist ist vorbei. Ohne wichtigen Grund fällt eine Vertragsstrafe von ${p} pro Tag an. Bei Krankheit bitte Nachweis an die Firma.`,
     okW:'Absage ist noch kostenlos.', done:'Abgesagt.',
@@ -24,6 +26,8 @@ const TX = {
     commitT:'Подтвердить обязательно?', commitX:'Подтверждая, вы обязуетесь полностью разнести этот маршрут в выбранные дни.',
     free:h => `Бесплатная отмена: не позднее чем за ${h} ч до начала первого дня (08:00).`, pen:p => `Позже без уважительной причины (напр. болезнь): штраф ${p} за день.`,
     commit:'Подтвердить обязательно', back:'Назад', read:'Читать договор', close:'Закрыть',
+    sumT:'Коротко о главном', bind:'Каждое принятое задание обязательно: вы полностью разносите маршрут в выбранные дни.', out:'Выйти',
+    note:(h, p) => `Принятое задание обязательно. Бесплатная отмена — не позднее чем за ${h} ч до начала первого дня` + (p ? `, позже штраф ${p} за день.` : '.'),
     cancel:'Отказаться', cancelT:'Отказ от маршрута', reason:'Причина (обязательно)', reasonPh:'напр. болезнь, встреча …', reasonNeed:'Укажите причину.',
     lateW:p => `Внимание: срок бесплатной отмены прошёл. Без уважительной причины — штраф ${p} за день. При болезни передайте справку фирме.`,
     okW:'Отмена пока бесплатна.', done:'Отменено.',
@@ -36,6 +40,8 @@ const TX = {
     commitT:'Commit bindingly?', commitX:'By committing you agree to distribute this route completely on the chosen days.',
     free:h => `Free cancellation: up to ${h} h before the first day starts (08:00).`, pen:p => `Later without good cause (e.g. illness): contractual penalty of ${p} per day.`,
     commit:'Commit bindingly', back:'Back', read:'Read the contract', close:'Close',
+    sumT:'The essentials', bind:'Every order you accept is binding: you distribute the route completely on the chosen days.', out:'Log out',
+    note:(h, p) => `Accepting is binding. Free cancellation up to ${h} h before the first day starts` + (p ? `, later a penalty of ${p} per day.` : '.'),
     cancel:'Cancel', cancelT:'Cancel route', reason:'Reason (required)', reasonPh:'e.g. ill, appointment …', reasonNeed:'Please give a reason.',
     lateW:p => `Note: the free cancellation period is over. Without good cause a penalty of ${p} per day applies. If ill, please send proof to the company.`,
     okW:'Cancelling is still free.', done:'Cancelled.',
@@ -56,35 +62,47 @@ export async function workerContract(rpc, token, fresh){
 }
 const needsAck = c => c && c.required && c.acked !== c.version;
 
-// returns true when accepted (or not needed)
-export async function contractGate(rpc, token){
+const terms = c => ({ h:c && c.cancel_hours != null ? c.cancel_hours : 48, p:c && c.penalty_eur != null ? +c.penalty_eur : 50 });
+// the rules of a binding commitment (free cancellation, penalty) in three lines: shown with the contract, so nobody has to
+// search the text for them – they are agreed once here, not asked again with every order
+const summary = c => { const { h, p } = terms(c); return `<div class="note" style="margin:8px 0"><b>${esc(T('sumT'))}</b><ul class="note-list" style="margin:6px 0 0"><li>${esc(T('bind'))}</li><li>${esc(T('free')(h))}</li>${p ? `<li>${esc(T('pen')(eur(p)))}</li>` : ''}</ul></div>`; };
+
+// returns true when accepted (or not needed).
+// opts.must: the first acceptance right after the registration – no "later", a tap outside does not close it
+// (opts.logout: the way out for somebody who does not agree). A new version for somebody who accepted before can wait.
+export async function contractGate(rpc, token, opts = {}){
   let c; try{ c = await workerContract(rpc, token, true); }catch{ return true; }   // offline: the server checks again on accept
   if(!needsAck(c)) return true;
+  const must = !!opts.must && !c.acked;
   return new Promise(resolve => {
-    const m = modal(`<h2>${esc(T('title'))}</h2><p class="muted">${esc(T('intro'))}</p>${doc(c)}
+    let m = modal(`<h2>${esc(T('title'))}</h2><p class="muted">${esc(T('intro'))}</p>${summary(c)}${doc(c)}
       <label class="check"><input type="checkbox" id="ctOk"><span>${esc(T('agree'))}</span></label>
-      <button class="btn primary" id="ctYes" style="margin-top:12px">${esc(T('accept'))}</button><button class="btn ghost" id="ctNo">${esc(T('later'))}</button><div class="err" id="ctErr"></div>`);
-    m.querySelector('#ctNo').onclick = () => { m.remove(); resolve(false); };
+      <button class="btn primary" id="ctYes" style="margin-top:12px">${esc(T('accept'))}</button>${must ? (opts.logout ? `<p class="small center" style="margin:12px 0 0"><button class="link" id="ctOut">${esc(T('out'))}</button></p>` : '') : `<button class="btn ghost" id="ctNo">${esc(T('later'))}</button>`}<div class="err" id="ctErr"></div>`);
+    if(must){ const n = m.cloneNode(true); m.replaceWith(n); m = n; }   // the copy has no "tap outside closes" handler
+    else new MutationObserver((_, o) => { if(!m.isConnected){ o.disconnect(); resolve(false); } }).observe(document.body, { childList:true });   // closed by a tap outside
+    const no = m.querySelector('#ctNo'); if(no) no.onclick = () => { m.remove(); resolve(false); };
+    const out = m.querySelector('#ctOut'); if(out) out.onclick = () => { m.remove(); resolve(false); opts.logout(); };
     m.querySelector('#ctYes').onclick = async () => {
       if(!m.querySelector('#ctOk').checked){ m.querySelector('#ctErr').textContent = T('need'); return; }
       try{ await rpc('ack_contract', { p_token:token, p_version:c.version }); c.acked = c.version; m.remove(); resolve(true); }
-      catch(e){ m.querySelector('#ctErr').textContent = /contract_changed/.test(e.message || '') ? T('changed') : (e.message || 'error'); if(/contract_changed/.test(e.message || '')){ m.remove(); resolve(contractGate(rpc, token)); } }
+      catch(e){ m.querySelector('#ctErr').textContent = /contract_changed/.test(e.message || '') ? T('changed') : (e.message || 'error'); if(/contract_changed/.test(e.message || '')){ m.remove(); resolve(contractGate(rpc, token, opts)); } }
     };
   });
 }
 
-// before "accept" / "take free route": gate + binding commitment
+// before "accept" / "take free route": only the contract, if it is not accepted yet. The rules of a commitment are part of the
+// contract (agreed at the registration) and stand as one line under the button (commitNote) – no extra window per order.
 export async function commitDialog(rpc, token){
-  if(!await contractGate(rpc, token)) return false;
-  let c = cache || {}; const h = c.cancel_hours != null ? c.cancel_hours : 48, p = eur(c.penalty_eur != null ? c.penalty_eur : 50);
-  return new Promise(resolve => {
-    const m = modal(`<h2>${esc(T('commitT'))}</h2><p>${esc(T('commitX'))}</p><ul class="note-list"><li>${esc(T('free')(h))}</li>${+c.penalty_eur ? `<li>${esc(T('pen')(p))}</li>` : ''}</ul>
-      <p class="small"><button class="link" id="cmRead">${esc(T('read'))}</button></p>
-      <button class="btn primary" id="cmYes">${esc(T('commit'))}</button><button class="btn ghost" id="cmNo">${esc(T('back'))}</button>`);
-    m.querySelector('#cmRead').onclick = () => { m.querySelector('#cmRead').replaceWith(Object.assign(document.createElement('div'), { innerHTML:doc(c) })); };
-    m.querySelector('#cmNo').onclick = () => { m.remove(); resolve(false); };
-    m.querySelector('#cmYes').onclick = () => { m.remove(); resolve(true); };
-  });
+  return contractGate(rpc, token);
+}
+// the line under "accept": binding, free cancellation until …, penalty; with the contract to read
+export async function commitNote(rpc, token, el){
+  if(!el) return;
+  let c = cache; if(!c){ try{ c = await workerContract(rpc, token); }catch{ c = null; } }
+  if(!el.isConnected) return;
+  const { h, p } = terms(c);
+  el.innerHTML = `${esc(T('note')(h, p ? eur(p) : ''))} <button class="link" type="button" style="font-size:inherit">${esc(T('read'))}</button>`;
+  el.querySelector('button').onclick = () => { const m = modal(`<h2>${esc(T('title'))}</h2>${summary(c)}${doc(c || {})}<button class="btn primary" data-ok>${esc(T('close'))}</button>`); m.querySelector('[data-ok]').onclick = () => m.remove(); };
 }
 
 // accepted route → cancel with reason; firstDate 'YYYY-MM-DD'

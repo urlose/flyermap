@@ -15,6 +15,8 @@ copyFileSync('assets/icon-only.png', 'www/icon.png'); copyFileSync('assets/favic
 mkdirSync('www/fonts', { recursive: true });
 // Onest (main font since 06.11.2026, SIL OFL) + Inter as fallback
 for(const fam of ['onest', 'inter']) for(const f of ['latin', 'latin-ext', 'cyrillic', 'cyrillic-ext']) copyFileSync(`node_modules/@fontsource-variable/${fam}/files/${fam}-${f}-wght-normal.woff2`, `www/fonts/${fam}-${f}-wght-normal.woff2`);
+// the intro videos for distributors (help page, first login)
+cpSync('assets/video', 'www/video', { recursive: true });
 writeFileSync('www/manifest.json', JSON.stringify({ name:'FlyerMap', short_name:'FlyerMap', start_url:'./', scope:'./', display:'standalone', background_color:'#F5F6F8', theme_color:'#2563EB', icons:[{ src:'icon.png', sizes:'1024x1024', type:'image/png', purpose:'any' }] }));
 // service worker (web app only): the app opens without signal; the page itself always comes fresh when there is signal
 { const { readFileSync } = await import('fs'); const { createHash } = await import('crypto');
