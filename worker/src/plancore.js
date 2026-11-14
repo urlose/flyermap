@@ -54,11 +54,13 @@ export function createPlanService(cache){
   };
   // one worker's line from its pieces (routes of the planner); pieces: [{ r, name|null }] in walking order
   // breaks (optional): indices of the pieces that start a new day (workers travelling together cut their days at the same place)
-  const buildLine = (pieces, hours, rideMin, breaks) => {
+  // origin (optional): the order's start point – the line begins there and the first piece is reached by a ride
+  const buildLine = (pieces, hours, rideMin, breaks, origin) => {
     const path = [], steps = [], boxes = [], segMin = [], segMb = [], segSt = [], place = [], cutAt = new Set();
+    if(origin && pieces.length && segLen(origin, pieces[0].r.path[0]) > 30){ path.push([origin[0], origin[1]]); segMin.push(0); segMb.push(0); segSt.push(0); place.push(''); }
     let length_m = 0, street_m = 0, minutes = 0, mailboxes = 0;
     for(const [pi, { r, name }] of pieces.entries()){
-      const L = path.length, jump = !!name && L > 0;
+      const L = path.length, jump = (!!name || pi === 0) && L > 0;
       if(breaks && breaks.has(pi) && L > 0) cutAt.add(L);
       const tot = r.path.slice(1).reduce((s, q, j) => s + segLen(r.path[j], q), 0) || 1;
       r.path.forEach((q, j) => {   // a jump costs the ride: bike ≈ 15 km/h + 5 min, bus 30 min
@@ -284,13 +286,13 @@ export function createPlanService(cache){
         // the car leaves a core when the slowest has finished; a new day starts before the core that does not fit any more
         const breaks = new Set(); let tday = 0;
         tour.forEach((c, k) => { const add = (k ? ride(tour[k - 1].park, c.park) : 0) + c.span; if(k && tday + add > hours * 60 + 20){ breaks.add(k); tday = c.span; } else tday += add; });
-        routes = Array.from({ length:n }, (_, w) => buildLine(tour.filter(c => c.routes[w]).map(c => ({ r:c.routes[w], name:c.name })), hours, (a, b) => ride(a, b), new Set([...breaks].map(k => tour.slice(0, k).filter(c => c.routes[w]).length)))).map((r, i) => ({ idx:i, ...r }));
+        routes = Array.from({ length:n }, (_, w) => buildLine(tour.filter(c => c.routes[w]).map(c => ({ r:c.routes[w], name:c.name })), hours, (a, b) => ride(a, b), new Set([...breaks].map(k => tour.slice(0, k).filter(c => c.routes[w]).length)), start)).map((r, i) => ({ idx:i, ...r }));
         // a small core done by one person only: the other waits – the days still end at the same core for everybody
       }else{
         const vill = []; { let prev = start; tour.forEach(x => { vill.push({ min:x.work + ride(prev, x.park), x }); prev = x.park; }); }
         const P2 = [0]; vill.forEach(v => P2.push(P2[P2.length - 1] + v.min)); const parts = []; let from = 0;
         for(let w = 0; w < n; w++){ const goal = P2[P2.length - 1] * (w + 1) / n; let to = from; while(to < vill.length && (w === n - 1 || P2[to + 1] - vill[to].min / 2 <= goal)) to++; parts.push(vill.slice(from, to)); from = to; }
-        routes = parts.filter(p => p.length).map((p, i) => ({ idx:i, ...buildLine(p.map(v => ({ r:v.x.routes[0], name:v.x.name })), hours, (a, b) => ride(a, b)) }));
+        routes = parts.filter(p => p.length).map((p, i) => ({ idx:i, ...buildLine(p.map(v => ({ r:v.x.routes[0], name:v.x.name })), hours, (a, b) => ride(a, b), null, start) }));
       }
       const plan = { routes, mailboxes:Math.round(sum), zone:[], cores:tour.map(c => ({ name:c.name, mb:Math.round(c.mb), c:c.park, min:Math.round(c.span) })), road_km:!!mat, side_info:[], side_failed:[], must_mb:0, must_info:[] };
       plan.capacity = Planner.capacity(routes, flyers);
