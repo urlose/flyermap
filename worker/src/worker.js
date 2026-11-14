@@ -8,7 +8,8 @@ import { drawPieces, legendHtml, arrowsAlong, drawCps, showCp, ROUTE_C } from '.
 import { openMapView } from './routeview.js';
 import { locationNote, legalLinks, bindLegal } from './legalview.js';
 import { setLegalFirm } from './legal.js';
-import { commitDialog, cancelDialog, cancelLabel, contractGate } from './contractview.js';
+import { commitDialog, commitNote, cancelDialog, cancelLabel, contractGate } from './contractview.js';
+import { introOnce, introVideo } from './introview.js';
 import { t, I } from './i18n.js';
 import { NATIVE, PRIVACY_URL, sb, store, rpc, errText, deMobile, $, esc, css, hav, fmtDist, fmtHm, fmtN, fmtTime, fmtDay, loopPath } from './core.js';
 import { waVerify } from './auth.js';
@@ -88,7 +89,7 @@ export async function flush(){
 setInterval(flush, 4000);
 
 export async function loadMe(){
-  try{ W.me = await rpc('worker_me', { p_token:W.token }); await store.set('me', W.me); setLegalFirm(W.me && W.me.company); if(!W.ctAsked){ W.ctAsked = true; contractGate(rpc, W.token); } }
+  try{ W.me = await rpc('worker_me', { p_token:W.token }); await store.set('me', W.me); setLegalFirm(W.me && W.me.company); if(!W.ctAsked){ W.ctAsked = true; const working = !!(W.route && !W.route.endedAt); contractGate(rpc, W.token, { must:!working, logout:() => forceLogout() }).then(ok => { if(ok) introOnce(() => !W.canAdmin && !(W.route && !W.route.endedAt)); }); } }
   catch(e){ if(e.message === 'invalid_token') return forceLogout(t('e_invalid_token')); W.me = W.me || await store.get('me'); return; }
   syncSkips();
   preloadMaps();
@@ -497,7 +498,7 @@ function viewTaskDetail(task){
       ${plan && st === 'open' ? `<p class="hint">${esc(t('openDetailHint'))}</p>` : ''}
       ${plan && (st === 'offered' || st === 'open') ? `<h2 class="sec">${esc(t('pickDays'))}</h2><p class="small muted" style="margin-top:-6px">${esc(t('dayHintW', { n:need }))}</p>
         <div class="dates">${Array.from({ length:need }, (_, i) => `<label><span>${esc(t('dayN', { n:i + 1 }))}</span><input class="in" type="date" data-day="${i}" min="${today}" value="${addDays(first, i)}"></label>`).join('')}</div>
-        ${st === 'open' ? `<button class="btn primary" id="claim">${esc(t('claim'))}</button>` : `<button class="btn primary" id="acc">${esc(t('accept'))}</button><button class="btn ghost" id="dec">${esc(t('decline'))}</button>`}<div class="err" id="accErr"></div>` : ''}
+        ${st === 'open' ? `<button class="btn primary" id="claim">${esc(t('claim'))}</button>` : `<button class="btn primary" id="acc">${esc(t('accept'))}</button><button class="btn ghost" id="dec">${esc(t('decline'))}</button>`}<div class="err" id="accErr"></div><p class="small muted" id="cmNote" style="margin:10px 0 0"></p>` : ''}
       ${plan && st === 'accepted' ? `<p class="hint">${esc(t('yourDates'))}: <b>${esc(dayList(plan).map(fmtDay).join(', '))}</b> <button class="link" id="chgDates">${esc(t('chgDates'))}</button> · <button class="link danger-text" id="cnPlan">${esc(cancelLabel())}</button></p>
         <div id="chgBox" hidden><div class="dates">${Array.from({ length:need }, (_, i) => `<label><span>${esc(t('dayN', { n:i + 1 }))}</span><input class="in" type="date" data-cday="${i}" value="${esc(dayList(plan)[i] || addDays(dayList(plan)[0] || first, i))}"></label>`).join('')}</div>
         <button class="btn primary" id="chgSave">${esc(t('save'))}</button><div class="err" id="chgErr"></div></div>` : ''}
@@ -511,6 +512,7 @@ function viewTaskDetail(task){
   const base = drawTaskBase(m, task), { b } = base; fit(m, b, 16);
   if(task._zone) (task._base.others || []).filter(o => o.place && o.place === plan.place && o.path && o.path.length > 1).forEach(o => L.polyline(Planner.pathRuns(o.path), { color:'#64748B', weight:3, opacity:.45, dashArray:'4 6', interactive:false }).addTo(m));   // the colleague's part of the same place, faded
   if($('#go')) $('#go').onclick = () => beginRoute(task);
+  commitNote(rpc, W.token, $('#cmNote'));
   if($('#tdHelp')) $('#tdHelp').onclick = () => viewHelp(plan.id, () => viewTaskDetail(task));
   if($('#tdBig')) $('#tdBig').onclick = () => bigRouteMap(task, null);
   document.querySelectorAll('[data-dbig]').forEach(r => { r.onclick = () => bigRouteMap(task, +r.dataset.dbig); r.onkeydown = e => { if(e.key === 'Enter') bigRouteMap(task, +r.dataset.dbig); }; });
@@ -571,7 +573,9 @@ async function viewHelp(planId, back){
   const faq = faqFor(I.lang);
   shell(UI.tab || 'tasks', `${topbar(t('needHelp'), true)}
     <div class="pad help">
-      <h2 class="sec" style="margin-top:4px">${esc(t('helpFaq'))}</h2>
+      <h2 class="sec" style="margin-top:4px">${esc(t('introSec'))}</h2>
+      <button class="btn ghost" id="hpVideo" style="margin-bottom:6px">${ICONS.play}${esc(t('introBtn'))}</button>
+      <h2 class="sec">${esc(t('helpFaq'))}</h2>
       <div class="faq">${faq.map(f => `<details><summary>${esc(f.q)}</summary><p>${esc(f.a)}</p></details>`).join('')}</div>
       <h2 class="sec" id="hpForm">${esc(t('helpProblem'))}</h2>
       <p class="small muted" style="margin-top:-6px">${esc(t('helpProblemSub'))}</p>
@@ -588,6 +592,7 @@ async function viewHelp(planId, back){
       <div id="hpMine"><p class="small muted">…</p></div>
     </div>`); setLoc('help');
   bindBack(back || (() => workerTab('tasks')));
+  $('#hpVideo').onclick = () => introVideo();
   let reason = '';
   document.querySelectorAll('.reasons .chip').forEach(b => b.onclick = () => { reason = b.dataset.r; document.querySelectorAll('.reasons .chip').forEach(x => { const on = x === b; x.classList.toggle('on', on); x.setAttribute('aria-checked', on); }); $('#hpErr').textContent = ''; });
   if(planId) setTimeout(() => { const el = $('#hpForm'); if(el) el.scrollIntoView({ block:'start' }); }, 50);
