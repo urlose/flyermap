@@ -1167,6 +1167,8 @@ function viewCreate(edit){
   // "exactly N" and the area around the start is too small: the nearest towns (found in the census) are added and the order
   // becomes a tour by car through their dense cores, until the flyers are covered. Tried once; places can be removed afterwards.
   async function autoTour(tok){
+    // first step: the dense cores of the area itself by car (it often holds enough, e.g. a second town inside the 6 km)
+    if(!d.cores || d.travel !== 'car'){ d.travel = 'car'; d.cores = true; d.dirty = true; toast(t('autoCores')); return recompute(); }
     d.autoRound = (d.autoRound || 0) + 1;   // up to 3 rounds: the dense cores of a place hold less than its households
     const need = d.flyers - d.plan.mailboxes; let towns = [];
     try{ towns = await townsAround(d.start.lat, d.start.lng, 6500, 30000); }catch{ return; }

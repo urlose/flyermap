@@ -287,3 +287,7 @@ Object.assign(T.ru, { autoTourOn:'Рядом ящиков не хватает �
 Object.assign(T.de, { repOk:'Gemeldet. Stattdessen {n} Straße(n) in der Nähe mit ≈ {mb} Briefkästen zu deiner Route hinzugefügt.', repNone:'Gemeldet. In der Nähe gibt es keine Ersatzstraße – übrige Flyer bitte zum Startpunkt zurückbringen.', rvReported:'Gemeldet (nicht begehbar)' });
 
 Object.assign(T.ru, { repOk:'Отправлено. Вместо этого в твой маршрут добавлено {n} улиц(ы) рядом, ≈ {mb} ящиков.', repNone:'Отправлено. Рядом нет улицы на замену — оставшиеся флаеры верни на стартовую точку.', rvReported:'Сообщено (пройти нельзя)' });
+
+Object.assign(T.de, { autoCores:'Im Umkreis reicht es zu Fuß nicht – Tour mit dem Auto durch die dichten Ortskerne.' });
+
+Object.assign(T.ru, { autoCores:'Пешком рядом не хватает — тур на машине по плотным центрам.' });

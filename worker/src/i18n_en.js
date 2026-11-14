@@ -232,3 +232,5 @@ Object.assign(T.en, { introSec:'Short video', introBtn:'Video: how the app works
 Object.assign(T.en, { autoTourOn:'Not enough nearby – car tour through {n} more places: {names}. Places can be removed below.', autoTourNone:'No other places for a tour within 30 km.' });
 
 Object.assign(T.en, { repOk:'Reported. Instead, {n} street(s) nearby with ≈ {mb} mailboxes were added to your route.', repNone:'Reported. No replacement street nearby – please bring the remaining flyers back to the start point.', rvReported:'Reported (not walkable)' });
+
+Object.assign(T.en, { autoCores:'Not enough on foot nearby – car tour through the dense cores.' });

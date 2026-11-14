@@ -245,7 +245,9 @@ export function createPlanService(cache){
         if(stale()) return { skipped:true };
       }
       // best first until the flyers are reached (exact: also the next best ones until the number is covered)
-      all.sort((a, b) => (b.forced ? 1 : 0) - (a.forced ? 1 : 0) || b.score - a.score);
+      // nearer cores first when they are about as good: the score is lowered by the distance from the start (−1/3 at 10 km)
+      const near = c => c.score / (1 + segLen(start, c.park) / 20000);
+      all.sort((a, b) => (b.forced ? 1 : 0) - (a.forced ? 1 : 0) || near(b) - near(a));
       const chosen = all.filter(c => c.forced); let sum = chosen.reduce((a, c) => a + c.mb, 0);
       // places that already carry a number of flyers (a saved order) get at most that many; the main town the rest
       const capOf = {}; let capSum = 0;
