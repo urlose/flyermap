@@ -258,7 +258,10 @@
     return { pts, edges, adj };
   }
   // keep only the largest connected part (by street length) so every part is reachable on foot
-  function largestComponent(g){
+  // near (optional, the start point): keep the network the start lies in, not simply the largest one – a town cut off
+  // from a bigger neighbour by roads without a footway (e.g. Leipheim next to Günzburg) must not be thrown away with its start.
+  // The start's network counts when it is within 500 m of the start and has at least 2 km of streets.
+  function largestComponent(g, near){
     const comp = new Array(g.pts.length).fill(-1); let c = 0; const len = [];
     for(let s = 0; s < g.pts.length; s++){
       if(comp[s] !== -1 || !g.adj[s].length) continue;
@@ -268,6 +271,10 @@
     }
     g.edges.forEach(e => { len[comp[e.a]] += e.len; });
     let best = 0; for(let i = 1; i < c; i++) if(len[i] > len[best]) best = i;
+    if(near){
+      let nv = -1, nd = 500; for(let v = 0; v < g.pts.length; v++){ if(comp[v] < 0) continue; const d = dist(near, g.pts[v]); if(d < nd){ nd = d; nv = v; } }
+      if(nv >= 0 && len[comp[nv]] >= 2000) best = comp[nv];
+    }
     const map = new Map(), pts = [], edges = [];
     const nid = v => { if(!map.has(v)){ map.set(v, pts.length); pts.push(g.pts[v]); } return map.get(v); };
     let dropped = 0;
@@ -1069,7 +1076,7 @@
       const m = mergeTiles(keys.map(k => store.get(k)));
       // squares reach beyond the radius: only the square around the start is used (keeps planning fast and the radius logic exact)
       const dLat = r / 111320, dLng = r / (111320 * Math.cos(start[0] * RAD)), box = [[start[0] - dLat, start[1] - dLng], [start[0] - dLat, start[1] + dLng], [start[0] + dLat, start[1] + dLng], [start[0] + dLat, start[1] - dLng]];
-      const g = largestComponent(buildGraph(m.osm, box));
+      const g = largestComponent(buildGraph(m.osm, box), start);
       let bl = m.buildings.filter(b => Math.abs(b.lat - start[0]) <= dLat && Math.abs(b.lng - start[1]) <= dLng);
       if(opt.census){ try{ bl = await censusFill(bl, box, opt.census); }catch(e){ /* census is optional: keep our own estimate */ } }
       attachBuildings(g, bl);

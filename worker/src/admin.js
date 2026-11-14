@@ -1171,7 +1171,7 @@ function viewCreate(edit){
     if(!d.cores || d.travel !== 'car'){ d.travel = 'car'; d.cores = true; d.dirty = true; toast(t('autoCores')); return recompute(); }
     d.autoRound = (d.autoRound || 0) + 1;   // up to 3 rounds: the dense cores of a place hold less than its households
     const need = d.flyers - d.plan.mailboxes; let towns = [];
-    try{ towns = await townsAround(d.start.lat, d.start.lng, 6500, 30000); }catch{ return; }
+    try{ towns = await townsAround(d.start.lat, d.start.lng, 2500, 30000); }catch{ return; }   // from 2.5 km: a town next door may not belong to the start's street network (overlaps are counted once)
     if(tok !== d.token || !alive()) return;
     const had = c => d.side.some(x => hav(x.lat, x.lng, c.lat, c.lng) < 1500);
     const pick = []; let got = 0;
