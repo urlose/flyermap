@@ -271,3 +271,5 @@ Object.assign(T.de, { daysNoOrder:'Ohne Auftrag' });
 Object.assign(T.ru, { daysNoOrder:'Без заказа' });
 Object.assign(T.de, { zLabel:'Zensus 2022', zLine:'{hh} Haushalte', zDiff:'unsere Schätzung {d} %', zHint:'Offizielle Haushalte entlang der Routen, Stand 2022' });
 Object.assign(T.ru, { zLabel:'Перепись 2022', zLine:'{hh} домохозяйств', zDiff:'наша оценка {d} %', zHint:'Официальные домохозяйства вдоль маршрутов, на 2022 год' });
+Object.assign(T.de, { helpAutoAnswer:'Automatische Antwort' });
+Object.assign(T.ru, { helpAutoAnswer:'Автоответ' });

@@ -888,7 +888,7 @@ async function viewHelpInbox(showDone){
         <div class="hi-head"><b>${esc(rs(h.reason))}</b>${statusPill(h.status === 'open' ? 'warn' : 'ok', t(h.status === 'open' ? 'helpOpen' : 'helpDone'))}</div>
         <span class="muted small">${esc([t('helpFrom', { n:nameOf(h.worker_id) || '?' }), tk ? tk.title : '', when(h.created_at)].filter(Boolean).join(' · '))}</span>
         ${h.body ? `<p style="margin:8px 0 0">${esc(h.body)}</p>` : ''}
-        ${h.answer ? `<p class="help-answer"><b>${esc(t('helpAnswer'))}:</b> ${esc(h.answer)}</p>` : ''}
+        ${h.answer ? `<p class="help-answer"><b>${esc(t(h.auto ? 'helpAutoAnswer' : 'helpAnswer'))}:</b> ${esc(h.answer)}</p>` : ''}
         <div class="hi-acts">${tk ? `<button class="btn ghost small" data-task="${tk.id}">${ICONS.flag}${esc(t('helpOpenTask'))}</button>` : ''}${h.lat != null ? `<a class="btn ghost small" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${(+h.lat).toFixed(6)},${(+h.lng).toFixed(6)}">${ICONS.pin}${esc(t('helpWhere'))}</a>` : ''}</div>
         ${h.status === 'open' ? `<textarea class="in" rows="2" maxlength="1000" placeholder="${esc(t('helpAnswerPh'))}"></textarea><div class="hi-acts"><button class="btn primary small" data-close="${h.id}">${ICONS.check}${esc(t('helpClose'))}</button></div>` : ''}
       </div>`; }).join('') : emptyState(t('helpInboxNone'), 'inbox')}
