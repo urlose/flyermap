@@ -1,0 +1,27 @@
+name: Server plan (one order, without the admin page)
+on:
+  push:
+    branches: [main]
+    paths: ['tools/serverplan/req.json']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: node tools/serverplan/run.mjs
+        timeout-minutes: 20
+      - name: result to branch serverplan-out
+        run: |
+          git config user.name "urlose"; git config user.email "urlose@users.noreply.github.com"
+          cp tools/serverplan/out/*.json /tmp/
+          git fetch origin serverplan-out || true
+          git checkout --orphan serverplan-out
+          git rm -rf --cached . > /dev/null
+          rm -rf ./* .github
+          cp /tmp/*.json .
+          git add *.json && git commit -m "plan result" && git push -f origin serverplan-out
