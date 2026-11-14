@@ -383,7 +383,8 @@ export function workerTab(tab){
   return viewTasks();
 }
 
-function planInfo(task){ return task.plan ? t('routeInfo', { km:fmtDist(task.plan.length_m), h:fmtHm(task.plan.minutes || 0) }) : '—'; }
+// workers never see the planned time (only the admin does): it is an estimate, not the pay
+function planInfo(task){ return task.plan ? fmtDist(task.plan.length_m) : '—'; }
 
 const dayList = pl => (pl && pl.work_dates || []).map(d => String(d).slice(0, 10)).sort();
 const stClass = p => !p ? '' : p.status === 'open' ? 'info' : p.status === 'accepted' ? '' : p.status === 'declined' ? 'bad' : p.status === 'done' ? 'ok' : 'warn';
@@ -398,13 +399,13 @@ function viewTasks(){
       ${list.length ? `<div class="kpis two"><div class="kpi k-warn"><b>${nNew}</b><span>${esc(t('kNew'))}</span></div><div class="kpi k-info"><b>${nAcc}</b><span>${esc(t('stAccepted'))}</span></div></div>` : ''}
       ${list.length ? list.map((tk, i) => { const pv = zoneSum(tk); return `<button class="card acc ${accClass(pv)} task-card" data-i="${i}">
         <div class="tc-main"><b>${esc(tk.title)}</b>
-        <div class="tc-meta"><i>${ICONS.calendar}${esc(taskDates(tk))}</i>${multiZone(tk) ? `<i>${ICONS.map}${esc(t('zonesN', { n:tk.plans.length }))}</i>` : tk.district || tk.city_name ? `<i>${ICONS.pin}${esc([tk.district, tk.city_name].filter(Boolean).join(', '))}</i>` : ''}${pv ? `<i>${ICONS.route}${esc(fmtDist(pv.length_m))} · ${esc(fmtHm(pv.minutes || 0))} ${esc(t('h'))}</i><i>${ICONS.mail}${esc(fmtN(pv.mailboxes || 0))}</i>` : ''}</div>
+        <div class="tc-meta"><i>${ICONS.calendar}${esc(taskDates(tk))}</i>${multiZone(tk) ? `<i>${ICONS.map}${esc(t('zonesN', { n:tk.plans.length }))}</i>` : tk.district || tk.city_name ? `<i>${ICONS.pin}${esc([tk.district, tk.city_name].filter(Boolean).join(', '))}</i>` : ''}${pv ? `<i>${ICONS.route}${esc(fmtDist(pv.length_m))}</i><i>${ICONS.mail}${esc(fmtN(pv.mailboxes || 0))}</i>` : ''}</div>
         ${pv ? statusPill(stClass(pv) || 'info', stLabel(pv)) : ''}</div>${ICONS.chevron}</button>`; }).join('')
         : emptyState(t('noTasks'), 'flag')}
       ${open.length ? `<h2 class="sec">${esc(t('openRoutes'))} <span class="muted small">(${open.length})</span></h2><p class="small muted" style="margin-top:-6px">${esc(t('openHint'))}</p>
         ${open.map((tk, i) => `<button class="card acc acc-info task-card open-card" data-o="${i}">
           <div class="tc-main"><b>${esc(tk.title)} <span class="muted">· ${esc(t('planRoute', { n:tk.plan.idx + 1 }))}</span></b>
-          <div class="tc-meta"><i>${ICONS.calendar}${esc(fmtDay(tk.work_date))}</i>${tk.district || tk.city_name ? `<i>${ICONS.pin}${esc([tk.district, tk.city_name].filter(Boolean).join(', '))}</i>` : ''}<i>${ICONS.route}${esc(fmtDist(tk.plan.length_m))} · ${esc(fmtHm(tk.plan.minutes || 0))} ${esc(t('h'))}</i><i>${ICONS.mail}${esc(fmtN(tk.plan.mailboxes || 0))}</i></div>
+          <div class="tc-meta"><i>${ICONS.calendar}${esc(fmtDay(tk.work_date))}</i>${tk.district || tk.city_name ? `<i>${ICONS.pin}${esc([tk.district, tk.city_name].filter(Boolean).join(', '))}</i>` : ''}<i>${ICONS.route}${esc(fmtDist(tk.plan.length_m))}</i><i>${ICONS.mail}${esc(fmtN(tk.plan.mailboxes || 0))}</i></div>
           ${statusPill('info', t('stOpen'))}</div>${ICONS.chevron}</button>`).join('')}` : ''}
       <button class="btn ghost" id="free" style="margin-top:16px">${ICONS.route}${esc(t('freeRoute'))}</button>
       ${NATIVE ? '' : `<p class="note">${esc(t('webNote'))}</p>`}
@@ -487,14 +488,14 @@ function viewTaskDetail(task){
         ${task.quota_m30 ? `<div><span>${esc(t('quotaInfo'))}</span><b>${fmtN(task.quota_m30)} m / 30 ${esc(t('min'))}</b></div>` : ''}
         ${task.notes ? `<div><span>${esc(t('note'))}</span><b>${esc(task.notes)}</b></div>` : ''}
       </div>
-      ${plan && plan.days && plan.days.length > 1 ? `<h2 class="sec">${esc(t('route'))}:</h2><div class="info">${plan.days.map((d, k) => `<div class="day-row" data-dbig="${k}" role="button" tabindex="0"><span>${esc(t('dayN', { n:k + 1 }) + (d.place ? ' · ' + d.place : ''))}${dayList(plan)[k] ? ' · ' + esc(fmtDay(dayList(plan)[k])) : ''}</span><b>${esc(t('routeLine', { km:fmtDist(d.length_m), h:fmtHm(d.minutes || 0), mb:fmtN(d.mailboxes || 0) }))} <i id="dp${k}"></i></b></div>`).join('')}</div>` : ''}
+      ${plan && plan.days && plan.days.length > 1 ? `<h2 class="sec">${esc(t('route'))}:</h2><div class="info">${plan.days.map((d, k) => `<div class="day-row" data-dbig="${k}" role="button" tabindex="0"><span>${esc(t('dayN', { n:k + 1 }) + (d.place ? ' · ' + d.place : ''))}${dayList(plan)[k] ? ' · ' + esc(fmtDay(dayList(plan)[k])) : ''}</span><b>${esc(t('routeLineW', { km:fmtDist(d.length_m), mb:fmtN(d.mailboxes || 0) }))} <i id="dp${k}"></i></b></div>`).join('')}</div>` : ''}
       <div class="mapbox" id="tdMap"></div>
       <div id="tdLegend"></div>
       ${plan && st !== 'open' ? `<button class="link" id="tdHelp" style="margin:2px 0 10px">${esc(t('helpRouteLink'))}</button>` : ''}
       ${plan && plan.path && plan.path.length > 1 ? `<button class="btn ghost small" id="tdBig" style="margin-top:8px">${ICONS.expand}${esc(t('rvBig'))}</button>` : ''}
       ${plan ? '' : `<p class="note">${esc(t('noPlan'))}</p>`}
       ${plan && st === 'open' ? `<p class="hint">${esc(t('openDetailHint'))}</p>` : ''}
-      ${plan && (st === 'offered' || st === 'open') ? `<h2 class="sec">${esc(t('pickDays'))}</h2><p class="small muted" style="margin-top:-6px">${esc(t('dayHint', { h:(plan.minutes / 60).toFixed(1).replace('.', ','), n:need }))}</p>
+      ${plan && (st === 'offered' || st === 'open') ? `<h2 class="sec">${esc(t('pickDays'))}</h2><p class="small muted" style="margin-top:-6px">${esc(t('dayHintW', { n:need }))}</p>
         <div class="dates">${Array.from({ length:need }, (_, i) => `<label><span>${esc(t('dayN', { n:i + 1 }))}</span><input class="in" type="date" data-day="${i}" min="${today}" value="${addDays(first, i)}"></label>`).join('')}</div>
         ${st === 'open' ? `<button class="btn primary" id="claim">${esc(t('claim'))}</button>` : `<button class="btn primary" id="acc">${esc(t('accept'))}</button><button class="btn ghost" id="dec">${esc(t('decline'))}</button>`}<div class="err" id="accErr"></div>` : ''}
       ${plan && st === 'accepted' ? `<p class="hint">${esc(t('yourDates'))}: <b>${esc(dayList(plan).map(fmtDay).join(', '))}</b> <button class="link" id="chgDates">${esc(t('chgDates'))}</button> · <button class="link danger-text" id="cnPlan">${esc(cancelLabel())}</button></p>
@@ -519,7 +520,7 @@ function viewTaskDetail(task){
       const multi = plan.days && plan.days.length > 1, ds = multi ? plan.days : [{ minutes:plan.minutes, length_m:plan.length_m }], dp = multi ? dayProgress(plan, tr) : [tr.pct()];
       const part = (k, v) => v * (dp[k] >= 95 ? 0 : 1 - (dp[k] || 0) / 100);
       const restMin = ds.reduce((a, d, k) => a + part(k, d.minutes || 0), 0), restM = ds.reduce((a, d, k) => a + part(k, d.length_m || 0), 0);
-      const row = $('#tdRest'); if(row && dp.some(x => x > 0)){ row.hidden = false; row.querySelector('b').textContent = restMin > 1 ? '≈ ' + fmtDist(restM) + ' · ' + fmtHm(restMin) + ' ' + t('hShort') : t('restNone'); }
+      const row = $('#tdRest'); if(row && dp.some(x => x > 0)){ row.hidden = false; row.querySelector('b').textContent = restMin > 1 ? '≈ ' + fmtDist(restM) : t('restNone'); }
       if(!multi || st !== 'accepted') return;
       const pc = dayProgress(plan, tr); pc.forEach((p, k) => { const el = $('#dp' + k); if(el) el.innerHTML = p >= 95 ? statusPill('ok', t('stDone')) : p ? '· ' + p + '%' : ''; });
       const next = pc.findIndex(p => p < 95), go = $('#go');
@@ -638,7 +639,7 @@ async function viewZones(task){
   shell('tasks', `${topbar(t('zonesTitle'), true)}
     <div class="pad">
       <div class="sec-row" style="margin-top:4px"><h2>${esc(task.title)}</h2>${statusPill(stClass(sum) || 'info', stLabel(sum))}</div>
-      <div class="kpis"><div class="kpi k-info"><b>${ps.length}</b><span>${esc(t('zonesMine'))}</span></div><div class="kpi"><b>${esc(fmtN(sum.mailboxes))}</b><span>${esc(t('mailboxes'))}</span></div><div class="kpi"><b>${esc(fmtHm(sum.minutes))}</b><span>${esc(t('h'))}</span></div></div>
+      <div class="kpis"><div class="kpi k-info"><b>${ps.length}</b><span>${esc(t('zonesMine'))}</span></div><div class="kpi"><b>${esc(fmtN(sum.mailboxes))}</b><span>${esc(t('mailboxes'))}</span></div><div class="kpi"><b>${esc(fmtDist(sum.length_m))}</b><span>${esc(t('routeLen'))}</span></div></div>
       <p class="small muted" style="margin-top:-4px">${esc(t('zonesHint'))}</p>
       <div class="mapbox zones-map" id="zMap"></div>
       <div class="zones-legend small">${others.length ? `<span><i class="zl-line"></i>${esc(t('zonesMine'))}</span><span><i class="zl-other"></i>${esc(t('zonesOther'))}${[...new Set(others.map(o => o.who).filter(Boolean))].length ? ': ' + esc([...new Set(others.map(o => o.who).filter(Boolean))].join(', ')) : ''}</span>` : ''}</div>
@@ -646,7 +647,7 @@ async function viewZones(task){
       <div class="zone-list">${ps.map((p, k) => `<div class="zone-row">
         <span class="zn" style="background:${col(k)}">${k + 1}</span>
         <button class="zr-main" data-open="${p.id}"><b>${esc(p.place || t('planRoute', { n:p.idx + 1 }))}</b>
-          <span class="zr-meta">${esc(fmtDist(p.length_m))} · ${esc(fmtHm(p.minutes || 0))} ${esc(t('h'))} · ${ICONS.mail}${esc(fmtN(p.mailboxes || 0))}</span>
+          <span class="zr-meta">${esc(fmtDist(p.length_m))} · ${ICONS.mail}${esc(fmtN(p.mailboxes || 0))}</span>
           <span class="zr-st">${statusPill(stClass(p) || 'info', stLabel(p))}${dayList(p).length ? ` <span class="muted">${esc(dayList(p).map(fmtDay).join(', '))}</span>` : ''} <i id="zp${p.id}"></i></span></button>
         <div class="zr-mv"><button class="icon-btn" data-up="${k}" aria-label="${esc(t('zoneUp'))}" ${k ? '' : 'disabled'}>↑</button><button class="icon-btn" data-down="${k}" aria-label="${esc(t('zoneDown'))}" ${k < ps.length - 1 ? '' : 'disabled'}>↓</button></div>
       </div>`).join('')}</div>
@@ -673,7 +674,7 @@ async function viewZones(task){
   if(b.isValid()) fit(m, b, 30);
   $('#zBig').onclick = () => openMapView({
     title:task.title, lines:[t('zonesN', { n:ps.length })],
-    stats:[[t('routeLen'), fmtDist(sum.length_m)], [t('duration'), fmtHm(sum.minutes || 0) + ' ' + t('h')], [t('mailboxes'), fmtN(sum.mailboxes || 0)]],
+    stats:[[t('routeLen'), fmtDist(sum.length_m)], [t('mailboxes'), fmtN(sum.mailboxes || 0)]],
     legend:ps.map((p, k) => ({ color:col(k), label:(k + 1) + ' · ' + (p.place || ''), sub:fmtDist(p.length_m) + ' · ' + fmtN(p.mailboxes || 0) })),
     layers:[...(others.length ? [{ key:'oth', label:t('zonesOther'), add:g => others.forEach(o => o.path && o.path.length > 1 && L.polyline(Planner.pathRuns(o.path), { color:'#64748B', weight:3, opacity:.5, dashArray:'4 6' }).addTo(g)) }] : []),
       ...ps.map((p, k) => ({ key:'z' + k, label:(k + 1) + ' · ' + (p.place || ''), add:g => { if(p.path && p.path.length > 1){ L.polyline(Planner.pathRuns(p.path), { color:'#fff', weight:8, opacity:.9 }).addTo(g); L.polyline(Planner.pathRuns(p.path), { color:col(k), weight:5, opacity:.95 }).addTo(g); } } }))],
@@ -718,8 +719,8 @@ function bigRouteMap(task, dayIdx){
   openMapView({
     title:task.title + (sel ? ' · ' + t('dayN', { n:dayIdx + 1 }) : ''),
     lines:[[task.district, task.city_name].filter(Boolean).join(', '), sel && dates[dayIdx] ? fmtDay(dates[dayIdx]) : taskDates(task)],
-    stats:sel ? [[t('routeLen'), fmtDist(sel.length_m)], [t('duration'), fmtHm(sel.minutes || 0) + ' ' + t('h')], [t('mailboxes'), fmtN(sel.mailboxes || 0)]]
-      : [[t('routeLen'), fmtDist(pl.length_m)], [t('duration'), fmtHm(pl.minutes || 0) + ' ' + t('h')], [t('mailboxes'), fmtN(pl.mailboxes || 0)]],
+    stats:sel ? [[t('routeLen'), fmtDist(sel.length_m)], [t('mailboxes'), fmtN(sel.mailboxes || 0)]]
+      : [[t('routeLen'), fmtDist(pl.length_m)], [t('mailboxes'), fmtN(pl.mailboxes || 0)]],
     legend:days ? days.map((d, k) => ({ color:DAY_COLORS[k % DAY_COLORS.length], label:t('dayN', { n:k + 1 }) + (d.place ? ' · ' + d.place : '') + (dates[k] ? ' · ' + fmtDay(dates[k]) : ''), sub:fmtDist(d.length_m) + ' · ' + fmtN(d.mailboxes || 0) })) : [],
     layers,
     back:() => viewTaskDetail(task),
