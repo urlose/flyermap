@@ -1174,8 +1174,8 @@ function viewCreate(edit){
     const pick = []; let got = 0;
     for(const c of towns){ if(got >= need * 1.15 || pick.length >= 8) break; pick.push(c); got += c.households * 0.75; }   // the dense cores hold about 3/4 of a place
     if(!pick.length){ toast(t('autoTourNone')); return; }
-    const names = await Promise.all(pick.map(c => reversePlace(c.lat, c.lng).then(n => n ? n.split(', ').pop() : null).catch(() => null)));
-    if(tok !== d.token || !alive()) return;
+    const names = [];   // one after another: the free geocoder refuses many requests at once
+    for(const c of pick){ let nm = null; for(let k = 0; k < 2 && !nm; k++){ try{ const r = await reversePlace(c.lat, c.lng); nm = r ? r.split(', ').pop() : null; }catch{ await new Promise(r => setTimeout(r, 800)); } } names.push(nm); if(tok !== d.token || !alive()) return; }
     const used = new Set();
     pick.forEach((c, i) => { let nm = names[i] || t('areaN', { n:i + 1 }); if(used.has(nm)) nm += ' ' + (i + 1); used.add(nm);
       d.side.push({ name:nm, lat:c.lat, lng:c.lng, p:null, flyers:c.households, km:Math.round(c.dist / 100) / 10, auto:true }); });
@@ -1240,7 +1240,7 @@ function viewCreate(edit){
     // flyers this plan really hands out: whole town or economical amount = the mailboxes of the plan, otherwise the number typed
     const effFlyers = p && (d.mainAll || (p.eco && !d.exact) || (p.cores && p.mailboxes < d.flyers)) ? Math.round(p.mailboxes) : d.flyers;
     if(!saved.title && title) saved.title = title;
-    const cap = p ? Planner.capacity(p.routes, d.flyers, { hoursPerDay:d.hours, days:d.days }) : null;
+    const cap = p ? Planner.capacity(p.routes, effFlyers, { hoursPerDay:d.hours, days:d.days }) : null;   // suggestion from what is really handed out (not 8 450 of an area with 3 348)
     const totMin = p ? p.routes.reduce((s, r) => s + (r.minutes || 0), 0) : 0, oneDay = p && totMin / 60 <= d.hours && (d.n > 1 || d.days > 1);   // all of it fits into one working day of one person
     const needDays = cap ? Math.min(d.days, Math.max(1, Math.ceil(cap.slowest / d.hours - 0.05))) : d.days;
     const km = p ? fmtDist(p.routes.reduce((s, r) => s + r.length_m, 0)) : '';

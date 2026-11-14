@@ -211,6 +211,12 @@ export function createPlanService(cache){
         const z = c.zone && c.zone.length > 2 ? c.zone : null;
         all = all.concat(denseCores(z ? Planner.zoneView(g, z) : g, c.name));
       }
+      // places next to each other are loaded as overlapping squares: the same streets would come twice (counted and walked
+      // twice). A street (by its middle point, ~1 m) belongs to the first core that has it; a core left with almost nothing is dropped.
+      { const seenE = new Set(), keyE = (g, i) => { const e = g.edges[i]; return ((g.pts[e.a][0] + g.pts[e.b][0]) / 2).toFixed(5) + ',' + ((g.pts[e.a][1] + g.pts[e.b][1]) / 2).toFixed(5); };
+        all = all.filter(c => { const ids = c.ids.filter(i => !seenE.has(keyE(c.g, i)));
+          if(!c.forced && ids.length < c.ids.length * 0.5) return false;
+          ids.forEach(i => seenE.add(keyE(c.g, i))); c.ids = ids; c.mb = ids.reduce((a, i) => a + c.g.edges[i].mb, 0); c.len = ids.reduce((a, i) => a + c.g.edges[i].len, 0); return c.mb >= 10; }); }
       if(!all.length) return { plan:{ routes:[], mailboxes:0, zone:[], cores:[] }, sug:n };
       stage('calculating');
       const K = together ? n : 1;
