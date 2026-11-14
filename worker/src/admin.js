@@ -1162,25 +1162,26 @@ function viewCreate(edit){
     if(d.plan.cores) d.days = Math.max(1, ...d.plan.routes.map(r => (r.days || []).length));   // village cores: the days follow from the tour
     if(tkE && !d.prefilled){ d.prefilled = true; edit.plans.forEach(p => { if(p.worker_id && p.idx < d.plan.routes.length) d.assign[p.idx] = p.worker_id; }); }
     draw(); renderSheet();
-    if(d.exact && !tkE && !d.autoTried && !d.side.length && !d.zone && !(d.must || []).length && d.plan.mailboxes < d.flyers * 0.95) autoTour(tok);
+    if(d.exact && !tkE && (d.autoRound || 0) < 3 && d.side.every(x => x.auto) && !d.zone && !(d.must || []).length && d.plan.mailboxes < d.flyers * 0.95) autoTour(tok);
   }
   // "exactly N" and the area around the start is too small: the nearest towns (found in the census) are added and the order
   // becomes a tour by car through their dense cores, until the flyers are covered. Tried once; places can be removed afterwards.
   async function autoTour(tok){
-    d.autoTried = true;
+    d.autoRound = (d.autoRound || 0) + 1;   // up to 3 rounds: the dense cores of a place hold less than its households
     const need = d.flyers - d.plan.mailboxes; let towns = [];
     try{ towns = await townsAround(d.start.lat, d.start.lng, 6500, 30000); }catch{ return; }
     if(tok !== d.token || !alive()) return;
+    const had = c => d.side.some(x => hav(x.lat, x.lng, c.lat, c.lng) < 1500);
     const pick = []; let got = 0;
-    for(const c of towns){ if(got >= need * 1.15 || pick.length >= 8) break; pick.push(c); got += c.households * 0.75; }   // the dense cores hold about 3/4 of a place
-    if(!pick.length){ toast(t('autoTourNone')); return; }
+    for(const c of towns){ if(got >= need * 1.25 || pick.length >= 8) break; if(had(c)) continue; pick.push(c); got += c.households * 0.6; }   // the dense cores hold only part of a place
+    if(!pick.length){ if(d.autoRound === 1) toast(t('autoTourNone')); return; }
     const names = [];   // one after another: the free geocoder refuses many requests at once
     for(const c of pick){ let nm = null; for(let k = 0; k < 2 && !nm; k++){ try{ const r = await reversePlace(c.lat, c.lng); nm = r ? r.split(', ').pop() : null; }catch{ await new Promise(r => setTimeout(r, 800)); } } names.push(nm); if(tok !== d.token || !alive()) return; }
-    const used = new Set();
-    pick.forEach((c, i) => { let nm = names[i] || t('areaN', { n:i + 1 }); if(used.has(nm)) nm += ' ' + (i + 1); used.add(nm);
+    const used = new Set(d.side.map(x => x.name)), added = [];
+    pick.forEach((c, i) => { let nm = names[i] || t('areaN', { n:d.side.length + 1 }); for(let j = 2; used.has(nm); j++) nm = (names[i] || t('areaN', { n:d.side.length + 1 })) + ' (' + j + ')'; used.add(nm); added.push(nm);
       d.side.push({ name:nm, lat:c.lat, lng:c.lng, p:null, flyers:c.households, km:Math.round(c.dist / 100) / 10, auto:true }); });
     d.travel = 'car'; d.cores = true; d.dirty = true;
-    toast(t('autoTourOn', { n:pick.length, names:[...used].join(', ') }));
+    toast(t('autoTourOn', { n:pick.length, names:added.join(', ') }));
     recompute();
   }
   function draw(){
@@ -1341,7 +1342,7 @@ function viewCreate(edit){
     document.querySelectorAll('[data-first]').forEach(b => b.onclick = () => { saved = keep(); const x = d.side[+b.dataset.first]; if(!x) return; d.first = d.first === x.name ? null : x.name; recompute(); });
     if($('#cCores')) $('#cCores').onchange = e => { saved = keep(); d.cores = e.target.checked; recompute(); };
     if($('#cTogether')) $('#cTogether').onchange = e => { saved = keep(); d.together = e.target.checked; recompute(); };
-    if($('#cExact')) $('#cExact').onclick = () => { saved = keep(); d.exact = true; d.autoTried = false; recompute(); };
+    if($('#cExact')) $('#cExact').onclick = () => { saved = keep(); d.exact = true; d.autoRound = 0; recompute(); };
     if($('#cEco')) $('#cEco').onclick = () => { saved = keep(); d.exact = false; recompute(); };
     // whole main town: its border becomes the distribution area and every mailbox in it gets a flyer
     if($('#cMainAll')) $('#cMainAll').onclick = async () => {
