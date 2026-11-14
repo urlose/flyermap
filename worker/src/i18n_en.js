@@ -223,3 +223,4 @@ Object.assign(T.en, { helpInbox:'Help reports', helpInboxN:'{n} open', helpInbox
 Object.assign(T.en, { navProblem:'Report a problem' });
 Object.assign(T.en, { rvLoading:'Loading the GPS tracks …' });
 Object.assign(T.en, { daysNoOrder:'Without an order' });
+Object.assign(T.en, { zLabel:'Census 2022', zLine:'{hh} households', zDiff:'our estimate {d} %', zHint:'Official households along the routes, as of 2022' });

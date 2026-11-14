@@ -11,6 +11,10 @@ window.addEventListener('fm-open-task', e => viewTask(e.detail, () => viewStats(
 import { makePlanEngine, setStampClient, tileStamp } from './planengine.js';
 import { openMapView } from './routeview.js';
 import { checkpoints, addSkips, dayProgress, makeNav } from './nav.js';
+import { compare as zensusCompare, diffPct as zensusDiff } from './zensus.js';
+// census line: official households next to our mailbox estimate; more than 25 % apart is marked
+const zensusHtml = c => { const d = zensusDiff(c); return d == null ? '' : `${esc(t('zLine', { hh:fmtN(c.households) }))} · <i class="zd ${Math.abs(d) > 25 ? 'err' : ''}" >${esc(t('zDiff', { d:(d > 0 ? '+' : d < 0 ? '−' : '±') + Math.abs(d) }))}</i>`; };
+const zensusOfPlan = new WeakMap();
 import { loadFirm, firmCardHtml, bindFirmCard, firmComplete, avvOk } from './firm.js';
 import { viewMaster, poolHtml } from './master.js';
 const DONE_TX = () => ({ de:{ chip:'Erledigte', tag:'erledigt' }, ru:{ chip:'Выполненные', tag:'выполнен' }, en:{ chip:'Finished', tag:'finished' } }[['ru', 'en'].includes(I.lang) ? I.lang : 'de']);
@@ -1197,7 +1201,8 @@ function viewCreate(edit){
         <div class="grow"><b>${esc(t('planRoute', { n:i + 1 }))} <span class="muted">· ${esc(t('daysN', { n:Math.max(1, Math.ceil(r.minutes / 60 / d.hours)) }))}</span></b><span>${esc(t('routeLine', { km:fmtDist(r.length_m), h:fmtHm(r.minutes), mb:fmtN(r.mailboxes) }))}</span>
         ${dayLines(r.days, Planner.COLORS[i % 10])}
         ${withSelect ? `<select class="in small" data-r="${i}" aria-label="${esc(t('planRoute', { n:i + 1 }))}">${workerOptions(d.start.lat, d.start.lng, d.assign[i])}</select>` : ''}</div></div>`;
-    const planBlock = () => p ? `${(p.side_failed || []).length ? `<div class="warnbox">${esc(t('sideFailed', { list:p.side_failed.join(', ') }))}</div>` : ''}${(p.bus || []).length ? `<div class="hint">${esc(t('busHint', { list:p.bus.map(x => x.name + ' (' + fmtDist(x.gap) + ')').join(', ') }))}</div>` : ''}${(p.side_info || []).length ? `<p class="small muted" style="margin:8px 0 0">${esc(p.side_info.map(x => x.name + ' → ' + t('planRoute', { n:x.worker + 1 })).join(' · '))}</p>` : ''}<p class="small muted" style="margin:10px 0 0">${esc(t('planSum', { mb:fmtN(p.mailboxes), km, h:fmtHm(p.routes.reduce((s, r) => s + r.minutes, 0)) }))}</p>
+    if(p && !zensusOfPlan.has(p)){ zensusOfPlan.set(p, ''); zensusCompare(p.routes.flatMap(r => r.boxes || [])).then(c => { const h = zensusHtml(c); if(!h) return; zensusOfPlan.set(p, esc(t('zLabel')) + ': ' + h); const el = $('#cZen'); if(el && d.plan === p) el.innerHTML = zensusOfPlan.get(p); }).catch(() => {}); }
+    const planBlock = () => p ? `${(p.side_failed || []).length ? `<div class="warnbox">${esc(t('sideFailed', { list:p.side_failed.join(', ') }))}</div>` : ''}${(p.bus || []).length ? `<div class="hint">${esc(t('busHint', { list:p.bus.map(x => x.name + ' (' + fmtDist(x.gap) + ')').join(', ') }))}</div>` : ''}${(p.side_info || []).length ? `<p class="small muted" style="margin:8px 0 0">${esc(p.side_info.map(x => x.name + ' → ' + t('planRoute', { n:x.worker + 1 })).join(' · '))}</p>` : ''}<p class="small muted" style="margin:10px 0 0">${esc(t('planSum', { mb:fmtN(p.mailboxes), km, h:fmtHm(p.routes.reduce((s, r) => s + r.minutes, 0)) }))}</p><p class="small muted" id="cZen" style="margin:4px 0 0">${zensusOfPlan.get(p) || ''}</p>
         ${p.mailboxes < d.flyers * 0.95 && !d.mainAll && !(p.eco && !d.exact) ? `<p class="small err">${esc(t(p.cores ? 'coresSmall' : 'areaSmall', { mb:fmtN(p.mailboxes) }))}</p>` : ''}
         <div class="${cap.ok ? 'hint' : 'warnbox'}">${cap.ok ? esc(needDays === 1 ? t('fitsOne') : t('fitsOk', { d:needDays })) : `${esc(t('tooBig', { h:cap.slowest.toFixed(1).replace('.', ','), lim:cap.limit, d:d.days }))} <button class="link" id="cReduce">${esc(t('reduceTo', { f:fmtN(cap.suggestedFlyers) }))}</button> ${esc(t('moreWorkers'))}`}</div>`
       : d.err ? `<p class="small err">${esc(t('streetsFail', { e:d.err }))}</p><button class="btn ghost small" id="cRetry">${ICONS.refresh}${esc(t('retryBtn'))}</button>` : `<p class="small muted" style="margin:10px 0 0">${esc(t('calculating'))}</p>`;
@@ -1468,6 +1473,7 @@ async function viewTask(id){
   const livePl = (plans || []).filter(p => p.status !== 'declined');
   const estMb = livePl.length ? livePl.reduce((s, p) => s + (p.mailboxes || 0), 0) : tk.est_mailboxes, routeM = livePl.length ? livePl.reduce((s, p) => s + (p.length_m || 0), 0) : tk.route_m;
   const invite = w => t('invite', { name:w.name, title:tk.title, date:tk.work_date ? ', ' + fmtDay(tk.work_date) : '' });
+  { const zb = livePl.flatMap(p => p.boxes || []); if(zb.length) setTimeout(() => zensusCompare(zb).then(c => { const el = $('#tZen'), h = zensusHtml(c); if(el && h){ $('#tZenB').innerHTML = h; el.style.display = ''; } }).catch(() => {}), 0); }
   shell('tasks', `${topbar(tk.title, true)}
     <div class="pad">
       <h2 class="sec" style="margin-top:4px">${esc(t('taskInfo'))}</h2>
@@ -1475,6 +1481,7 @@ async function viewTask(id){
         <div><span>${esc(t('place'))}</span><b>${esc([tk.district, tk.city_name].filter(Boolean).join(', ') || '—')}</b></div>
         <div><span>${esc(t('date'))}</span><b>${esc(fmtDay(tk.work_date))}</b></div>
         ${tk.flyers ? `<div><span>${esc(t('flyers'))}</span><b>${esc(fmtN(tk.flyers))} · ${esc(t('mbApprox', { n:fmtN(estMb || 0) }))}</b></div>` : ''}
+        <div id="tZen" style="display:none"><span>${esc(t('zLabel'))}</span><b id="tZenB"></b><small class="muted">${esc(t('zHint'))}</small></div>
         ${routeM ? `<div><span>${esc(t('dist2'))}</span><b>${esc(fmtDist(routeM))}</b></div>` : ''}
         ${tk.quota_m30 ? `<div><span>${esc(t('quotaInfo'))}</span><b>${fmtN(tk.quota_m30)} m / 30 ${esc(t('min'))}</b></div>` : ''}
         ${(tk.travel && tk.travel !== 'bus') || tk.bike ? `<div><span>${esc(t('travelLbl'))}</span><b>${esc(t('travel_' + (tk.travel || 'bike')))}</b></div>` : ''}
