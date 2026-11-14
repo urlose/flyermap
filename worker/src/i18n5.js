@@ -283,3 +283,7 @@ Object.assign(T.ru, { introSec:'Короткое видео', introBtn:'Виде
 Object.assign(T.de, { autoTourOn:'Im Umkreis reicht es nicht – Tour mit dem Auto durch {n} weitere Orte: {names}. Orte lassen sich unten entfernen.', autoTourNone:'Im Umkreis von 30 km gibt es keine weiteren Orte für eine Tour.' });
 
 Object.assign(T.ru, { autoTourOn:'Рядом ящиков не хватает — тур на машине ещё через {n} мест: {names}. Места можно убрать ниже.', autoTourNone:'В радиусе 30 км нет других мест для тура.' });
+
+Object.assign(T.de, { repOk:'Gemeldet. Stattdessen {n} Straße(n) in der Nähe mit ≈ {mb} Briefkästen zu deiner Route hinzugefügt.', repNone:'Gemeldet. In der Nähe gibt es keine Ersatzstraße – übrige Flyer bitte zum Startpunkt zurückbringen.', rvReported:'Gemeldet (nicht begehbar)' });
+
+Object.assign(T.ru, { repOk:'Отправлено. Вместо этого в твой маршрут добавлено {n} улиц(ы) рядом, ≈ {mb} ящиков.', repNone:'Отправлено. Рядом нет улицы на замену — оставшиеся флаеры верни на стартовую точку.', rvReported:'Сообщено (пройти нельзя)' });

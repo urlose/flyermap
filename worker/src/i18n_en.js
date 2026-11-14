@@ -230,3 +230,5 @@ Object.assign(T.en, { botTitle:"Suggestion from Claude", botWriting:"Claude is w
 Object.assign(T.en, { introSec:'Short video', introBtn:'Video: how the app works', introT:'How FlyerMap works', introSub:'23 seconds, no sound (captions in German). You can open it any time under “Need help?”.', introOk:'Got it', introErr:'The video cannot be loaded right now. Please try again later with internet.' });
 
 Object.assign(T.en, { autoTourOn:'Not enough nearby – car tour through {n} more places: {names}. Places can be removed below.', autoTourNone:'No other places for a tour within 30 km.' });
+
+Object.assign(T.en, { repOk:'Reported. Instead, {n} street(s) nearby with ≈ {mb} mailboxes were added to your route.', repNone:'Reported. No replacement street nearby – please bring the remaining flyers back to the start point.', rvReported:'Reported (not walkable)' });

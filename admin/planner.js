@@ -1214,6 +1214,24 @@
     return { ...sel, ids, mailboxes, reach_m:Math.round(reach), must_mb:mustMb, must_ids:must, must_info:pk.info, zone_mb };
   }
 
+  // Reserve of every route: streets with mailboxes near the route that no route of the order takes (left out to save time,
+  // or more mailboxes than flyers). When the distributor cannot walk a piece (closed, no access …), the app hands out the
+  // flyers on the nearest reserve streets instead. r.reserve = [{ p:[[lat, lng] …], mb }], nearest first, at most RES_MAX.
+  const RES_R = 400, RES_MAX = 120;
+  function reserveFor(g, used, routes){
+    const cell = 0.004, key = (a, b) => Math.floor(a / cell) + ':' + Math.floor(b / cell), grid = new Map();
+    routes.forEach((r, k) => { r.reserve = []; const pp = r.path || []; for(let i = 0; i < pp.length; i += 2){ const q = pp[i], gk = key(q[0], q[1]); let l = grid.get(gk); if(!l) grid.set(gk, l = []); l.push([q[0], q[1], k]); } });
+    if(!grid.size) return;
+    const cand = routes.map(() => []);
+    g.edges.forEach((e, i) => {
+      if(used.has(i) || !(e.mb > 0) || !e.coords || e.coords.length < 2) return;
+      const m = e.coords[Math.floor(e.coords.length / 2)], i0 = Math.floor(m[0] / cell), j0 = Math.floor(m[1] / cell);
+      let best = -1, bd = Infinity;
+      for(let a = -1; a <= 1; a++) for(let b = -1; b <= 1; b++){ const l = grid.get((i0 + a) + ':' + (j0 + b)); if(l) for(const q of l){ const d = dist(m, q); if(d < bd){ bd = d; best = q[2]; } } }
+      if(best >= 0 && bd <= RES_R) cand[best].push({ d:bd, p:e.coords.map(c => [+c[0].toFixed(6), +c[1].toFixed(6)]), mb:Math.round(e.mb) });
+    });
+    cand.forEach((l, k) => { routes[k].reserve = l.sort((a, b) => a.d - b.d).slice(0, RES_MAX).map(({ p, mb }) => ({ p, mb })); });
+  }
   function planFlyers(g, start, flyers, n, opt){
     opt = opt || {};
     g = zoneView(g, opt.zone, opt.must);
@@ -1292,6 +1310,7 @@
     if(maxDays > 1) routes = bestParts.map((part, k) => withDays(part, k, routes[k]));
     else routes = routes.map(r => ({ ...r, days:[{ i0:0, i1:Math.max(0, r.path.length - 1), length_m:r.length_m, street_m:r.street_m, minutes:r.minutes, mailboxes:r.mailboxes }] }));
     const pts = []; for(const i of sel.ids) for(const c of g.edges[i].coords) pts.push(c);
+    reserveFor(g, new Set(sel.ids), routes);
     return { routes, mailboxes:sel.mailboxes, must_mb:sel.must_mb || 0, must_info:sel.must_info || [], zone_mb:g.zoned ? g.edges.reduce((a, e) => a + e.mb, 0) : null, reach_m:sel.reach_m, zone:hull(pts), capacity:capacity(routes, flyers) };
   }
   function planRoutes(g, start, n){

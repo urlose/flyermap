@@ -2,7 +2,7 @@ import L from 'leaflet';
 import { registerPlugin } from '@capacitor/core';
 import { App } from '@capacitor/app';
 import Planner from '../../admin/planner.js';
-import { makeNav, dayProgress, nearestOpen, rerouteDay, stepsFromPath, checkpoints, addSkips, openStraight } from './nav.js';
+import { makeNav, dayProgress, nearestOpen, rerouteDay, stepsFromPath, checkpoints, addSkips, openStraight, pieceAt, piecesBoxes, pickReserve, insertDetour } from './nav.js';
 import { REASONS, faqFor } from './help.js';
 import { drawPieces, legendHtml, arrowsAlong, drawCps, showCp, ROUTE_C } from './routedraw.js';
 import { openMapView } from './routeview.js';
@@ -465,7 +465,10 @@ function drawTaskBase(m, task, dayIdx, dim){
   let planLine = null, redraw = () => null; const pl = task.plan;
   if(pl && pl.path && pl.path.length > 1){
     planLine = L.featureGroup().addTo(m);
-    redraw = (tr, day) => drawPieces(planLine, pl, tr || addSkips(Planner.makeTracker(pl.path), pl), day == null ? (dayIdx || 0) : day, dim);
+    redraw = (tr, day) => { const r = drawPieces(planLine, pl, tr || addSkips(Planner.makeTracker(pl.path), pl), day == null ? (dayIdx || 0) : day, dim);
+      // pieces reported as not walkable: orange, dashed (they count as handled, the admin decides)
+      for(const x of pl.skipped || []) if(x && x.rep && Array.isArray(x.pts) && x.pts.length > 1) L.polyline(x.pts, { color:'#F97316', weight:6, opacity:.95, dashArray:'10 6', lineCap:'round', interactive:false }).addTo(planLine);
+      return r; };
     redraw(null); b = L.latLngBounds(pl.path.map(q => [q[0], q[1]])); drawJumps(m, pl.path, task.travel || (task.bike ? 'bike' : 'bus'));
   }
   L.marker([task.start_lat, task.start_lng], { icon:dot('pin-start', 24) }).addTo(m);
@@ -639,10 +642,42 @@ async function viewHelp(planId, back){
     $('#hpSend').disabled = true; $('#hpErr').textContent = '';
     try{
       await rpc('help_request', { p_token:W.token, p_plan_id:$('#hpPlan').value || null, p_reason:reason, p_text:text, p_lat:me ? me[0] : null, p_lng:me ? me[1] : null });
+      let rep = null; if(REPLACE_REASONS.includes(reason)){ try{ rep = await replaceAfterReport($('#hpPlan').value || null, reason, me); }catch{ rep = null; } }
+      if(rep && rep.n) toast(t('repOk', { n:rep.n, mb:fmtN(rep.mb) })); else if(rep) toast(t('repNone')); else
       toast(t('helpSent')); $('#hpText').value = ''; reason = ''; document.querySelectorAll('.reasons .chip').forEach(x => { x.classList.remove('on'); x.setAttribute('aria-checked', false); }); mine();
     }catch(e){ $('#hpErr').textContent = errText(e); }
     if($('#hpSend')) $('#hpSend').disabled = false;
   };
+}
+
+/* ================= replacement streets ================= */
+// A piece reported as closed / without mailboxes / without access during the shift: it is marked as reported (orange, counts as
+// handled for the guidance, the admin decides later) and the nearest reserve streets with about as many mailboxes are put into
+// today's route, so the flyers are not left over. Needs signal (the report itself does too). → { n, mb } or null (no piece here)
+const REPLACE_REASONS = ['closed', 'nobox', 'private'];
+async function replaceAfterReport(planId, reason, me){
+  const pl = W.route && !W.route.endedAt && W.route.task && W.route.task.plan;
+  if(!pl || !me || (planId && planId !== pl.id) || !pl.path || pl.path.length < 2) return null;
+  ensureTracker(); if(!W.tracker) return null;
+  const nav = makeNav(pl), day = W.route.dayIdx || 0;
+  const pc = pieceAt(W.tracker.samples, i => W.tracker.isDone(i), i => nav.dayAt(nav.posOf[i]) === day, me[0], me[1]);
+  if(!pc) return null;
+  const need = piecesBoxes(pl.boxes, pc.pts);
+  let res = [], take = [];
+  if(need > 0){ try{ res = await rpc('plan_reserve', { p_token:W.token, p_plan_id:pl.id }) || []; }catch{ res = []; } take = pickReserve(res, pc.pts, need, [me[0], me[1]]); }
+  const nd = take.length ? insertDetour(pl, day, take.map(i => res[i].p)) : null;
+  const out = await rpc('replace_piece', { p_token:W.token, p_plan_id:pl.id, p_pts:pc.pts, p_reason:reason, p_take:take, p_path:nd ? nd.path : null, p_days:nd ? nd.days : null, p_steps:nd && pl.steps && pl.steps.length ? nd.steps : null });
+  (pl.skipped = pl.skipped || []).push({ pts:pc.pts, why:reason, rep:true, by:(W.me && W.me.name) || '' });
+  let mb = 0;
+  if(nd){
+    const add = take.map(i => { const p = res[i].p, m = p[Math.floor(p.length / 2)]; mb += res[i].mb || 0; return [m[0], m[1], res[i].mb || 1]; });
+    Object.assign(pl, { path:nd.path, days:nd.days, steps:pl.steps && pl.steps.length ? nd.steps : pl.steps, boxes:[...(pl.boxes || []), ...add], mailboxes:(pl.mailboxes || 0) + mb });
+  }
+  const fresh = allPlans().find(p => p.id === pl.id);
+  if(fresh && fresh !== pl) Object.assign(fresh, { skipped:pl.skipped, path:pl.path, days:pl.days, steps:pl.steps, boxes:pl.boxes, mailboxes:pl.mailboxes });
+  W.tracker = null; W.counter = null; await saveRoute(); ensureTracker();
+  loadMe().catch(() => {});
+  return { n:take.length, mb:(out && out.mb) || mb };
 }
 
 /* ================= joined orders: all zones ================= */

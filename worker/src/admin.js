@@ -646,7 +646,7 @@ async function boxesAlong(tracks, exclude){
 const adminDone = p => (p.skipped || []).filter(x => x && /^Admin/.test(x.by || '') && Array.isArray(x.pts)).map(x => x.pts);
 const byWorker = x => x && !/^Admin/.test(x.by || '');
 const workerSkips = p => ((p && p.skipped) || []).filter(byWorker);
-const drawSkips = (g, plans) => (plans || []).forEach(p => workerSkips(p).forEach(x => { if(x && x.pts && x.pts.length > 1) L.polyline(x.pts, { color:'#6B7280', weight:7, opacity:.85, dashArray:'3 9', lineCap:'round' }).bindTooltip(t('rvSkipped') + (x.by ? ' · ' + x.by : '') + (x.why ? ' · „' + x.why + '“' : '') + (x.at ? ' · ' + fmtDT(x.at) : '')).addTo(g); }));
+const drawSkips = (g, plans) => (plans || []).forEach(p => workerSkips(p).forEach(x => { if(x && x.pts && x.pts.length > 1) L.polyline(x.pts, x.rep ? { color:'#F97316', weight:7, opacity:.9, dashArray:'10 6', lineCap:'round' } : { color:'#6B7280', weight:7, opacity:.85, dashArray:'3 9', lineCap:'round' }).bindTooltip(t(x.rep ? 'rvReported' : 'rvSkipped') + (x.rep && x.why ? ' · ' + (t('hr_' + x.why) === 'hr_' + x.why ? x.why : t('hr_' + x.why)) : '') + (x.by ? ' · ' + x.by : '') + (x.why && !x.rep ? ' · „' + x.why + '“' : '') + (x.at ? ' · ' + fmtDT(x.at) : '')).addTo(g); }));
 // GPS track: its own colour (yellow with a dark edge) so it never looks like a planned route
 const GPS = '#FACC15';
 const splitJumps = ll => { const out = []; let cur = []; for(let i = 0; i < ll.length; i++){ if(i && hav(ll[i - 1][0], ll[i - 1][1], ll[i][0], ll[i][1]) > 150){ if(cur.length > 1) out.push(cur); cur = []; } cur.push(ll[i]); } if(cur.length > 1) out.push(cur); return out; };
@@ -1400,7 +1400,7 @@ function viewCreate(edit){
       }else{
         const ins = await sb.from('tasks').insert({ ...row, created_by:A.user.id }).select().single(); if(ins.error) throw ins.error; tk = ins.data;
       }
-      const rows = pl.routes.map((r, i) => ({ task_id:tk.id, idx:i, worker_id:d.assign[i] || null, color:Planner.COLORS[i % 10], path:r.path, length_m:r.length_m, street_m:r.street_m, mailboxes:r.mailboxes, boxes:r.boxes, minutes:r.minutes, days:r.days, steps:r.steps }));
+      const rows = pl.routes.map((r, i) => ({ task_id:tk.id, idx:i, worker_id:d.assign[i] || null, color:Planner.COLORS[i % 10], path:r.path, length_m:r.length_m, street_m:r.street_m, mailboxes:r.mailboxes, boxes:r.boxes, minutes:r.minutes, days:r.days, steps:r.steps, reserve:r.reserve || [] }));
       if(old){
         const skips = old.flatMap(p => p.skipped || []);
         rows.forEach(r => {

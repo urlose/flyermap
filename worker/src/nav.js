@@ -293,3 +293,63 @@ export function routePieces(plan, tracker, cur){
   }
   return { done:out[0], later:out[1], missed:out[2], today:out[3], m:{ done:m[0], later:m[1], missed:m[2], today:m[3] } };
 }
+
+/* ---------- replacement streets (a piece the distributor cannot walk) ---------- */
+// The open piece of the route at the walker: the nearest open sample of the working day (≤ 60 m), grown both ways along
+// neighbouring open samples while the direction stays about the same (one street, no turn > 50°), at most ~400 m.
+// samples = tracker samples (8 m steps); isDone(i); ok(i) = sample belongs to the working day. → { pts, i0, i1 } or null
+export function pieceAt(samples, isDone, ok, lat, lng){
+  const open = i => i >= 0 && i < samples.length && !isDone(i) && ok(i);
+  let best = -1, bd = 60;
+  for(let i = 0; i < samples.length; i++){ const q = samples[i]; if(Math.abs(q[0] - lat) > 0.001 || !open(i)) continue; const d = hv([lat, lng], q); if(d < bd){ bd = d; best = i; } }
+  if(best < 0) return null;
+  const dirAt = (i, j) => bearing(samples[i], samples[j]);
+  const grow = step => {
+    let i = best, ref = null, n = 0;
+    while(n < 25){
+      const j = i + step; if(!open(j) || samples[step > 0 ? j : i][2] === 1 || hv(samples[i], samples[j]) > 20) break;
+      const b = dirAt(Math.min(i, j), Math.max(i, j));
+      if(ref == null && hv(samples[best], samples[j]) >= 15) ref = b;
+      if(ref != null){ let d = b - ref; while(d > 180) d -= 360; while(d < -180) d += 360; if(Math.abs(d) > 50) break; }
+      i = j; n++;
+    }
+    return i;
+  };
+  const i0 = grow(-1), i1 = grow(1);
+  if(i1 - i0 < 1) return null;
+  return { i0, i1, pts:samples.slice(i0, i1 + 1).map(q => [+q[0].toFixed(6), +q[1].toFixed(6)]) };
+}
+// mailboxes of the plan along a piece (boxes = [[lat, lng, n] …], within 30 m of the piece)
+export function piecesBoxes(boxes, pts){
+  if(!boxes || !pts.length) return 0;
+  const la0 = Math.min(...pts.map(p => p[0])) - 0.0004, la1 = Math.max(...pts.map(p => p[0])) + 0.0004, lo0 = Math.min(...pts.map(p => p[1])) - 0.0006, lo1 = Math.max(...pts.map(p => p[1])) + 0.0006;
+  let n = 0;
+  for(const b of boxes){ if(b[0] < la0 || b[0] > la1 || b[1] < lo0 || b[1] > lo1) continue; if(pts.some(p => hv(p, b) <= 30)) n += b[2] || 1; }
+  return n;
+}
+// which reserve streets replace the piece: nearest to the walker first (≤ 600 m), not the piece itself, until they hold
+// about as many mailboxes as the piece. → indexes into reserve
+export function pickReserve(reserve, piece, need, here){
+  if(!reserve || !reserve.length || !(need > 0)) return [];
+  const mid = r => r.p[Math.floor(r.p.length / 2)];
+  const cand = reserve.map((r, i) => ({ i, r, d:Math.min(...r.p.map(q => hv(here, q))) }))
+    .filter(c => c.r && c.r.p && c.r.p.length > 1 && c.d <= 600 && !piece.some(q => hv(q, mid(c.r)) < 20))
+    .sort((a, b) => a.d - b.d);
+  const out = []; let got = 0;
+  for(const c of cand){ if(got >= need || out.length >= 30) break; out.push(c.i); got += c.r.mb || 0; }
+  return out;
+}
+// the route with the reserve streets put in at the end of the working day (the guidance takes the nearest open street anyway).
+// Each street is reached by a short "walk over" ([lat, lng, 1, 'r']: no street to deliver, not drawn as a bus/car trip);
+// the day's last point is reached the same way afterwards. Days and turn steps after it are shifted.
+export function insertDetour(plan, dayIdx, pieces){
+  const path = plan.path, days = plan.days && plan.days.length ? plan.days : [{ i0:0, i1:Math.max(0, path.length - 1) }];
+  const k = Math.max(0, Math.min(days.length - 1, dayIdx || 0)), at = days[k].i1;   // put in after the day's last point
+  const ins = [];
+  for(const pc of pieces) pc.forEach((q, j) => ins.push(j ? [q[0], q[1]] : [q[0], q[1], 1, 'r']));
+  const last = path[at], back = [last[0], last[1], 1, 'r'];   // and back to it: the next day goes on from there as before
+  const np = [...path.slice(0, at + 1), ...ins, back, ...path.slice(at + 1)], add = ins.length + 1;
+  const nd = days.map((d, j) => j < k ? { ...d } : j === k ? { ...d, i1:d.i1 + add } : { ...d, i0:d.i0 + add, i1:d.i1 + add });
+  const steps = (plan.steps || []).map(s => s[0] >= at ? [s[0] + add, ...s.slice(1)] : s.slice());
+  return { path:np, days:nd, steps, added:add };
+}

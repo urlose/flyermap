@@ -167,7 +167,7 @@ export const labelIcon = (cls, text) => L.divIcon({ className:'', html:`<div cla
 export function drawJumps(g, path, bike){
   const mode = typeof bike === 'string' ? bike : (bike ? 'bike' : 'bus'); bike = mode !== 'bus';   // 'car' | 'bike' | 'bus' (old callers: true = bike)
   (path || []).forEach((q, i) => {
-    if(!i || q[2] !== 1) return;
+    if(!i || q[2] !== 1 || q[3] === 'r') return;   // 'r': short walk over to a replacement street – no bus / car trip
     const a = [path[i - 1][0], path[i - 1][1]], b = [q[0], q[1]];
     const ln = L.polyline([a, b], { color:bike ? (css('--color-drive') || '#8B5CF6') : (css('--color-map-route-pending') || '#64748B'), weight:4, opacity:.9, dashArray:bike ? '6 6' : '2 9', lineCap:'round', interactive:false }).addTo(g);
     const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
