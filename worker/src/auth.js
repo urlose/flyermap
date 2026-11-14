@@ -4,7 +4,10 @@ import { sb, store, errText, $, esc, PRIVACY_URL, deMobile } from './core.js';
 import { legalLinks, bindLegal, legalModal } from './legalview.js';
 import { UI, plain, cityPicker, langSwitch, toast, modal } from './ui.js';
 import { acceptToken } from './worker.js';
-import { bootAdmin, viewAdminLogin } from './admin.js';
+import { loadAdmin } from './adminload.js';
+// the admin part is loaded when it is needed (see adminload.js); without signal the first time, nothing happens but a hint
+const bootAdmin = async () => { try{ return await (await loadAdmin()).bootAdmin(); }catch{ toast(t('e_net')); return false; } };
+const viewAdminLogin = async back => { try{ (await loadAdmin()).viewAdminLogin(back); }catch{ toast(t('e_net')); } };
 import { firmFields, readFirm, avvCheck, bindAvvRead, normCode } from './firm.js';
 import { AVV_VERSION, setLegalFirm } from './legal.js';
 

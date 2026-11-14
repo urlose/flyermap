@@ -30,6 +30,8 @@ jobs:
           npm install
           npm run build
       - name: Create & configure Android project
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
         run: bash scripts/android-setup.sh
       - name: Build APK
         working-directory: worker/android
