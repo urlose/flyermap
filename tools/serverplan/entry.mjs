@@ -2,12 +2,16 @@
 // too little, the nearest census towns are added as ordinary Nebenstädte (nearest first), up to 3 rounds.
 // Build: cd worker && npx esbuild ../tools/serverplan/entry.mjs --bundle --format=iife --outfile=../tools/serverplan/bundle.js
 import { createPlanService } from '../../worker/src/plancore.js';
-import { townsAround, censusSource, compare } from '../../worker/src/zensus.js';
+import { townsAround, censusSource, compare, placeMask } from '../../worker/src/zensus.js';
 import Planner from '../../admin/planner.js';
 globalThis.FMRun = async req => {
   const start = req.start, flyers = req.flyers, svc = createPlanService(null), log = [], side = [];
   const plan = () => svc.plan({ start, flyers, n:req.n || 2, days:req.days || 2, hours:req.hours || 7, quota:req.quota || 2500, travel:req.travel || 'bus', bike:req.travel === 'bike', split:'even', exact:true, mainAll:false, mainName:req.mainName || 'Start',
     cores:!!req.cores, together:false, first:null, near:side.length > 0, must:[], zone:null, side:side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers, zone:null, all:false })) }, () => {}, () => false);
+  if(req.debug){ const m = await placeMask(start[0], start[1]); log.push('mask ' + (m ? m.households + ' hh, ' + m.cells + ' cells' : 'none'));
+    const G0 = await Planner.loadForFlyers(start, flyers, { census:censusSource() }); let tot = 0, ins = 0; G0.edges.forEach(e => { if(e.mb > 0){ const c = e.coords[Math.floor(e.coords.length / 2)]; tot += e.mb; if(m && m.inside(c[0], c[1])) ins += e.mb; } }); log.push('graph mb ' + Math.round(tot) + ' inside ' + Math.round(ins) + ' r ' + G0.radius);
+    const gv = { ...G0, edges:G0.edges.map(e => { const c = e.coords && e.coords[Math.floor(e.coords.length / 2)]; return e.mb && m && !m.inside(c[0], c[1]) ? { ...e, mb:0, boxes:[] } : e; }) };
+    const st = Planner.denseEntry(gv, start, null, 150); log.push('entry ' + JSON.stringify(st) + ' sel ' + Math.round(Planner.selectWithMust(gv, st || start, 1e9, [], null).mailboxes) + ' sel@start ' + Math.round(Planner.selectWithMust(gv, start, 1e9, [], null).mailboxes)); }
   let res = await plan(); log.push('walk ' + res.plan.mailboxes);
   const hav = (a, b, c, d) => 111320 * Math.hypot(c - a, (d - b) * Math.cos(a * Math.PI / 180));
   for(let round = 1; round <= 3 && res.plan.mailboxes < flyers * 0.95; round++){

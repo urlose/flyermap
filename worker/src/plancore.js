@@ -457,12 +457,12 @@ export function createPlanService(cache){
       const people = m => Math.max(1, Math.min(n, Math.floor(m / 150)));   // a small place: fewer people (the ones with least work so far)
       const whom = k => Array.from({ length:n }, (_, i) => i).sort((a, b) => load0(a) - load0(b)).slice(0, k).sort((a, b) => a - b);
       const seen = new Set(), keyE = (g, i) => { const e = g.edges[i]; return ((g.pts[e.a][0] + g.pts[e.b][0]) / 2).toFixed(5) + ',' + ((g.pts[e.a][1] + g.pts[e.b][1]) / 2).toFixed(5); };
-      const planPlace = async (g0, st, name, ask, zn, isMain) => {
+      const planPlace = async (g0, st, name, ask, zn, isMain, mask) => {
         stage('calculating');
         const g = { ...g0, edges:g0.edges.map((e, i) => e.mb && seen.has(keyE(g0, i)) ? { ...e, mb:0, boxes:[] } : e) };   // streets of a place planned before
         const cap = Math.round(Planner.selectWithMust(g, st, 1e9, isMain ? must : [], zn).mailboxes || 0);
         const want = Math.min(cap, ask != null ? ask : rest, rest);
-        split.push({ name, flyers:want, cap });
+        split.push({ name, flyers:want, cap, hh:mask ? mask.households : null });
         if(want < SEQ_MIN && !(isMain && want > 0)) return;
         const p = Planner.planFlyers(g, st, want, people(want), { days:maxDays, hoursPerDay:hours, must:isMain ? must : undefined, zone:zn });
         const rs = ((p && p.routes) || []).filter(r => r.path && r.path.length > 1).map(({ part, ...r }) => r);
@@ -478,7 +478,7 @@ export function createPlanService(cache){
       const hasZone = !!(zone && zone.length > 2);
       const mMask = hasZone ? null : await maskOf(start[0], start[1]);
       const gm = view(G, mMask), st0 = mMask ? (Planner.denseEntry(gm, start, null, 150) || start) : start;
-      await planPlace(gm, st0, mainName || '', mainAll ? 1e9 : null, hasZone ? zone : null, true);
+      await planPlace(gm, st0, mainName || '', mainAll ? 1e9 : null, hasZone ? zone : null, true, mMask);
       if(stale()) return { skipped:true };
       // the other places in the order the admin has them (suggested ones: densest first)
       for(const c of side || []){
@@ -487,7 +487,7 @@ export function createPlanService(cache){
         stage('loadingSide'); c.loadFor = Math.max(600, Math.round(Math.min(rest, (c.flyers || rest)) * 1.3)); const g0 = await sideGraph({ ...c, flyers:c.loadFor }, stage, stale); if(stale()) return { skipped:true };
         const mask = zn ? null : await maskOf(c.lat, c.lng);
         const g = view(g0, mask), st = Planner.denseEntry(g, start, zn, Math.min(300, Math.max(100, rest * 0.2))) || [c.lat, c.lng];
-        await planPlace(g, st, c.name, c.all ? 1e9 : (c.auto ? null : c.flyers || null), zn, false);
+        await planPlace(g, st, c.name, c.all ? 1e9 : (c.auto ? null : c.flyers || null), zn, false, mask);
         if(stale()) return { skipped:true };
       }
       routes.forEach((r, i) => { r.idx = i; });
