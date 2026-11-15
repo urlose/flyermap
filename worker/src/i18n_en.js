@@ -239,3 +239,5 @@ Object.assign(T.en, { autoTownsOn:'Not enough nearby – nearest places added: {
 Object.assign(T.en, { stPick:'Choose studio', stTitle:'Studio as start address', stSearch:'Search town or studio', stSoon:'soon', stOpens:'opens {d}',
   stInfo:'{n} studios · updated {d}', stSync:'Refresh list', stSyncing:'Refreshing …', stSyncNew:'New: {list}', stSyncSame:'List is up to date – no new studios.', stSyncFail:'Refresh failed. Try again later.' });
 Object.assign(T.en, { rvRepOk:'Reported · confirmed', repAccept:'Confirm – leave out', repBack:'Back into the route' });
+Object.assign(T.en, { personN:'Person {n}', mainCityShort:'Main town', zonesHint:'Every place is planned as its own zone and shared out among all distributors. Nothing is drawn between the places – the distributors get there themselves.',
+  coresZonesHint:'In every place only the dense streets – outskirts and roads between hamlets are left out.' });

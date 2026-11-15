@@ -85,13 +85,13 @@ export async function townsAround(lat, lng, minR, maxR, fetcher){
   const dense = new Set([...blk].filter(([, b]) => b.h >= 25).map(([k]) => k)), seen = new Set(), out = [];
   for(const k0 of dense){
     if(seen.has(k0)) continue; seen.add(k0);
-    const st = [k0]; let h = 0, sx = 0, sy = 0, top = null;
-    while(st.length){ const k = st.pop(), b = blk.get(k); h += b.h; sx += b.sx; sy += b.sy; if(!top || b.h > top.h) top = b; const [bx, by] = k.split(',').map(Number);
+    const st = [k0]; let h = 0, sx = 0, sy = 0, top = null, nb = 0;
+    while(st.length){ const k = st.pop(), b = blk.get(k); h += b.h; nb++; sx += b.sx; sy += b.sy; if(!top || b.h > top.h) top = b; const [bx, by] = k.split(',').map(Number);
       for(let dx = -1; dx <= 1; dx++) for(let dy = -1; dy <= 1; dy++){ const n = (bx + dx) + ',' + (by + dy); if(dense.has(n) && !seen.has(n)){ seen.add(n); st.push(n); } } }
     const mx = sx / h, my = sy / h, dist = Math.hypot(mx - x, my - y);
     if(h < 150 || dist < minR || dist > maxR) continue;
     // the place's point is its densest 1 km block (the town centre); the middle of a big group can lie in a neighbouring village
-    const [la, lo] = unlaea(top.sx / top.h, top.sy / top.h); out.push({ lat:+la.toFixed(6), lng:+lo.toFixed(6), households:h, dist:Math.round(dist) });
+    const [la, lo] = unlaea(top.sx / top.h, top.sy / top.h); out.push({ lat:+la.toFixed(6), lng:+lo.toFixed(6), households:h, dist:Math.round(dist), km2:nb, dense:Math.round(h / nb) });   // dense: households per km² block
   }
   return out.sort((a, b) => a.dist - b.dist);
 }

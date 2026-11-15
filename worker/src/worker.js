@@ -248,7 +248,8 @@ const gTransit = (lat, lng) => `https://www.google.com/maps/dir/?api=1&destinati
 const aTransit = (lat, lng) => `https://maps.apple.com/?daddr=${lat},${lng}&dirflg=r`;
 const gBike = (lat, lng) => `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=bicycling`;
 const gCar = (lat, lng) => `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&travelmode=driving`;
-const rideLink = task => task && task.travel === 'car' ? gCar : gBike, rideTxt = task => task && task.travel === 'car' ? 'byCar' : 'byBike';
+const byCar = task => task && (task.travel === 'car' || task.travel === 'zones');
+const rideLink = task => byCar(task) ? gCar : gBike, rideTxt = task => byCar(task) ? 'byCar' : 'byBike';
 const BIKE_M = 700;   // order with bike: from this distance on, riding is suggested   // metres from the start point within which the working day can begin
 const AHEAD_M = 400;        // bright stretch of the route in front of the walker
 // the working day starts at the start point or anywhere close to an open part of an unfinished day (then that day is worked);
