@@ -1,6 +1,6 @@
 // "Exactly N" with too few mailboxes around the start: the app adds the nearest towns as ordinary Nebenstädte (no car tour,
 // no dense cores). Checked here with made-up towns (street grids): the main town is done whole, the nearest town gets what is
-// still missing, every town is shared out among all workers when there are fewer towns than people, and a town that does
+// still missing, every town is shared out among all workers (each his own zone), and a town that does
 // not fit into the rest of the day starts a new day.
 // Run: node test/neartowns.mjs
 import Planner from '../admin/planner.js';
@@ -45,8 +45,9 @@ const inTown = (r, t) => r.boxes.filter(b => d2(b, t.c) < 1200).reduce((s, b) =>
   const sp = p.split || [], by = n => sp.find(x => x.name === n) || {};
   ok('2 nearest town whole, the next one gets the rest', by('Kleindorf').flyers === SMALL.mb && by('Cstadt').flyers === 2000, JSON.stringify(sp));
   ok('2 exactly the flyers of the order', Math.abs(p.mailboxes - F) <= F * 0.03, p.mailboxes + ' of ' + F);
-  ok('2 each town goes whole to one worker', !p.team && p.routes.length === 2 && [SMALL, C].every(t => p.routes.filter(r => inTown(r, t) > 0).length === 1), p.routes.map(r => inTown(r, MAIN) + '+' + inTown(r, SMALL) + '+' + inTown(r, C)).join(' / '));
-  ok('2 both workers work in the main town', p.routes.every(r => inTown(r, MAIN) > 0)); }
+  ok('2 every town is shared out among both workers', !!p.team && p.routes.length === 2 && [MAIN, SMALL, C].every(t => p.routes.every(r => inTown(r, t) > 0)), p.routes.map(r => inTown(r, MAIN) + '+' + inTown(r, SMALL) + '+' + inTown(r, C)).join(' / '));
+  ok('2 the shares of a town are about equal', [MAIN, SMALL, C].every(t => { const a = p.routes.map(r => inTown(r, t)); return Math.min(...a) > 0.6 * Math.max(...a); }));
+  ok('2 both visit the towns in the same order', new Set(p.routes.map(r => [...new Set(r.days.flatMap(d => (d.place || '').split(' + ')).filter(Boolean))].join('>'))).size === 1, p.routes.map(r => r.days.map(d => d.minutes + ' ' + (d.place || '')).join(', ')).join(' / ')); }
 
 // 3. a town that would only get a handful of flyers is not visited
 { const F = MAIN.mb + 60, p = await run(F, 2, [side(B, 'Bstadt')], { near:true });

@@ -323,9 +323,9 @@ export function createPlanService(cache){
       return { plan, sug:n, street_m:Math.round(chosen.reduce((a, c) => a + c.len, 0)) };
     },
     async planSide({ start, flyers, n, days, hours, must, zone, side, bike, travel, eco, mainAll, mainShare, near }, stage, stale){
-        // fewer towns than people (towns added by the app): nobody gets a town alone – every town, like the main town, is
-        // shared out among all workers, and everybody moves on to the next town together
-        const team = !!near && n > 1 && side.length < n;
+        // towns added by the app: nobody gets a town alone – every town, like the main town, is shared out among all workers
+        // (each gets his own zone of it), and everybody moves on to the next town together
+        const team = !!near && n > 1;
 
         // each far place as one whole route (one worker)
         const far = [], failed = [];
