@@ -647,7 +647,26 @@ async function boxesAlong(tracks, exclude){
 const adminDone = p => (p.skipped || []).filter(x => x && /^Admin/.test(x.by || '') && Array.isArray(x.pts)).map(x => x.pts);
 const byWorker = x => x && !/^Admin/.test(x.by || '');
 const workerSkips = p => ((p && p.skipped) || []).filter(byWorker);
-const drawSkips = (g, plans) => (plans || []).forEach(p => workerSkips(p).forEach(x => { if(x && x.pts && x.pts.length > 1) L.polyline(x.pts, x.rep ? { color:'#F97316', weight:7, opacity:.9, dashArray:'10 6', lineCap:'round' } : { color:'#6B7280', weight:7, opacity:.85, dashArray:'3 9', lineCap:'round' }).bindTooltip(t(x.rep ? 'rvReported' : 'rvSkipped') + (x.rep && x.why ? ' · ' + (t('hr_' + x.why) === 'hr_' + x.why ? x.why : t('hr_' + x.why)) : '') + (x.by ? ' · ' + x.by : '') + (x.why && !x.rep ? ' · „' + x.why + '“' : '') + (x.at ? ' · ' + fmtDT(x.at) : '')).addTo(g); }));
+// pieces a worker reported as not walkable (orange): the admin decides – "Bestätigt" (stays out, drawn faded) or
+// "Zurück in die Route" (the report is removed, the piece is open again for the worker). Grey ones (old "Nicht nötig") only show.
+const skipKey = x => (x.at || '') + '|' + (x.pts && x.pts[0] ? x.pts[0].join(',') : '');
+const skipTip = x => t(x.rep ? (x.ok ? 'rvRepOk' : 'rvReported') : 'rvSkipped') + (x.rep && x.why ? ' · ' + (t('hr_' + x.why) === 'hr_' + x.why ? x.why : t('hr_' + x.why)) : '') + (x.by ? ' · ' + x.by : '') + (x.why && !x.rep ? ' · „' + x.why + '“' : '') + (x.at ? ' · ' + fmtDT(x.at) : '');
+const drawSkips = (g, plans, reload) => (plans || []).forEach(p => workerSkips(p).forEach(x => {
+  if(!x || !x.pts || x.pts.length < 2) return;
+  const ln = L.polyline(x.pts, x.rep ? { color:'#F97316', weight:7, opacity:x.ok ? .45 : .9, dashArray:'10 6', lineCap:'round' } : { color:'#6B7280', weight:7, opacity:.85, dashArray:'3 9', lineCap:'round' }).addTo(g);
+  if(!x.rep || !reload){ ln.bindTooltip(skipTip(x)); return; }
+  ln.bindPopup(`<b>${esc(skipTip(x))}</b><div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">${x.ok ? '' : `<button class="btn primary small" data-rok>${esc(t('repAccept'))}</button>`}<button class="btn ghost small" data-rback>${esc(t('repBack'))}</button></div><div class="err" data-rerr></div>`, { className:'cp-pop', maxWidth:240 });
+  ln.on('popupopen', e => {
+    const el = e.popup.getElement(), err = el.querySelector('[data-rerr]'), key = skipKey(x);
+    const save = async fn => {
+      const { data:fresh, error:e1 } = await sb.from('task_plans').select('skipped').eq('id', p.id).maybeSingle(); if(e1 || !fresh){ err.textContent = errText(e1); return; }
+      const { error } = await sb.from('task_plans').update({ skipped:fn(fresh.skipped || []) }).eq('id', p.id); if(error){ err.textContent = errText(error); return; }
+      ln.closePopup(); reload();
+    };
+    const ok = el.querySelector('[data-rok]'); if(ok) ok.onclick = () => { ok.disabled = true; save(sk => sk.map(y => y && y.rep && skipKey(y) === key ? { ...y, ok:true, ok_at:new Date().toISOString() } : y)); };
+    const bk = el.querySelector('[data-rback]'); bk.onclick = () => { bk.disabled = true; save(sk => sk.filter(y => !(y && y.rep && skipKey(y) === key))); };
+  });
+}));
 // GPS track: its own colour (yellow with a dark edge) so it never looks like a planned route
 const GPS = '#FACC15';
 const splitJumps = ll => { const out = []; let cur = []; for(let i = 0; i < ll.length; i++){ if(i && hav(ll[i - 1][0], ll[i - 1][1], ll[i][0], ll[i][1]) > 150){ if(cur.length > 1) out.push(cur); cur = []; } cur.push(ll[i]); } if(cur.length > 1) out.push(cur); return out; };
@@ -725,7 +744,7 @@ async function viewDayMap(routeId, back, keep){
         if(ll.length < 2) return;
         wr.forEach(a => { if(a.length > 1) gpsLine(g, a); }); sp.drive.forEach(a => driveLine(g, a));
         L.marker(ll[0], { icon:dot('start-dot', 16) }).addTo(g); L.marker(ll[ll.length - 1], { icon:dot(r.ended_at ? 'end-dot' : 'me-dot', r.ended_at ? 16 : 20) }).addTo(g); } },
-      { key:'skip', label:workerSkips(pl).length ? t('rvSkipped') : '', add:g => drawSkips(g, [pl]) },
+      { key:'skip', label:workerSkips(pl).length ? t('rvSkipped') : '', add:g => drawSkips(g, [pl], pl ? () => viewDayMap(routeId, back, dm.rvState()) : null) },
       { key:'cp', label:cps.length ? t('checkpoints') : '', on:false, add:g => cps.forEach(c => cpAdmin(c, dayColor(col, c.day), (pl.days || []).length > 1, pl, () => viewDayMap(routeId, back, dm.rvState())).addTo(g)) },
     ],
     back,
@@ -851,7 +870,7 @@ async function viewTaskMap(id, back, keep){
       { key:'done', label:t('rvDone'), add:g => { res.forEach(x => x.runs.forEach(run => L.polyline(run, { color:GREEN_C(), weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g))); offRuns.forEach(run => L.polyline(run, { color:GREEN_C(), weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g));
         tracks.forEach(ll => { if(ll.length > 1) gpsLine(g, ll, 2.5); }); drives.forEach(ll => driveLine(g, ll, 2.5)); } },
       ...((plans || []).some(p => (p.path || []).some(q => q[2] === 1)) ? [{ key:'jumps', label:t({ car:'tripsCar', bike:'tripsBike', bus:'tripsBus' }[(tk.travel || (tk.bike ? 'bike' : 'bus'))]), add:g => (plans || []).forEach(p => drawJumps(g, p.path, (tk.travel || (tk.bike ? 'bike' : 'bus')))) }] : []),
-      ...((plans || []).some(p => workerSkips(p).length) ? [{ key:'skip', label:t('rvSkipped'), add:g => drawSkips(g, plans) }] : []),
+      ...((plans || []).some(p => workerSkips(p).length) ? [{ key:'skip', label:t('rvSkipped'), add:g => drawSkips(g, plans, () => viewTaskMap(id, back, m && m.rvState())) }] : []),
       { key:'cp', label:t('checkpoints'), on:false, add:g => res.forEach(({ p, cps }) => cps.forEach(c => cpAdmin(c, dayColor(p.color, c.day), (p.days || []).length > 1, p, () => viewTaskMap(id, back, m && m.rvState())).addTo(g))) },
       // a tap on "Wo gerade" moves the map to the people: the ones walking right now, else the last known positions
       { key:'live', label:t('rvLive'), add:g => { redrawLive = liveWorkers(g, tk, plans, () => names); },

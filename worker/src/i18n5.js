@@ -299,3 +299,7 @@ Object.assign(T.de, { stPick:'Studio wählen', stTitle:'Studio als Startadresse'
   stInfo:'{n} Studios · Stand {d}', stSync:'Liste aktualisieren', stSyncing:'Wird aktualisiert …', stSyncNew:'Neu: {list}', stSyncSame:'Liste ist aktuell – keine neuen Studios.', stSyncFail:'Aktualisieren hat nicht geklappt. Später noch einmal versuchen.' });
 Object.assign(T.ru, { stPick:'Выбрать студию', stTitle:'Студия как адрес старта', stSearch:'Город или студия', stSoon:'скоро', stOpens:'открытие {d}',
   stInfo:'{n} студий · обновлено {d}', stSync:'Обновить список', stSyncing:'Обновляется …', stSyncNew:'Новые: {list}', stSyncSame:'Список актуален – новых студий нет.', stSyncFail:'Не удалось обновить. Попробуйте позже.' });
+
+// reported pieces (orange): admin decision on the map
+Object.assign(T.de, { rvRepOk:'Gemeldet · bestätigt', repAccept:'Bestätigen – bleibt draußen', repBack:'Zurück in die Route' });
+Object.assign(T.ru, { rvRepOk:'Сообщено · подтверждено', repAccept:'Подтвердить – не раздавать', repBack:'Вернуть в маршрут' });

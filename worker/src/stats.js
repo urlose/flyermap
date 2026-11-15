@@ -27,7 +27,10 @@ export async function loadWorkerStats(force){
 }
 export const isVerified = id => !!(STATS.byId.get(id) || {}).verified;
 export const okBadge = id => isVerified(id) ? `<span class="ok-badge" title="${esc(S('ok'))}">✓ ${esc(S('ok'))}</span>` : '';
-export const shortLine = id => { const s = STATS.byId.get(id); if(!s || !s.days) return ''; return `${s.done} ${S('orders').toLowerCase()} ${S('done')} · ${n1(s.hours)} ${S('hours')}${s.pace != null ? ' · ' + s.pace + ' %' : ''}`; };
+// "2 Aufträge erledigt · 28,1 Std. · Tempo 145 %" (German nouns stay capitalised, singular for one order)
+const doneTxt = n => ({ de:`${n} ${n === 1 ? 'Auftrag' : 'Aufträge'} erledigt`, en:`${n} ${n === 1 ? 'order' : 'orders'} done`, ru:`выполнено заказов: ${n}` })[L()];
+const paceTxt = p => ({ de:'Tempo', en:'pace', ru:'темп' })[L()] + ' ' + p + ' %';
+export const shortLine = id => { const s = STATS.byId.get(id); if(!s || !s.days) return ''; return `${doneTxt(s.done)} · ${n1(s.hours)} ${S('hours')}${s.pace != null ? ' · ' + paceTxt(s.pace) : ''}`; };
 
 export function workerStatsHtml(id){
   const s = STATS.byId.get(id); if(!s) return '';

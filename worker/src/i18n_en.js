@@ -238,3 +238,4 @@ Object.assign(T.en, { autoTownsOn:'Not enough nearby – nearest places added: {
 
 Object.assign(T.en, { stPick:'Choose studio', stTitle:'Studio as start address', stSearch:'Search town or studio', stSoon:'soon', stOpens:'opens {d}',
   stInfo:'{n} studios · updated {d}', stSync:'Refresh list', stSyncing:'Refreshing …', stSyncNew:'New: {list}', stSyncSame:'List is up to date – no new studios.', stSyncFail:'Refresh failed. Try again later.' });
+Object.assign(T.en, { rvRepOk:'Reported · confirmed', repAccept:'Confirm – leave out', repBack:'Back into the route' });

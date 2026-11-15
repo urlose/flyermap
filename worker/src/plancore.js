@@ -61,7 +61,7 @@ export function createPlanService(cache){
   const buildLine = (pieces, hours, rideMin, breaks, origin, hoursToo) => {
     const path = [], steps = [], boxes = [], segMin = [], segMb = [], segSt = [], place = [], cutAt = new Set();
     if(origin && pieces.length && segLen(origin, pieces[0].r.path[0]) > 30){ path.push([origin[0], origin[1]]); segMin.push(0); segMb.push(0); segSt.push(0); place.push(''); }
-    let length_m = 0, street_m = 0, minutes = 0, mailboxes = 0;
+    let length_m = 0, street_m = 0, minutes = 0, mailboxes = 0; const reserve = [], resSeen = new Set();
     for(const [pi, { r, name }] of pieces.entries()){
       const L = path.length, jump = (!!name || pi === 0) && L > 0;
       if(breaks && breaks.has(pi) && L > 0) cutAt.add(L);
@@ -72,6 +72,7 @@ export function createPlanService(cache){
         segMin.push(j === 0 ? (jump ? (rideMin ? rideMin(path[L - 1], q) : TRAVEL_MIN) : 0) : r.minutes * d / tot); segMb.push(j ? (r.mailboxes || 0) * d / tot : 0); segSt.push(j ? (r.street_m || 0) * d / tot : 0); place.push(name || '');
       });
       (r.steps || []).forEach(st => steps.push([st[0] + L, st[1], st[2]])); (r.boxes || []).forEach(x => boxes.push(x));
+      for(const x of r.reserve || []){ const k = x.p && x.p[0] ? x.p[0].join(',') : ''; if(k && !resSeen.has(k)){ resSeen.add(k); reserve.push(x); } }   // replacement streets of every piece
       length_m += r.length_m || 0; street_m += r.street_m || 0; minutes += r.minutes || 0; mailboxes += r.mailboxes || 0;
     }
     // days: cut where the hours of a day are full; a last bit under 45 min goes to the day before
@@ -85,7 +86,7 @@ export function createPlanService(cache){
     }
     if(t > 0 || !days.length) close(path.length - 1);
     if(!breaks && days.length > 1 && days[days.length - 1].minutes < 45){ const x = days.pop(), y = days[days.length - 1]; y.i1 = x.i1; ['minutes', 'mailboxes', 'street_m', 'length_m'].forEach(k => y[k] += x[k]); if(x.place) y.place = [...new Set([...(y.place || '').split(' + '), ...x.place.split(' + ')].filter(Boolean))].join(' + '); }
-    return { path, steps, boxes, days, length_m, street_m, minutes, mailboxes };
+    return { path, steps, boxes, days, length_m, street_m, minutes, mailboxes, reserve:reserve.slice(0, 400) };
   };
   // ---- dense cores (Ortskerne) ----
   // Streets with many mailboxes per km, joined by short links, form a core; hamlets, scattered houses and the roads between
@@ -301,6 +302,13 @@ export function createPlanService(cache){
       const cnt = {}; chosen.forEach(c => { const k = c.area || ''; cnt[k] = (cnt[k] || 0) + 1; }); const seen = {};
       chosen.forEach(c => { const k = c.area || ''; seen[k] = (seen[k] || 0) + 1; c.name = (c.area || t0(c)) + (cnt[k] > 1 ? ' ' + seen[k] : ''); });
       function t0(c){ const r = c.routes[0], st = (r.steps || []).find(x => x[2]); return st ? st[2] : 'Kern'; }
+      // replacement streets (Ersatzstraßen): the cores were planned on cut-out maps, so their reserve is taken from the full map
+      // of their place – streets near the core that no chosen core walks (also not under another place's map)
+      { const kE = (g, i) => { const e = g.edges[i]; return ((g.pts[e.a][0] + g.pts[e.b][0]) / 2).toFixed(5) + ',' + ((g.pts[e.a][1] + g.pts[e.b][1]) / 2).toFixed(5); };
+        const taken = new Set(); chosen.forEach(c => c.ids.forEach(i => taken.add(kE(c.g, i))));
+        for(const g of new Set(chosen.map(c => c.g))){ const cs = chosen.filter(c => c.g === g), used = new Set(cs.flatMap(c => c.ids));
+          Planner.reserveFor(g, used, cs.flatMap(c => c.routes), { skip:i => taken.has(kE(g, i)) }); }
+        if(stale()) return { skipped:true }; }
       // tour by car from the start: nearest next, then untangled (2-opt)
       // first: the tour begins in this place (its core nearest to the start), the rest follows from there
       let tour = [], left = chosen.slice(), at = start, origin = start;

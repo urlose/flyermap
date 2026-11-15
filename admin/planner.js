@@ -1248,13 +1248,15 @@
   // or more mailboxes than flyers). When the distributor cannot walk a piece (closed, no access …), the app hands out the
   // flyers on the nearest reserve streets instead. r.reserve = [{ p:[[lat, lng] …], mb }], nearest first, at most RES_MAX.
   const RES_R = 400, RES_MAX = 120;
-  function reserveFor(g, used, routes){
+  // opt.skip(edgeIndex): leave a street out (tours: the same street is also in another place's map and walked there)
+  function reserveFor(g, used, routes, opt){
+    const skip = opt && opt.skip;
     const cell = 0.004, key = (a, b) => Math.floor(a / cell) + ':' + Math.floor(b / cell), grid = new Map();
     routes.forEach((r, k) => { r.reserve = []; const pp = r.path || []; for(let i = 0; i < pp.length; i += 2){ const q = pp[i], gk = key(q[0], q[1]); let l = grid.get(gk); if(!l) grid.set(gk, l = []); l.push([q[0], q[1], k]); } });
     if(!grid.size) return;
     const cand = routes.map(() => []);
     g.edges.forEach((e, i) => {
-      if(used.has(i) || !(e.mb > 0) || !e.coords || e.coords.length < 2) return;
+      if(used.has(i) || !(e.mb > 0) || !e.coords || e.coords.length < 2 || (skip && skip(i))) return;
       const m = e.coords[Math.floor(e.coords.length / 2)], i0 = Math.floor(m[0] / cell), j0 = Math.floor(m[1] / cell);
       let best = -1, bd = Infinity;
       for(let a = -1; a <= 1; a++) for(let b = -1; b <= 1; b++){ const l = grid.get((i0 + a) + ':' + (j0 + b)); if(l) for(const q of l){ const d = dist(m, q); if(d < bd){ bd = d; best = q[2]; } } }
@@ -1347,6 +1349,6 @@
     return partition(g, start, n).map((part, k) => ({ idx:k, ...planPart(g, part, start) }));
   }
 
-  const api = { censusFill, setTileStamp, setPace, denseEntry, pathRuns, emptyGap, tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, DIR_FROM, makeBoxCounter, walkRuns, DRIVE_MS, DRIVE_MIN_M, DRIVE_NET_M, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
+  const api = { reserveFor, censusFill, setTileStamp, setPace, denseEntry, pathRuns, emptyGap, tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, DIR_FROM, makeBoxCounter, walkRuns, DRIVE_MS, DRIVE_MIN_M, DRIVE_NET_M, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
   if(typeof module !== 'undefined' && module.exports) module.exports = api; else root.Planner = api;
 })(typeof window !== 'undefined' ? window : globalThis);

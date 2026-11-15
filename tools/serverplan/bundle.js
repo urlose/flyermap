@@ -1,1 +1,3112 @@
-(()=>{var $n=Object.create;var pn=Object.defineProperty;var Nn=Object.getOwnPropertyDescriptor;var Un=Object.getOwnPropertyNames;var Bn=Object.getPrototypeOf,Wn=Object.prototype.hasOwnProperty;var qn=(oe,I)=>()=>(I||oe((I={exports:{}}).exports,I),I.exports);var Gn=(oe,I,z,Re)=>{if(I&&typeof I=="object"||typeof I=="function")for(let Se of Un(I))!Wn.call(oe,Se)&&Se!==z&&pn(oe,Se,{get:()=>I[Se],enumerable:!(Re=Nn(I,Se))||Re.enumerable});return oe};var gn=(oe,I,z)=>(z=oe!=null?$n(Bn(oe)):{},Gn(I||!oe||!oe.__esModule?pn(z,"default",{value:oe,enumerable:!0}):z,oe));var Xt=qn((Qn,Nt)=>{(function(oe){"use strict";let z=Math.PI/180,Re="motorway|motorway_link|trunk|trunk_link|footway|cycleway|path|steps|bridleway|construction|proposed|raceway|corridor|elevator|platform|bus_stop|track|bus_guideway|escape|rest_area|services",Se=["https://overpass.openstreetmap.fr/api/interpreter","https://overpass-api.de/api/interpreter","https://maps.mail.ru/osm/tools/overpass/api/interpreter"],Qe=7,He=3.2,Ae=3,rt=8,bt=5,qe=0;function pt(e){qe=e>0?+e:0}let Ge=(e,n)=>(qe?e/qe*30:e/1e3/He*60)+(n||0)*bt/60;function fe(e,n){let t=Math.sin((n[0]-e[0])*z/2)**2+Math.cos(e[0]*z)*Math.cos(n[0]*z)*Math.sin((n[1]-e[1])*z/2)**2;return 2*6371e3*Math.asin(Math.sqrt(t))}function Be(e,n){let t=!1;for(let i=0,s=n.length-1;i<n.length;s=i++){let[r,l]=n[i],[a,f]=n[s];r>e[0]!=a>e[0]&&e[1]<(f-l)*(e[0]-r)/(a-r)+l&&(t=!t)}return t}function je(e){let n=0;for(let t=1;t<e.length;t++)n+=fe(e[t-1],e[t]);return n}async function ze(e,n,t,i){let s=Date.now(),r=4e3;for(;;)try{return await it(e,n,t)}catch(l){if(Date.now()-s>24e4||i&&i())throw l;if(await new Promise(a=>setTimeout(a,r)),r=Math.min(3e4,r*2),i&&i())throw new Error("stale")}}function it(e,n,t){let i=n||fetch,s=t||6e4;return new Promise((r,l)=>{let a=!1,f=0,M=0,d,c=[],o=[],u=(k,x)=>{a||(a=!0,o.forEach(clearTimeout),c.forEach(P=>{try{P.abort()}catch{}}),k(x))},p=()=>{if(a||M>=Se.length)return;let k=Se[M++];M<Se.length&&o.push(setTimeout(p,1e4));let x=typeof AbortController<"u"?new AbortController:null;x&&c.push(x);let P=x?setTimeout(()=>x.abort(),s):null;P&&o.push(P),(async()=>{try{let R=await i(k,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:"data="+encodeURIComponent(e),signal:x&&x.signal});if(!R.ok)throw new Error("overpass "+R.status);let Y=await R.json();if(Y&&Y.remark&&/runtime error|out of memory|timed out/i.test(Y.remark))throw new Error("overpass "+Y.remark);u(r,Y)}catch(R){d=R,f++,f>=Se.length?u(l,d||new Error("overpass")):p()}})()};p()})}let dt=`["highway"]["highway"!~"^(${Re})$"]["service"!~"^(parking_aisle|driveway|drive-through|emergency_access)$"]["access"!~"^(private|no)$"]["foot"!~"^(no|private)$"]["motorroad"!="yes"]`;async function kt(e,n){let t=e.map(i=>i[0].toFixed(6)+" "+i[1].toFixed(6)).join(" ");return ze(`[out:json][timeout:110];way${dt}(poly:"${t}");out body;>;out skel qt;`,n,11e4)}let xt=e=>[Math.round(e[0]*1e3)/1e3,Math.round(e[1]*1e3)/1e3],ht=(e,n)=>{let t=xt(e),i=n/111320,s=n/(111320*Math.cos(t[0]*z));return[t[0]-i,t[1]-s,t[0]+i,t[1]+s].map(r=>r.toFixed(5)).join(",")},Ft=(e,n)=>`[out:json][timeout:110];way${dt}(${ht(e,n)});out body;>;out skel qt;`,Rt=(e,n)=>{let t=ht(e,n);return`[out:json][timeout:110];way["building"~"^(${O})$"](${t})->.h;way["building"]["building"!~"^(${O}|${v})$"](${t})->.o;.h out center tags;.o out geom tags;`};async function Et(e,n,t){return ze(Ft(e,n),t,11e4)}async function _(e,n,t){return ze(Rt(e,n),t,11e4)}let N=.03,Z=.045,J="fm3",X=(e,n)=>e+":"+n;function H(e,n){let t=n/111320,i=n/(111320*Math.cos(e[0]*z)),s=[],r=Math.floor((e[0]-t)/N),l=Math.floor((e[0]+t)/N),a=Math.floor((e[1]-i)/Z),f=Math.floor((e[1]+i)/Z);for(let d=r;d<=l;d++)for(let c=a;c<=f;c++)s.push(X(d,c));let M=d=>{let[c,o]=d.split(":").map(Number);return Math.hypot((c+.5)*N-e[0],((o+.5)*Z-e[1])*Math.cos(e[0]*z))};return s.sort((d,c)=>M(d)-M(c))}function L(e){let[n,t]=e.split(":").map(Number),i=[n*N,t*Z,(n+1)*N,(t+1)*Z].map(s=>s.toFixed(4)).join(",");return`[out:json][timeout:90];way${dt}(${i});out body qt;>;out skel qt;way["building"~"^(${O})$"](${i});out center tags qt;way["building"]["building"!~"^(${O}|${v})$"](${i});out geom tags qt;/*${J}*/`}let q=e=>Math.round(e*1e6)/1e6;function me(e){if(!/^(primary|secondary|tertiary)(_link)?$/.test(e.highway||""))return!1;let n=String(e.maxspeed||"").trim().toLowerCase();return(/^(de:rural|de:motorway|none)$/.test(n)?100:/^(de:urban|walk|de:living_street)$/.test(n)?50:parseInt(n,10))>=70?!["sidewalk","sidewalk:both","sidewalk:left","sidewalk:right"].some(i=>/^(yes|both|left|right|separate)$/.test(e[i]||"")):!1}function T(e){let n=[],t=[],i=[];for(let s of e&&e.elements||[])if(s.type==="node")n.push(s.id,q(s.lat),q(s.lon));else if(s.type==="way"&&s.nodes&&s.tags&&s.tags.highway)me(s.tags)||t.push([s.id,s.tags.name||s.tags.ref||"",s.nodes]);else if(s.type==="way"){let r=It({elements:[s]})[0];r&&i.push([s.id,q(r.lat),q(r.lng),r.n])}return{v:J,elements:[],n,w:t,b:i}}function Me(e){if(!e||e.v!=="fm4")return e;let n=[],t=[],i=[],s=0,r=0,l=0;for(let f=0;f<e.n.length;f+=3)s+=e.n[f],r+=e.n[f+1],l+=e.n[f+2],n.push(s,r/1e6,l/1e6);let a=0;for(let f of e.w){a+=f[0];let M=0;t.push([a,f[1],f[2].map(d=>M+=d)])}r=0,l=0;for(let f=0;f<e.b.length;f+=3)r+=e.b[f],l+=e.b[f+1],i.push([0,r/1e6,l/1e6,e.b[f+2]]);return{v:"fm4",elements:[],n,w:t,b:i}}function Le(e){let n=new Map,t=new Map,i=new Map;for(let r of e)if(r){for(let l=0;l<r.n.length;l+=3)n.set(r.n[l],[r.n[l+1],r.n[l+2]]);for(let l of r.w)t.set(l[0],l);for(let l of r.b)i.set(l[1]+","+l[2],l)}let s=[];for(let[r,l]of n)s.push({type:"node",id:r,lat:l[0],lon:l[1]});for(let[r,l]of t)s.push({type:"way",id:r,nodes:l[2],tags:l[1]?{name:l[1]}:{}});return{osm:{elements:s},buildings:[...i.values()].map(r=>({lat:r[1],lng:r[2],n:r[3]}))}}let Ue="https://xobrvfkwqessbkdwiavu.supabase.co/storage/v1/object/public/tiles/v4/",lt="";function ye(e){lt=e?"?b="+encodeURIComponent(e):""}async function Je(e,n,t){let i=await t(e+n.replace(":","_")+".json.gz"+lt);if(!i.ok)return null;let s=new Uint8Array(await i.arrayBuffer()),r;if(s[0]===31&&s[1]===139){if(typeof DecompressionStream>"u")return null;r=await new Response(new Blob([s]).stream().pipeThrough(new DecompressionStream("gzip"))).text()}else r=new TextDecoder().decode(s);let l=Me(JSON.parse(r));return l&&l.v==="fm4"&&Array.isArray(l.n)?l:null}async function mt(e,n,t){let i=e.filter(c=>!n.has(c)),s=e.length,r=()=>t.progress&&t.progress(e.filter(c=>n.has(c)).length,s);if(!i.length)return;let l=t.tilesUrl===void 0?t.fetchImpl?null:Ue:t.tilesUrl,a=t.tileFetch||(typeof fetch<"u"?fetch:null);if(l&&a){let c=0,o=async()=>{for(;c<i.length;){let u=i[c++];try{let p=await Je(l,u,a);p&&(n.set(u,p),r())}catch{}}};if(await Promise.all([o(),o(),o(),o()]),i.every(u=>n.has(u)))return}if(t.cache){let c=i.filter(u=>!n.has(u)),o=[];for(let u=0;u<c.length;u+=3)o.push(c.slice(u,u+3));await Promise.all(o.map(async u=>{try{(await t.cache.get(u.map(L))||[]).forEach((k,x)=>{k&&k.v===J&&Array.isArray(k.n)&&n.set(u[x],k)})}catch{}}))}let f=i.filter(c=>!n.has(c));r();let M=0,d=async()=>{for(;M<f.length;){if(t.stale&&t.stale())throw new Error("stale");let c=f[M++],o=L(c),u=T(await ze(o,t.fetchImpl,9e4,t.stale));n.set(c,u),r(),t.cache&&Promise.resolve(t.cache.put([{q:o,payload:u}])).catch(()=>{})}};await Promise.all([d(),d()])}function xe(e,n){let t=new Map;for(let o of e.elements)o.type==="node"&&t.set(o.id,[o.lat,o.lon]);let i=[],s=new Map,r=new Map,l=(o,u)=>{r.has(o)||r.set(o,[]),r.get(o).push(u),s.set(o,(s.get(o)||0)+1)};for(let o of e.elements){if(o.type!=="way"||!o.nodes)continue;let u=o.tags&&(o.tags.name||o.tags.ref)||"";for(let p=1;p<o.nodes.length;p++){let k=o.nodes[p-1],x=o.nodes[p],P=t.get(k),R=t.get(x);if(!P||!R||k===x||n&&!Be([(P[0]+R[0])/2,(P[1]+R[1])/2],n))continue;let Y=i.length;i.push({u:k,v:x,name:u,used:!1}),l(k,Y),l(x,Y)}}let a=new Map,f=[],M=o=>(a.has(o)||(a.set(o,f.length),f.push(t.get(o))),a.get(o)),d=[],c=(o,u)=>{let p=[t.get(o)],k=o,x=u,P=i[u].name;for(;;){let R=i[x];R.used=!0;let Y=R.u===k?R.v:R.u;if(p.push(t.get(Y)),!P&&R.name&&(P=R.name),k=Y,s.get(k)!==2||k===o)break;let he=r.get(k).find(te=>!i[te].used);if(he===void 0)break;x=he}k===o&&p.length<3||d.push({a:M(o),b:M(k),coords:p,len:je(p),name:P})};for(let[o,u]of s)if(u!==2)for(let p of r.get(o))i[p].used||c(o,p);for(let o=0;o<i.length;o++)i[o].used||c(i[o].u,o);return be(f,d)}function be(e,n){let t=e.map(()=>[]);return n.forEach((i,s)=>{t[i.a].push({e:s,to:i.b}),i.a!==i.b&&t[i.b].push({e:s,to:i.a})}),{pts:e,edges:n,adj:t}}function ue(e,n){let t=new Array(e.pts.length).fill(-1),i=0,s=[];for(let o=0;o<e.pts.length;o++){if(t[o]!==-1||!e.adj[o].length)continue;let u=[o];for(t[o]=i,s[i]=0;u.length;){let p=u.pop();for(let{e:k,to:x}of e.adj[p])t[x]===-1&&(t[x]=i,u.push(x))}i++}e.edges.forEach(o=>{s[t[o.a]]+=o.len});let r=0;for(let o=1;o<i;o++)s[o]>s[r]&&(r=o);if(n){let o=-1,u=500;for(let p=0;p<e.pts.length;p++){if(t[p]<0)continue;let k=fe(n,e.pts[p]);k<u&&(u=k,o=p)}o>=0&&s[t[o]]>=2e3&&(r=t[o])}let l=new Map,a=[],f=[],M=o=>(l.has(o)||(l.set(o,a.length),a.push(e.pts[o])),l.get(o)),d=0;for(let o of e.edges)t[o.a]===r?f.push({...o,a:M(o.a),b:M(o.b)}):d+=o.len;let c=be(a,f);return c.dropped_m=d,c}class Ve{constructor(){this.a=[]}push(n,t){let i=this.a;i.push([n,t]);let s=i.length-1;for(;s;){let r=s-1>>1;if(i[r][0]<=i[s][0])break;[i[r],i[s]]=[i[s],i[r]],s=r}}pop(){let n=this.a,t=n[0],i=n.pop();if(n.length){n[0]=i;let s=0;for(;;){let r=2*s+1,l=r+1,a=s;if(r<n.length&&n[r][0]<n[a][0]&&(a=r),l<n.length&&n[l][0]<n[a][0]&&(a=l),a===s)break;[n[a],n[s]]=[n[s],n[a]],s=a}}return t}get size(){return this.a.length}}function re(e,n,t){let i=new Float64Array(e.pts.length).fill(1/0),s=new Int32Array(e.pts.length).fill(-1),r=new Int32Array(e.pts.length).fill(-1),l=new Ve;for(let a of n)i[a]=0,l.push(0,a);for(;l.size;){let[a,f]=l.pop();if(!(a>i[f])){if(t(f)){let M=[],d=f;for(;s[d]!==-1;)M.push(s[d]),d=r[d];return{target:f,edges:M.reverse()}}for(let{e:M,to:d}of e.adj[f]){let c=a+e.edges[M].len;c<i[d]&&(i[d]=c,s[d]=M,r[d]=f,l.push(c,d))}}}return null}function et(e,n){let t=new Float64Array(e.pts.length).fill(1/0),i=new Int32Array(e.pts.length).fill(-1),s=new Int32Array(e.pts.length).fill(-1),r=new Ve;for(t[n]=0,r.push(0,n);r.size;){let[l,a]=r.pop();if(!(l>t[a]))for(let{e:f,to:M}of e.adj[a]){let d=l+e.edges[f].len;d<t[M]&&(t[M]=d,i[M]=f,s[M]=a,r.push(d,M))}}return{d:t,pe:i,pv:s}}function ct(e,n,t){let i=e.pts.map((M,d)=>d).filter(M=>e.adj[M].length);if(!i.length)return 1/0;let s=new Uint8Array(e.pts.length),r=!1;for(let M of i)Be(e.pts[M],t)&&(s[M]=1,r=!0);if(!r)return 1/0;let l=Oe(e,n,i),a=new Float64Array(e.pts.length).fill(1/0),f=new Ve;for(a[l]=0,f.push(0,l);f.size;){let[M,d]=f.pop();if(!(M>a[d])){if(s[d])return Math.round(M);for(let{e:c,to:o}of e.adj[d]){let u=e.edges[c],p=(u.mb||0)*60>=u.len?0:u.len,k=M+p;k<a[o]&&(a[o]=k,f.push(k,o))}}}return 1/0}function ut(e,n,t,i){if(!e||!e.pts||!e.edges||!e.adj)return null;let s=.0027,r=s/Math.max(.2,Math.cos((n[0]||51)*z)),l=(c,o)=>c+":"+o,a=new Map;for(let c of e.edges){if(!(c.mb>0))continue;let o=e.pts[c.a];if(t&&t.length>2&&!Be(o,t))continue;let u=l(Math.floor(o[0]/s),Math.floor(o[1]/r));a.set(u,(a.get(u)||0)+c.mb)}let f=c=>{let o=Math.floor(c[0]/s),u=Math.floor(c[1]/r),p=0;for(let k=-1;k<=1;k++)for(let x=-1;x<=1;x++)p+=a.get(l(o+k,u+x))||0;return p},M=null,d=null;for(let c=0;c<e.pts.length;c++){if(!e.adj[c]||!e.adj[c].length)continue;let o=e.pts[c];if(t&&t.length>2&&!Be(o,t))continue;let u=f(o),p=fe(o,n);u>=i&&(!M||p<M.dd)&&(M={p:o,dd:p}),(!d||u>d.mb)&&(d={p:o,mb:u})}return(M||d||{}).p||null}function Q(e,n){let t=[],i=n;for(;e.pe[i]!==-1;)t.push(e.pe[i]),i=e.pv[i];return t.reverse()}function Xe(e,n,t,i,s){let r=Math.cos(n[0]*z),l=i||e.edges.map((k,x)=>x),a=s||(k=>k.len),f=l.map(k=>{let x=e.edges[k],P=x.coords[Math.floor(x.coords.length/2)];return{i:k,len:a(x),ang:Math.atan2(P[0]-n[0],(P[1]-n[1])*r)}}).sort((k,x)=>k.ang-x.ang);if(t<=1||!f.length)return[f.map(k=>k.i)];let M=0,d=-1;for(let k=0;k<f.length;k++){let x=f[k].ang,P=k+1<f.length?f[k+1].ang:f[0].ang+2*Math.PI;P-x>d&&(d=P-x,M=k+1)}let c=f.slice(M).concat(f.slice(0,M)),o=c.reduce((k,x)=>k+x.len,0),u=Array.from({length:t},()=>[]),p=0;for(let k of c){let x=Math.min(t-1,Math.floor((p+k.len/2)/o*t));u[x].push(k.i),p+=k.len}return u}function Te(e,n){let t=new Set(n),i=new Set,s=[];for(let r of n){if(i.has(r))continue;let l=[r],a=[];for(i.add(r);l.length;){let f=l.pop();a.push(f);for(let M of[e.edges[f].a,e.edges[f].b])for(let{e:d}of e.adj[M])t.has(d)&&!i.has(d)&&(i.add(d),l.push(d))}s.push(a)}return s}function V(e,n){let t=new Map;return n.forEach((i,s)=>{for(let r of i)for(let l of[e.edges[r].a,e.edges[r].b]){let a=t.get(l);a||t.set(l,a=new Map),a.set(s,(a.get(s)||0)+1)}}),t}function ee(e,n){n=n.map(i=>i.slice());let t=i=>i.reduce((s,r)=>s+e.edges[r].len,0);for(let i=0;i<20;i++){let s=!1;for(let r=0;r<n.length;r++){let l=Te(e,n[r]);if(l.length<2)continue;l.sort((d,c)=>t(c)-t(d));let a=V(e,n),f=l[0].slice(),M=t(n[r]);for(let d of l.slice(1)){if(t(d)>.3*M){for(let p of d)f.push(p);continue}let c=new Map;for(let p of d)for(let k of[e.edges[p].a,e.edges[p].b]){let x=a.get(k);if(x)for(let[P,R]of x)P!==r&&c.set(P,(c.get(P)||0)+R)}if(!c.size){for(let p of d)f.push(p);continue}let o=-1,u=-1;for(let[p,k]of c)k>u&&(u=k,o=p);for(let p of d)n[o].push(p);s=!0}n[r]=f}if(!s)break}return n}let $e=e=>Ge(1.35*e.len,e.mb);function se(e,n,t,i){let s=new Set;for(let r of n[t])for(let l of[e.edges[r].a,e.edges[r].b]){let a=i.get(l);if(a)for(let f of a.keys())f!==t&&s.add(f)}return s}function Ke(e,n,t,i,s,r){let l=new Set(n[t]),a=new Set,f=new Set,M=[];for(let o of n[t])for(let u of[e.edges[o].a,e.edges[o].b]){let p=r.get(u);p&&p.has(i)&&!f.has(o)&&(f.add(o),M.push(o))}let d=0;for(let o=0;o<M.length&&d<s&&a.size<l.size-1;o++){let u=M[o];a.add(u),d+=$e(e.edges[u]);for(let p of[e.edges[u].a,e.edges[u].b])for(let{e:k}of e.adj[p])l.has(k)&&!f.has(k)&&(f.add(k),M.push(k))}if(!a.size)return null;let c=n.map(o=>o.slice());c[t]=c[t].filter(o=>!a.has(o));for(let o of a)c[i].push(o);return ee(e,c)}function Ne(e,n,t){let i=s=>s.reduce((r,l)=>r+$e(e.edges[l]),0);n=ee(e,n);for(let s=0;s<(t||40);s++){let r=n.map(i),l=r.reduce((M,d)=>M+d,0)/n.length,a=V(e,n),f=null;for(let M of r.map((d,c)=>c).sort((d,c)=>r[c]-r[d])){if(r[M]<=l*1.03)break;let d=[...se(e,n,M,a)].filter(c=>r[c]<r[M]).sort((c,o)=>r[c]-r[o]);if(d.length&&(f=Ke(e,n,M,d[0],(r[M]-r[d[0]])/2,a),f))break}if(!f)break;n=f}return n}function Ce(e,n){let t=n[0]+","+n[1];return(!e._sn||e._sn.k!==t)&&(e._sn={k:t,v:Oe(e,n,e.pts.map((i,s)=>s).filter(i=>e.adj[i].length))}),e._sn.v}function Oe(e,n,t){let i=-1,s=1/0;for(let r of t){let l=fe(e.pts[r],n);l<s&&(s=l,i=r)}return i}let U=(e,n)=>Math.atan2((n[1]-e[1])*Math.cos(e[0]*z),n[0]-e[0])/z,ke=e=>{let n=Math.abs(e);return n<25?"S":n<60?e<0?"SL":"SR":n<150?e<0?"L":"R":"U"};function tt(e,n,t,i){if(!n.length)return{path:[],length_m:0,street_m:0,edges:0,steps:[]};let s=n.map(g=>({e:g,dead:!1})),r=new Set;for(let g of n)r.add(e.edges[g].a),r.add(e.edges[g].b);let l=i??Ce(e,t);r.add(l);let a=new Map,f=g=>{for(;a.get(g)!==g;)a.set(g,a.get(a.get(g))),g=a.get(g);return g},M=(g,W)=>{a.has(g)||a.set(g,g),a.has(W)||a.set(W,W),a.set(f(g),f(W))};for(let g of r)a.set(g,g);for(let g of n)M(e.edges[g].a,e.edges[g].b);for(let g=0;g<5e3;g++){let W=f(l),b=[...r].filter(w=>f(w)===W);if(b.length===r.size)break;let E=re(e,b,w=>r.has(w)&&f(w)!==W);if(!E)break;for(let w of E.edges){s.push({e:w,dead:!0});let{a:S,b:A}=e.edges[w];r.add(S),r.add(A),M(S,A)}}let d=new Map,c=g=>d.set(g,(d.get(g)||0)+1);for(let{e:g}of s)c(e.edges[g].a),c(e.edges[g].b);let o=[...d].filter(([,g])=>g%2).map(([g])=>g);if(o.length){let g=o.length,W=new Map(o.map((A,C)=>[A,C])),b=Array.from({length:g},()=>new Float64Array(g).fill(1/0)),E=o.map(A=>et(e,A));for(let A=0;A<g;A++)for(let C=0;C<g;C++)b[A][C]=E[A].d[o[C]];let w=[];for(let A=0;A<g;A++)for(let C=A+1;C<g;C++)isFinite(b[A][C])&&w.push([b[A][C],A,C]);w.sort((A,C)=>A[0]-C[0]);let S=new Int32Array(g).fill(-1);for(let[,A,C]of w)S[A]<0&&S[C]<0&&(S[A]=C,S[C]=A);for(let A=0,C=!0;C&&A<30;A++){C=!1;for(let ae=0;ae<g;ae++){let _e=S[ae];if(!(_e<ae))for(let ve=ae+1;ve<g;ve++){let De=S[ve];if(ve===_e||De<ve||De===ae)continue;let ft=b[ae][_e]+b[ve][De],ot=b[ae][ve]+b[_e][De],yt=b[ae][De]+b[_e][ve];if(ot<ft-1e-6&&ot<=yt){S[ae]=ve,S[ve]=ae,S[_e]=De,S[De]=_e,C=!0;break}if(yt<ft-1e-6){S[ae]=De,S[De]=ae,S[_e]=ve,S[ve]=_e,C=!0;break}}}}for(let A=0;A<g;A++){let C=S[A];if(!(C<A))for(let ae of Q(E[A],o[C]))s.push({e:ae,dead:!0})}}let u=new Map,p=(g,W)=>{u.has(g)||u.set(g,[]),u.get(g).push(W)};s.forEach((g,W)=>{p(e.edges[g.e].a,W),e.edges[g.e].a!==e.edges[g.e].b?p(e.edges[g.e].b,W):p(e.edges[g.e].a,W)});let k=new Uint8Array(s.length),x=new Map,P=[{v:l,i:-1,from:-1}],R=[];for(;P.length;){let g=P[P.length-1],W=u.get(g.v)||[],b=x.get(g.v)||0;for(;b<W.length&&k[W[b]];)b++;if(x.set(g.v,b),b<W.length){let E=W[b];k[E]=1;let w=e.edges[s[E].e];P.push({v:w.a===g.v?w.b:w.a,i:E,from:g.v})}else R.push(P.pop())}R.reverse();let Y=[],he=0,te=0,ne=[],$=null,G=null;for(let g of R){if(g.i<0)continue;let W=e.edges[s[g.i].e],b=g.from===W.a?W.coords:W.coords.slice().reverse(),E=Y.length?Y.length-1:0,w=1;for(;w<b.length-1&&fe(b[0],b[w])<4;)w++;let S=U(b[0],b[w]),A=0;if($!=null){for(A=S-$;A>180;)A-=360;for(;A<-180;)A+=360}let C=W.name||"";$==null?ne.push([E,"start",C]):(Math.abs(A)>=25||C&&C!==G)&&ne.push([E,ke(A),C]);let ae=b.length-2;for(;ae>0&&fe(b[b.length-1],b[ae])<4;)ae--;$=U(b[ae],b[b.length-1]),G=C||G;for(let _e of Y.length?b.slice(1):b)Y.push([+_e[0].toFixed(6),+_e[1].toFixed(6)]);he+=W.len,s[g.i].dead||(te+=W.len)}return Y.length&&ne.push([Y.length-1,"end",""]),{path:Y,steps:ne,root:l,length_m:Math.round(he),street_m:Math.round(te),edges:n.length,covered:k.reduce((g,W)=>g+W,0)===s.length}}let St=["#2563EB","#C2185B","#D97706","#7C3AED","#059669","#0891B2","#DC2626","#4D7C0F","#DB2777","#EA580C"];function m(e){let n=[],t=[];for(let i of e||[])i[2]===1&&t.length&&(n.push(t),t=[]),t.push(i);return t.length&&n.push(t),n}function D(e,n){let t=[];for(let i=0;i<e.length;i++){if(i===0){t.push(e[0]);continue}let s=e[i-1],r=e[i];if(r[2]===1){t.push(r);continue}let l=fe(s,r),a=Math.max(1,Math.ceil(l/n));for(let f=1;f<=a;f++)t.push([s[0]+(r[0]-s[0])*f/a,s[1]+(r[1]-s[1])*f/a])}return t}let B=Date.parse("2026-11-12T23:00:00Z");function h(e,n){n=n||25;let t=D(e,8),i=new Uint8Array(t.length),s=6371e3*z,r=Math.cos((t.length?t[0][0]:51)*z)*6371e3*z,l=t.map((b,E)=>{let w=E>0&&b[2]!==1?t[E-1]:b,S=E<t.length-1&&t[E+1][2]!==1?t[E+1]:b,A=(S[1]-w[1])*r,C=(S[0]-w[0])*s,ae=Math.hypot(A,C);return ae>.5?[A/ae,C/ae]:null}),a=4e-4,f=new Map,M=(b,E)=>Math.floor(b/a)+":"+Math.floor(E/a);t.forEach((b,E)=>{let w=M(b[0],b[1]);f.has(w)||f.set(w,[]),f.get(w).push(E)});let d=0;function c(b){let E=Math.floor(b[0]/a),w=Math.floor(b[1]/a),S=!1;for(let A=-1;A<=1;A++)for(let C=-1;C<=1;C++){let ae=f.get(E+A+":"+(w+C));if(ae)for(let _e of ae)!i[_e]&&fe(t[_e],b)<=n&&(i[_e]=1,d++,S=!0)}return S}let o=6,u=8,p=Math.cos(50*z),k=Math.cos(35*z),x=[];function P(b,E){(!x.length||x[x.length-1][0]!==b[0]||x[x.length-1][1]!==b[1])&&(x=[b]),x.push(E),x.length>40&&x.shift();let w=(st,y)=>{let F=(y[1]-st[1])*r,pe=(y[0]-st[0])*s;return[F,pe,Math.hypot(F,pe)]},S=null,A=null,C=b;for(let st=x.length-2;st>=0;st--){let y=w(x[st],E);if(y[2]>80)break;if(!A&&y[2]>=8&&(A=y),y[2]>=20){S=y,C=x[st];break}}let ae=null;S&&A&&(S[0]*A[0]+S[1]*A[1])/(S[2]*A[2])>=k?ae=[S[0]/S[2],S[1]/S[2]]:C=b;let _e=w(C,E),ve=_e[0],De=_e[1],ft=_e[2],ot=new Set,yt=Math.min(50,Math.max(1,Math.ceil(ft/10))),ge=!1,We=[];for(let st=0;st<=yt;st++){let y=[C[0]+(E[0]-C[0])*st/yt,C[1]+(E[1]-C[1])*st/yt],F=Math.floor(y[0]/a),pe=Math.floor(y[1]/a);for(let ie=-1;ie<=1;ie++)for(let ce=-1;ce<=1;ce++){let Ze=F+ie+":"+(pe+ce);if(ot.has(Ze))continue;ot.add(Ze);let Fe=f.get(Ze);if(Fe)for(let K of Fe){if(i[K])continue;let Ee=(t[K][1]-C[1])*r,de=(t[K][0]-C[0])*s,Ie=ft>0?(Ee*ve+de*De)/ft:0,Pe=Math.max(0,Math.min(ft,Ie)),at=Math.hypot(Ee-(ft>0?ve/ft*Pe:0),de-(ft>0?De/ft*Pe:0)),vt=at<=o;!vt&&ae&&at<=n&&Ie>=-2&&Ie<=ft+u&&l[K]&&(vt=Math.abs(ae[0]*l[K][0]+ae[1]*l[K][1])>=p),vt&&(i[K]=1,d++,ge=!0,We.push(K))}}}let $t=(st,y)=>t[y][2]!==1&&fe(t[st],t[y])<=12;for(let st of We)for(let y of[-1,1])for(let F=1;F<=2;F++){let pe=st+y*(F+1);if(pe<0||pe>=t.length||!i[pe])continue;let ie=!0;for(let ce=Math.min(st,pe);ce<Math.max(st,pe);ce++)if(!$t(ce,ce+1)){ie=!1;break}if(ie)for(let ce=Math.min(st,pe)+1;ce<Math.max(st,pe);ce++)i[ce]||(i[ce]=1,d++);break}return ge}let R=b=>(b[2]||0)>=B;function Y(b,E){if(R(E))return P(b,E);let w=fe(b,E),S=Math.min(50,Math.max(1,Math.ceil(w/10))),A=!1;for(let C=0;C<=S;C++)A=c([b[0]+(E[0]-b[0])*C/S,b[1]+(E[1]-b[1])*C/S])||A;return A}function he(b,E){let w=Math.floor(b[0]/a),S=Math.floor(b[1]/a),A=[];for(let C=-1;C<=1;C++)for(let ae=-1;ae<=1;ae++){let _e=f.get(w+C+":"+(S+ae));if(_e)for(let ve of _e)fe(t[ve],b)<=E&&A.push(ve)}return A}function te(b,E){let w=fe(b,E);if(w>600)return!1;let S=he(b,30),A=he(E,30);if(!S.length||!A.length)return!1;let C=null;for(let _e of S)for(let ve of A){let De=Math.abs(_e-ve);(!C||De<C.k)&&(C={i:_e,j:ve,k:De})}if(C.k*8>1.5*w+40)return!1;let ae=!1;for(let _e=Math.min(C.i,C.j);_e<=Math.max(C.i,C.j);_e++)i[_e]||(i[_e]=1,d++,ae=!0);return ae}function ne(b){let E=!1;for(let w=0;w<b.length;w++){let S=w?fe(b[w-1],b[w]):0;E=(w&&S<120?Y(b[w-1],b[w]):(w?te(b[w-1],b[w]):!1)|(R(b[w])?P(b[w],b[w]):c(b[w])))||E}return E}let $=(b,E)=>[(b[0]+E[0])/2,(b[1]+E[1])/2],G=(b,E)=>{let w=l[b],S=l[E];return!w||!S||w[0]*S[0]+w[1]*S[1]>=.7};function g(){let b=[],E=null;for(let w=0;w<t.length;w++){let S=t[w][2]===1;S&&E&&(b.push(E),E=null),i[w]?(E||(E=[],w&&!S&&G(w-1,w)&&E.push($(t[w-1],t[w]))),E.push(t[w])):E&&(!S&&G(w-1,w)&&E.push($(t[w],t[w-1])),b.push(E),E=null)}return E&&b.push(E),b}function W(){for(let b=0;b<t.length;b++)if(!i[b])return b;return-1}return{samples:t,mark:c,markLine:Y,fillGap:te,addTrack:ne,runs:g,nextIndex:W,isDone:b=>!!i[b],doneCount:()=>d,pct:()=>t.length?Math.round(100*d/t.length):0}}let v="garage|garages|shed|roof|carport|greenhouse|hut|cabin|barn|farm_auxiliary|stable|cowshed|sty|ruins|construction|service|parking|hangar|kiosk|toilets|bunker|digester|silo|tank|transformer_tower|water_tower|storage_tank|bridge|boathouse|container|allotment_house|gatehouse|church|chapel|mosque|synagogue|temple|cathedral|train_station|transportation|grandstand|stadium|pavilion|tower|industrial|warehouse|manufacture|power|substation|commercial|retail|supermarket|shop|mall|office|hotel|hospital|clinic|school|university|college|kindergarten|public|civic|government|fire_station|sports_hall|sports_centre|gym|restaurant|cafe|fuel|petrol_station|bank|data_center|factory|works|laboratory|museum|theatre|cinema|library|prison|barracks|military",O="house|detached|semidetached_house|terrace|bungalow|villa|farm|cottage|houseboat|static_caravan",j=new RegExp("^("+v+")$"),le=new RegExp("^("+O+")$"),nt=/^(apartments|residential|dormitory)$/;function Ye(e){if(!e||e.length<3)return 0;let n=e[0].lat,t=Math.cos(n*z)*6371e3*z,i=6371e3*z,s=0;for(let r=0;r<e.length;r++){let l=e[r],a=e[(r+1)%e.length];s+=l.lon*t*(a.lat*i)-a.lon*t*(l.lat*i)}return Math.abs(s)/2}function wt(e,n){if(e=e||{},e.abandoned||e.disused||e["disused:building"])return 0;let t=String(e.building||"yes"),i=e.shop||e.office||e.amenity||e.craft||e.tourism||e.industrial||e.healthcare||e.leisure,s=parseInt(e["building:flats"]||e["addr:flats"],10);if(s>0)return Math.min(s,250);if(j.test(t))return 0;let r=!!e["addr:housenumber"];if(le.test(t))return n<25?0:1;let l=parseFloat(e["building:levels"]),a=l>0?l:n<120?2:4;return nt.test(t)?Math.max(2,Math.min(250,Math.round(n*a*.75/80))):i?0:t==="yes"?n<30||!r&&n<60||!(l>0)&&n>900?0:!(l>0)&&!r?n<160?1:0:l>0?Math.max(1,Math.min(250,Math.round(n*a*.75/80))):n<160?1:n<260?2:n<500?3:Math.max(3,Math.min(250,Math.round(n*3*.75/80))):0}function It(e){let n=[];for(let t of e.elements||[])if(t.type==="way"){if(t.geometry){let i=Ye(t.geometry),s=wt(t.tags,i);if(!s)continue;let r=0,l=0;for(let a of t.geometry)r+=a.lat,l+=a.lon;n.push({lat:r/t.geometry.length,lng:l/t.geometry.length,n:s})}else if(t.center){let i=wt(t.tags,100);i&&n.push({lat:t.center.lat,lng:t.center.lon,n:i})}}return n}function gt(e,n,t){t=t||70;let i=80,s=e.pts.length?e.pts[0][0]:51,r=Math.cos(s*z)*6371e3*z,l=6371e3*z,a=(o,u)=>Math.floor(o/i)+":"+Math.floor(u/i),f=new Map,M=(o,u)=>{let p=f.get(o);p||f.set(o,p=[]),p.push(u)};e.edges.forEach((o,u)=>{o.mb=0,o.boxes=[];for(let p=1;p<o.coords.length;p++){let k=o.coords[p-1][1]*r,x=o.coords[p-1][0]*l,P=o.coords[p][1]*r,R=o.coords[p][0]*l,Y=Math.hypot(P-k,R-x),he=Math.max(1,Math.ceil(Y/30)),te=new Set;for(let ne=0;ne<=he;ne++){let $=k+(P-k)*ne/he,G=x+(R-x)*ne/he;for(let g=-1;g<=1;g++)for(let W=-1;W<=1;W++){let b=a($+g*i,G+W*i);te.has(b)||(te.add(b),M(b,[u,k,x,P,R]))}}}});let d=0,c=0;for(let o of n){let u=o.lng*r,p=o.lat*l,k=f.get(a(u,p)),x=-1,P=1/0;if(k)for(let[Y,he,te,ne,$]of k){let G=ne-he,g=$-te,W=G*G+g*g,b=W?((u-he)*G+(p-te)*g)/W:0;b=Math.max(0,Math.min(1,b));let E=Math.hypot(u-(he+b*G),p-(te+b*g));E<P&&(P=E,x=Y)}if(x<0||P>(o.snap||t)){c+=o.n;continue}let R=e.edges[x];R.mb+=o.n,R.boxes.push([+o.lat.toFixed(6),+o.lng.toFixed(6),o.n]),d+=o.n}return e.mailboxes=d,e.dropped_mb=c,e}function Mt(e,n,t){let i=Oe(e,n,e.pts.map((y,F)=>F).filter(y=>e.adj[y].length)),s=et(e,i),r=e.pts.length,l=[],a=0,f=0;e.edges.forEach(y=>{y.mb>0&&(a+=y.mb,f+=y.len)});let M=f?a/f*1e3:0,d=Math.max(4,Math.min(15,.25*M)),c=y=>y.len>100&&y.mb*1e3/y.len<d,o=0;e.edges.forEach((y,F)=>{if(y.mb>0){if(!e.zoned&&c(y)){o+=y.mb;return}l.push({i:F,k:(s.d[y.a]+s.d[y.b])/2,v:s.d[y.a]<=s.d[y.b]?y.b:y.a})}});let u=new Float64Array(r),p=new Float64Array(r),k=Array.from({length:r},()=>[]);for(let y=0;y<r;y++)s.pe[y]!==-1&&k[s.pv[y]].push(y);let x=[],P=[i];for(;P.length;){let y=P.pop();x.push(y);for(let F of k[y])P.push(F)}l.forEach(y=>{let F=e.edges[y.i];u[y.v]+=F.mb,p[y.v]+=F.len});for(let y=x.length-1;y>=0;y--){let F=x[y];s.pe[F]!==-1&&(p[F]+=e.edges[s.pe[F]].len,u[s.pv[F]]+=u[F],p[s.pv[F]]+=p[F])}let R=Math.max(6,Math.min(25,.3*M)),Y=new Uint8Array(r);for(let y of x)s.pe[y]!==-1&&(Y[s.pv[y]]||!e.zoned&&s.d[y]>300&&p[y]>0&&u[y]/p[y]*1e3<R)&&(Y[y]=1);let he=l.filter(y=>Y[y.v]?(o+=e.edges[y.i].mb,!1):!0),te=Math.max(12,Math.min(45,.25*M)),ne=Int32Array.from({length:r},(y,F)=>F),$=y=>{for(;ne[y]!==y;)ne[y]=ne[ne[y]],y=ne[y];return y},G=y=>{let F=e.edges[y.i];return F.len<=100||F.mb*1e3/F.len>=te};he.forEach(y=>{if(G(y)){let F=e.edges[y.i];ne[$(F.a)]=$(F.b)}});let g=new Map;for(let y of he){let F=e.edges[y.i],pe=G(y)?$(F.a):"x"+y.i,ie=g.get(pe);ie||g.set(pe,ie={items:[],entry:F.a}),ie.items.push(y);for(let ce of[F.a,F.b])s.d[ce]<s.d[ie.entry]&&(ie.entry=ce)}let W=[...g.values()],b=e.edges.length,E=new Uint8Array(b),w=new Uint8Array(r);W.forEach((y,F)=>{y.ix=F});let S=new Set,A=0,C=y=>{E[y]||(E[y]=1,A+=e.edges[y].mb)},ae=y=>{let F=y.entry;for(;s.pe[F]!==-1;)C(s.pe[F]),w[e.edges[s.pe[F]].a]=1,w[e.edges[s.pe[F]].b]=1,F=s.pv[F]},_e=y=>{let F=[],pe=y.entry,ie=0;for(;!w[pe]&&s.pe[pe]!==-1;)F.push(s.pe[pe]),ie+=e.edges[s.pe[pe]].len,pe=s.pv[pe];return{path:F,len:ie}},ve=(y,F)=>{E.fill(0),w.fill(0),w[i]=1,A=0;let pe=new Set(y.map(ie=>ie.c));S=new Set,W.forEach((ie,ce)=>{!pe.has(ie)&&!(F&&F.has(ie))&&S.add(ce)});for(let ie of y){ae(ie.c);for(let ce of ie.items)C(ce.i),w[e.edges[ce.i].a]=1,w[e.edges[ce.i].b]=1}},De=()=>{let y=null;for(let F of S){let pe=W[F],ie=0,ce=0,Ze=0;for(let de of pe.items)E[de.i]||(ie+=e.edges[de.i].mb,ce+=e.edges[de.i].len,Ze+=e.edges[de.i].mb*de.k);if(!ie){S.delete(F);continue}let Fe=_e(pe),K=1.35*ce+Ae*Fe.len+200+rt*Ze/1e3,Ee=ie/K;(!y||Ee>y.score)&&(y={ci:F,c:pe,tr:Fe,mb:ie,score:Ee})}return y},ft=(y,F)=>{let{ci:pe,c:ie,tr:ce}=y;S.delete(pe);for(let K of ce.path)C(K);let Ze=ie.items.filter(K=>!E[K.i]).sort((K,Ee)=>K.k-Ee.k),Fe=[];for(let K of Ze){if(A>=F)break;C(K.i),Fe.push(K)}for(let K of ie.items)E[K.i]&&(w[e.edges[K.i].a]=1,w[e.edges[K.i].b]=1);for(let K of ce.path)w[e.edges[K].a]=1,w[e.edges[K].b]=1;return{c:ie,items:Fe.length?Fe:ie.items}},ot=y=>{let F=new Uint8Array(b),pe=new Uint8Array(b),ie=0,ce=0,Ze=(K,Ee)=>{Ee&&(pe[K]=1),F[K]||(F[K]=1,ie+=e.edges[K].mb)};for(let K of y){for(let de of K.items)Ze(de.i,!0);let Ee=K.c.entry;for(;s.pe[Ee]!==-1;)Ze(s.pe[Ee],!1),Ee=s.pv[Ee]}let Fe=0;for(let K=0;K<b;K++)if(F[K]){let Ee=e.edges[K],de=Ee.len*(pe[K]?1.35:Ae);Fe+=de,ce+=de+rt*Ee.mb*(s.d[Ee.a]+s.d[Ee.b])/2e3}return{inSet:F,sum:ie,cost:ce+200*y.length,walk:Fe+200*y.length}},yt=(y,F)=>{ve(y,F);let pe=y.slice();for(;A<t;){let ie=De();if(!ie)break;pe.push(ft(ie,A+ie.mb-t<=.05*t?1/0:t))}return pe},ge=yt([],null),We=ot(ge);for(let y=0;y<15&&t<1e8;y++){let F=ge.map((ie,ce)=>{let Ze=ot(ge.filter((Fe,K)=>K!==ce));return{k:ce,r:(We.cost-Ze.cost)/Math.max(1,We.sum-Ze.sum)}}).sort((ie,ce)=>ce.r-ie.r).slice(0,6),pe=!1;for(let{k:ie}of F){let ce=yt(ge.filter((Fe,K)=>K!==ie),new Set([ge[ie].c])),Ze=ot(ce);if(Ze.sum>=t&&Ze.cost<We.cost*.995){ge=ce,We=Ze,pe=!0;break}}if(!pe)break}if(t<1e8){ve(ge,null);for(let y=0;y<400;y++){let F=De();if(!F||F.score<.9*We.sum/We.cost||A+F.mb>1.35*t)break;ge.push(ft(F,1/0)),We=ot(ge)}}for(let y=0;y<400&&We.sum>t&&ge.length>1;y++){let F=-1,pe=null,ie=-1;for(let ce=0;ce<ge.length;ce++){let Ze=ot(ge.filter((K,Ee)=>Ee!==ce));if(Ze.sum<t)continue;let Fe=(We.cost-Ze.cost)/Math.max(1,We.sum-Ze.sum);Fe>ie&&(ie=Fe,F=ce,pe=Ze)}if(F<0)break;ge.splice(F,1),We=pe}if(t<1e8){let y=(Fe,K)=>{K=K||120;let Ee=new Uint8Array(r),de=new Float64Array(r).fill(1/0),Ie=new Ve;for(let Pe=0;Pe<b;Pe++)if(Fe[Pe])for(let at of[e.edges[Pe].a,e.edges[Pe].b])de[at]&&(de[at]=0,Ie.push(0,at));for(;Ie.size;){let[Pe,at]=Ie.pop();if(!(Pe>de[at])){Ee[at]=1;for(let{e:vt,to:Pt}of e.adj[at]){let jt=Pe+e.edges[vt].len;jt<=K&&jt<de[Pt]&&(de[Pt]=jt,Ie.push(jt,Pt))}}}return Ee},F=new Set,pe=ge.reduce((Fe,K)=>K.c.items.reduce((de,Ie)=>de+e.edges[Ie.i].mb,0)>.1*t?Fe+K.items.reduce((de,Ie)=>de+e.edges[Ie.i].mb,0):Fe,0),ie=t*1.15+.5*pe,ce=0;for(let Fe=0;Fe<b;Fe++)We.inSet[Fe]&&e.edges[Fe].mb&&(ce+=e.edges[Fe].len);let Ze=We.sum/Math.max(1,ce);for(let Fe=0;Fe<200;Fe++){let K=null,Ee=y(We.inSet);for(let de of W){if(F.has(de))continue;let Ie=!1,Pe=0,at=0,vt=0;for(let At of de.items){let Tt=e.edges[At.i];vt+=Tt.mb,(We.inSet[At.i]||Ee[Tt.a]||Ee[Tt.b])&&(Ie=!0),We.inSet[At.i]||(Pe+=Tt.mb,at+=Tt.len)}if(!Ie||!Pe||vt>.1*t||Pe/(at+1)<.5*Ze)continue;let Pt=ge.find(At=>At.c===de),jt=Pt?ge.map(At=>At===Pt?{c:de,items:de.items.slice()}:At):ge.concat([{c:de,items:de.items.slice()}]),hn=ot(jt),dn=hn.walk-We.walk;if(dn>1.35*at*1.3+200+Ae*150){F.add(de);continue}let mn=Pe/Math.max(1,dn);(!K||mn>K.r)&&(K={c:de,r:mn,restMb:Pe,S2:jt,b:hn})}if(!K)break;if(We.sum+K.restMb>ie){F.add(K.c);continue}ge=K.S2,We=K.b,F.add(K.c)}for(let Fe=0;Fe<400&&We.sum>t&&ge.length>1;Fe++){let K=!1;for(let Ee of ge.map((de,Ie)=>Ie).sort((de,Ie)=>s.d[ge[Ie].c.entry]-s.d[ge[de].c.entry])){if(F.has(ge[Ee].c))continue;let de=ot(ge.filter((Pe,at)=>at!==Ee));if(de.sum<t||ge[Ee].c.items.some(Pe=>de.inSet[Pe.i]))continue;let Ie=y(de.inSet,250);if(!ge[Ee].c.items.some(Pe=>Ie[e.edges[Pe.i].a]||Ie[e.edges[Pe.i].b])){ge.splice(Ee,1),We=de,K=!0;break}}if(!K)break}if(We.sum>t*1.01){let Fe=Ie=>!F.has(Ie.c)&&Ie.c.items.reduce((Pe,at)=>Pe+e.edges[at.i].mb,0)>.1*t,K=[];ge.forEach(Ie=>{if(Fe(Ie))for(let Pe of Ie.items)K.push(Pe)}),K.sort((Ie,Pe)=>Pe.k-Ie.k);let Ee=new Set,de=We.sum-t;for(let Ie of K){let Pe=e.edges[Ie.i].mb;if(Pe&&Pe<=de&&(Ee.add(Ie),de-=Pe),de<.005*t)break}if(Ee.size){let Ie=ge.map(at=>({c:at.c,items:at.items.filter(vt=>!Ee.has(vt))})).filter(at=>at.items.length),Pe=ot(Ie);Pe.sum>=t&&(ge=Ie,We=Pe)}}}let $t=[],st=0;A=0;for(let y=0;y<b;y++)if(We.inSet[y]){$t.push(y),A+=e.edges[y].mb;let F=(s.d[e.edges[y].a]+s.d[e.edges[y].b])/2;F>st&&(st=F)}return{ids:$t,mailboxes:A,skipped_mb:o,reach_m:Math.round(st)}}let _t=6e3,Lt=1e4;function Jt(e,n){let t=n*1.15,i=Math.max(1,e.usable!=null?e.usable:e.mailboxes||1),s=e.radius*1.3;return i<t&&(s=Math.max(s,e.radius*Math.sqrt(t/i)*1.1)),e.reach&&(s=Math.max(s,e.reach/.6)),Math.min(_t,Math.round(s))}function en(e){let n=e.map(r=>[r[1],r[0]]).sort((r,l)=>r[0]-l[0]||r[1]-l[1]);if(n.length<3)return e.slice();let t=(r,l,a)=>(l[0]-r[0])*(a[1]-r[1])-(l[1]-r[1])*(a[0]-r[0]),i=[],s=[];for(let r of n){for(;i.length>=2&&t(i[i.length-2],i[i.length-1],r)<=0;)i.pop();i.push(r)}for(let r=n.length-1;r>=0;r--){let l=n[r];for(;s.length>=2&&t(s[s.length-2],s[s.length-1],l)<=0;)s.pop();s.push(l)}return i.slice(0,-1).concat(s.slice(0,-1)).map(r=>[r[1],r[0]])}function vn(e,n){n=n||30;let t=new Uint8Array(e.length),i=0,s=e.reduce((c,o)=>c+o[2],0),r=e.map(c=>n+Math.min(25,4*Math.sqrt(Math.max(1,c[2]||1)))),l=4e-4,a=new Map,f=(c,o)=>Math.floor(c/l)+":"+Math.floor(o/l);e.forEach((c,o)=>{let u=f(c[0],c[1]);a.has(u)||a.set(u,[]),a.get(u).push(o)});function M(c,o){let u=Math.floor(c/l),p=Math.floor(o/l);for(let k=-2;k<=2;k++)for(let x=-3;x<=3;x++){let P=a.get(u+k+":"+(p+x));if(P)for(let R of P)!t[R]&&fe([c,o],e[R])<=r[R]&&(t[R]=1,i+=e[R][2])}return i}function d(c,o){let u=fe(c,o),p=Math.min(50,Math.max(1,Math.ceil(u/15)));for(let k=0;k<=p;k++)M(c[0]+(o[0]-c[0])*k/p,c[1]+(o[1]-c[1])*k/p);return i}return{visit:M,visitLine:d,visitAll(c){for(let o=0;o<c.length;o++)o&&fe(c[o-1],c[o])<120?d(c[o-1],c[o]):M(c[o][0],c[o][1]);return i},count:()=>i,total:s}}let tn=14/3.6,nn=200,on=150;function En(e){let n=(e||[]).map(a=>Array.isArray(a)?a:[a.lat,a.lng,+new Date(a.t)]),t=[],i=[],s=new Uint8Array(n.length);for(let a=1;a<n.length;a++){let f=n[a-1],M=n[a],d=fe(f,M),c=((M[2]||0)-(f[2]||0))/1e3;d>30&&c>0&&d/c>tn&&(s[a]=1)}for(let a=1;a<n.length;){if(!s[a]){a++;continue}let f=a,M=0;for(;f<n.length&&s[f];)M+=fe(n[f-1],n[f]),f++;if(M<nn||fe(n[a-1],n[f-1])<on)for(let d=a;d<f;d++)s[d]=0;a=f}let r=[],l=[];for(let a=0;a<n.length;a++){let f=n[a];if(!a){r.push([f[0],f[1],f[2]]);continue}let M=n[a-1];s[a]?(r.length&&t.push(r),r=[],l.length||l.push([M[0],M[1]]),l.push([f[0],f[1]])):(l.length&&(i.push(l),l=[]),r.length||r.push([M[0],M[1],M[2]]),r.push([f[0],f[1],f[2]]))}return r.length&&t.push(r),l.length>1&&i.push(l),{walk:t,drive:i,driveM:i.reduce((a,f)=>a+f.reduce((M,d,c)=>M+(c?fe(f[c-1],d):0),0),0)}}function Sn(e,n,t){return Math.max(1,Math.ceil(e/60/((n||Qe)*(t||1))))}function sn(e){return Ge(e,0)/60}function rn(e,n){return Math.round(Ge(e,n))}function an(e,n,t){let i=t&&t.hoursPerDay||Qe,s=t&&t.days||2,r=i*s,l=o=>o.minutes!=null?o.minutes/60:sn(o.length_m),a=e.reduce((o,u)=>o+l(u),0),f=e.filter(o=>l(o)>r).map(o=>o.idx),M=e.length*r,d=a<=M&&!f.length,c=e.reduce((o,u)=>Math.max(o,l(u)),0);return{ok:d,limit:r,totalH:a,slowest:c,over:f,suggestedFlyers:d?n:Math.max(0,Math.floor(n*Math.min(1,r/(c||r))/50)*50)}}async function An(e,n){let t=await kt(e,n),i=ue(xe(t,e));return i.street_m=Math.round(i.edges.reduce((s,r)=>s+r.len,0)),i}let jn=1.1;async function ln(e,n,t){let i=n.map(R=>R[0]),s=n.map(R=>R[1]),r=t.cellOf(Math.min(...i),Math.min(...s)),l=t.cellOf(Math.max(...i),Math.max(...s)),a=t.cellOf(Math.min(...i),Math.max(...s)),f=t.cellOf(Math.max(...i),Math.min(...s)),M=Math.min(r[0],l[0],a[0],f[0]),d=Math.max(r[0],l[0],a[0],f[0]),c=Math.min(r[1],l[1],a[1],f[1]),o=Math.max(r[1],l[1],a[1],f[1]),u=await t.households(M,c,d,o);if(!u||!u.size)return e;let p=new Map;e.forEach((R,Y)=>{let he=t.cellOf(R.lat,R.lng),te=he[0]+","+he[1],ne=p.get(te);ne||p.set(te,ne=[]),ne.push(Y)});let k=e.map(R=>({...R})),x=0,P=0;for(let[R,Y]of p){let he=u.get(R);if(!he)continue;let te=Y.reduce((g,W)=>g+k[W].n,0),ne=Math.round(he*jn)+2;if(te<=ne)continue;let $=Y.map(g=>({i:g,x:Math.max(1,ne*k[g].n/te)})),G=ne;$.forEach(g=>{let W=Math.max(1,Math.floor(g.x));G-=W,g.f=W,g.r=g.x-Math.floor(g.x)}),$.sort((g,W)=>W.r-g.r);for(let g=0;g<G;g++)$[g%$.length].f+=1;$.forEach(g=>{P+=k[g.i].n-g.f,k[g.i].n=g.f})}for(let[R,Y]of u){let[he,te]=R.split(",").map(Number);if(he<M||he>d||te<c||te>o)continue;let ne=p.get(R)||[],$=ne.reduce((w,S)=>w+k[S].n,0),G=Y-$;if(G<=0)continue;let[g,W]=t.centre(he,te);if(g<Math.min(...i)||g>Math.max(...i)||W<Math.min(...s)||W>Math.max(...s))continue;if(!ne.length){k.push({lat:g,lng:W,n:G,census:!0,snap:110}),x+=G;continue}let b=ne.map(w=>({i:w,x:G*k[w].n/$})),E=G;b.forEach(w=>{let S=Math.floor(w.x);k[w.i].n+=S,E-=S,w.r=w.x-S}),b.sort((w,S)=>S.r-w.r);for(let w=0;w<E;w++)k[b[w%b.length].i].n+=1;x+=G}return k.added=x,k.removed=P,k}async function Fn(e,n,t){t=t||{};let i=t.zone&&t.zone.length>2?qt(e,[t.zone]):0,s=Math.min(Lt,Math.max(qt(e,t.must),i)),r=Math.max(Math.min(_t,t.radius||1500),s),l=null,a=t.tiles||new Map;for(let f=0;f<6;f++){let M=H(e,r);await mt(M,a,t);let d=Le(M.map(x=>a.get(x))),c=r/111320,o=r/(111320*Math.cos(e[0]*z)),u=[[e[0]-c,e[1]-o],[e[0]-c,e[1]+o],[e[0]+c,e[1]+o],[e[0]+c,e[1]-o]],p=ue(xe(d.osm,u),e),k=d.buildings.filter(x=>Math.abs(x.lat-e[0])<=c&&Math.abs(x.lng-e[1])<=o);if(t.census)try{k=await ln(k,u,t.census)}catch{}if(gt(p,k),p.radius=r,p.street_m=Math.round(p.edges.reduce((x,P)=>x+P.len,0)),l=p,p.usable=Mt(p,e,1e9).mailboxes,p.reach=Kt(p,e,n,t.must,t.zone).reach_m,i||p.usable>=n*1.15&&p.reach<=.65*r||r>=_t)break;r=Jt(p,n)}return l}function In(e,n){let t=V(e,n),i=0;for(let s of t.values())s.size>1&&i++;return t.size?i/t.size:0}function Pn(e,n,t,i,s){if(t<2||i.length<t)return[];let r=Oe(e,n,e.pts.map((c,o)=>o)),l=et(e,r).d,a=s||(c=>c.len),f=i.map(c=>({i:c,d:Math.min(l[e.edges[c].a],l[e.edges[c].b]),w:a(e.edges[c])})).sort((c,o)=>c.d-o.d),M=f.reduce((c,o)=>c+o.w,0),d=[];for(let c of[0,-.08,.08]){let o=Array.from({length:t},()=>[]),u=0;for(let p of f){let k=(u+p.w/2)/M,x=0;for(let P=1;P<t;P++)k>P/t+c&&(x=P);o[x].push(p.i),u+=p.w}o.every(p=>p.length)&&d.push(o)}return d}function Rn(e,n,t,i,s){if(n<2||t.length<n)return[];let r=i||(x=>x.len),l=x=>{let P=e.edges[x].coords;return P[Math.floor(P.length/2)]},a=0,f=0,M=0;for(let x of t){let P=l(x),R=r(e.edges[x])||1e-6;a+=P[0]*R,f+=P[1]*R,M+=R}let d=[a/M,f/M],c=Math.cos(d[0]*z),o=t.map(x=>{let P=l(x);return{i:x,w:r(e.edges[x]),ang:Math.atan2(P[0]-d[0],(P[1]-d[1])*c)}}).sort((x,P)=>x.ang-P.ang),u=o.reduce((x,P)=>x+P.w,0),p=o.length,k=[];for(let x=0;x<s;x++){let P=Math.floor(x*p/s),R=o.slice(P).concat(o.slice(0,P)),Y=Array.from({length:n},()=>[]),he=0;for(let te of R)Y[Math.min(n-1,Math.floor((he+te.w/2)/u*n))].push(te.i),he+=te.w;Y.every(te=>te.length)&&k.push(Y)}return k}function cn(e,n,t,i,s){let r=Math.cos(n[0]*z),l=Oe(e,n,e.pts.map((o,u)=>u)),a=et(e,l).d,f=i.map(o=>{let u=e.edges[o],p=u.coords[Math.floor(u.coords.length/2)];return{i:o,len:u.len,mb:u.mb,d:Math.min(a[u.a],a[u.b]),ang:Math.atan2(p[0]-n[0],(p[1]-n[1])*r)}}).sort((o,u)=>o.ang-u.ang),M=f.length,d=[];if(M<t)return d;let c=(o,u,p)=>Ge(1.35*o+2*p,u);for(let o=0;o<s;o++){let u=Math.floor(o*M/s),p=f.slice(u).concat(f.slice(0,u)),k=te=>{let ne=[],$=0,G=0,g=0,W=0;for(let b=0;b<M;b++){let E=p[b],w=$+E.len,S=G+E.mb,A=Math.max(g,E.d);if(b>W&&c(w,S,A)>te){if(ne.push(b),ne.length>=t)return null;W=b,$=E.len,G=E.mb,g=E.d}else $=w,G=S,g=A}return ne},x=0,P=c(f.reduce((te,ne)=>te+ne.len,0),f.reduce((te,ne)=>te+ne.mb,0),Math.max(...f.map(te=>te.d))),R=k(P);for(let te=0;te<28;te++){let ne=(x+P)/2,$=k(ne);$?(R=$,P=ne):x=ne}if(!R)continue;let Y=[0,...R,M],he=[];for(let te=0;te+1<Y.length;te++)he.push(p.slice(Y[te],Y[te+1]).map(ne=>ne.i));for(;he.length<t;){let te=0;he.forEach(($,G)=>{$.length>he[te].length&&(te=G)});let ne=he[te];if(ne.length<2)break;he.splice(te,1,ne.slice(0,ne.length>>1),ne.slice(ne.length>>1))}he.length===t&&d.push(he)}return d}let zt=e=>Array.isArray(e)?{p:e,n:0}:{p:e&&e.p||[],n:Math.max(0,+(e&&e.n)||0)},Wt=(e,n)=>n.length>2&&Be(e.coords[Math.floor(e.coords.length/2)],n);function Ln(e,n){let t=[];if(!n||!n.length)return t;let i=n.map(s=>zt(s).p);return e.edges.forEach((s,r)=>{s.mb&&i.some(l=>Wt(s,l))&&t.push(r)}),t}function fn(e,n,t){let i=[],s=[];if(!t||!t.length)return{ids:i,info:s};let r=null;for(let l of t){let a=zt(l),f=[];e.edges.forEach((c,o)=>{c.mb&&Wt(c,a.p)&&f.push(o)});let M=f.reduce((c,o)=>c+e.edges[o].mb,0),d=f;if(a.n>0&&a.n<M){if(!r){let u=Oe(e,n,e.pts.map((p,k)=>k).filter(p=>e.adj[p].length));r=et(e,u).d}let c=u=>Math.min(r[e.edges[u].a],r[e.edges[u].b]);d=[];let o=0;for(let u of f.slice().sort((p,k)=>c(p)-c(k))){if(o>=a.n)break;d.push(u),o+=e.edges[u].mb}}for(let c of d)i.push(c);s.push({avail:M,used:d.reduce((c,o)=>c+e.edges[o].mb,0),n:a.n})}return{ids:[...new Set(i)],info:s}}function qt(e,n){let t=0;for(let i of n||[])for(let s of zt(i).p)t=Math.max(t,fe(e,s));return t?t+400:0}function Gt(e,n,t){if(!n||n.length<3)return e;let i=[n,...(t||[]).map(s=>zt(s).p)];return{...e,zoned:!0,edges:e.edges.map(s=>!s.mb||i.some(r=>Wt(s,r))?s:{...s,mb:0,boxes:[]})}}function Kt(e,n,t,i,s){e=Gt(e,s,i);let r=e.zoned?e.edges.reduce((R,Y)=>R+Y.mb,0):null,l=fn(e,n,i),a=l.ids;if(!a.length)return{...Mt(e,n,t),must_mb:0,must_ids:[],must_info:l.info,zone_mb:r};let f=new Set(a),M=a.reduce((R,Y)=>R+e.edges[Y].mb,0),d=Math.max(0,t-M),c=d>0?Mt(e,n,d):{ids:[],mailboxes:0,reach_m:0},o=c.ids.reduce((R,Y)=>R+(f.has(Y)?e.edges[Y].mb:0),0);d>0&&o>0&&(c=Mt(e,n,d+o));let u=[...new Set([...c.ids,...a])],p=u.reduce((R,Y)=>R+e.edges[Y].mb,0),k=Oe(e,n,e.pts.map((R,Y)=>Y).filter(R=>e.adj[R].length)),x=et(e,k).d,P=Math.max(c.reach_m||0,...a.map(R=>Math.max(x[e.edges[R].a],x[e.edges[R].b])).filter(isFinite));return{...c,ids:u,mailboxes:p,reach_m:Math.round(P),must_mb:M,must_ids:a,must_info:l.info,zone_mb:r}}let Tn=400,On=120;function Cn(e,n,t){let s=(a,f)=>Math.floor(a/.004)+":"+Math.floor(f/.004),r=new Map;if(t.forEach((a,f)=>{a.reserve=[];let M=a.path||[];for(let d=0;d<M.length;d+=2){let c=M[d],o=s(c[0],c[1]),u=r.get(o);u||r.set(o,u=[]),u.push([c[0],c[1],f])}}),!r.size)return;let l=t.map(()=>[]);e.edges.forEach((a,f)=>{if(n.has(f)||!(a.mb>0)||!a.coords||a.coords.length<2)return;let M=a.coords[Math.floor(a.coords.length/2)],d=Math.floor(M[0]/.004),c=Math.floor(M[1]/.004),o=-1,u=1/0;for(let p=-1;p<=1;p++)for(let k=-1;k<=1;k++){let x=r.get(d+p+":"+(c+k));if(x)for(let P of x){let R=fe(M,P);R<u&&(u=R,o=P[2])}}o>=0&&u<=Tn&&l[o].push({d:u,p:a.coords.map(p=>[+p[0].toFixed(6),+p[1].toFixed(6)]),mb:Math.round(a.mb)})}),l.forEach((a,f)=>{t[f].reserve=a.sort((M,d)=>M.d-d.d).slice(0,On).map(({p:M,mb:d})=>({p:M,mb:d}))})}function Dn(e,n,t,i,s){s=s||{},e=Gt(e,s.zone,s.must);let r=Kt(e,n,t,s.must),l=r.ids.reduce(($,G)=>$+e.edges[G].len,0),a=r.mailboxes||1,f=$=>.5*$.len/(l||1)+.5*$.mb/a,M=i||1,d=($,G)=>$.map((g,W)=>{let b=tt(e,g,n,G),E=[],w=0;for(let S of g){w+=e.edges[S].mb;for(let A of e.edges[S].boxes)E.push(A)}return{idx:W,...b,part:g,mailboxes:w,boxes:E,minutes:rn(b.length_m,w)}}),c=$=>{let G=$.map(b=>b.minutes),g=Math.max(...G),W=G.reduce((b,E)=>b+E,0);return g+.3*W/G.length+.01*(g-Math.min(...G))},o=null,u=null,p=0,k=$=>{let G=d($);return p++,!u||c(G)<c(u)?(u=G,o=$,!0):!1},P=[Xe(e,n,M,r.ids,f),...M>1?cn(e,n,M,r.ids,8):[]].map($=>{let G=ee(e,$),g=d(G);return p++,(!u||c(g)<c(u))&&(u=g,o=G),{t:G,sc:c(g)}});if(M>1)for(let{t:$}of P.sort((G,g)=>G.sc-g.sc).slice(0,3))k(Ne(e,$));if(M>1)for(let $=0;$<10&&p<30;$++){let G=u.map(E=>E.minutes),g=V(e,o),W=G.indexOf(Math.max(...G)),b=!1;for(let E of[...se(e,o,W,g)].filter(w=>G[w]<G[W]*.95).sort((w,S)=>G[w]-G[S]).slice(0,2)){for(let w of[.5,.25]){let S=Ke(e,o,W,E,(G[W]-G[E])*w,g);if(S&&k(S)){b=!0;break}}if(b)break}if(!b){let E=o.map(w=>w.slice());for(let w=0;w<M;w++){let S=(w+1)%M,A=G[w],C=G[S];if(A>C*1.08&&E[w].length>1){let ae=Math.max(1,Math.min(E[w].length-1,Math.round(E[w].length*Math.min(.35,(A-C)/(2*A)))));E[S]=E[w].splice(E[w].length-ae,ae).concat(E[S])}else if(C>A*1.08&&E[S].length>1){let ae=Math.max(1,Math.min(E[S].length-1,Math.round(E[S].length*Math.min(.35,(C-A)/(2*C)))));E[w]=E[w].concat(E[S].splice(0,ae))}}b=k(ee(e,E))}if(!b)break}let R=s.hoursPerDay||Qe,Y=s.days||1,he=$=>({length_m:$.length_m,street_m:$.street_m,minutes:$.minutes,mailboxes:$.mailboxes}),te=($,G,g)=>{let W=Math.min(Y,Math.max(1,Math.ceil(g.minutes/60/R)));if(W<2||$.length<W)return{...g,days:[{i0:0,i1:Math.max(0,g.path.length-1),...he(g)}]};let E=[Xe(e,n,W,$,f),...cn(e,n,W,$,4),...Pn(e,n,W,$,f),...Rn(e,W,$,f,4)].flatMap(ve=>{let De=ee(e,ve);return[ve,De,Ne(e,De)]}),w=null;for(let ve of E){let De=d(ve.filter(ge=>ge.length),g.root);if(De.length<2)continue;let ft=Math.max(...De.map(ge=>ge.minutes)),ot=Math.min(...De.map(ge=>ge.minutes)),yt=ft+.3*De.reduce((ge,We)=>ge+We.minutes,0)/De.length+.01*(ft-ot)+250*In(e,ve.filter(ge=>ge.length));(!w||yt<w.sc)&&(w={rs:De,sc:yt})}if(!w)return{...g,days:[{i0:0,i1:Math.max(0,g.path.length-1),...he(g)}]};let S=[],A=[],C=[],ae=[];for(let ve of w.rs){let De=S.length?S.length-1:0,ft=De;for(let ot of S.length?ve.path.slice(1):ve.path)S.push(ot);for(let ot of ve.steps)A.push([De+ot[0],ot[1],ot[2]]);for(let ot of ve.boxes)C.push(ot);ae.push({i0:ft,i1:S.length-1,...he(ve)})}let _e=ve=>ae.reduce((De,ft)=>De+ft[ve],0);return{...g,path:S,steps:A,boxes:C,days:ae,length_m:_e("length_m"),street_m:_e("street_m"),minutes:_e("minutes"),mailboxes:_e("mailboxes")}};Y>1?u=o.map(($,G)=>te($,G,u[G])):u=u.map($=>({...$,days:[{i0:0,i1:Math.max(0,$.path.length-1),length_m:$.length_m,street_m:$.street_m,minutes:$.minutes,mailboxes:$.mailboxes}]}));let ne=[];for(let $ of r.ids)for(let G of e.edges[$].coords)ne.push(G);return Cn(e,new Set(r.ids),u),{routes:u,mailboxes:r.mailboxes,must_mb:r.must_mb||0,must_info:r.must_info||[],zone_mb:e.zoned?e.edges.reduce(($,G)=>$+G.mb,0):null,reach_m:r.reach_m,zone:en(ne),capacity:an(u,t)}}function zn(e,n,t){return Xe(e,n,t).map((i,s)=>({idx:s,...tt(e,i,n)}))}let un={censusFill:ln,setTileStamp:ye,setPace:pt,denseEntry:ut,pathRuns:m,emptyGap:ct,tilesFor:H,qTile:L,compactTile:T,mergeTiles:Le,decodeTile:Me,fetchOwnTile:Je,TILES_URL:Ue,TILE_V:J,MUST_MAX_R:Lt,mustEdges:Ln,mustPick:fn,mustRadius:qt,selectWithMust:Kt,zoneView:Gt,COLORS:St,densifyPath:D,makeTracker:h,DIR_FROM:B,makeBoxCounter:vn,walkRuns:En,DRIVE_MS:tn,DRIVE_MIN_M:nn,DRIVE_NET_M:on,fetchStreets:kt,fetchStreetsAround:Et,fetchBuildings:_,parseBuildings:It,estimateMailboxes:wt,attachBuildings:gt,selectForFlyers:Mt,nextRadius:Jt,MAX_R:_t,planFlyers:Dn,loadForFlyers:Fn,capacity:an,hull:en,buildGraph:xe,largestComponent:ue,partition:Xe,planPart:tt,planRoutes:zn,loadZone:An,suggestWorkers:Sn,hours:sn,routeMinutes:rn,dist:fe,inPoly:Be,lineLen:je,WORK_HOURS:Qe,WALK_KMH:He,BOX_SEC:bt};typeof Nt<"u"&&Nt.exports?Nt.exports=un:oe.Planner=un})(typeof window<"u"?window:globalThis)});var we=gn(Xt());var Kn="https://urlose.github.io/flyermap/zensus/",Ut=new Map,Mn=6378137,Bt=.0066943800229,Ht=Math.sqrt(Bt),Vt=52*Math.PI/180,Xn=10*Math.PI/180,Yt=oe=>(1-Bt)*(oe/(1-Bt*oe*oe)-Math.log((1-Ht*oe)/(1+Ht*oe))/(2*Ht)),Zt=Yt(1),Ot=Math.asin(Yt(Math.sin(Vt))/Zt),wn=Mn*Math.sqrt(Zt/2),bn=Mn*(Math.cos(Vt)/Math.sqrt(1-Bt*Math.sin(Vt)**2))/(wn*Math.cos(Ot));function Ct(oe,I){let z=Math.asin(Yt(Math.sin(oe*Math.PI/180))/Zt),Re=I*Math.PI/180-Xn,Se=wn*Math.sqrt(2/(1+Math.sin(Ot)*Math.sin(z)+Math.cos(Ot)*Math.cos(z)*Math.cos(Re)));return[4321e3+Se*bn*Math.cos(z)*Math.sin(Re),321e4+Se/bn*(Math.cos(Ot)*Math.sin(z)-Math.sin(Ot)*Math.cos(z)*Math.cos(Re))]}var Hn=(oe,I)=>{let[z,Re]=Ct(oe,I);return[Math.floor(z/100),Math.floor(Re/100)]};function Vn(oe){let I=new Uint32Array(oe.slice(0,oe.byteLength-oe.byteLength%4)),z=new Map;for(let Re=0;Re<I.length;Re++)z.set(I[Re]>>>12,I[Re]&4095);return z}function Yn(oe,I){return Ut.has(oe)||Ut.set(oe,(I||fetch)(Kn+"h_"+oe+".bin").then(z=>z.status===404?new Map:z.ok?z.arrayBuffer().then(Vn):Promise.reject(new Error("zensus "+z.status))).catch(z=>{throw Ut.delete(oe),z})),Ut.get(oe)}function yn(oe,I){let z=52+(I-321e4)/111320,Re=10+(oe-4321e3)/(111320*Math.cos(z*Math.PI/180));for(let Se=0;Se<6;Se++){let[Qe,He]=Ct(z,Re),Ae=1e-5,[rt,bt]=Ct(z+Ae,Re),[qe,pt]=Ct(z,Re+Ae),Ge=(rt-Qe)/Ae,fe=(bt-He)/Ae,Be=(qe-Qe)/Ae,je=(pt-He)/Ae,ze=Ge*je-Be*fe,it=oe-Qe,dt=I-He;if(z+=(je*it-Be*dt)/ze,Re+=(-fe*it+Ge*dt)/ze,Math.abs(it)+Math.abs(dt)<.01)break}return[z,Re]}function Dt(oe){return{cellOf:Hn,centre:(I,z)=>yn(I*100+50,z*100+50),async households(I,z,Re,Se){let Qe=[];for(let Ae=Math.floor(I/500);Ae<=Math.floor(Re/500);Ae++)for(let rt=Math.floor(z/500);rt<=Math.floor(Se/500);rt++)Qe.push([Ae,rt]);let He=new Map;return await Promise.all(Qe.map(async([Ae,rt])=>{let bt=await Yn(Ae+"_"+rt,oe);for(let[qe,pt]of bt){let Ge=Ae*500+qe%500,fe=rt*500+Math.floor(qe/500);pt&&Ge>=I&&Ge<=Re&&fe>=z&&fe<=Se&&He.set(Ge+","+fe,pt)}})),He}}}async function kn(oe,I,z,Re,Se){let Qe=Dt(Se),[He,Ae]=Ct(oe,I),rt=Math.ceil(Re/100),bt=Math.floor(He/100),qe=Math.floor(Ae/100),pt=await Qe.households(bt-rt,qe-rt,bt+rt,qe+rt),Ge=new Map;for(let[ze,it]of pt){let[dt,kt]=ze.split(",").map(Number),xt=Math.floor(dt/10)+","+Math.floor(kt/10),ht=Ge.get(xt);ht||Ge.set(xt,ht={h:0,sx:0,sy:0}),ht.h+=it,ht.sx+=(dt*100+50)*it,ht.sy+=(kt*100+50)*it}let fe=new Set([...Ge].filter(([,ze])=>ze.h>=25).map(([ze])=>ze)),Be=new Set,je=[];for(let ze of fe){if(Be.has(ze))continue;Be.add(ze);let it=[ze],dt=0,kt=0,xt=0,ht=null;for(;it.length;){let Z=it.pop(),J=Ge.get(Z);dt+=J.h,kt+=J.sx,xt+=J.sy,(!ht||J.h>ht.h)&&(ht=J);let[X,H]=Z.split(",").map(Number);for(let L=-1;L<=1;L++)for(let q=-1;q<=1;q++){let me=X+L+","+(H+q);fe.has(me)&&!Be.has(me)&&(Be.add(me),it.push(me))}}let Ft=kt/dt,Rt=xt/dt,Et=Math.hypot(Ft-He,Rt-Ae);if(dt<150||Et<z||Et>Re)continue;let[_,N]=yn(ht.sx/ht.h,ht.sy/ht.h);je.push({lat:+_.toFixed(6),lng:+N.toFixed(6),households:dt,dist:Math.round(Et)})}return je.sort((ze,it)=>ze.dist-it.dist)}var xn=Dt();function _n(oe){let I=null,z="",Re=new Map,Se=_=>_[0].toFixed(5)+","+_[1].toFixed(5),Qe=()=>I?{radius:I.radius,usable:I.usable,mailboxes:I.mailboxes,street_m:I.street_m}:null,He=async(_,N,Z,J,X,H,L,q)=>{Re.size>150&&Re.clear(),I=await we.default.loadForFlyers(_,N,{cache:oe,radius:Z,must:J,zone:q,tiles:Re,stale:H,census:xn,progress:(me,T)=>{X&&T>1&&X((L||"loadingArea")+"|"+me+"|"+T)}}),z=Se(_)},Ae=new Map,rt=async(_,N,Z)=>{let J=_.zone&&_.zone.length>2?_.zone:null,X=Se([_.lat,_.lng])+":"+(J?"z"+J.length+","+J[0].join(","):_.loadFor||_.flyers);if(Ae.has(X))return Ae.get(X);Ae.size>6&&Ae.clear();let H=await we.default.loadForFlyers([_.lat,_.lng],_.loadFor||_.flyers,{cache:oe,tiles:Re,stale:Z,zone:J,census:xn,progress:(L,q)=>{N&&q>1&&N("loadingSide|"+L+"|"+q)}});return Ae.set(X,H),H},bt=async(_,N)=>{try{let Z={sources:_.map(me=>({lat:me[0],lon:me[1]})),targets:_.map(me=>({lat:me[0],lon:me[1]})),costing:N,units:"kilometers"},J=new AbortController,X=setTimeout(()=>J.abort(),9e3),H=await fetch("https://valhalla1.openstreetmap.de/sources_to_targets?json="+encodeURIComponent(JSON.stringify(Z)),{signal:J.signal});if(clearTimeout(X),!H.ok)return null;let q=(await H.json()).sources_to_targets;return Array.isArray(q)?q.map(me=>me.map(T=>T&&T.distance!=null?T.distance*1e3:null)):null}catch{return null}},qe={bike:250,car:667},pt=150,Ge=30,fe=1e3,Be=600,je=(_,N)=>{let Z=Math.cos(_[0]*Math.PI/180);return 111320*Math.hypot(N[0]-_[0],(N[1]-_[1])*Z)},ze=(_,N)=>{let Z=Array.from({length:N},()=>({min:0,items:[],far:0})),J=_.filter(L=>L.isFar).sort((L,q)=>q.min-L.min),X=_.filter(L=>!L.isFar).sort((L,q)=>q.min-L.min),H=(L,q)=>{let me=q.reduce((T,Me)=>Me.min<T.min?Me:T,q[0]);me.items.push(L),me.min+=L.min,L.isFar&&me.far++};return J.forEach(L=>{let q=Z.filter(me=>!me.far);H(L,q.length?q:Z)}),X.forEach(L=>H(L,Z)),Z},it=(_,N,Z,J,X,H)=>{let L=[],q=[],me=[],T=[],Me=[],Le=[],Ue=[],lt=new Set;X&&_.length&&je(X,_[0].r.path[0])>30&&(L.push([X[0],X[1]]),T.push(0),Me.push(0),Le.push(0),Ue.push(""));let ye=0,Je=0,mt=0,xe=0;for(let[V,{r:ee,name:$e}]of _.entries()){let se=L.length,Ke=(!!$e||V===0)&&se>0;J&&J.has(V)&&se>0&&lt.add(se);let Ne=ee.path.slice(1).reduce((Ce,Oe,U)=>Ce+je(ee.path[U],Oe),0)||1;ee.path.forEach((Ce,Oe)=>{L.push(Oe===0&&Ke?[Ce[0],Ce[1],1]:[Ce[0],Ce[1]]);let U=Oe?je(ee.path[Oe-1],Ce):0;T.push(Oe===0?Ke?Z?Z(L[se-1],Ce):Ge:0:ee.minutes*U/Ne),Me.push(Oe?(ee.mailboxes||0)*U/Ne:0),Le.push(Oe?(ee.street_m||0)*U/Ne:0),Ue.push($e||"")}),(ee.steps||[]).forEach(Ce=>q.push([Ce[0]+se,Ce[1],Ce[2]])),(ee.boxes||[]).forEach(Ce=>me.push(Ce)),ye+=ee.length_m||0,Je+=ee.street_m||0,mt+=ee.minutes||0,xe+=ee.mailboxes||0}let be=N*60,ue=[],Ve=0,re=0,et=0,ct=0,ut=0,Q=new Set,Xe=V=>{ue.push({i0:Ve,i1:V,minutes:Math.round(re),mailboxes:Math.round(et),street_m:Math.round(ct),length_m:Math.round(ut),place:[...Q].filter(Boolean).join(" + ")||void 0}),Ve=V,re=0,et=0,ct=0,ut=0,Q=new Set},Te=new Float64Array(L.length+1);if(H)for(let V=L.length-1;V>=1;V--)Te[V]=T[V]+(lt.has(V+1)?0:Te[V+1]);for(let V=1;V<L.length;V++)(H?lt.has(V)||re>=be&&Te[V]>=60:J?lt.has(V):re>=be)&&re>0&&Xe(V-1),re+=T[V],et+=Me[V],ct+=Le[V],ut+=L[V][2]===1?0:je(L[V-1],L[V]),Q.add(Ue[V]);if((re>0||!ue.length)&&Xe(L.length-1),!J&&ue.length>1&&ue[ue.length-1].minutes<45){let V=ue.pop(),ee=ue[ue.length-1];ee.i1=V.i1,["minutes","mailboxes","street_m","length_m"].forEach($e=>ee[$e]+=V[$e]),V.place&&(ee.place=[...new Set([...(ee.place||"").split(" + "),...V.place.split(" + ")].filter(Boolean))].join(" + "))}return{path:L,steps:q,boxes:me,days:ue,length_m:ye,street_m:Je,minutes:mt,mailboxes:xe}},dt=25,kt=40,xt=8,ht=(_,N)=>{let Z=_.pts.length,J=Int32Array.from({length:Z},(T,Me)=>Me),X=T=>{for(;J[T]!==T;)J[T]=J[J[T]],T=J[T];return T},H=T=>T.mb>0&&(T.len<=80||T.mb*1e3/T.len>=dt),L=new Uint8Array(Z);_.edges.forEach(T=>{H(T)&&(J[X(T.a)]=X(T.b),L[T.a]=1,L[T.b]=1)});let q=T=>!H(T)&&T.len<=60&&L[T.a]&&L[T.b];_.edges.forEach(T=>{q(T)&&(J[X(T.a)]=X(T.b))});let me=new Map;return _.edges.forEach((T,Me)=>{if(!H(T)&&!q(T))return;let Le=X(T.a),Ue=me.get(Le);Ue||me.set(Le,Ue={area:N,ids:[],mb:0,len:0}),Ue.ids.push(Me),Ue.mb+=T.mb,Ue.len+=T.len}),[...me.values()].filter(T=>T.mb>=kt).map(T=>{let Me=0,Le=0,Ue=0;for(let mt of T.ids){let xe=_.edges[mt];Me+=(_.pts[xe.a][0]+_.pts[xe.b][0])/2*xe.len,Le+=(_.pts[xe.a][1]+_.pts[xe.b][1])/2*xe.len,Ue+=xe.len}let lt=[Me/Ue,Le/Ue],ye=-1,Je=1/0;for(let mt of T.ids)for(let xe of[_.edges[mt].a,_.edges[mt].b]){let be=je(lt,_.pts[xe]);be<Je&&(Je=be,ye=xe)}return{...T,g:_,park:[_.pts[ye][0],_.pts[ye][1]]}})},Ft=(_,N)=>{let Z=N.map(X=>_.edges[X]),J=_.pts.map(()=>[]);return Z.forEach((X,H)=>{J[X.a].push({e:H,to:X.b}),X.a!==X.b&&J[X.b].push({e:H,to:X.a})}),{pts:_.pts,edges:Z,adj:J,zoned:!0}},Rt=1.35,Et=(_,N,Z,J)=>{let X=[.8,.85,.9,.95,1].map(q=>{let me=we.default.selectWithMust(I,_,Math.round(N*q),Z,J),T=me.ids.reduce((Me,Le)=>Me+I.edges[Le].len,0);return{mb:me.mailboxes,min:we.default.routeMinutes(T*1.35,me.mailboxes)}}),H=X[0].min/Math.max(1,X[0].mb),L=X[0];for(let q=1;q<X.length;q++){let me=X[q].mb-X[0].mb;(me<=0||(X[q].min-X[0].min)/me<=Rt*H)&&(L=X[q])}return L.mb>=.97*N?N:Math.max(100,Math.round(L.mb/50)*50)};return{async load({start:_,flyers:N,must:Z,zone:J},X,H){return I&&z===Se(_)||(X("loadingArea"),I=null,z="",await He(_,N,void 0,Z,X,H,"loadingArea",J)),Qe()},async plan({start:_,flyers:N,n:Z,days:J,hours:X,must:H,zone:L,side:q,quota:me,bike:T,travel:Me,split:Le,exact:Ue,mainAll:lt,cores:ye,together:Je,first:mt,near:xe},be,ue){let Ve=!Ue&&!lt;if(ye)return this.planCores({start:_,flyers:N,n:Z,hours:X,must:H,zone:L,side:q,travel:Me,together:Je,exact:Ue,first:mt},be,ue);Me=Me==="bike"||Me==="car"?Me:T?"bike":"bus",T=Me!=="bus",we.default.setPace(me),q=(q||[]).filter(Q=>Q&&(Q.flyers>0||Le==="even"));let re=[];if((H||[]).some(Q=>Q&&Q.name&&Q.p&&Q.p.length>2)){if((!I||z!==Se(_))&&(be("loadingArea"),await He(_,N,void 0,H,be,ue,"loadingArea",L)),ue())return{skipped:!0};let Q=Math.min(we.default.MUST_MAX_R,we.default.mustRadius(_,H));if(Q>I.radius&&(be("loadingMore"),await He(_,N,Q,H,be,ue,"loadingMore",L),ue()))return{skipped:!0};let Xe=[];for(let Te of H){let V=Te&&Te.name&&Te.p&&Te.p.length>2?we.default.emptyGap(I,_,Te.p):0;if(V>(T?Be:fe)){let ee=Te.c||Te.p.reduce(($e,se)=>[$e[0]+se[0]/Te.p.length,$e[1]+se[1]/Te.p.length],[0,0]);q.push({name:Te.name,lat:ee[0],lng:ee[1],flyers:Te.n||1e3,zone:Te.p,all:!!Te.all}),re.push({name:Te.name,gap:V})}else Xe.push(Te)}H=Xe}let et=null,ct=Le==="even"&&!!xe&&q.length>0&&!lt&&!(H||[]).some(Q=>Q&&Q.name)&&!q.some(Q=>Q.all||Q.zone&&Q.zone.length>2);if(ct){if((!I||z!==Se(_))&&(be("loadingArea"),await He(_,N,void 0,H,be,ue,"loadingArea",L)),ue())return{skipped:!0};let Q=new Set,Xe=(se,Ke)=>{let Ne=se.edges[Ke];return((se.pts[Ne.a][0]+se.pts[Ne.b][0])/2).toFixed(5)+","+((se.pts[Ne.a][1]+se.pts[Ne.b][1])/2).toFixed(5)},Te=we.default.selectWithMust(I,_,N,H,L),V=Math.min(N,Math.round(Te.mailboxes));Te.ids.forEach(se=>Q.add(Xe(I,se)));let ee=N-V,$e=new Map;for(let se of q.slice().sort((Ke,Ne)=>je(_,[Ke.lat,Ke.lng])-je(_,[Ne.lat,Ne.lng]))){let Ke=se.flyers||0;if(ee<pt){se.flyers=0,$e.set(se,{name:se.name,flyers:0});continue}be("loadingSide"),se.loadFor=Math.min(ee,Math.max(600,Math.round(Ke*1.3)));let Ne=await rt(se,be,ue);if(ue())return{skipped:!0};let Ce={...Ne,edges:Ne.edges.map((ke,tt)=>ke.mb&&Q.has(Xe(Ne,tt))?{...ke,mb:0,boxes:[]}:ke)},Oe=we.default.denseEntry(Ce,_,null,Math.min(300,Math.max(100,ee*.2)))||[se.lat,se.lng],U=Math.round(we.default.selectForFlyers(Ce,Oe,1e9).mailboxes||0);se.flyers=Math.min(U,ee),se.flyers<pt&&(se.flyers=0),se.flyers&&(se.g=Ce,se.st=Oe,we.default.selectWithMust(Ce,Oe,se.flyers).ids.forEach(ke=>Q.add(Xe(Ce,ke)))),ee-=se.flyers,$e.set(se,{name:se.name,flyers:se.flyers,cap:U})}et=[{name:null,flyers:V,cap:V},...q.map(se=>$e.get(se))],q=q.filter(se=>se.flyers>0)}else if(Le==="even"&&((H||[]).some(Q=>Q&&Q.name)||q.length)){if((!I||z!==Se(_))&&(be("loadingArea"),await He(_,N,void 0,H,be,ue,"loadingArea",L)),ue())return{skipped:!0};let Q=(H||[]).filter(U=>U&&U.name&&U.p&&U.p.length>2),Xe=Q.map(U=>we.default.mustPick(I,_,[{p:U.p,n:0}]).info[0].avail),Te=[];for(let U of q){be("loadingSide"),U.flyers=U.flyers||N;let ke=await rt(U,be,ue);if(ue())return{skipped:!0};Te.push(U.zone&&U.zone.length>2?we.default.mustPick(ke,[U.lat,U.lng],[{p:U.zone,n:0}]).info[0].avail:(ke.usable!=null?ke.usable:ke.mailboxes)||0)}let V=Math.max(0,(I.usable!=null?I.usable:I.mailboxes)-Xe.reduce((U,ke)=>U+ke,0)),ee=[V,...Xe,...Te],$e=new Array(ee.length).fill(0),se=new Set([lt?0:-1,...Q.map((U,ke)=>U.all?1+ke:-1),...q.map((U,ke)=>U.all?1+Q.length+ke:-1)].filter(U=>U>=0)),Ke=N;se.forEach(U=>{$e[U]=ee[U],Ke-=ee[U]}),Ke=Math.max(0,Ke);let Ne=ee.map((U,ke)=>ke).filter(U=>!se.has(U));for(;Ke>0&&Ne.length;){let U=Ke/Ne.length,ke=Ne.filter(tt=>ee[tt]-$e[tt]<=U);if(!ke.length){Ne.forEach(tt=>{$e[tt]+=U}),Ke=0;break}ke.forEach(tt=>{Ke-=ee[tt]-$e[tt],$e[tt]=ee[tt]}),Ne=Ne.filter(tt=>!ke.includes(tt))}let Ce=U=>Math.max(0,Math.round(U/50)*50),Oe=U=>se.has(U)?Math.round($e[U]):Ce($e[U]);Q.forEach((U,ke)=>{U.n=U.all?0:Math.max(50,Oe(1+ke))}),q.forEach((U,ke)=>{U.flyers=Oe(1+Q.length+ke)}),et=[{name:null,flyers:Ce($e[0]),cap:Math.round(V)},...Q.map((U,ke)=>({name:U.name,flyers:Oe(1+ke),cap:Math.round(Xe[ke]),all:!!U.all})),...q.map((U,ke)=>({name:U.name,flyers:U.flyers,cap:Math.round(Te[ke]),all:!!U.all}))],q=q.filter(U=>U.flyers>0)}if(q.length){let Q=await this.planSide({start:_,flyers:N,n:Z,days:J,hours:X,must:H,zone:L,side:q,bike:T,travel:Me,eco:Ve,mainAll:lt,mainShare:et?et[0].flyers:null,near:ct},be,ue);return Q&&Q.plan&&(Q.plan.bus=re,Q.plan.split=et,ct&&(Q.plan.near=!0)),Q}let ut=await this.planMain({start:_,flyers:N,n:Z,days:J,hours:X,must:H,zone:L,eco:Ve,mainAll:lt},be,ue);return ut&&ut.plan&&(ut.plan.split=et,ct&&(ut.plan.near=!0)),ut},async planCores({start:_,flyers:N,n:Z,hours:J,must:X,zone:H,side:L,travel:q,together:me,exact:T,first:Me},Le,Ue){if((!I||z!==Se(_))&&(Le("loadingArea"),await He(_,N,void 0,X,Le,Ue,"loadingArea",H)),Ue())return{skipped:!0};let lt=!!(H&&H.length>2),ye;if(lt){let m=we.default.zoneView(I,H),D=we.default.selectWithMust(I,_,1e9,X,H).ids,B=D.reduce((v,O)=>v+m.edges[O].mb,0),h=D.reduce((v,O)=>v+m.edges[O].len,0);ye=D.length?[{area:null,g:m,ids:D,mb:B,len:h,park:_,forced:!0}]:[]}else if(T){let m=we.default.selectForFlyers(I,_,N).ids,D=m.reduce((h,v)=>h+I.edges[v].mb,0),B=m.reduce((h,v)=>h+I.edges[v].len,0);ye=m.length?[{area:null,g:I,ids:m,mb:D,len:B,park:_,forced:!0}]:[]}else ye=ht(I,null);for(let m of L||[]){Le("loadingSide");let D=await rt({...m,flyers:m.flyers||3e3},Le,Ue);if(Ue())return{skipped:!0};let B=m.zone&&m.zone.length>2?m.zone:null;ye=ye.concat(ht(B?we.default.zoneView(D,B):D,m.name))}{let m=new Set,D=(B,h)=>{let v=B.edges[h];return((B.pts[v.a][0]+B.pts[v.b][0])/2).toFixed(5)+","+((B.pts[v.a][1]+B.pts[v.b][1])/2).toFixed(5)};ye=ye.filter(B=>{let h=B.ids.filter(v=>!m.has(D(B.g,v)));return!B.forced&&h.length<B.ids.length*.5?!1:(h.forEach(v=>m.add(D(B.g,v))),B.ids=h,B.mb=h.reduce((v,O)=>v+B.g.edges[O].mb,0),B.len=h.reduce((v,O)=>v+B.g.edges[O].len,0),B.mb>=10)})}if(!ye.length)return{plan:{routes:[],mailboxes:0,zone:[],cores:[]},sug:Z};Le("calculating");let Je=me?Z:1,mt=Math.min(90,J*60*.25),xe=(m,D)=>{let B=0,h=0,v=0;for(let nt of D){let Ye=m.edges[nt];B+=(m.pts[Ye.a][0]+m.pts[Ye.b][0])/2*Ye.len,h+=(m.pts[Ye.a][1]+m.pts[Ye.b][1])/2*Ye.len,v+=Ye.len}let O=[B/v,h/v],j=-1,le=1/0;for(let nt of D)for(let Ye of[m.edges[nt].a,m.edges[nt].b]){let wt=je(O,m.pts[Ye]);wt<le&&(le=wt,j=Ye)}return[m.pts[j][0],m.pts[j][1]]},be=[];for(let m of ye){let D=Math.ceil(we.default.routeMinutes(m.len*1.35,m.mb)/Je/mt);if(D<=1){m.forced&&(m.park=xe(m.g,m.ids)),be.push(m);continue}let B=we.default.planFlyers(Ft(m.g,m.ids),m.park,1e9,D,{days:1,hoursPerDay:99});for(let h of B.routes){let v=(h.part||[]).map(j=>m.ids[j]);if(!v.length)continue;let O=v.reduce((j,le)=>j+m.g.edges[le].mb,0);O<10||be.push({area:m.area,g:m.g,ids:v,mb:O,len:v.reduce((j,le)=>j+m.g.edges[le].len,0),park:xe(m.g,v),forced:m.forced})}if(Ue())return{skipped:!0}}ye=be;for(let m of ye){let D=we.default.planFlyers(Ft(m.g,m.ids),m.park,1e9,Math.max(1,Math.min(Je,Math.floor(m.mb/30))),{days:1,hoursPerDay:99});if(m.routes=D.routes.map(({part:B,...h})=>h),m.mb=D.mailboxes,m.work=m.routes.reduce((B,h)=>B+h.minutes,0),m.span=Math.max(...m.routes.map(B=>B.minutes)),m.score=m.mb/(m.work+xt*m.routes.length),Ue())return{skipped:!0}}let ue=m=>m.score/(1+je(_,m.park)/2e4);ye.sort((m,D)=>(D.forced?1:0)-(m.forced?1:0)||ue(D)-ue(m));let Ve=ye.filter(m=>m.forced),re=Ve.reduce((m,D)=>m+D.mb,0),et={},ct=0;for(let m of L||[])m.flyers>0&&(et[m.name]=m.flyers,ct+=m.flyers);ct&&ct<N&&(et[""]=N-ct);let ut={};Ve.forEach(m=>{let D=m.area||"";ut[D]=(ut[D]||0)+m.mb});for(let m of ye){if(m.forced)continue;if(re>=N)break;let D=m.area||"";if(!(ct&&et[D]!=null&&(ut[D]||0)+m.mb>et[D]*1.1+30)){if(ut[D]=(ut[D]||0)+m.mb,!T&&re>=.8*N&&m.score<.55*re/Ve.reduce((B,h)=>B+h.work+xt*h.routes.length,0))break;Ve.push(m),re+=m.mb}}let Q={};Ve.forEach(m=>{let D=m.area||"";Q[D]=(Q[D]||0)+1});let Xe={};Ve.forEach(m=>{let D=m.area||"";Xe[D]=(Xe[D]||0)+1,m.name=(m.area||Te(m))+(Q[D]>1?" "+Xe[D]:"")});function Te(m){let D=m.routes[0],B=(D.steps||[]).find(h=>h[2]);return B?B[2]:"Kern"}let V=[],ee=Ve.slice(),$e=_,se=_,Ke=Me?ee.filter(m=>(m.area||"")===Me):[];if(Ke.length){let m=Ke.reduce((D,B)=>je(_,B.park)<je(_,D.park)?B:D);ee.splice(ee.indexOf(m),1),V.push(m),$e=m.park}for(;ee.length;){let m=0;ee.forEach((B,h)=>{je($e,B.park)<je($e,ee[m].park)&&(m=h)});let D=ee.splice(m,1)[0];V.push(D),$e=D.park}let Ne=m=>m.reduce((D,B,h)=>D+je(h?m[h-1].park:se,B.park),0),Ce=Ke.length?1:0;for(let m=!0,D=0;m&&D<60;D++){m=!1;for(let B=Ce;B<V.length-1;B++)for(let h=B+1;h<V.length;h++){let v=[...V.slice(0,B),...V.slice(B,h+1).reverse(),...V.slice(h+1)];Ne(v)<Ne(V)-1&&(V=v,m=!0)}}let Oe=null,U=[_,...V.map(m=>m.park)];if(q!=="bus"&&U.length<=50&&(Le("loadingSide"),Oe=await bt(U,q==="car"?"auto":"bicycle"),Ue()))return{skipped:!0};let ke=(m,D)=>{if(q==="bus")return Ge;let B=U.findIndex(O=>O===m||O[0]===m[0]&&O[1]===m[1]),h=U.findIndex(O=>O===D||O[0]===D[0]&&O[1]===D[1]);return 5+(Oe&&B>=0&&h>=0&&Oe[B][h]!=null?Oe[B][h]:je(m,D)*1.3)/qe[q==="car"?"car":"bike"]},tt;if(me){let m=new Set,D=0;V.forEach((B,h)=>{let v=(h?ke(V[h-1].park,B.park):0)+B.span;h&&D+v>J*60+20?(m.add(h),D=B.span):D+=v}),tt=Array.from({length:Z},(B,h)=>it(V.filter(v=>v.routes[h]).map(v=>({r:v.routes[h],name:v.name})),J,(v,O)=>ke(v,O),new Set([...m].map(v=>V.slice(0,v).filter(O=>O.routes[h]).length)),_)).map((B,h)=>({idx:h,...B}))}else{let m=[];{let v=_;V.forEach(O=>{m.push({min:O.work+ke(v,O.park),x:O}),v=O.park})}let D=[0];m.forEach(v=>D.push(D[D.length-1]+v.min));let B=[],h=0;for(let v=0;v<Z;v++){let O=D[D.length-1]*(v+1)/Z,j=h;for(;j<m.length&&(v===Z-1||D[j+1]-m[j].min/2<=O);)j++;B.push(m.slice(h,j)),h=j}tt=B.filter(v=>v.length).map((v,O)=>({idx:O,...it(v.map(j=>({r:j.x.routes[0],name:j.x.name})),J,(j,le)=>ke(j,le),null,_)}))}let St={routes:tt,mailboxes:Math.round(re),zone:[],cores:V.map(m=>({name:m.name,mb:Math.round(m.mb),c:m.park,min:Math.round(m.span)})),road_km:!!Oe,side_info:[],side_failed:[],must_mb:0,must_info:[]};return St.capacity=we.default.capacity(tt,N),!T&&re<N&&(St.eco={asked:N,used:Math.round(re)}),{plan:St,sug:Z,street_m:Math.round(Ve.reduce((m,D)=>m+D.len,0))}},async planSide({start:_,flyers:N,n:Z,days:J,hours:X,must:H,zone:L,side:q,bike:me,travel:T,eco:Me,mainAll:Le,mainShare:Ue,near:lt},ye,Je){let mt=!!lt&&Z>1,xe=[],be=[];for(let h of q){ye("loadingSide");let v=h.g||await rt(h,ye,Je);if(Je())return{skipped:!0};let O=h.zone&&h.zone.length>2?h.zone:null,j=h.st||we.default.denseEntry(v,_,O,Math.min(300,Math.max(100,h.flyers*.2)))||[h.lat,h.lng],le=we.default.planFlyers(v,j,h.flyers,mt?Z:1,{days:1,hoursPerDay:X,zone:O}),nt=(le&&le.routes||[]).filter(Ye=>Ye.path&&Ye.path.length>1).map(({part:Ye,...wt})=>wt);if(!nt.length){be.push(h.name);continue}xe.push({c:h,r:nt[0],rs:nt,min:Math.max(...nt.map(Ye=>Ye.minutes)),mb:le.mailboxes})}let ue=Math.max(100,N-xe.reduce((h,v)=>h+v.c.flyers,0));if(!xe.length){let h=await this.planMain({start:_,flyers:N,n:Z,days:J,hours:X,must:H,zone:L,eco:Me,mainAll:Le},ye,Je);return h&&h.plan&&(h.plan.side_failed=be),h}let Ve=null;if(Me&&!(L&&L.length>2)){(!I||z!==Se(_))&&(ye("loadingArea"),await He(_,ue,void 0,H,ye,Je,"loadingArea",L));let h=Et(_,ue,H,L);h<ue&&(Ve={asked:ue,used:h},ue=h)}let re=await this.planMain({start:_,flyers:ue,n:Z,days:1,hours:X,must:H,zone:L,mainAll:Le},ye,Je);if(!re||re.skipped)return re;let et=re.plan.routes.reduce((h,v)=>h+v.minutes,0),ct=h=>h.r.path[0],ut=h=>h.r.path[h.r.path.length-1],Q=[],Xe=[...xe],Te=_;for(;Xe.length;){let h=0;Xe.forEach((O,j)=>{je(Te,ct(O))<je(Te,ct(Xe[h]))&&(h=j)});let v=Xe.splice(h,1)[0];Q.push(v),Te=ut(v)}let V=h=>h.reduce((v,O,j)=>v+je(j?ut(h[j-1]):_,ct(O)),0);for(let h=!0,v=0;h&&v<50;v++){h=!1;for(let O=0;O<Q.length-1;O++)for(let j=O+1;j<Q.length;j++){let le=[...Q.slice(0,O),...Q.slice(O,j+1).reverse(),...Q.slice(j+1)];V(le)<V(Q)-1&&(Q=le,h=!0)}}let ee=null,$e=[_,...xe.map(h=>ct(h))],se=h=>$e.findIndex(v=>Math.abs(v[0]-h[0])<1e-7&&Math.abs(v[1]-h[1])<1e-7);if(T!=="bus"&&xe.length&&(ye("loadingSide"),ee=await bt($e,T==="car"?"auto":"bicycle"),Je()))return{skipped:!0};let Ke=(h,v)=>{if(T==="bus")return Ge;let O=se(h),j=se(v);return 5+(ee&&O>=0&&j>=0&&ee[O][j]!=null?ee[O][j]:je(h,v)*1.3)/qe[T]},Ne=[];{let h=_;Q.forEach(v=>{Ne.push({min:v.min+Ke(h,ct(v)),far:v}),h=ut(v)})}let Ce=X*60,Oe=h=>{if(h<=Ce+60)return h;let v=h%Ce;return v<60?Ce:v},U=(h,v)=>{let O=new Set,j=h;return v.forEach((le,nt)=>{j>0&&j+le>Ce+20&&le<=Ce+20?(O.add(nt),j=le):j=Oe(j+le)}),O};if(mt){let h=re.plan.routes,v=U(Oe(Math.max(0,...h.map(j=>j.minutes))),Ne.map(j=>j.min)),O=[];for(let j=0;j<Z;j++){let le=h[j]?[{r:h[j],name:null}]:[],nt=new Set;Q.forEach((Ye,wt)=>{Ye.rs[j]&&(v.has(wt)&&nt.add(le.length),le.push({r:Ye.rs[j],name:Ye.c.name}))}),le.length&&O.push(it(le,X,Ke,nt,null,!0))}return Ve&&(re.plan.eco=Ve),re.plan.routes=O.map((j,le)=>({idx:le,...j})),re.plan.road_km=!!ee,re.plan.mailboxes+=xe.reduce((j,le)=>j+le.mb,0),re.plan.side_failed=be,re.plan.side_info=[],re.plan.team=xe.map(j=>j.c.name),re.plan.capacity=we.default.capacity(re.plan.routes,N),re.sug=Math.min(20,we.default.suggestWorkers(re.plan.routes.reduce((j,le)=>j+le.minutes,0),X,J)),re}let tt=((h,v)=>{let O=h.length,j=[0];h.forEach(gt=>j.push(j[j.length-1]+gt.min));let le=Math.min(v,O);if(!le)return Array.from({length:v},()=>[]);let nt=Array.from({length:le+1},()=>new Array(O+1).fill(1/0)),Ye=Array.from({length:le+1},()=>new Array(O+1).fill(0));nt[0][0]=0;for(let gt=1;gt<=le;gt++)for(let Mt=gt;Mt<=O;Mt++)for(let _t=gt-1;_t<Mt;_t++){let Lt=Math.max(nt[gt-1][_t],j[Mt]-j[_t]);Lt<nt[gt][Mt]&&(nt[gt][Mt]=Lt,Ye[gt][Mt]=_t)}let wt=[],It=O;for(let gt=le;gt>=1;gt--){let Mt=Ye[gt][It];wt.unshift(h.slice(Mt,It)),It=Mt}for(;wt.length<v;)wt.push([]);return wt})(Ne,Z),St=h=>{let v=tt.map(O=>({min:O.reduce((j,le)=>j+le.min,0),mains:[],vill:O}));return[...h].sort((O,j)=>j.minutes-O.minutes).forEach(O=>{let j=v.reduce((le,nt)=>nt.min<le.min?nt:le,v[0]);j.mains.push(O),j.min+=O.minutes}),v},m=Z,D=1/0;for(let h=Z;h<=3*Z;h++){let v=Math.max(...St(Array.from({length:h},()=>({minutes:et/h}))).map(O=>O.min));v<D-15&&(D=v,m=h)}if(m!==Z){ye("calculating");let h=await this.planMain({start:_,flyers:ue,n:m,days:1,hours:X,must:H,zone:L,mainAll:Le},ye,Je);if(!h||h.skipped)return h;re=h}Ve&&(re.plan.eco=Ve);let B=St(re.plan.routes).filter(h=>h.mains.length||h.vill.length).map(h=>({...h,items:h.vill}));return re.plan.routes=B.map((h,v)=>{let O=U(Oe(h.mains.reduce((j,le)=>j+le.minutes,0)),h.vill.map(j=>j.min));return{idx:v,...it([...h.mains.map(j=>({r:j,name:null})),...h.vill.map(j=>({r:j.far.r,name:j.far.c.name}))],X,Ke,new Set([...O].map(j=>j+h.mains.length)),null,!0)}}),re.plan.road_km=!!ee,re.plan.mailboxes+=xe.reduce((h,v)=>h+v.mb,0),re.plan.side_failed=be,re.plan.side_info=xe.map(h=>({name:h.c.name,mailboxes:h.mb,worker:B.findIndex(v=>v.items.some(O=>O.far===h))})),re.plan.capacity=we.default.capacity(re.plan.routes,N),re.sug=Math.min(20,we.default.suggestWorkers(re.plan.routes.reduce((h,v)=>h+v.minutes,0),X,J)),re},async planMain({start:_,flyers:N,n:Z,days:J,hours:X,must:H,zone:L,eco:q,mainAll:me},T,Me){if((!I||z!==Se(_))&&(T("loadingArea"),await He(_,N,void 0,H,T,Me,"loadingArea",L)),Me())return{skipped:!0};let Le=!!(L&&L.length>2),Ue=Math.min(we.default.MUST_MAX_R,Math.max(we.default.mustRadius(_,H),Le?we.default.mustRadius(_,[L]):0));if(Ue>I.radius&&(T("loadingMore"),await He(_,N,Ue,H,T,Me,"loadingMore",L),Me()))return{skipped:!0};let lt=we.default.selectWithMust(I,_,N,H,L).reach_m;if(I.reach=lt,!Le&&((I.usable!=null?I.usable:I.mailboxes)<N*1.05||lt>.65*I.radius)&&I.radius<we.default.MAX_R){T("loadingMore");let be=I;try{await He(_,N,we.default.nextRadius(I,N),H,T,Me,"loadingMore",L)}catch{I=be,z=Se(_)}if(Me())return{skipped:!0}}T("calculating");let ye=null;if(me&&Le)N=Math.max(100,we.default.selectWithMust(I,_,1e9,H,L).mailboxes);else if(q&&!Le){let be=Et(_,N,H,L);be<N&&(ye={asked:N,used:be},N=be)}let Je=we.default.selectWithMust(I,_,N,H,L),mt=Math.min(20,we.default.suggestWorkers(we.default.routeMinutes(Je.ids.reduce((be,ue)=>be+I.edges[ue].len,0)*1.35,Je.mailboxes),X,J));if(Me())return{skipped:!0};let xe=we.default.planFlyers(I,_,N,Z,{days:J,hoursPerDay:X,must:H,zone:L});return xe.routes=xe.routes.map(({part:be,...ue})=>ue),ye&&(xe.eco=ye),{plan:xe,sug:mt,street_m:I.street_m}}}}var Qt=gn(Xt(),1);globalThis.FMRun=async oe=>{let I=oe.start,z=oe.flyers,Re=_n(null),Se=[],Qe=[],He=()=>Re.plan({start:I,flyers:z,n:oe.n||2,days:oe.days||2,hours:oe.hours||7,quota:oe.quota||2500,travel:oe.travel||"bus",bike:oe.travel==="bike",split:"even",exact:!0,mainAll:!1,cores:!1,together:!1,first:null,near:Qe.length>0,must:[],zone:null,side:Qe.map(qe=>({name:qe.name,lat:qe.lat,lng:qe.lng,flyers:qe.flyers,zone:null,all:!1}))},()=>{},()=>!1),Ae=await He();Se.push("walk "+Ae.plan.mailboxes);let rt=(qe,pt,Ge,fe)=>111320*Math.hypot(Ge-qe,(fe-pt)*Math.cos(qe*Math.PI/180));for(let qe=1;qe<=3&&Ae.plan.mailboxes<z*.95;qe++){let pt=z-Ae.plan.mailboxes,Ge=await kn(I[0],I[1],2500,3e4),fe=Ge.filter(ze=>ze.households>=300);fe.length&&(Ge=fe);let Be=[],je=0;for(let ze of Ge){if(je>=pt*1.1||Be.length>=4)break;Qe.some(it=>rt(it.lat,it.lng,ze.lat,ze.lng)<1500)||(Be.push(ze),je+=ze.households*.9)}if(!Be.length)break;Be.forEach(ze=>Qe.push({name:"Ort "+(Qe.length+1),lat:ze.lat,lng:ze.lng,flyers:ze.households,km:Math.round(ze.dist/100)/10,auto:!0})),Ae=await He(),Se.push("round "+qe+" +"+Be.length+" -> "+Ae.plan.mailboxes)}let bt=null;if(oe.dump){bt=[];let qe=Dt(),pt=Ae.plan.split||[],Ge=fe=>fe.edges.forEach(Be=>{Be.mb>0&&Be.coords&&bt.push([Math.round(Be.mb),...Be.coords.flatMap(je=>[+je[0].toFixed(5),+je[1].toFixed(5)])])});Ge(await Qt.default.loadForFlyers(I,z,{census:qe}));for(let fe of Qe){let Be=(pt.find(je=>je.name===fe.name)||{}).flyers;Be>0&&Ge(await Qt.default.loadForFlyers([fe.lat,fe.lng],Be,{census:qe}))}}return{log:Se,side:Qe,sug:Ae.sug,street_m:Ae.street_m,plan:Ae.plan,streets:bt}};})();
+(() => {
+  var __create = Object.create;
+  var __defProp = Object.defineProperty;
+  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+  var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __getProtoOf = Object.getPrototypeOf;
+  var __hasOwnProp = Object.prototype.hasOwnProperty;
+  var __commonJS = (cb, mod) => function __require() {
+    return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+  };
+  var __copyProps = (to, from, except, desc) => {
+    if (from && typeof from === "object" || typeof from === "function") {
+      for (let key of __getOwnPropNames(from))
+        if (!__hasOwnProp.call(to, key) && key !== except)
+          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+    }
+    return to;
+  };
+  var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+    // If the importer is in node compatibility mode or this is not an ESM
+    // file that has been converted to a CommonJS file using a Babel-
+    // compatible transform (i.e. "__esModule" has not been set), then set
+    // "default" to the CommonJS "module.exports" for node compatibility.
+    isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+    mod
+  ));
+
+  // ../admin/planner.js
+  var require_planner = __commonJS({
+    "../admin/planner.js"(exports, module) {
+      (function(root) {
+        "use strict";
+        const R = 6371e3, RAD = Math.PI / 180;
+        const NO_WAY = "motorway|motorway_link|trunk|trunk_link|footway|cycleway|path|steps|bridleway|construction|proposed|raceway|corridor|elevator|platform|bus_stop|track|bus_guideway|escape|rest_area|services";
+        const OVERPASS = ["https://overpass.openstreetmap.fr/api/interpreter", "https://overpass-api.de/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter"];
+        const WORK_HOURS = 7;
+        const WALK_KMH = 3.2;
+        const TRANSIT_W = 3;
+        const DIST_MB = 8;
+        const BOX_SEC = 5;
+        let PACE_M30 = 0;
+        function setPace(m30) {
+          PACE_M30 = m30 > 0 ? +m30 : 0;
+        }
+        const walkMin = (len, mb) => (PACE_M30 ? len / PACE_M30 * 30 : len / 1e3 / WALK_KMH * 60) + (mb || 0) * BOX_SEC / 60;
+        function dist(a, b) {
+          const x = Math.sin((b[0] - a[0]) * RAD / 2) ** 2 + Math.cos(a[0] * RAD) * Math.cos(b[0] * RAD) * Math.sin((b[1] - a[1]) * RAD / 2) ** 2;
+          return 2 * R * Math.asin(Math.sqrt(x));
+        }
+        function inPoly(p, poly) {
+          let inside = false;
+          for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+            const [yi, xi] = poly[i], [yj, xj] = poly[j];
+            if (yi > p[0] !== yj > p[0] && p[1] < (xj - xi) * (p[0] - yi) / (yj - yi) + xi) inside = !inside;
+          }
+          return inside;
+        }
+        function lineLen(c) {
+          let s = 0;
+          for (let i = 1; i < c.length; i++) s += dist(c[i - 1], c[i]);
+          return s;
+        }
+        async function overpass(q, fetchImpl, timeoutMs, stale) {
+          const t0 = Date.now();
+          let wait = 4e3;
+          for (; ; ) {
+            try {
+              return await overpassRound(q, fetchImpl, timeoutMs);
+            } catch (e) {
+              if (Date.now() - t0 > 24e4 || stale && stale()) throw e;
+              await new Promise((r) => setTimeout(r, wait));
+              wait = Math.min(3e4, wait * 2);
+              if (stale && stale()) throw new Error("stale");
+            }
+          }
+        }
+        function overpassRound(q, fetchImpl, timeoutMs) {
+          const f = fetchImpl || fetch, total = timeoutMs || 6e4;
+          return new Promise((resolve, reject) => {
+            let done = false, failed = 0, next = 0, lastErr;
+            const ctrls = [], timers = [];
+            const finish = (fn, v) => {
+              if (done) return;
+              done = true;
+              timers.forEach(clearTimeout);
+              ctrls.forEach((c) => {
+                try {
+                  c.abort();
+                } catch {
+                }
+              });
+              fn(v);
+            };
+            const launch = () => {
+              if (done || next >= OVERPASS.length) return;
+              const url = OVERPASS[next++];
+              if (next < OVERPASS.length) timers.push(setTimeout(launch, 1e4));
+              const ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+              if (ctrl) ctrls.push(ctrl);
+              const tm = ctrl ? setTimeout(() => ctrl.abort(), total) : null;
+              if (tm) timers.push(tm);
+              (async () => {
+                try {
+                  const r = await f(url, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "data=" + encodeURIComponent(q), signal: ctrl && ctrl.signal });
+                  if (!r.ok) throw new Error("overpass " + r.status);
+                  const j = await r.json();
+                  if (j && j.remark && /runtime error|out of memory|timed out/i.test(j.remark)) throw new Error("overpass " + j.remark);
+                  finish(resolve, j);
+                } catch (e) {
+                  lastErr = e;
+                  failed++;
+                  if (failed >= OVERPASS.length) finish(reject, lastErr || new Error("overpass"));
+                  else launch();
+                }
+              })();
+            };
+            launch();
+          });
+        }
+        const HW_FILTER = `["highway"]["highway"!~"^(${NO_WAY})$"]["service"!~"^(parking_aisle|driveway|drive-through|emergency_access)$"]["access"!~"^(private|no)$"]["foot"!~"^(no|private)$"]["motorroad"!="yes"]`;
+        async function fetchStreets(poly, fetchImpl) {
+          const ps = poly.map((p) => p[0].toFixed(6) + " " + p[1].toFixed(6)).join(" ");
+          return overpass(`[out:json][timeout:110];way${HW_FILTER}(poly:"${ps}");out body;>;out skel qt;`, fetchImpl, 11e4);
+        }
+        const rc = (c) => [Math.round(c[0] * 1e3) / 1e3, Math.round(c[1] * 1e3) / 1e3];
+        const bbox = (c, r) => {
+          const k = rc(c), dLat = r / 111320, dLng = r / (111320 * Math.cos(k[0] * RAD));
+          return [k[0] - dLat, k[1] - dLng, k[0] + dLat, k[1] + dLng].map((v) => v.toFixed(5)).join(",");
+        };
+        const qStreets = (c, r) => `[out:json][timeout:110];way${HW_FILTER}(${bbox(c, r)});out body;>;out skel qt;`;
+        const qBuildings = (c, r) => {
+          const bb = bbox(c, r);
+          return `[out:json][timeout:110];way["building"~"^(${HOUSE_B})$"](${bb})->.h;way["building"]["building"!~"^(${HOUSE_B}|${NO_B})$"](${bb})->.o;.h out center tags;.o out geom tags;`;
+        };
+        async function fetchStreetsAround(c, r, fetchImpl) {
+          return overpass(qStreets(c, r), fetchImpl, 11e4);
+        }
+        async function fetchBuildings(c, r, fetchImpl) {
+          return overpass(qBuildings(c, r), fetchImpl, 11e4);
+        }
+        const TILE_LAT = 0.03, TILE_LNG = 0.045, TILE_V = "fm3";
+        const tileKey = (i, j) => i + ":" + j;
+        function tilesFor(c, r) {
+          const dLat = r / 111320, dLng = r / (111320 * Math.cos(c[0] * RAD)), out = [];
+          const i0 = Math.floor((c[0] - dLat) / TILE_LAT), i1 = Math.floor((c[0] + dLat) / TILE_LAT);
+          const j0 = Math.floor((c[1] - dLng) / TILE_LNG), j1 = Math.floor((c[1] + dLng) / TILE_LNG);
+          for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) out.push(tileKey(i, j));
+          const mid = (k) => {
+            const [i, j] = k.split(":").map(Number);
+            return Math.hypot((i + 0.5) * TILE_LAT - c[0], ((j + 0.5) * TILE_LNG - c[1]) * Math.cos(c[0] * RAD));
+          };
+          return out.sort((a, b) => mid(a) - mid(b));
+        }
+        function qTile(k) {
+          const [i, j] = k.split(":").map(Number), bb = [i * TILE_LAT, j * TILE_LNG, (i + 1) * TILE_LAT, (j + 1) * TILE_LNG].map((v) => v.toFixed(4)).join(",");
+          return `[out:json][timeout:90];way${HW_FILTER}(${bb});out body qt;>;out skel qt;way["building"~"^(${HOUSE_B})$"](${bb});out center tags qt;way["building"]["building"!~"^(${HOUSE_B}|${NO_B})$"](${bb});out geom tags qt;/*${TILE_V}*/`;
+        }
+        const r6 = (v) => Math.round(v * 1e6) / 1e6;
+        function fastNoWalk(g) {
+          if (!/^(primary|secondary|tertiary)(_link)?$/.test(g.highway || "")) return false;
+          const v = String(g.maxspeed || "").trim().toLowerCase(), sp = /^(de:rural|de:motorway|none)$/.test(v) ? 100 : /^(de:urban|walk|de:living_street)$/.test(v) ? 50 : parseInt(v, 10);
+          if (!(sp >= 70)) return false;
+          return !["sidewalk", "sidewalk:both", "sidewalk:left", "sidewalk:right"].some((k) => /^(yes|both|left|right|separate)$/.test(g[k] || ""));
+        }
+        function compactTile(osm) {
+          const n = [], w = [], b = [];
+          for (const e of osm && osm.elements || []) {
+            if (e.type === "node") n.push(e.id, r6(e.lat), r6(e.lon));
+            else if (e.type === "way" && e.nodes && e.tags && e.tags.highway) {
+              if (!fastNoWalk(e.tags)) w.push([e.id, e.tags.name || e.tags.ref || "", e.nodes]);
+            } else if (e.type === "way") {
+              const x = parseBuildings({ elements: [e] })[0];
+              if (x) b.push([e.id, r6(x.lat), r6(x.lng), x.n]);
+            }
+          }
+          return { v: TILE_V, elements: [], n, w, b };
+        }
+        function decodeTile(t) {
+          if (!t || t.v !== "fm4") return t;
+          const n = [], w = [], b = [];
+          let id = 0, la = 0, lo = 0;
+          for (let i = 0; i < t.n.length; i += 3) {
+            id += t.n[i];
+            la += t.n[i + 1];
+            lo += t.n[i + 2];
+            n.push(id, la / 1e6, lo / 1e6);
+          }
+          let wid = 0;
+          for (const x of t.w) {
+            wid += x[0];
+            let nid = 0;
+            w.push([wid, x[1], x[2].map((d) => nid += d)]);
+          }
+          la = 0;
+          lo = 0;
+          for (let i = 0; i < t.b.length; i += 3) {
+            la += t.b[i];
+            lo += t.b[i + 1];
+            b.push([0, la / 1e6, lo / 1e6, t.b[i + 2]]);
+          }
+          return { v: "fm4", elements: [], n, w, b };
+        }
+        function mergeTiles(list) {
+          const nodes = /* @__PURE__ */ new Map(), ways = /* @__PURE__ */ new Map(), bs = /* @__PURE__ */ new Map();
+          for (const t of list) {
+            if (!t) continue;
+            for (let i = 0; i < t.n.length; i += 3) nodes.set(t.n[i], [t.n[i + 1], t.n[i + 2]]);
+            for (const x of t.w) ways.set(x[0], x);
+            for (const x of t.b) bs.set(x[1] + "," + x[2], x);
+          }
+          const elements = [];
+          for (const [id, p] of nodes) elements.push({ type: "node", id, lat: p[0], lon: p[1] });
+          for (const [id, x] of ways) elements.push({ type: "way", id, nodes: x[2], tags: x[1] ? { name: x[1] } : {} });
+          return { osm: { elements }, buildings: [...bs.values()].map((x) => ({ lat: x[1], lng: x[2], n: x[3] })) };
+        }
+        const TILES_URL = "https://xobrvfkwqessbkdwiavu.supabase.co/storage/v1/object/public/tiles/v4/";
+        let tileStamp = "";
+        function setTileStamp(s) {
+          tileStamp = s ? "?b=" + encodeURIComponent(s) : "";
+        }
+        async function fetchOwnTile(base, k, f) {
+          const r = await f(base + k.replace(":", "_") + ".json.gz" + tileStamp);
+          if (!r.ok) return null;
+          const buf = new Uint8Array(await r.arrayBuffer());
+          let text;
+          if (buf[0] === 31 && buf[1] === 139) {
+            if (typeof DecompressionStream === "undefined") return null;
+            text = await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+          } else text = new TextDecoder().decode(buf);
+          const t = decodeTile(JSON.parse(text));
+          return t && t.v === "fm4" && Array.isArray(t.n) ? t : null;
+        }
+        async function fetchTiles(keys, store, opt) {
+          const miss = keys.filter((k) => !store.has(k)), total = keys.length;
+          const report = () => opt.progress && opt.progress(keys.filter((k) => store.has(k)).length, total);
+          if (!miss.length) return;
+          const base = opt.tilesUrl === void 0 ? opt.fetchImpl ? null : TILES_URL : opt.tilesUrl, tf = opt.tileFetch || (typeof fetch !== "undefined" ? fetch : null);
+          if (base && tf) {
+            let next2 = 0;
+            const lane2 = async () => {
+              while (next2 < miss.length) {
+                const k = miss[next2++];
+                try {
+                  const t = await fetchOwnTile(base, k, tf);
+                  if (t) {
+                    store.set(k, t);
+                    report();
+                  }
+                } catch (e) {
+                }
+              }
+            };
+            await Promise.all([lane2(), lane2(), lane2(), lane2()]);
+            if (miss.every((k) => store.has(k))) return;
+          }
+          if (opt.cache) {
+            const left = miss.filter((k) => !store.has(k)), chunks = [];
+            for (let i = 0; i < left.length; i += 3) chunks.push(left.slice(i, i + 3));
+            await Promise.all(chunks.map(async (ch) => {
+              try {
+                const hit = await opt.cache.get(ch.map(qTile));
+                (hit || []).forEach((x, i) => {
+                  if (x && x.v === TILE_V && Array.isArray(x.n)) store.set(ch[i], x);
+                });
+              } catch (e) {
+              }
+            }));
+          }
+          const todo = miss.filter((k) => !store.has(k));
+          report();
+          let next = 0;
+          const lane = async () => {
+            while (next < todo.length) {
+              if (opt.stale && opt.stale()) throw new Error("stale");
+              const k = todo[next++], q = qTile(k);
+              const t = compactTile(await overpass(q, opt.fetchImpl, 9e4, opt.stale));
+              store.set(k, t);
+              report();
+              if (opt.cache) Promise.resolve(opt.cache.put([{ q, payload: t }])).catch(() => {
+              });
+            }
+          };
+          await Promise.all([lane(), lane()]);
+        }
+        function buildGraph(osm, poly) {
+          const nodes = /* @__PURE__ */ new Map();
+          for (const e of osm.elements) if (e.type === "node") nodes.set(e.id, [e.lat, e.lon]);
+          const segs = [], deg = /* @__PURE__ */ new Map(), adjSeg = /* @__PURE__ */ new Map();
+          const addAdj = (n, i) => {
+            if (!adjSeg.has(n)) adjSeg.set(n, []);
+            adjSeg.get(n).push(i);
+            deg.set(n, (deg.get(n) || 0) + 1);
+          };
+          for (const w of osm.elements) {
+            if (w.type !== "way" || !w.nodes) continue;
+            const name = w.tags && (w.tags.name || w.tags.ref) || "";
+            for (let i = 1; i < w.nodes.length; i++) {
+              const u = w.nodes[i - 1], v = w.nodes[i], a = nodes.get(u), b = nodes.get(v);
+              if (!a || !b || u === v) continue;
+              if (poly && !inPoly([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], poly)) continue;
+              const id = segs.length;
+              segs.push({ u, v, name, used: false });
+              addAdj(u, id);
+              addAdj(v, id);
+            }
+          }
+          const jIndex = /* @__PURE__ */ new Map(), pts = [];
+          const jid = (n) => {
+            if (!jIndex.has(n)) {
+              jIndex.set(n, pts.length);
+              pts.push(nodes.get(n));
+            }
+            return jIndex.get(n);
+          };
+          const edges = [];
+          const walk = (start, firstSeg) => {
+            const coords = [nodes.get(start)];
+            let cur = start, sid = firstSeg, name = segs[firstSeg].name;
+            while (true) {
+              const s = segs[sid];
+              s.used = true;
+              const nxt = s.u === cur ? s.v : s.u;
+              coords.push(nodes.get(nxt));
+              if (!name && s.name) name = s.name;
+              cur = nxt;
+              if (deg.get(cur) !== 2 || cur === start) break;
+              const ns = adjSeg.get(cur).find((i) => !segs[i].used);
+              if (ns === void 0) break;
+              sid = ns;
+            }
+            if (cur === start && coords.length < 3) return;
+            edges.push({ a: jid(start), b: jid(cur), coords, len: lineLen(coords), name });
+          };
+          for (const [n, d] of deg) if (d !== 2) {
+            for (const sid of adjSeg.get(n)) if (!segs[sid].used) walk(n, sid);
+          }
+          for (let i = 0; i < segs.length; i++) if (!segs[i].used) walk(segs[i].u, i);
+          return finishGraph(pts, edges);
+        }
+        function finishGraph(pts, edges) {
+          const adj = pts.map(() => []);
+          edges.forEach((e, i) => {
+            adj[e.a].push({ e: i, to: e.b });
+            if (e.a !== e.b) adj[e.b].push({ e: i, to: e.a });
+          });
+          return { pts, edges, adj };
+        }
+        function largestComponent(g, near) {
+          const comp = new Array(g.pts.length).fill(-1);
+          let c = 0;
+          const len = [];
+          for (let s = 0; s < g.pts.length; s++) {
+            if (comp[s] !== -1 || !g.adj[s].length) continue;
+            const st = [s];
+            comp[s] = c;
+            len[c] = 0;
+            while (st.length) {
+              const v = st.pop();
+              for (const { e, to } of g.adj[v]) {
+                if (comp[to] === -1) {
+                  comp[to] = c;
+                  st.push(to);
+                }
+              }
+            }
+            c++;
+          }
+          g.edges.forEach((e) => {
+            len[comp[e.a]] += e.len;
+          });
+          let best = 0;
+          for (let i = 1; i < c; i++) if (len[i] > len[best]) best = i;
+          if (near) {
+            let nv = -1, nd = 500;
+            for (let v = 0; v < g.pts.length; v++) {
+              if (comp[v] < 0) continue;
+              const d = dist(near, g.pts[v]);
+              if (d < nd) {
+                nd = d;
+                nv = v;
+              }
+            }
+            if (nv >= 0 && len[comp[nv]] >= 2e3) best = comp[nv];
+          }
+          const map = /* @__PURE__ */ new Map(), pts = [], edges = [];
+          const nid = (v) => {
+            if (!map.has(v)) {
+              map.set(v, pts.length);
+              pts.push(g.pts[v]);
+            }
+            return map.get(v);
+          };
+          let dropped = 0;
+          for (const e of g.edges) {
+            if (comp[e.a] === best) edges.push({ ...e, a: nid(e.a), b: nid(e.b) });
+            else dropped += e.len;
+          }
+          const out = finishGraph(pts, edges);
+          out.dropped_m = dropped;
+          return out;
+        }
+        class Heap {
+          constructor() {
+            this.a = [];
+          }
+          push(k, v) {
+            const a = this.a;
+            a.push([k, v]);
+            let i = a.length - 1;
+            while (i) {
+              const p = i - 1 >> 1;
+              if (a[p][0] <= a[i][0]) break;
+              [a[p], a[i]] = [a[i], a[p]];
+              i = p;
+            }
+          }
+          pop() {
+            const a = this.a, top = a[0], last = a.pop();
+            if (a.length) {
+              a[0] = last;
+              let i = 0;
+              for (; ; ) {
+                const l = 2 * i + 1, r = l + 1;
+                let m = i;
+                if (l < a.length && a[l][0] < a[m][0]) m = l;
+                if (r < a.length && a[r][0] < a[m][0]) m = r;
+                if (m === i) break;
+                [a[m], a[i]] = [a[i], a[m]];
+                i = m;
+              }
+            }
+            return top;
+          }
+          get size() {
+            return this.a.length;
+          }
+        }
+        function shortestTo(g, sources, isTarget) {
+          const d = new Float64Array(g.pts.length).fill(Infinity), pe = new Int32Array(g.pts.length).fill(-1), pv = new Int32Array(g.pts.length).fill(-1);
+          const h = new Heap();
+          for (const s of sources) {
+            d[s] = 0;
+            h.push(0, s);
+          }
+          while (h.size) {
+            const [k, v] = h.pop();
+            if (k > d[v]) continue;
+            if (isTarget(v)) {
+              const path = [];
+              let x = v;
+              while (pe[x] !== -1) {
+                path.push(pe[x]);
+                x = pv[x];
+              }
+              return { target: v, edges: path.reverse() };
+            }
+            for (const { e, to } of g.adj[v]) {
+              const nd = k + g.edges[e].len;
+              if (nd < d[to]) {
+                d[to] = nd;
+                pe[to] = e;
+                pv[to] = v;
+                h.push(nd, to);
+              }
+            }
+          }
+          return null;
+        }
+        function sssp(g, src) {
+          const d = new Float64Array(g.pts.length).fill(Infinity), pe = new Int32Array(g.pts.length).fill(-1), pv = new Int32Array(g.pts.length).fill(-1);
+          const h = new Heap();
+          d[src] = 0;
+          h.push(0, src);
+          while (h.size) {
+            const [k, v] = h.pop();
+            if (k > d[v]) continue;
+            for (const { e, to } of g.adj[v]) {
+              const nd = k + g.edges[e].len;
+              if (nd < d[to]) {
+                d[to] = nd;
+                pe[to] = e;
+                pv[to] = v;
+                h.push(nd, to);
+              }
+            }
+          }
+          return { d, pe, pv };
+        }
+        function emptyGap(g, start, poly) {
+          const nodes = g.pts.map((_, i) => i).filter((i) => g.adj[i].length);
+          if (!nodes.length) return Infinity;
+          const target = new Uint8Array(g.pts.length);
+          let any = false;
+          for (const i of nodes) if (inPoly(g.pts[i], poly)) {
+            target[i] = 1;
+            any = true;
+          }
+          if (!any) return Infinity;
+          const src = nearestNode(g, start, nodes), d = new Float64Array(g.pts.length).fill(Infinity), h = new Heap();
+          d[src] = 0;
+          h.push(0, src);
+          while (h.size) {
+            const [k, v] = h.pop();
+            if (k > d[v]) continue;
+            if (target[v]) return Math.round(k);
+            for (const { e, to } of g.adj[v]) {
+              const E3 = g.edges[e], c = (E3.mb || 0) * 60 >= E3.len ? 0 : E3.len, nd = k + c;
+              if (nd < d[to]) {
+                d[to] = nd;
+                h.push(nd, to);
+              }
+            }
+          }
+          return Infinity;
+        }
+        function denseEntry(g, from, zone, need) {
+          if (!g || !g.pts || !g.edges || !g.adj) return null;
+          const cy = 27e-4, cx = cy / Math.max(0.2, Math.cos((from[0] || 51) * RAD)), key = (i, j) => i + ":" + j, cells = /* @__PURE__ */ new Map();
+          for (const e of g.edges) {
+            if (!(e.mb > 0)) continue;
+            const p = g.pts[e.a];
+            if (zone && zone.length > 2 && !inPoly(p, zone)) continue;
+            const k = key(Math.floor(p[0] / cy), Math.floor(p[1] / cx));
+            cells.set(k, (cells.get(k) || 0) + e.mb);
+          }
+          const around = (p) => {
+            const i = Math.floor(p[0] / cy), j = Math.floor(p[1] / cx);
+            let s = 0;
+            for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) s += cells.get(key(i + a, j + b)) || 0;
+            return s;
+          };
+          let best = null, dense = null;
+          for (let v = 0; v < g.pts.length; v++) {
+            if (!g.adj[v] || !g.adj[v].length) continue;
+            const p = g.pts[v];
+            if (zone && zone.length > 2 && !inPoly(p, zone)) continue;
+            const mb = around(p), dd = dist(p, from);
+            if (mb >= need && (!best || dd < best.dd)) best = { p, dd };
+            if (!dense || mb > dense.mb) dense = { p, mb };
+          }
+          return (best || dense || {}).p || null;
+        }
+        function pathFrom(tree, target) {
+          const out = [];
+          let x = target;
+          while (tree.pe[x] !== -1) {
+            out.push(tree.pe[x]);
+            x = tree.pv[x];
+          }
+          return out.reverse();
+        }
+        function partition(g, start, n, ids, weight) {
+          const cosLat = Math.cos(start[0] * RAD);
+          const list = ids || g.edges.map((e, i) => i), wf = weight || ((e) => e.len);
+          const items = list.map((i) => {
+            const e = g.edges[i], m = e.coords[Math.floor(e.coords.length / 2)];
+            return { i, len: wf(e), ang: Math.atan2(m[0] - start[0], (m[1] - start[1]) * cosLat) };
+          }).sort((x, y) => x.ang - y.ang);
+          if (n <= 1 || !items.length) return [items.map((x) => x.i)];
+          let gapAt = 0, gap = -1;
+          for (let k = 0; k < items.length; k++) {
+            const a = items[k].ang, b = k + 1 < items.length ? items[k + 1].ang : items[0].ang + 2 * Math.PI;
+            if (b - a > gap) {
+              gap = b - a;
+              gapAt = k + 1;
+            }
+          }
+          const rot = items.slice(gapAt).concat(items.slice(0, gapAt));
+          const total = rot.reduce((s, x) => s + x.len, 0), parts = Array.from({ length: n }, () => []);
+          let cum = 0;
+          for (const x of rot) {
+            const p = Math.min(n - 1, Math.floor((cum + x.len / 2) / total * n));
+            parts[p].push(x.i);
+            cum += x.len;
+          }
+          return parts;
+        }
+        function pieces(g, ids) {
+          const set = new Set(ids), seen = /* @__PURE__ */ new Set(), out = [];
+          for (const i of ids) {
+            if (seen.has(i)) continue;
+            const st = [i], c = [];
+            seen.add(i);
+            while (st.length) {
+              const e = st.pop();
+              c.push(e);
+              for (const v of [g.edges[e].a, g.edges[e].b]) for (const { e: f } of g.adj[v]) if (set.has(f) && !seen.has(f)) {
+                seen.add(f);
+                st.push(f);
+              }
+            }
+            out.push(c);
+          }
+          return out;
+        }
+        function owners(g, parts) {
+          const own = /* @__PURE__ */ new Map();
+          parts.forEach((p, k) => {
+            for (const e of p) for (const v of [g.edges[e].a, g.edges[e].b]) {
+              let m = own.get(v);
+              if (!m) own.set(v, m = /* @__PURE__ */ new Map());
+              m.set(k, (m.get(k) || 0) + 1);
+            }
+          });
+          return own;
+        }
+        function tidyParts(g, parts) {
+          parts = parts.map((p) => p.slice());
+          const lenOf = (c) => c.reduce((s, e) => s + g.edges[e].len, 0);
+          for (let round = 0; round < 20; round++) {
+            let moved = false;
+            for (let k = 0; k < parts.length; k++) {
+              const ps = pieces(g, parts[k]);
+              if (ps.length < 2) continue;
+              ps.sort((a, b) => lenOf(b) - lenOf(a));
+              const own = owners(g, parts), keep = ps[0].slice(), all = lenOf(parts[k]);
+              for (const c of ps.slice(1)) {
+                if (lenOf(c) > 0.3 * all) {
+                  for (const e of c) keep.push(e);
+                  continue;
+                }
+                const touch = /* @__PURE__ */ new Map();
+                for (const e of c) for (const v of [g.edges[e].a, g.edges[e].b]) {
+                  const m = own.get(v);
+                  if (m) {
+                    for (const [q, cnt] of m) if (q !== k) touch.set(q, (touch.get(q) || 0) + cnt);
+                  }
+                }
+                if (!touch.size) {
+                  for (const e of c) keep.push(e);
+                  continue;
+                }
+                let bq = -1, bc = -1;
+                for (const [q, cnt] of touch) if (cnt > bc) {
+                  bc = cnt;
+                  bq = q;
+                }
+                for (const e of c) parts[bq].push(e);
+                moved = true;
+              }
+              parts[k] = keep;
+            }
+            if (!moved) break;
+          }
+          return parts;
+        }
+        const edgeMin = (x) => walkMin(1.35 * x.len, x.mb);
+        function neighbours(g, parts, P, own) {
+          const nb = /* @__PURE__ */ new Set();
+          for (const e of parts[P]) for (const v of [g.edges[e].a, g.edges[e].b]) {
+            const m = own.get(v);
+            if (m) {
+              for (const q of m.keys()) if (q !== P) nb.add(q);
+            }
+          }
+          return nb;
+        }
+        function shiftStrip(g, parts, P, Q, want, own) {
+          const inP = new Set(parts[P]), take = /* @__PURE__ */ new Set(), seen = /* @__PURE__ */ new Set(), queue = [];
+          for (const e of parts[P]) for (const v of [g.edges[e].a, g.edges[e].b]) {
+            const m = own.get(v);
+            if (m && m.has(Q) && !seen.has(e)) {
+              seen.add(e);
+              queue.push(e);
+            }
+          }
+          let got = 0;
+          for (let h = 0; h < queue.length && got < want && take.size < inP.size - 1; h++) {
+            const e = queue[h];
+            take.add(e);
+            got += edgeMin(g.edges[e]);
+            for (const v of [g.edges[e].a, g.edges[e].b]) for (const { e: f } of g.adj[v]) if (inP.has(f) && !seen.has(f)) {
+              seen.add(f);
+              queue.push(f);
+            }
+          }
+          if (!take.size) return null;
+          const out = parts.map((p) => p.slice());
+          out[P] = out[P].filter((e) => !take.has(e));
+          for (const e of take) out[Q].push(e);
+          return tidyParts(g, out);
+        }
+        function balanceParts(g, parts, rounds) {
+          const cost = (p) => p.reduce((s, e) => s + edgeMin(g.edges[e]), 0);
+          parts = tidyParts(g, parts);
+          for (let it = 0; it < (rounds || 40); it++) {
+            const c = parts.map(cost), mean = c.reduce((a, b) => a + b, 0) / parts.length, own = owners(g, parts);
+            let next = null;
+            for (const P of c.map((x, k) => k).sort((a, b) => c[b] - c[a])) {
+              if (c[P] <= mean * 1.03) break;
+              const nb = [...neighbours(g, parts, P, own)].filter((q) => c[q] < c[P]).sort((a, b) => c[a] - c[b]);
+              if (!nb.length) continue;
+              next = shiftStrip(g, parts, P, nb[0], (c[P] - c[nb[0]]) / 2, own);
+              if (next) break;
+            }
+            if (!next) break;
+            parts = next;
+          }
+          return parts;
+        }
+        function startNode(g, p) {
+          const k = p[0] + "," + p[1];
+          if (!g._sn || g._sn.k !== k) g._sn = { k, v: nearestNode(g, p, g.pts.map((_, i) => i).filter((i) => g.adj[i].length)) };
+          return g._sn.v;
+        }
+        function nearestNode(g, p, among) {
+          let best = -1, bd = Infinity;
+          for (const v of among) {
+            const d = dist(g.pts[v], p);
+            if (d < bd) {
+              bd = d;
+              best = v;
+            }
+          }
+          return best;
+        }
+        const bearing = (a, b) => Math.atan2((b[1] - a[1]) * Math.cos(a[0] * RAD), b[0] - a[0]) / RAD;
+        const turnCode = (d) => {
+          const a = Math.abs(d);
+          return a < 25 ? "S" : a < 60 ? d < 0 ? "SL" : "SR" : a < 150 ? d < 0 ? "L" : "R" : "U";
+        };
+        function planPart(g, req, start, rootNode) {
+          if (!req.length) return { path: [], length_m: 0, street_m: 0, edges: 0, steps: [] };
+          const inst = req.map((e) => ({ e, dead: false }));
+          const touched = /* @__PURE__ */ new Set();
+          for (const e of req) {
+            touched.add(g.edges[e].a);
+            touched.add(g.edges[e].b);
+          }
+          const root2 = rootNode != null ? rootNode : startNode(g, start);
+          touched.add(root2);
+          const par = /* @__PURE__ */ new Map();
+          const find = (x) => {
+            while (par.get(x) !== x) {
+              par.set(x, par.get(par.get(x)));
+              x = par.get(x);
+            }
+            return x;
+          };
+          const uni = (a, b) => {
+            if (!par.has(a)) par.set(a, a);
+            if (!par.has(b)) par.set(b, b);
+            par.set(find(a), find(b));
+          };
+          for (const v of touched) par.set(v, v);
+          for (const e of req) uni(g.edges[e].a, g.edges[e].b);
+          for (let guard = 0; guard < 5e3; guard++) {
+            const rr = find(root2), comp = [...touched].filter((v) => find(v) === rr);
+            if (comp.length === touched.size) break;
+            const r = shortestTo(g, comp, (v) => touched.has(v) && find(v) !== rr);
+            if (!r) break;
+            for (const e of r.edges) {
+              inst.push({ e, dead: true });
+              const { a, b } = g.edges[e];
+              touched.add(a);
+              touched.add(b);
+              uni(a, b);
+            }
+          }
+          const degree = /* @__PURE__ */ new Map();
+          const bump = (v) => degree.set(v, (degree.get(v) || 0) + 1);
+          for (const { e } of inst) {
+            bump(g.edges[e].a);
+            bump(g.edges[e].b);
+          }
+          const odd = [...degree].filter(([, d]) => d % 2).map(([v]) => v);
+          if (odd.length) {
+            const k = odd.length, idx = new Map(odd.map((v, i) => [v, i]));
+            const D2 = Array.from({ length: k }, () => new Float64Array(k).fill(Infinity));
+            const trees = odd.map((v) => sssp(g, v));
+            for (let i = 0; i < k; i++) for (let j = 0; j < k; j++) D2[i][j] = trees[i].d[odd[j]];
+            const pairs = [];
+            for (let i = 0; i < k; i++) for (let j = i + 1; j < k; j++) if (isFinite(D2[i][j])) pairs.push([D2[i][j], i, j]);
+            pairs.sort((x, y) => x[0] - y[0]);
+            const mate = new Int32Array(k).fill(-1);
+            for (const [, i, j] of pairs) if (mate[i] < 0 && mate[j] < 0) {
+              mate[i] = j;
+              mate[j] = i;
+            }
+            for (let pass = 0, improved = true; improved && pass < 30; pass++) {
+              improved = false;
+              for (let a = 0; a < k; a++) {
+                const b = mate[a];
+                if (b < a) continue;
+                for (let c = a + 1; c < k; c++) {
+                  const d = mate[c];
+                  if (c === b || d < c || d === a) continue;
+                  const cur = D2[a][b] + D2[c][d], s1 = D2[a][c] + D2[b][d], s2 = D2[a][d] + D2[b][c];
+                  if (s1 < cur - 1e-6 && s1 <= s2) {
+                    mate[a] = c;
+                    mate[c] = a;
+                    mate[b] = d;
+                    mate[d] = b;
+                    improved = true;
+                    break;
+                  }
+                  if (s2 < cur - 1e-6) {
+                    mate[a] = d;
+                    mate[d] = a;
+                    mate[b] = c;
+                    mate[c] = b;
+                    improved = true;
+                    break;
+                  }
+                }
+              }
+            }
+            for (let i = 0; i < k; i++) {
+              const j = mate[i];
+              if (j < i) continue;
+              for (const e of pathFrom(trees[i], odd[j])) inst.push({ e, dead: true });
+            }
+          }
+          const inc = /* @__PURE__ */ new Map();
+          const addInc = (v, i) => {
+            if (!inc.has(v)) inc.set(v, []);
+            inc.get(v).push(i);
+          };
+          inst.forEach((x, i) => {
+            addInc(g.edges[x.e].a, i);
+            if (g.edges[x.e].a !== g.edges[x.e].b) addInc(g.edges[x.e].b, i);
+            else addInc(g.edges[x.e].a, i);
+          });
+          const used = new Uint8Array(inst.length), ptr = /* @__PURE__ */ new Map();
+          const stack = [{ v: root2, i: -1, from: -1 }], circuit = [];
+          while (stack.length) {
+            const top = stack[stack.length - 1], list = inc.get(top.v) || [];
+            let p = ptr.get(top.v) || 0;
+            while (p < list.length && used[list[p]]) p++;
+            ptr.set(top.v, p);
+            if (p < list.length) {
+              const i = list[p];
+              used[i] = 1;
+              const ed = g.edges[inst[i].e];
+              stack.push({ v: ed.a === top.v ? ed.b : ed.a, i, from: top.v });
+            } else circuit.push(stack.pop());
+          }
+          circuit.reverse();
+          const path = [];
+          let length = 0, street = 0;
+          const steps = [];
+          let prevB = null, prevName = null;
+          for (const step of circuit) {
+            if (step.i < 0) continue;
+            const ed = g.edges[inst[step.i].e];
+            const c = step.from === ed.a ? ed.coords : ed.coords.slice().reverse();
+            const at = path.length ? path.length - 1 : 0;
+            let j = 1;
+            while (j < c.length - 1 && dist(c[0], c[j]) < 4) j++;
+            const b0 = bearing(c[0], c[j]);
+            let turn = 0;
+            if (prevB != null) {
+              turn = b0 - prevB;
+              while (turn > 180) turn -= 360;
+              while (turn < -180) turn += 360;
+            }
+            const nm = ed.name || "";
+            if (prevB == null) steps.push([at, "start", nm]);
+            else if (Math.abs(turn) >= 25 || nm && nm !== prevName) steps.push([at, turnCode(turn), nm]);
+            let k = c.length - 2;
+            while (k > 0 && dist(c[c.length - 1], c[k]) < 4) k--;
+            prevB = bearing(c[k], c[c.length - 1]);
+            prevName = nm || prevName;
+            for (const p of path.length ? c.slice(1) : c) path.push([+p[0].toFixed(6), +p[1].toFixed(6)]);
+            length += ed.len;
+            if (!inst[step.i].dead) street += ed.len;
+          }
+          if (path.length) steps.push([path.length - 1, "end", ""]);
+          return { path, steps, root: root2, length_m: Math.round(length), street_m: Math.round(street), edges: req.length, covered: used.reduce((s, x) => s + x, 0) === inst.length };
+        }
+        const COLORS = ["#2563EB", "#C2185B", "#D97706", "#7C3AED", "#059669", "#0891B2", "#DC2626", "#4D7C0F", "#DB2777", "#EA580C"];
+        function pathRuns(path) {
+          const out = [];
+          let cur = [];
+          for (const q of path || []) {
+            if (q[2] === 1 && cur.length) {
+              out.push(cur);
+              cur = [];
+            }
+            cur.push(q);
+          }
+          if (cur.length) out.push(cur);
+          return out;
+        }
+        function densifyPath(path, step) {
+          const out = [];
+          for (let i = 0; i < path.length; i++) {
+            if (i === 0) {
+              out.push(path[0]);
+              continue;
+            }
+            const a = path[i - 1], b = path[i];
+            if (b[2] === 1) {
+              out.push(b);
+              continue;
+            }
+            const d = dist(a, b), n = Math.max(1, Math.ceil(d / step));
+            for (let k = 1; k <= n; k++) out.push([a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n]);
+          }
+          return out;
+        }
+        const DIR_FROM = Date.parse("2026-11-12T23:00:00Z");
+        function makeTracker(path, tol) {
+          tol = tol || 25;
+          const samples = densifyPath(path, 8), done = new Uint8Array(samples.length);
+          const KY = R * RAD, KX = Math.cos((samples.length ? samples[0][0] : 51) * RAD) * R * RAD;
+          const sdir = samples.map((q, i) => {
+            const a = i > 0 && q[2] !== 1 ? samples[i - 1] : q, b = i < samples.length - 1 && samples[i + 1][2] !== 1 ? samples[i + 1] : q;
+            const dx = (b[1] - a[1]) * KX, dy = (b[0] - a[0]) * KY, l = Math.hypot(dx, dy);
+            return l > 0.5 ? [dx / l, dy / l] : null;
+          });
+          const cell = 4e-4, grid = /* @__PURE__ */ new Map(), key = (la, lo) => Math.floor(la / cell) + ":" + Math.floor(lo / cell);
+          samples.forEach((p, i) => {
+            const k = key(p[0], p[1]);
+            if (!grid.has(k)) grid.set(k, []);
+            grid.get(k).push(i);
+          });
+          let count = 0;
+          function mark(p) {
+            const cy = Math.floor(p[0] / cell), cx = Math.floor(p[1] / cell);
+            let changed = false;
+            for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+              const list = grid.get(cy + dy + ":" + (cx + dx));
+              if (!list) continue;
+              for (const i of list) if (!done[i] && dist(samples[i], p) <= tol) {
+                done[i] = 1;
+                count++;
+                changed = true;
+              }
+            }
+            return changed;
+          }
+          const CLOSE = 6, ALONG = 8, COS = Math.cos(50 * RAD), AGREE = Math.cos(35 * RAD);
+          let hist = [];
+          function markDir(a, b) {
+            if (!hist.length || hist[hist.length - 1][0] !== a[0] || hist[hist.length - 1][1] !== a[1]) hist = [a];
+            hist.push(b);
+            if (hist.length > 40) hist.shift();
+            const vec = (p, q) => {
+              const x = (q[1] - p[1]) * KX, y = (q[0] - p[0]) * KY;
+              return [x, y, Math.hypot(x, y)];
+            };
+            let long = null, short = null, from = a;
+            for (let k = hist.length - 2; k >= 0; k--) {
+              const v2 = vec(hist[k], b);
+              if (v2[2] > 80) break;
+              if (!short && v2[2] >= 8) short = v2;
+              if (v2[2] >= 20) {
+                long = v2;
+                from = hist[k];
+                break;
+              }
+            }
+            let dir = null;
+            if (long && short && (long[0] * short[0] + long[1] * short[1]) / (long[2] * short[2]) >= AGREE) dir = [long[0] / long[2], long[1] / long[2]];
+            else from = a;
+            const v = vec(from, b), vx = v[0], vy = v[1], len = v[2];
+            const seen = /* @__PURE__ */ new Set(), n = Math.min(50, Math.max(1, Math.ceil(len / 10)));
+            let ch = false;
+            const hit = [];
+            for (let s = 0; s <= n; s++) {
+              const p = [from[0] + (b[0] - from[0]) * s / n, from[1] + (b[1] - from[1]) * s / n], cy = Math.floor(p[0] / cell), cx = Math.floor(p[1] / cell);
+              for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+                const k = cy + dy + ":" + (cx + dx);
+                if (seen.has(k)) continue;
+                seen.add(k);
+                const list = grid.get(k);
+                if (!list) continue;
+                for (const i of list) {
+                  if (done[i]) continue;
+                  const px = (samples[i][1] - from[1]) * KX, py = (samples[i][0] - from[0]) * KY;
+                  const al = len > 0 ? (px * vx + py * vy) / len : 0, t = Math.max(0, Math.min(len, al));
+                  const dC = Math.hypot(px - (len > 0 ? vx / len * t : 0), py - (len > 0 ? vy / len * t : 0));
+                  let ok = dC <= CLOSE;
+                  if (!ok && dir && dC <= tol && al >= -2 && al <= len + ALONG && sdir[i]) ok = Math.abs(dir[0] * sdir[i][0] + dir[1] * sdir[i][1]) >= COS;
+                  if (ok) {
+                    done[i] = 1;
+                    count++;
+                    ch = true;
+                    hit.push(i);
+                  }
+                }
+              }
+            }
+            const cont = (i, j) => samples[j][2] !== 1 && dist(samples[i], samples[j]) <= 12;
+            for (const i of hit) for (const sgn of [-1, 1]) for (let g = 1; g <= 2; g++) {
+              const j = i + sgn * (g + 1);
+              if (j < 0 || j >= samples.length || !done[j]) continue;
+              let fine = true;
+              for (let x = Math.min(i, j); x < Math.max(i, j); x++) if (!cont(x, x + 1)) {
+                fine = false;
+                break;
+              }
+              if (fine) {
+                for (let x = Math.min(i, j) + 1; x < Math.max(i, j); x++) if (!done[x]) {
+                  done[x] = 1;
+                  count++;
+                }
+              }
+              break;
+            }
+            return ch;
+          }
+          const isNew = (p) => (p[2] || 0) >= DIR_FROM;
+          function markLine(a, b) {
+            if (isNew(b)) return markDir(a, b);
+            const d = dist(a, b), n = Math.min(50, Math.max(1, Math.ceil(d / 10)));
+            let ch = false;
+            for (let k = 0; k <= n; k++) ch = mark([a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n]) || ch;
+            return ch;
+          }
+          function near(p, r) {
+            const cy = Math.floor(p[0] / cell), cx = Math.floor(p[1] / cell), out = [];
+            for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+              const list = grid.get(cy + dy + ":" + (cx + dx));
+              if (list) {
+                for (const i of list) if (dist(samples[i], p) <= r) out.push(i);
+              }
+            }
+            return out;
+          }
+          function fillGap(a, b) {
+            const d = dist(a, b);
+            if (d > 600) return false;
+            const A2 = near(a, 30), B = near(b, 30);
+            if (!A2.length || !B.length) return false;
+            let best = null;
+            for (const i of A2) for (const j of B) {
+              const k = Math.abs(i - j);
+              if (!best || k < best.k) best = { i, j, k };
+            }
+            if (best.k * 8 > 1.5 * d + 40) return false;
+            let ch = false;
+            for (let x = Math.min(best.i, best.j); x <= Math.max(best.i, best.j); x++) if (!done[x]) {
+              done[x] = 1;
+              count++;
+              ch = true;
+            }
+            return ch;
+          }
+          function addTrack(pts) {
+            let ch = false;
+            for (let i = 0; i < pts.length; i++) {
+              const d = i ? dist(pts[i - 1], pts[i]) : 0;
+              ch = (i && d < 120 ? markLine(pts[i - 1], pts[i]) : (i ? fillGap(pts[i - 1], pts[i]) : false) | (isNew(pts[i]) ? markDir(pts[i], pts[i]) : mark(pts[i]))) || ch;
+            }
+            return ch;
+          }
+          const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+          const straight = (i, j) => {
+            const a = sdir[i], b = sdir[j];
+            return !a || !b || a[0] * b[0] + a[1] * b[1] >= 0.7;
+          };
+          function runs() {
+            const out = [];
+            let cur = null;
+            for (let i = 0; i < samples.length; i++) {
+              const jump = samples[i][2] === 1;
+              if (jump && cur) {
+                out.push(cur);
+                cur = null;
+              }
+              if (done[i]) {
+                if (!cur) {
+                  cur = [];
+                  if (i && !jump && straight(i - 1, i)) cur.push(mid(samples[i - 1], samples[i]));
+                }
+                cur.push(samples[i]);
+              } else if (cur) {
+                if (!jump && straight(i - 1, i)) cur.push(mid(samples[i], samples[i - 1]));
+                out.push(cur);
+                cur = null;
+              }
+            }
+            if (cur) out.push(cur);
+            return out;
+          }
+          function nextIndex() {
+            for (let i = 0; i < samples.length; i++) if (!done[i]) return i;
+            return -1;
+          }
+          return { samples, mark, markLine, fillGap, addTrack, runs, nextIndex, isDone: (i) => !!done[i], doneCount: () => count, pct: () => samples.length ? Math.round(100 * count / samples.length) : 0 };
+        }
+        const NO_B = "garage|garages|shed|roof|carport|greenhouse|hut|cabin|barn|farm_auxiliary|stable|cowshed|sty|ruins|construction|service|parking|hangar|kiosk|toilets|bunker|digester|silo|tank|transformer_tower|water_tower|storage_tank|bridge|boathouse|container|allotment_house|gatehouse|church|chapel|mosque|synagogue|temple|cathedral|train_station|transportation|grandstand|stadium|pavilion|tower|industrial|warehouse|manufacture|power|substation|commercial|retail|supermarket|shop|mall|office|hotel|hospital|clinic|school|university|college|kindergarten|public|civic|government|fire_station|sports_hall|sports_centre|gym|restaurant|cafe|fuel|petrol_station|bank|data_center|factory|works|laboratory|museum|theatre|cinema|library|prison|barracks|military", HOUSE_B = "house|detached|semidetached_house|terrace|bungalow|villa|farm|cottage|houseboat|static_caravan";
+        const NO_MAILBOX = new RegExp("^(" + NO_B + ")$"), HOUSE = new RegExp("^(" + HOUSE_B + ")$");
+        const FLATS = /^(apartments|residential|dormitory)$/;
+        function polyArea(geom) {
+          if (!geom || geom.length < 3) return 0;
+          const lat0 = geom[0].lat, kx = Math.cos(lat0 * RAD) * R * RAD, ky = R * RAD;
+          let a = 0;
+          for (let i = 0; i < geom.length; i++) {
+            const p = geom[i], q = geom[(i + 1) % geom.length];
+            a += p.lon * kx * (q.lat * ky) - q.lon * kx * (p.lat * ky);
+          }
+          return Math.abs(a) / 2;
+        }
+        function estimateMailboxes(tags, area) {
+          tags = tags || {};
+          if (tags.abandoned || tags.disused || tags["disused:building"]) return 0;
+          const b = String(tags.building || "yes");
+          const business = tags.shop || tags.office || tags.amenity || tags.craft || tags.tourism || tags.industrial || tags.healthcare || tags.leisure;
+          const flats = parseInt(tags["building:flats"] || tags["addr:flats"], 10);
+          if (flats > 0) return Math.min(flats, 250);
+          if (NO_MAILBOX.test(b)) return 0;
+          const hasNr = !!tags["addr:housenumber"];
+          if (HOUSE.test(b)) return area < 25 ? 0 : 1;
+          const lv = parseFloat(tags["building:levels"]);
+          const levels = lv > 0 ? lv : area < 120 ? 2 : 4;
+          if (FLATS.test(b)) return Math.max(2, Math.min(250, Math.round(area * levels * 0.75 / 80)));
+          if (business) return 0;
+          if (b === "yes") {
+            if (area < 30 || !hasNr && area < 60) return 0;
+            if (!(lv > 0) && area > 900) return 0;
+            if (!(lv > 0) && !hasNr) return area < 160 ? 1 : 0;
+            if (!(lv > 0)) return area < 160 ? 1 : area < 260 ? 2 : area < 500 ? 3 : Math.max(3, Math.min(250, Math.round(area * 3 * 0.75 / 80)));
+            return Math.max(1, Math.min(250, Math.round(area * levels * 0.75 / 80)));
+          }
+          return 0;
+        }
+        function parseBuildings(osm) {
+          const out = [];
+          for (const w of osm.elements || []) {
+            if (w.type !== "way") continue;
+            if (w.geometry) {
+              const area = polyArea(w.geometry), n = estimateMailboxes(w.tags, area);
+              if (!n) continue;
+              let la = 0, lo = 0;
+              for (const p of w.geometry) {
+                la += p.lat;
+                lo += p.lon;
+              }
+              out.push({ lat: la / w.geometry.length, lng: lo / w.geometry.length, n });
+            } else if (w.center) {
+              const n = estimateMailboxes(w.tags, 100);
+              if (n) out.push({ lat: w.center.lat, lng: w.center.lon, n });
+            }
+          }
+          return out;
+        }
+        function attachBuildings(g, buildings, maxSnap) {
+          maxSnap = maxSnap || 70;
+          const cell = 80, lat0 = g.pts.length ? g.pts[0][0] : 51, kx = Math.cos(lat0 * RAD) * R * RAD, ky = R * RAD;
+          const key = (x, y) => Math.floor(x / cell) + ":" + Math.floor(y / cell), grid = /* @__PURE__ */ new Map();
+          const add = (k, v) => {
+            let l = grid.get(k);
+            if (!l) grid.set(k, l = []);
+            l.push(v);
+          };
+          g.edges.forEach((e, ei) => {
+            e.mb = 0;
+            e.boxes = [];
+            for (let i = 1; i < e.coords.length; i++) {
+              const ax = e.coords[i - 1][1] * kx, ay = e.coords[i - 1][0] * ky, bx = e.coords[i][1] * kx, by = e.coords[i][0] * ky;
+              const L = Math.hypot(bx - ax, by - ay), steps = Math.max(1, Math.ceil(L / 30)), seen = /* @__PURE__ */ new Set();
+              for (let s = 0; s <= steps; s++) {
+                const x = ax + (bx - ax) * s / steps, y = ay + (by - ay) * s / steps;
+                for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+                  const k = key(x + dx * cell, y + dy * cell);
+                  if (!seen.has(k)) {
+                    seen.add(k);
+                    add(k, [ei, ax, ay, bx, by]);
+                  }
+                }
+              }
+            }
+          });
+          let used = 0, dropped = 0;
+          for (const b of buildings) {
+            const x = b.lng * kx, y = b.lat * ky, cand = grid.get(key(x, y));
+            let best = -1, bd = Infinity;
+            if (cand) for (const [ei, ax, ay, bx, by] of cand) {
+              const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+              let t = l2 ? ((x - ax) * dx + (y - ay) * dy) / l2 : 0;
+              t = Math.max(0, Math.min(1, t));
+              const d = Math.hypot(x - (ax + t * dx), y - (ay + t * dy));
+              if (d < bd) {
+                bd = d;
+                best = ei;
+              }
+            }
+            if (best < 0 || bd > (b.snap || maxSnap)) {
+              dropped += b.n;
+              continue;
+            }
+            const e = g.edges[best];
+            e.mb += b.n;
+            e.boxes.push([+b.lat.toFixed(6), +b.lng.toFixed(6), b.n]);
+            used += b.n;
+          }
+          g.mailboxes = used;
+          g.dropped_mb = dropped;
+          return g;
+        }
+        function selectForFlyers(g, start, flyers) {
+          const root2 = nearestNode(g, start, g.pts.map((p, i) => i).filter((i) => g.adj[i].length));
+          const tree = sssp(g, root2), n = g.pts.length, items = [];
+          let sm = 0, sl = 0;
+          g.edges.forEach((e) => {
+            if (e.mb > 0) {
+              sm += e.mb;
+              sl += e.len;
+            }
+          });
+          const D2 = sl ? sm / sl * 1e3 : 0;
+          const minDens = Math.max(4, Math.min(15, 0.25 * D2));
+          const sparse = (e) => e.len > 100 && e.mb * 1e3 / e.len < minDens;
+          let skipped = 0;
+          g.edges.forEach((e, i) => {
+            if (e.mb > 0) {
+              if (!g.zoned && sparse(e)) {
+                skipped += e.mb;
+                return;
+              }
+              items.push({ i, k: (tree.d[e.a] + tree.d[e.b]) / 2, v: tree.d[e.a] <= tree.d[e.b] ? e.b : e.a });
+            }
+          });
+          const B = new Float64Array(n), Lc = new Float64Array(n), kids = Array.from({ length: n }, () => []);
+          for (let v = 0; v < n; v++) if (tree.pe[v] !== -1) kids[tree.pv[v]].push(v);
+          const pre = [], st = [root2];
+          while (st.length) {
+            const v = st.pop();
+            pre.push(v);
+            for (const c of kids[v]) st.push(c);
+          }
+          items.forEach((it) => {
+            const e = g.edges[it.i];
+            B[it.v] += e.mb;
+            Lc[it.v] += e.len;
+          });
+          for (let q = pre.length - 1; q >= 0; q--) {
+            const v = pre[q];
+            if (tree.pe[v] === -1) continue;
+            Lc[v] += g.edges[tree.pe[v]].len;
+            B[tree.pv[v]] += B[v];
+            Lc[tree.pv[v]] += Lc[v];
+          }
+          const thr = Math.max(6, Math.min(25, 0.3 * D2)), drop = new Uint8Array(n);
+          for (const v of pre) {
+            if (tree.pe[v] === -1) continue;
+            if (drop[tree.pv[v]]) drop[v] = 1;
+            else if (!g.zoned && tree.d[v] > 300 && Lc[v] > 0 && B[v] / Lc[v] * 1e3 < thr) drop[v] = 1;
+          }
+          const kept = items.filter((it) => {
+            if (drop[it.v]) {
+              skipped += g.edges[it.i].mb;
+              return false;
+            }
+            return true;
+          });
+          const denseThr = Math.max(12, Math.min(45, 0.25 * D2));
+          const uf = Int32Array.from({ length: n }, (_, i) => i), find = (x) => {
+            while (uf[x] !== x) {
+              uf[x] = uf[uf[x]];
+              x = uf[x];
+            }
+            return x;
+          };
+          const isDense = (it) => {
+            const e = g.edges[it.i];
+            return e.len <= 100 || e.mb * 1e3 / e.len >= denseThr;
+          };
+          kept.forEach((it) => {
+            if (isDense(it)) {
+              const e = g.edges[it.i];
+              uf[find(e.a)] = find(e.b);
+            }
+          });
+          const groups = /* @__PURE__ */ new Map();
+          for (const it of kept) {
+            const e = g.edges[it.i], key = isDense(it) ? find(e.a) : "x" + it.i;
+            let c = groups.get(key);
+            if (!c) groups.set(key, c = { items: [], entry: e.a });
+            c.items.push(it);
+            for (const v of [e.a, e.b]) if (tree.d[v] < tree.d[c.entry]) c.entry = v;
+          }
+          const cl = [...groups.values()], E3 = g.edges.length, taken = new Uint8Array(E3), reached = new Uint8Array(n);
+          cl.forEach((c, i) => {
+            c.ix = i;
+          });
+          let alive = /* @__PURE__ */ new Set(), sum = 0;
+          const take = (i) => {
+            if (!taken[i]) {
+              taken[i] = 1;
+              sum += g.edges[i].mb;
+            }
+          };
+          const markPath = (c) => {
+            let x = c.entry;
+            while (tree.pe[x] !== -1) {
+              take(tree.pe[x]);
+              reached[g.edges[tree.pe[x]].a] = 1;
+              reached[g.edges[tree.pe[x]].b] = 1;
+              x = tree.pv[x];
+            }
+          };
+          const transit = (c) => {
+            const path = [];
+            let x = c.entry, len = 0;
+            while (!reached[x] && tree.pe[x] !== -1) {
+              path.push(tree.pe[x]);
+              len += g.edges[tree.pe[x]].len;
+              x = tree.pv[x];
+            }
+            return { path, len };
+          };
+          const reset = (list, forbid) => {
+            taken.fill(0);
+            reached.fill(0);
+            reached[root2] = 1;
+            sum = 0;
+            const inList = new Set(list.map((p) => p.c));
+            alive = /* @__PURE__ */ new Set();
+            cl.forEach((c, i) => {
+              if (!inList.has(c) && !(forbid && forbid.has(c))) alive.add(i);
+            });
+            for (const p of list) {
+              markPath(p.c);
+              for (const it of p.items) {
+                take(it.i);
+                reached[g.edges[it.i].a] = 1;
+                reached[g.edges[it.i].b] = 1;
+              }
+            }
+          };
+          const bestCluster = () => {
+            let best = null;
+            for (const ci of alive) {
+              const c = cl[ci];
+              let mb = 0, len = 0;
+              let far = 0;
+              for (const it of c.items) if (!taken[it.i]) {
+                mb += g.edges[it.i].mb;
+                len += g.edges[it.i].len;
+                far += g.edges[it.i].mb * it.k;
+              }
+              if (!mb) {
+                alive.delete(ci);
+                continue;
+              }
+              const tr = transit(c), c0 = 1.35 * len + TRANSIT_W * tr.len + 200 + DIST_MB * far / 1e3, score = mb / c0;
+              if (!best || score > best.score) best = { ci, c, tr, mb, score };
+            }
+            return best;
+          };
+          const pick = (best, limit) => {
+            const { ci, c, tr } = best;
+            alive.delete(ci);
+            for (const ei of tr.path) take(ei);
+            const items2 = c.items.filter((it) => !taken[it.i]).sort((x, y) => x.k - y.k), used = [];
+            for (const it of items2) {
+              if (sum >= limit) break;
+              take(it.i);
+              used.push(it);
+            }
+            for (const it of c.items) {
+              if (taken[it.i]) {
+                reached[g.edges[it.i].a] = 1;
+                reached[g.edges[it.i].b] = 1;
+              }
+            }
+            for (const ei of tr.path) {
+              reached[g.edges[ei].a] = 1;
+              reached[g.edges[ei].b] = 1;
+            }
+            return { c, items: used.length ? used : c.items };
+          };
+          const build = (list) => {
+            const inSet = new Uint8Array(E3), isItem = new Uint8Array(E3);
+            let sm2 = 0, c = 0;
+            const add = (i, it) => {
+              if (it) isItem[i] = 1;
+              if (!inSet[i]) {
+                inSet[i] = 1;
+                sm2 += g.edges[i].mb;
+              }
+            };
+            for (const p of list) {
+              for (const it of p.items) add(it.i, true);
+              let x = p.c.entry;
+              while (tree.pe[x] !== -1) {
+                add(tree.pe[x], false);
+                x = tree.pv[x];
+              }
+            }
+            let walk = 0;
+            for (let i = 0; i < E3; i++) if (inSet[i]) {
+              const e = g.edges[i], w = e.len * (isItem[i] ? 1.35 : TRANSIT_W);
+              walk += w;
+              c += w + DIST_MB * e.mb * (tree.d[e.a] + tree.d[e.b]) / 2e3;
+            }
+            return { inSet, sum: sm2, cost: c + 200 * list.length, walk: walk + 200 * list.length };
+          };
+          const grow = (list, forbid) => {
+            reset(list, forbid);
+            const out = list.slice();
+            while (sum < flyers) {
+              const best = bestCluster();
+              if (!best) break;
+              out.push(pick(best, sum + best.mb - flyers <= 0.05 * flyers ? Infinity : flyers));
+            }
+            return out;
+          };
+          let S = grow([], null), cur = build(S);
+          for (let round = 0; round < 15 && flyers < 1e8; round++) {
+            const cand = S.map((p, k) => {
+              const b = build(S.filter((_, j) => j !== k));
+              return { k, r: (cur.cost - b.cost) / Math.max(1, cur.sum - b.sum) };
+            }).sort((x, y) => y.r - x.r).slice(0, 6);
+            let done = false;
+            for (const { k } of cand) {
+              const S2 = grow(S.filter((_, j) => j !== k), /* @__PURE__ */ new Set([S[k].c])), b2 = build(S2);
+              if (b2.sum >= flyers && b2.cost < cur.cost * 0.995) {
+                S = S2;
+                cur = b2;
+                done = true;
+                break;
+              }
+            }
+            if (!done) break;
+          }
+          if (flyers < 1e8) {
+            reset(S, null);
+            for (let guard = 0; guard < 400; guard++) {
+              const best = bestCluster();
+              if (!best || best.score < 0.9 * cur.sum / cur.cost || sum + best.mb > 1.35 * flyers) break;
+              S.push(pick(best, Infinity));
+              cur = build(S);
+            }
+          }
+          for (let guard = 0; guard < 400 && cur.sum > flyers && S.length > 1; guard++) {
+            let bi = -1, bb = null, br = -1;
+            for (let k = 0; k < S.length; k++) {
+              const b = build(S.filter((_, j) => j !== k));
+              if (b.sum < flyers) continue;
+              const r = (cur.cost - b.cost) / Math.max(1, cur.sum - b.sum);
+              if (r > br) {
+                br = r;
+                bi = k;
+                bb = b;
+              }
+            }
+            if (bi < 0) break;
+            S.splice(bi, 1);
+            cur = bb;
+          }
+          if (flyers < 1e8) {
+            const nearWalked = (inSet, lim) => {
+              lim = lim || 120;
+              const on = new Uint8Array(n), dW = new Float64Array(n).fill(Infinity), hW = new Heap();
+              for (let i = 0; i < E3; i++) if (inSet[i]) {
+                for (const v of [g.edges[i].a, g.edges[i].b]) if (dW[v]) {
+                  dW[v] = 0;
+                  hW.push(0, v);
+                }
+              }
+              while (hW.size) {
+                const [k, v] = hW.pop();
+                if (k > dW[v]) continue;
+                on[v] = 1;
+                for (const { e, to } of g.adj[v]) {
+                  const nd = k + g.edges[e].len;
+                  if (nd <= lim && nd < dW[to]) {
+                    dW[to] = nd;
+                    hW.push(nd, to);
+                  }
+                }
+              }
+              return on;
+            };
+            const protect = /* @__PURE__ */ new Set();
+            const bigMb = S.reduce((a, p) => {
+              const all = p.c.items.reduce((x, it) => x + g.edges[it.i].mb, 0);
+              return all > 0.1 * flyers ? a + p.items.reduce((x, it) => x + g.edges[it.i].mb, 0) : a;
+            }, 0);
+            const budget = flyers * 1.15 + 0.5 * bigMb;
+            let selLen = 0;
+            for (let i = 0; i < E3; i++) if (cur.inSet[i] && g.edges[i].mb) selLen += g.edges[i].len;
+            const avgDens = cur.sum / Math.max(1, selLen);
+            for (let guard = 0; guard < 200; guard++) {
+              let best = null;
+              const onWay = nearWalked(cur.inSet);
+              for (const c of cl) {
+                if (protect.has(c)) continue;
+                let any = false, restMb = 0, restLen = 0, allMb = 0;
+                for (const it of c.items) {
+                  const e = g.edges[it.i];
+                  allMb += e.mb;
+                  if (cur.inSet[it.i] || onWay[e.a] || onWay[e.b]) any = true;
+                  if (!cur.inSet[it.i]) {
+                    restMb += e.mb;
+                    restLen += e.len;
+                  }
+                }
+                if (!any || !restMb || allMb > 0.1 * flyers || restMb / (restLen + 1) < 0.5 * avgDens) continue;
+                const p0 = S.find((x) => x.c === c), S2 = p0 ? S.map((x) => x === p0 ? { c, items: c.items.slice() } : x) : S.concat([{ c, items: c.items.slice() }]);
+                const b = build(S2), extra = b.walk - cur.walk;
+                if (extra > 1.35 * restLen * 1.3 + 200 + TRANSIT_W * 150) {
+                  protect.add(c);
+                  continue;
+                }
+                const r = restMb / Math.max(1, extra);
+                if (!best || r > best.r) best = { c, r, restMb, S2, b };
+              }
+              if (!best) break;
+              if (cur.sum + best.restMb > budget) {
+                protect.add(best.c);
+                continue;
+              }
+              S = best.S2;
+              cur = best.b;
+              protect.add(best.c);
+            }
+            for (let guard = 0; guard < 400 && cur.sum > flyers && S.length > 1; guard++) {
+              let done = false;
+              for (const k of S.map((p, k2) => k2).sort((x, y) => tree.d[S[y].c.entry] - tree.d[S[x].c.entry])) {
+                if (protect.has(S[k].c)) continue;
+                const b = build(S.filter((_, j) => j !== k));
+                if (b.sum < flyers) continue;
+                if (S[k].c.items.some((it) => b.inSet[it.i])) continue;
+                const nw = nearWalked(b.inSet, 250);
+                if (S[k].c.items.some((it) => nw[g.edges[it.i].a] || nw[g.edges[it.i].b])) continue;
+                S.splice(k, 1);
+                cur = b;
+                done = true;
+                break;
+              }
+              if (!done) break;
+            }
+            if (cur.sum > flyers * 1.01) {
+              const bigC = (p) => !protect.has(p.c) && p.c.items.reduce((a, it) => a + g.edges[it.i].mb, 0) > 0.1 * flyers;
+              const far = [];
+              S.forEach((p) => {
+                if (bigC(p)) for (const it of p.items) far.push(it);
+              });
+              far.sort((x, y) => y.k - x.k);
+              const drop2 = /* @__PURE__ */ new Set();
+              let extra = cur.sum - flyers;
+              for (const it of far) {
+                const mb = g.edges[it.i].mb;
+                if (mb && mb <= extra) {
+                  drop2.add(it);
+                  extra -= mb;
+                }
+                if (extra < 5e-3 * flyers) break;
+              }
+              if (drop2.size) {
+                const S2 = S.map((p) => ({ c: p.c, items: p.items.filter((it) => !drop2.has(it)) })).filter((p) => p.items.length), b = build(S2);
+                if (b.sum >= flyers) {
+                  S = S2;
+                  cur = b;
+                }
+              }
+            }
+          }
+          const ids = [];
+          let reach = 0;
+          sum = 0;
+          for (let i = 0; i < E3; i++) if (cur.inSet[i]) {
+            ids.push(i);
+            sum += g.edges[i].mb;
+            const k = (tree.d[g.edges[i].a] + tree.d[g.edges[i].b]) / 2;
+            if (k > reach) reach = k;
+          }
+          return { ids, mailboxes: sum, skipped_mb: skipped, reach_m: Math.round(reach) };
+        }
+        const MAX_R = 6e3, MUST_MAX_R = 1e4;
+        function nextRadius(g, flyers) {
+          const need = flyers * 1.15, have = Math.max(1, g.usable != null ? g.usable : g.mailboxes || 1);
+          let r = g.radius * 1.3;
+          if (have < need) r = Math.max(r, g.radius * Math.sqrt(need / have) * 1.1);
+          if (g.reach) r = Math.max(r, g.reach / 0.6);
+          return Math.min(MAX_R, Math.round(r));
+        }
+        function hull(points) {
+          const p = points.map((q) => [q[1], q[0]]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+          if (p.length < 3) return points.slice();
+          const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+          const lo = [], up = [];
+          for (const q of p) {
+            while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop();
+            lo.push(q);
+          }
+          for (let i = p.length - 1; i >= 0; i--) {
+            const q = p[i];
+            while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop();
+            up.push(q);
+          }
+          return lo.slice(0, -1).concat(up.slice(0, -1)).map((q) => [q[1], q[0]]);
+        }
+        function makeBoxCounter(boxes, tol) {
+          tol = tol || 30;
+          const done = new Uint8Array(boxes.length);
+          let count = 0;
+          const total = boxes.reduce((s, b) => s + b[2], 0);
+          const reach = boxes.map((b) => tol + Math.min(25, 4 * Math.sqrt(Math.max(1, b[2] || 1))));
+          const cell = 4e-4, grid = /* @__PURE__ */ new Map(), key = (la, lo) => Math.floor(la / cell) + ":" + Math.floor(lo / cell);
+          boxes.forEach((b, i) => {
+            const k = key(b[0], b[1]);
+            if (!grid.has(k)) grid.set(k, []);
+            grid.get(k).push(i);
+          });
+          function visit(lat, lng) {
+            const cy = Math.floor(lat / cell), cx = Math.floor(lng / cell);
+            for (let dy = -2; dy <= 2; dy++) for (let dx = -3; dx <= 3; dx++) {
+              const list = grid.get(cy + dy + ":" + (cx + dx));
+              if (!list) continue;
+              for (const i of list) if (!done[i] && dist([lat, lng], boxes[i]) <= reach[i]) {
+                done[i] = 1;
+                count += boxes[i][2];
+              }
+            }
+            return count;
+          }
+          function visitLine(a, b) {
+            const d = dist(a, b), n = Math.min(50, Math.max(1, Math.ceil(d / 15)));
+            for (let k = 0; k <= n; k++) visit(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n);
+            return count;
+          }
+          return { visit, visitLine, visitAll(pts) {
+            for (let i = 0; i < pts.length; i++) {
+              if (i && dist(pts[i - 1], pts[i]) < 120) visitLine(pts[i - 1], pts[i]);
+              else visit(pts[i][0], pts[i][1]);
+            }
+            return count;
+          }, count: () => count, total };
+        }
+        const DRIVE_MS = 14 / 3.6, DRIVE_MIN_M = 200, DRIVE_NET_M = 150;
+        function walkRuns(pts) {
+          const P = (pts || []).map((p) => Array.isArray(p) ? p : [p.lat, p.lng, +new Date(p.t)]), walk = [], drive = [], fast = new Uint8Array(P.length);
+          for (let i = 1; i < P.length; i++) {
+            const a = P[i - 1], b = P[i], d = dist(a, b), dt = ((b[2] || 0) - (a[2] || 0)) / 1e3;
+            if (d > 30 && dt > 0 && d / dt > DRIVE_MS) fast[i] = 1;
+          }
+          for (let i = 1; i < P.length; ) {
+            if (!fast[i]) {
+              i++;
+              continue;
+            }
+            let j = i, len = 0;
+            while (j < P.length && fast[j]) {
+              len += dist(P[j - 1], P[j]);
+              j++;
+            }
+            if (len < DRIVE_MIN_M || dist(P[i - 1], P[j - 1]) < DRIVE_NET_M) for (let k = i; k < j; k++) fast[k] = 0;
+            i = j;
+          }
+          let w = [], dr = [];
+          for (let i = 0; i < P.length; i++) {
+            const b = P[i];
+            if (!i) {
+              w.push([b[0], b[1], b[2]]);
+              continue;
+            }
+            const a = P[i - 1];
+            if (fast[i]) {
+              if (w.length) walk.push(w);
+              w = [];
+              if (!dr.length) dr.push([a[0], a[1]]);
+              dr.push([b[0], b[1]]);
+            } else {
+              if (dr.length) {
+                drive.push(dr);
+                dr = [];
+              }
+              if (!w.length) w.push([a[0], a[1], a[2]]);
+              w.push([b[0], b[1], b[2]]);
+            }
+          }
+          if (w.length) walk.push(w);
+          if (dr.length > 1) drive.push(dr);
+          return { walk, drive, driveM: drive.reduce((s, r) => s + r.reduce((x, q, k) => x + (k ? dist(r[k - 1], q) : 0), 0), 0) };
+        }
+        function suggestWorkers(totalMinutes, hoursPerDay, days) {
+          return Math.max(1, Math.ceil(totalMinutes / 60 / ((hoursPerDay || WORK_HOURS) * (days || 1))));
+        }
+        function hours(meters) {
+          return walkMin(meters, 0) / 60;
+        }
+        function routeMinutes(len, mb) {
+          return Math.round(walkMin(len, mb));
+        }
+        function capacity(routes, flyers, opt) {
+          const hpd = opt && opt.hoursPerDay || WORK_HOURS, days = opt && opt.days || 2, limit = hpd * days;
+          const hr = (r) => r.minutes != null ? r.minutes / 60 : hours(r.length_m);
+          const totalH = routes.reduce((s, r) => s + hr(r), 0), over = routes.filter((r) => hr(r) > limit).map((r) => r.idx);
+          const cap = routes.length * limit, ok = totalH <= cap && !over.length;
+          const slowest = routes.reduce((m, r) => Math.max(m, hr(r)), 0);
+          return { ok, limit, totalH, slowest, over, suggestedFlyers: ok ? flyers : Math.max(0, Math.floor(flyers * Math.min(1, limit / (slowest || limit)) / 50) * 50) };
+        }
+        async function loadZone(poly, fetchImpl) {
+          const osm = await fetchStreets(poly, fetchImpl);
+          const g = largestComponent(buildGraph(osm, poly));
+          g.street_m = Math.round(g.edges.reduce((s, e) => s + e.len, 0));
+          return g;
+        }
+        const CENSUS_SLACK = 1.1;
+        async function censusFill(buildings, box, census2) {
+          const las = box.map((p) => p[0]), los = box.map((p) => p[1]);
+          const c0 = census2.cellOf(Math.min(...las), Math.min(...los)), c1 = census2.cellOf(Math.max(...las), Math.max(...los)), c2 = census2.cellOf(Math.min(...las), Math.max(...los)), c3 = census2.cellOf(Math.max(...las), Math.min(...los));
+          const x0 = Math.min(c0[0], c1[0], c2[0], c3[0]), x1 = Math.max(c0[0], c1[0], c2[0], c3[0]), y0 = Math.min(c0[1], c1[1], c2[1], c3[1]), y1 = Math.max(c0[1], c1[1], c2[1], c3[1]);
+          const H = await census2.households(x0, y0, x1, y1);
+          if (!H || !H.size) return buildings;
+          const own = /* @__PURE__ */ new Map();
+          buildings.forEach((b, i) => {
+            const c = census2.cellOf(b.lat, b.lng), k = c[0] + "," + c[1];
+            let l = own.get(k);
+            if (!l) own.set(k, l = []);
+            l.push(i);
+          });
+          const out = buildings.map((b) => ({ ...b }));
+          let added = 0, removed = 0;
+          for (const [k, idx] of own) {
+            const h = H.get(k);
+            if (!h) continue;
+            const ours = idx.reduce((a, i) => a + out[i].n, 0), cap = Math.round(h * CENSUS_SLACK) + 2;
+            if (ours <= cap) continue;
+            const share = idx.map((i) => ({ i, x: Math.max(1, cap * out[i].n / ours) }));
+            let left = cap;
+            share.forEach((s) => {
+              const f = Math.max(1, Math.floor(s.x));
+              left -= f;
+              s.f = f;
+              s.r = s.x - Math.floor(s.x);
+            });
+            share.sort((a, b) => b.r - a.r);
+            for (let j = 0; j < left; j++) share[j % share.length].f += 1;
+            share.forEach((s) => {
+              removed += out[s.i].n - s.f;
+              out[s.i].n = s.f;
+            });
+          }
+          for (const [k, h] of H) {
+            const [cx, cy] = k.split(",").map(Number);
+            if (cx < x0 || cx > x1 || cy < y0 || cy > y1) continue;
+            const idx = own.get(k) || [], ours = idx.reduce((a, i) => a + out[i].n, 0), miss = h - ours;
+            if (miss <= 0) continue;
+            const [la, lo] = census2.centre(cx, cy);
+            if (la < Math.min(...las) || la > Math.max(...las) || lo < Math.min(...los) || lo > Math.max(...los)) continue;
+            if (!idx.length) {
+              out.push({ lat: la, lng: lo, n: miss, census: true, snap: 110 });
+              added += miss;
+              continue;
+            }
+            const share = idx.map((i) => ({ i, x: miss * out[i].n / ours }));
+            let left = miss;
+            share.forEach((s) => {
+              const f = Math.floor(s.x);
+              out[s.i].n += f;
+              left -= f;
+              s.r = s.x - f;
+            });
+            share.sort((a, b) => b.r - a.r);
+            for (let j = 0; j < left; j++) out[share[j % share.length].i].n += 1;
+            added += miss;
+          }
+          out.added = added;
+          out.removed = removed;
+          return out;
+        }
+        async function loadForFlyers(start, flyers, opt) {
+          opt = opt || {};
+          const zr = opt.zone && opt.zone.length > 2 ? mustRadius(start, [opt.zone]) : 0;
+          const mr = Math.min(MUST_MAX_R, Math.max(mustRadius(start, opt.must), zr));
+          let r = Math.max(Math.min(MAX_R, opt.radius || 1500), mr), last = null;
+          const store = opt.tiles || /* @__PURE__ */ new Map();
+          for (let round = 0; round < 6; round++) {
+            const keys = tilesFor(start, r);
+            await fetchTiles(keys, store, opt);
+            const m = mergeTiles(keys.map((k) => store.get(k)));
+            const dLat = r / 111320, dLng = r / (111320 * Math.cos(start[0] * RAD)), box = [[start[0] - dLat, start[1] - dLng], [start[0] - dLat, start[1] + dLng], [start[0] + dLat, start[1] + dLng], [start[0] + dLat, start[1] - dLng]];
+            const g = largestComponent(buildGraph(m.osm, box), start);
+            let bl = m.buildings.filter((b) => Math.abs(b.lat - start[0]) <= dLat && Math.abs(b.lng - start[1]) <= dLng);
+            if (opt.census) {
+              try {
+                bl = await censusFill(bl, box, opt.census);
+              } catch (e) {
+              }
+            }
+            attachBuildings(g, bl);
+            g.radius = r;
+            g.street_m = Math.round(g.edges.reduce((s, e) => s + e.len, 0));
+            last = g;
+            g.usable = selectForFlyers(g, start, 1e9).mailboxes;
+            g.reach = selectWithMust(g, start, flyers, opt.must, opt.zone).reach_m;
+            if (zr || g.usable >= flyers * 1.15 && g.reach <= 0.65 * r || r >= MAX_R) break;
+            r = nextRadius(g, flyers);
+          }
+          return last;
+        }
+        function mixShare(g, parts) {
+          const own = owners(g, parts);
+          let shared = 0;
+          for (const m of own.values()) if (m.size > 1) shared++;
+          return own.size ? shared / own.size : 0;
+        }
+        function bandSplits(g, start, n, ids, weight) {
+          if (n < 2 || ids.length < n) return [];
+          const root2 = nearestNode(g, start, g.pts.map((_, i) => i)), dd = sssp(g, root2).d, wf = weight || ((e) => e.len);
+          const items = ids.map((i) => ({ i, d: Math.min(dd[g.edges[i].a], dd[g.edges[i].b]), w: wf(g.edges[i]) })).sort((a, b) => a.d - b.d);
+          const total = items.reduce((a, x) => a + x.w, 0), out = [];
+          for (const shift of [0, -0.08, 0.08]) {
+            const parts = Array.from({ length: n }, () => []);
+            let cum = 0;
+            for (const x of items) {
+              const f = (cum + x.w / 2) / total;
+              let p = 0;
+              for (let k = 1; k < n; k++) if (f > k / n + shift) p = k;
+              parts[p].push(x.i);
+              cum += x.w;
+            }
+            if (parts.every((q) => q.length)) out.push(parts);
+          }
+          return out;
+        }
+        function centreSplits(g, n, ids, weight, tries) {
+          if (n < 2 || ids.length < n) return [];
+          const wf = weight || ((e) => e.len), mid = (i) => {
+            const c2 = g.edges[i].coords;
+            return c2[Math.floor(c2.length / 2)];
+          };
+          let la = 0, lo = 0, W = 0;
+          for (const i of ids) {
+            const m = mid(i), x = wf(g.edges[i]) || 1e-6;
+            la += m[0] * x;
+            lo += m[1] * x;
+            W += x;
+          }
+          const c = [la / W, lo / W], cosLat = Math.cos(c[0] * RAD);
+          const items = ids.map((i) => {
+            const m = mid(i);
+            return { i, w: wf(g.edges[i]), ang: Math.atan2(m[0] - c[0], (m[1] - c[1]) * cosLat) };
+          }).sort((a, b) => a.ang - b.ang);
+          const total = items.reduce((a, x) => a + x.w, 0), M = items.length, out = [];
+          for (let t = 0; t < tries; t++) {
+            const off = Math.floor(t * M / tries), ring = items.slice(off).concat(items.slice(0, off)), parts = Array.from({ length: n }, () => []);
+            let cum = 0;
+            for (const x of ring) {
+              parts[Math.min(n - 1, Math.floor((cum + x.w / 2) / total * n))].push(x.i);
+              cum += x.w;
+            }
+            if (parts.every((q) => q.length)) out.push(parts);
+          }
+          return out;
+        }
+        function balancedSplits(g, start, n, ids, tries) {
+          const cosLat = Math.cos(start[0] * RAD), root2 = nearestNode(g, start, g.pts.map((_, i) => i)), dd = sssp(g, root2).d;
+          const items = ids.map((i) => {
+            const e = g.edges[i], m = e.coords[Math.floor(e.coords.length / 2)];
+            return { i, len: e.len, mb: e.mb, d: Math.min(dd[e.a], dd[e.b]), ang: Math.atan2(m[0] - start[0], (m[1] - start[1]) * cosLat) };
+          }).sort((x, y) => x.ang - y.ang);
+          const M = items.length, out = [];
+          if (M < n) return out;
+          const cost = (len, mb, far) => walkMin(1.35 * len + 2 * far, mb);
+          for (let t = 0; t < tries; t++) {
+            const off = Math.floor(t * M / tries), ring = items.slice(off).concat(items.slice(0, off));
+            const cut = (T) => {
+              const cuts = [];
+              let len = 0, mb = 0, far = 0, from = 0;
+              for (let k = 0; k < M; k++) {
+                const x = ring[k], nl = len + x.len, nm = mb + x.mb, nf = Math.max(far, x.d);
+                if (k > from && cost(nl, nm, nf) > T) {
+                  cuts.push(k);
+                  if (cuts.length >= n) return null;
+                  from = k;
+                  len = x.len;
+                  mb = x.mb;
+                  far = x.d;
+                } else {
+                  len = nl;
+                  mb = nm;
+                  far = nf;
+                }
+              }
+              return cuts;
+            };
+            let lo = 0, hi = cost(items.reduce((a, x) => a + x.len, 0), items.reduce((a, x) => a + x.mb, 0), Math.max(...items.map((x) => x.d)));
+            let best = cut(hi);
+            for (let it = 0; it < 28; it++) {
+              const mid = (lo + hi) / 2, c = cut(mid);
+              if (c) {
+                best = c;
+                hi = mid;
+              } else lo = mid;
+            }
+            if (!best) continue;
+            const bounds = [0, ...best, M], parts = [];
+            for (let k = 0; k + 1 < bounds.length; k++) parts.push(ring.slice(bounds[k], bounds[k + 1]).map((x) => x.i));
+            while (parts.length < n) {
+              let bi = 0;
+              parts.forEach((p2, i) => {
+                if (p2.length > parts[bi].length) bi = i;
+              });
+              const p = parts[bi];
+              if (p.length < 2) break;
+              parts.splice(bi, 1, p.slice(0, p.length >> 1), p.slice(p.length >> 1));
+            }
+            if (parts.length === n) out.push(parts);
+          }
+          return out;
+        }
+        const mp = (a) => Array.isArray(a) ? { p: a, n: 0 } : { p: a && a.p || [], n: Math.max(0, +(a && a.n) || 0) };
+        const inArea = (e, P) => P.length > 2 && inPoly(e.coords[Math.floor(e.coords.length / 2)], P);
+        function mustEdges(g, polys) {
+          const out = [];
+          if (!polys || !polys.length) return out;
+          const ps = polys.map((a) => mp(a).p);
+          g.edges.forEach((e, i) => {
+            if (e.mb && ps.some((P) => inArea(e, P))) out.push(i);
+          });
+          return out;
+        }
+        function mustPick(g, start, polys) {
+          const out = [], info = [];
+          if (!polys || !polys.length) return { ids: out, info };
+          let d = null;
+          for (const raw of polys) {
+            const A2 = mp(raw), ids = [];
+            g.edges.forEach((e, i) => {
+              if (e.mb && inArea(e, A2.p)) ids.push(i);
+            });
+            const avail = ids.reduce((x, i) => x + g.edges[i].mb, 0);
+            let use = ids;
+            if (A2.n > 0 && A2.n < avail) {
+              if (!d) {
+                const root2 = nearestNode(g, start, g.pts.map((p, i) => i).filter((i) => g.adj[i].length));
+                d = sssp(g, root2).d;
+              }
+              const k = (i) => Math.min(d[g.edges[i].a], d[g.edges[i].b]);
+              use = [];
+              let sum = 0;
+              for (const i of ids.slice().sort((x, y) => k(x) - k(y))) {
+                if (sum >= A2.n) break;
+                use.push(i);
+                sum += g.edges[i].mb;
+              }
+            }
+            for (const i of use) out.push(i);
+            info.push({ avail, used: use.reduce((x, i) => x + g.edges[i].mb, 0), n: A2.n });
+          }
+          return { ids: [...new Set(out)], info };
+        }
+        function mustRadius(start, polys) {
+          let r = 0;
+          for (const a of polys || []) for (const q of mp(a).p) r = Math.max(r, dist(start, q));
+          return r ? r + 400 : 0;
+        }
+        function zoneView(g, zone, must) {
+          if (!zone || zone.length < 3) return g;
+          const ps = [zone, ...(must || []).map((a) => mp(a).p)];
+          return { ...g, zoned: true, edges: g.edges.map((e) => !e.mb || ps.some((P) => inArea(e, P)) ? e : { ...e, mb: 0, boxes: [] }) };
+        }
+        function selectWithMust(g, start, flyers, polys, zone) {
+          g = zoneView(g, zone, polys);
+          const zone_mb = g.zoned ? g.edges.reduce((a, e) => a + e.mb, 0) : null;
+          const pk = mustPick(g, start, polys), must = pk.ids;
+          if (!must.length) return { ...selectForFlyers(g, start, flyers), must_mb: 0, must_ids: [], must_info: pk.info, zone_mb };
+          const mustSet = new Set(must), mustMb = must.reduce((a, i) => a + g.edges[i].mb, 0);
+          let rest = Math.max(0, flyers - mustMb), sel = rest > 0 ? selectForFlyers(g, start, rest) : { ids: [], mailboxes: 0, reach_m: 0 };
+          const overlap = sel.ids.reduce((a, i) => a + (mustSet.has(i) ? g.edges[i].mb : 0), 0);
+          if (rest > 0 && overlap > 0) sel = selectForFlyers(g, start, rest + overlap);
+          const ids = [.../* @__PURE__ */ new Set([...sel.ids, ...must])], mailboxes = ids.reduce((a, i) => a + g.edges[i].mb, 0);
+          const root2 = nearestNode(g, start, g.pts.map((p, i) => i).filter((i) => g.adj[i].length)), d = sssp(g, root2).d;
+          const reach = Math.max(sel.reach_m || 0, ...must.map((i) => Math.max(d[g.edges[i].a], d[g.edges[i].b])).filter(isFinite));
+          return { ...sel, ids, mailboxes, reach_m: Math.round(reach), must_mb: mustMb, must_ids: must, must_info: pk.info, zone_mb };
+        }
+        const RES_R = 400, RES_MAX = 120;
+        function reserveFor(g, used, routes, opt) {
+          const skip = opt && opt.skip;
+          const cell = 4e-3, key = (a, b) => Math.floor(a / cell) + ":" + Math.floor(b / cell), grid = /* @__PURE__ */ new Map();
+          routes.forEach((r, k) => {
+            r.reserve = [];
+            const pp = r.path || [];
+            for (let i = 0; i < pp.length; i += 2) {
+              const q = pp[i], gk = key(q[0], q[1]);
+              let l = grid.get(gk);
+              if (!l) grid.set(gk, l = []);
+              l.push([q[0], q[1], k]);
+            }
+          });
+          if (!grid.size) return;
+          const cand = routes.map(() => []);
+          g.edges.forEach((e, i) => {
+            if (used.has(i) || !(e.mb > 0) || !e.coords || e.coords.length < 2 || skip && skip(i)) return;
+            const m = e.coords[Math.floor(e.coords.length / 2)], i0 = Math.floor(m[0] / cell), j0 = Math.floor(m[1] / cell);
+            let best = -1, bd = Infinity;
+            for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+              const l = grid.get(i0 + a + ":" + (j0 + b));
+              if (l) for (const q of l) {
+                const d = dist(m, q);
+                if (d < bd) {
+                  bd = d;
+                  best = q[2];
+                }
+              }
+            }
+            if (best >= 0 && bd <= RES_R) cand[best].push({ d: bd, p: e.coords.map((c) => [+c[0].toFixed(6), +c[1].toFixed(6)]), mb: Math.round(e.mb) });
+          });
+          cand.forEach((l, k) => {
+            routes[k].reserve = l.sort((a, b) => a.d - b.d).slice(0, RES_MAX).map(({ p, mb }) => ({ p, mb }));
+          });
+        }
+        function planFlyers(g, start, flyers, n, opt) {
+          opt = opt || {};
+          g = zoneView(g, opt.zone, opt.must);
+          const sel = selectWithMust(g, start, flyers, opt.must);
+          const total = sel.ids.reduce((s, i) => s + g.edges[i].len, 0), mbTotal = sel.mailboxes || 1;
+          const w = (e) => 0.5 * e.len / (total || 1) + 0.5 * e.mb / mbTotal;
+          const N = n || 1, build = (parts, rootNode) => parts.map((part, k) => {
+            const r = planPart(g, part, start, rootNode);
+            const boxes = [];
+            let mb = 0;
+            for (const i of part) {
+              mb += g.edges[i].mb;
+              for (const b of g.edges[i].boxes) boxes.push(b);
+            }
+            return { idx: k, ...r, part, mailboxes: mb, boxes, minutes: routeMinutes(r.length_m, mb) };
+          });
+          const score = (rs) => {
+            const m = rs.map((r) => r.minutes), mx = Math.max(...m), sum = m.reduce((a, b) => a + b, 0);
+            return mx + 0.3 * sum / m.length + 0.01 * (mx - Math.min(...m));
+          };
+          let bestParts = null, routes = null, builds = 0;
+          const tryParts = (parts) => {
+            const rs = build(parts);
+            builds++;
+            if (!routes || score(rs) < score(routes)) {
+              routes = rs;
+              bestParts = parts;
+              return true;
+            }
+            return false;
+          };
+          const cands = [partition(g, start, N, sel.ids, w), ...N > 1 ? balancedSplits(g, start, N, sel.ids, 8) : []];
+          const tried = cands.map((raw) => {
+            const t = tidyParts(g, raw), rs = build(t);
+            builds++;
+            if (!routes || score(rs) < score(routes)) {
+              routes = rs;
+              bestParts = t;
+            }
+            return { t, sc: score(rs) };
+          });
+          if (N > 1) for (const { t } of tried.sort((a, b) => a.sc - b.sc).slice(0, 3)) tryParts(balanceParts(g, t));
+          if (N > 1) {
+            for (let it = 0; it < 10 && builds < 30; it++) {
+              const m = routes.map((r) => r.minutes), own = owners(g, bestParts), P = m.indexOf(Math.max(...m));
+              let better = false;
+              for (const Q of [...neighbours(g, bestParts, P, own)].filter((q) => m[q] < m[P] * 0.95).sort((a, b) => m[a] - m[b]).slice(0, 2)) {
+                for (const f of [0.5, 0.25]) {
+                  const parts = shiftStrip(g, bestParts, P, Q, (m[P] - m[Q]) * f, own);
+                  if (parts && tryParts(parts)) {
+                    better = true;
+                    break;
+                  }
+                }
+                if (better) break;
+              }
+              if (!better) {
+                const parts = bestParts.map((p) => p.slice());
+                for (let k = 0; k < N; k++) {
+                  const j = (k + 1) % N, a = m[k], b = m[j];
+                  if (a > b * 1.08 && parts[k].length > 1) {
+                    const c = Math.max(1, Math.min(parts[k].length - 1, Math.round(parts[k].length * Math.min(0.35, (a - b) / (2 * a)))));
+                    parts[j] = parts[k].splice(parts[k].length - c, c).concat(parts[j]);
+                  } else if (b > a * 1.08 && parts[j].length > 1) {
+                    const c = Math.max(1, Math.min(parts[j].length - 1, Math.round(parts[j].length * Math.min(0.35, (b - a) / (2 * b)))));
+                    parts[k] = parts[k].concat(parts[j].splice(0, c));
+                  }
+                }
+                better = tryParts(tidyParts(g, parts));
+              }
+              if (!better) break;
+            }
+          }
+          const hpd = opt.hoursPerDay || WORK_HOURS, maxDays = opt.days || 1;
+          const dayInfo = (r) => ({ length_m: r.length_m, street_m: r.street_m, minutes: r.minutes, mailboxes: r.mailboxes });
+          const withDays = (part, k, base) => {
+            const nd = Math.min(maxDays, Math.max(1, Math.ceil(base.minutes / 60 / hpd)));
+            if (nd < 2 || part.length < nd) return { ...base, days: [{ i0: 0, i1: Math.max(0, base.path.length - 1), ...dayInfo(base) }] };
+            const raw = [partition(g, start, nd, part, w), ...balancedSplits(g, start, nd, part, 4), ...bandSplits(g, start, nd, part, w), ...centreSplits(g, nd, part, w, 4)];
+            const cands2 = raw.flatMap((ps) => {
+              const t = tidyParts(g, ps);
+              return [ps, t, balanceParts(g, t)];
+            });
+            let best = null;
+            for (const ps of cands2) {
+              const rs = build(ps.filter((x) => x.length), base.root);
+              if (rs.length < 2) continue;
+              const mx = Math.max(...rs.map((r) => r.minutes)), mn = Math.min(...rs.map((r) => r.minutes));
+              const sc = mx + 0.3 * rs.reduce((a, r) => a + r.minutes, 0) / rs.length + 0.01 * (mx - mn) + 250 * mixShare(g, ps.filter((x) => x.length));
+              if (!best || sc < best.sc) {
+                best = { rs, sc };
+              }
+            }
+            if (!best) return { ...base, days: [{ i0: 0, i1: Math.max(0, base.path.length - 1), ...dayInfo(base) }] };
+            const path = [], steps = [], boxes = [], days = [];
+            for (const d of best.rs) {
+              const off = path.length ? path.length - 1 : 0, i0 = off;
+              for (const q of path.length ? d.path.slice(1) : d.path) path.push(q);
+              for (const st of d.steps) steps.push([off + st[0], st[1], st[2]]);
+              for (const b of d.boxes) boxes.push(b);
+              days.push({ i0, i1: path.length - 1, ...dayInfo(d) });
+            }
+            const sum = (k2) => days.reduce((a, d) => a + d[k2], 0);
+            return { ...base, path, steps, boxes, days, length_m: sum("length_m"), street_m: sum("street_m"), minutes: sum("minutes"), mailboxes: sum("mailboxes") };
+          };
+          if (maxDays > 1) routes = bestParts.map((part, k) => withDays(part, k, routes[k]));
+          else routes = routes.map((r) => ({ ...r, days: [{ i0: 0, i1: Math.max(0, r.path.length - 1), length_m: r.length_m, street_m: r.street_m, minutes: r.minutes, mailboxes: r.mailboxes }] }));
+          const pts = [];
+          for (const i of sel.ids) for (const c of g.edges[i].coords) pts.push(c);
+          reserveFor(g, new Set(sel.ids), routes);
+          return { routes, mailboxes: sel.mailboxes, must_mb: sel.must_mb || 0, must_info: sel.must_info || [], zone_mb: g.zoned ? g.edges.reduce((a, e) => a + e.mb, 0) : null, reach_m: sel.reach_m, zone: hull(pts), capacity: capacity(routes, flyers) };
+        }
+        function planRoutes(g, start, n) {
+          return partition(g, start, n).map((part, k) => ({ idx: k, ...planPart(g, part, start) }));
+        }
+        const api = { reserveFor, censusFill, setTileStamp, setPace, denseEntry, pathRuns, emptyGap, tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, DIR_FROM, makeBoxCounter, walkRuns, DRIVE_MS, DRIVE_MIN_M, DRIVE_NET_M, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
+        if (typeof module !== "undefined" && module.exports) module.exports = api;
+        else root.Planner = api;
+      })(typeof window !== "undefined" ? window : globalThis);
+    }
+  });
+
+  // src/plancore.js
+  var import_planner = __toESM(require_planner());
+
+  // src/zensus.js
+  var BASE = "https://urlose.github.io/flyermap/zensus/";
+  var squares = /* @__PURE__ */ new Map();
+  var A = 6378137;
+  var E2 = 0.0066943800229;
+  var E = Math.sqrt(E2);
+  var P0 = 52 * Math.PI / 180;
+  var L0 = 10 * Math.PI / 180;
+  var qf = (s) => (1 - E2) * (s / (1 - E2 * s * s) - Math.log((1 - E * s) / (1 + E * s)) / (2 * E));
+  var QP = qf(1);
+  var B0 = Math.asin(qf(Math.sin(P0)) / QP);
+  var RQ = A * Math.sqrt(QP / 2);
+  var D = A * (Math.cos(P0) / Math.sqrt(1 - E2 * Math.sin(P0) ** 2)) / (RQ * Math.cos(B0));
+  function laea(lat, lng) {
+    const b = Math.asin(qf(Math.sin(lat * Math.PI / 180)) / QP), dl = lng * Math.PI / 180 - L0;
+    const k = RQ * Math.sqrt(2 / (1 + Math.sin(B0) * Math.sin(b) + Math.cos(B0) * Math.cos(b) * Math.cos(dl)));
+    return [4321e3 + k * D * Math.cos(b) * Math.sin(dl), 321e4 + k / D * (Math.cos(B0) * Math.sin(b) - Math.sin(B0) * Math.cos(b) * Math.cos(dl))];
+  }
+  var cellOf = (lat, lng) => {
+    const [x, y] = laea(lat, lng);
+    return [Math.floor(x / 100), Math.floor(y / 100)];
+  };
+  function parseSquare(buf) {
+    const u = new Uint32Array(buf.slice(0, buf.byteLength - buf.byteLength % 4)), m = /* @__PURE__ */ new Map();
+    for (let i = 0; i < u.length; i++) m.set(u[i] >>> 12, u[i] & 4095);
+    return m;
+  }
+  function square(key, fetcher) {
+    if (!squares.has(key)) squares.set(key, (fetcher || fetch)(BASE + "h_" + key + ".bin").then((r) => r.status === 404 ? /* @__PURE__ */ new Map() : r.ok ? r.arrayBuffer().then(parseSquare) : Promise.reject(new Error("zensus " + r.status))).catch((e) => {
+      squares.delete(key);
+      throw e;
+    }));
+    return squares.get(key);
+  }
+  function unlaea(x, y) {
+    let lat = 52 + (y - 321e4) / 111320, lng = 10 + (x - 4321e3) / (111320 * Math.cos(lat * Math.PI / 180));
+    for (let k = 0; k < 6; k++) {
+      const [fx, fy] = laea(lat, lng), h = 1e-5, [ax, ay] = laea(lat + h, lng), [bx, by] = laea(lat, lng + h);
+      const j11 = (ax - fx) / h, j21 = (ay - fy) / h, j12 = (bx - fx) / h, j22 = (by - fy) / h, det = j11 * j22 - j12 * j21, ex = x - fx, ey = y - fy;
+      lat += (j22 * ex - j12 * ey) / det;
+      lng += (-j21 * ex + j11 * ey) / det;
+      if (Math.abs(ex) + Math.abs(ey) < 0.01) break;
+    }
+    return [lat, lng];
+  }
+  function censusSource(fetcher) {
+    return {
+      cellOf,
+      centre: (cx, cy) => unlaea(cx * 100 + 50, cy * 100 + 50),
+      async households(x0, y0, x1, y1) {
+        const keys = [];
+        for (let sx = Math.floor(x0 / 500); sx <= Math.floor(x1 / 500); sx++) for (let sy = Math.floor(y0 / 500); sy <= Math.floor(y1 / 500); sy++) keys.push([sx, sy]);
+        const out = /* @__PURE__ */ new Map();
+        await Promise.all(keys.map(async ([sx, sy]) => {
+          const m = await square(sx + "_" + sy, fetcher);
+          for (const [i, h] of m) {
+            const cx = sx * 500 + i % 500, cy = sy * 500 + Math.floor(i / 500);
+            if (h && cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) out.set(cx + "," + cy, h);
+          }
+        }));
+        return out;
+      }
+    };
+  }
+  async function townsAround(lat, lng, minR, maxR, fetcher) {
+    const src = censusSource(fetcher), [x, y] = laea(lat, lng), r = Math.ceil(maxR / 100);
+    const cx = Math.floor(x / 100), cy = Math.floor(y / 100);
+    const H = await src.households(cx - r, cy - r, cx + r, cy + r);
+    const blk = /* @__PURE__ */ new Map();
+    for (const [k, h] of H) {
+      const [ix, iy] = k.split(",").map(Number), bk = Math.floor(ix / 10) + "," + Math.floor(iy / 10);
+      let b = blk.get(bk);
+      if (!b) blk.set(bk, b = { h: 0, sx: 0, sy: 0 });
+      b.h += h;
+      b.sx += (ix * 100 + 50) * h;
+      b.sy += (iy * 100 + 50) * h;
+    }
+    const dense = new Set([...blk].filter(([, b]) => b.h >= 25).map(([k]) => k)), seen = /* @__PURE__ */ new Set(), out = [];
+    for (const k0 of dense) {
+      if (seen.has(k0)) continue;
+      seen.add(k0);
+      const st = [k0];
+      let h = 0, sx = 0, sy = 0, top = null;
+      while (st.length) {
+        const k = st.pop(), b = blk.get(k);
+        h += b.h;
+        sx += b.sx;
+        sy += b.sy;
+        if (!top || b.h > top.h) top = b;
+        const [bx, by] = k.split(",").map(Number);
+        for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+          const n = bx + dx + "," + (by + dy);
+          if (dense.has(n) && !seen.has(n)) {
+            seen.add(n);
+            st.push(n);
+          }
+        }
+      }
+      const mx = sx / h, my = sy / h, dist = Math.hypot(mx - x, my - y);
+      if (h < 150 || dist < minR || dist > maxR) continue;
+      const [la, lo] = unlaea(top.sx / top.h, top.sy / top.h);
+      out.push({ lat: +la.toFixed(6), lng: +lo.toFixed(6), households: h, dist: Math.round(dist) });
+    }
+    return out.sort((a, b) => a.dist - b.dist);
+  }
+
+  // src/plancore.js
+  var census = censusSource();
+  function createPlanService(cache) {
+    let G = null, gKey = "";
+    const tiles = /* @__PURE__ */ new Map();
+    const keyOf = (s) => s[0].toFixed(5) + "," + s[1].toFixed(5);
+    const info = () => G ? { radius: G.radius, usable: G.usable, mailboxes: G.mailboxes, street_m: G.street_m } : null;
+    const load = async (start, flyers, radius, must, stage, stale, key, zone) => {
+      if (tiles.size > 150) tiles.clear();
+      G = await import_planner.default.loadForFlyers(start, flyers, {
+        cache,
+        radius,
+        must,
+        zone,
+        tiles,
+        stale,
+        census,
+        progress: (done, total) => {
+          if (stage && total > 1) stage((key || "loadingArea") + "|" + done + "|" + total);
+        }
+      });
+      gKey = keyOf(start);
+    };
+    const sideG = /* @__PURE__ */ new Map();
+    const sideGraph = async (c, stage, stale) => {
+      const z = c.zone && c.zone.length > 2 ? c.zone : null, k = keyOf([c.lat, c.lng]) + ":" + (z ? "z" + z.length + "," + z[0].join(",") : c.loadFor || c.flyers);
+      if (sideG.has(k)) return sideG.get(k);
+      if (sideG.size > 6) sideG.clear();
+      const g = await import_planner.default.loadForFlyers([c.lat, c.lng], c.loadFor || c.flyers, { cache, tiles, stale, zone: z, census, progress: (done, total) => {
+        if (stage && total > 1) stage("loadingSide|" + done + "|" + total);
+      } });
+      sideG.set(k, g);
+      return g;
+    };
+    const roadMatrix = async (pts, costing) => {
+      try {
+        const q = { sources: pts.map((p) => ({ lat: p[0], lon: p[1] })), targets: pts.map((p) => ({ lat: p[0], lon: p[1] })), costing, units: "kilometers" };
+        const ctrl = new AbortController(), tm = setTimeout(() => ctrl.abort(), 9e3);
+        const r = await fetch("https://valhalla1.openstreetmap.de/sources_to_targets?json=" + encodeURIComponent(JSON.stringify(q)), { signal: ctrl.signal });
+        clearTimeout(tm);
+        if (!r.ok) return null;
+        const j = await r.json();
+        const m = j.sources_to_targets;
+        if (!Array.isArray(m)) return null;
+        return m.map((row) => row.map((c) => c && c.distance != null ? c.distance * 1e3 : null));
+      } catch {
+        return null;
+      }
+    };
+    const SPEED = { bike: 250, car: 667 };
+    const SEQ_MIN = 150;
+    const TRAVEL_MIN = 30, EMPTY_GAP = 1e3, EMPTY_GAP_BIKE = 600;
+    const segLen = (a, b) => {
+      const k = Math.cos(a[0] * Math.PI / 180);
+      return 111320 * Math.hypot(b[0] - a[0], (b[1] - a[1]) * k);
+    };
+    const lpt = (items, n) => {
+      const bins = Array.from({ length: n }, () => ({ min: 0, items: [], far: 0 }));
+      const fars = items.filter((x) => x.isFar).sort((x, y) => y.min - x.min), rest = items.filter((x) => !x.isFar).sort((x, y) => y.min - x.min);
+      const put = (it, among) => {
+        const b = among.reduce((m, x) => x.min < m.min ? x : m, among[0]);
+        b.items.push(it);
+        b.min += it.min;
+        if (it.isFar) b.far++;
+      };
+      fars.forEach((it) => {
+        const free = bins.filter((b) => !b.far);
+        put(it, free.length ? free : bins);
+      });
+      rest.forEach((it) => put(it, bins));
+      return bins;
+    };
+    const buildLine = (pieces, hours, rideMin, breaks, origin, hoursToo) => {
+      const path = [], steps = [], boxes = [], segMin = [], segMb = [], segSt = [], place = [], cutAt = /* @__PURE__ */ new Set();
+      if (origin && pieces.length && segLen(origin, pieces[0].r.path[0]) > 30) {
+        path.push([origin[0], origin[1]]);
+        segMin.push(0);
+        segMb.push(0);
+        segSt.push(0);
+        place.push("");
+      }
+      let length_m = 0, street_m = 0, minutes = 0, mailboxes = 0;
+      const reserve = [], resSeen = /* @__PURE__ */ new Set();
+      for (const [pi, { r, name }] of pieces.entries()) {
+        const L = path.length, jump = (!!name || pi === 0) && L > 0;
+        if (breaks && breaks.has(pi) && L > 0) cutAt.add(L);
+        const tot = r.path.slice(1).reduce((s, q, j) => s + segLen(r.path[j], q), 0) || 1;
+        r.path.forEach((q, j) => {
+          path.push(j === 0 && jump ? [q[0], q[1], 1] : [q[0], q[1]]);
+          const d = j ? segLen(r.path[j - 1], q) : 0;
+          segMin.push(j === 0 ? jump ? rideMin ? rideMin(path[L - 1], q) : TRAVEL_MIN : 0 : r.minutes * d / tot);
+          segMb.push(j ? (r.mailboxes || 0) * d / tot : 0);
+          segSt.push(j ? (r.street_m || 0) * d / tot : 0);
+          place.push(name || "");
+        });
+        (r.steps || []).forEach((st2) => steps.push([st2[0] + L, st2[1], st2[2]]));
+        (r.boxes || []).forEach((x) => boxes.push(x));
+        for (const x of r.reserve || []) {
+          const k = x.p && x.p[0] ? x.p[0].join(",") : "";
+          if (k && !resSeen.has(k)) {
+            resSeen.add(k);
+            reserve.push(x);
+          }
+        }
+        length_m += r.length_m || 0;
+        street_m += r.street_m || 0;
+        minutes += r.minutes || 0;
+        mailboxes += r.mailboxes || 0;
+      }
+      const lim = hours * 60, days = [];
+      let i0 = 0, t = 0, mb = 0, st = 0, ln = 0, pl = /* @__PURE__ */ new Set();
+      const close = (i1) => {
+        days.push({ i0, i1, minutes: Math.round(t), mailboxes: Math.round(mb), street_m: Math.round(st), length_m: Math.round(ln), place: [...pl].filter(Boolean).join(" + ") || void 0 });
+        i0 = i1;
+        t = 0;
+        mb = 0;
+        st = 0;
+        ln = 0;
+        pl = /* @__PURE__ */ new Set();
+      };
+      const left = new Float64Array(path.length + 1);
+      if (hoursToo) for (let i = path.length - 1; i >= 1; i--) left[i] = segMin[i] + (cutAt.has(i + 1) ? 0 : left[i + 1]);
+      for (let i = 1; i < path.length; i++) {
+        if ((hoursToo ? cutAt.has(i) || t >= lim && left[i] >= 60 : breaks ? cutAt.has(i) : t >= lim) && t > 0) close(i - 1);
+        t += segMin[i];
+        mb += segMb[i];
+        st += segSt[i];
+        ln += path[i][2] === 1 ? 0 : segLen(path[i - 1], path[i]);
+        pl.add(place[i]);
+      }
+      if (t > 0 || !days.length) close(path.length - 1);
+      if (!breaks && days.length > 1 && days[days.length - 1].minutes < 45) {
+        const x = days.pop(), y = days[days.length - 1];
+        y.i1 = x.i1;
+        ["minutes", "mailboxes", "street_m", "length_m"].forEach((k) => y[k] += x[k]);
+        if (x.place) y.place = [...new Set([...(y.place || "").split(" + "), ...x.place.split(" + ")].filter(Boolean))].join(" + ");
+      }
+      return { path, steps, boxes, days, length_m, street_m, minutes, mailboxes, reserve: reserve.slice(0, 400) };
+    };
+    const CORE_T = 25, CORE_MIN = 40, CORE_PARK = 8;
+    const denseCores = (g, area) => {
+      const n = g.pts.length, uf = Int32Array.from({ length: n }, (_, i) => i), f = (x) => {
+        while (uf[x] !== x) {
+          uf[x] = uf[uf[x]];
+          x = uf[x];
+        }
+        return x;
+      };
+      const dense = (e) => e.mb > 0 && (e.len <= 80 || e.mb * 1e3 / e.len >= CORE_T), dn = new Uint8Array(n);
+      g.edges.forEach((e) => {
+        if (dense(e)) {
+          uf[f(e.a)] = f(e.b);
+          dn[e.a] = 1;
+          dn[e.b] = 1;
+        }
+      });
+      const link = (e) => !dense(e) && e.len <= 60 && dn[e.a] && dn[e.b];
+      g.edges.forEach((e) => {
+        if (link(e)) uf[f(e.a)] = f(e.b);
+      });
+      const cl = /* @__PURE__ */ new Map();
+      g.edges.forEach((e, i) => {
+        if (!dense(e) && !link(e)) return;
+        const k = f(e.a);
+        let c = cl.get(k);
+        if (!c) cl.set(k, c = { area, ids: [], mb: 0, len: 0 });
+        c.ids.push(i);
+        c.mb += e.mb;
+        c.len += e.len;
+      });
+      return [...cl.values()].filter((c) => c.mb >= CORE_MIN).map((c) => {
+        let la = 0, lo = 0, w = 0;
+        for (const i of c.ids) {
+          const e = g.edges[i];
+          la += (g.pts[e.a][0] + g.pts[e.b][0]) / 2 * e.len;
+          lo += (g.pts[e.a][1] + g.pts[e.b][1]) / 2 * e.len;
+          w += e.len;
+        }
+        const ctr = [la / w, lo / w];
+        let best = -1, bd = Infinity;
+        for (const i of c.ids) for (const v of [g.edges[i].a, g.edges[i].b]) {
+          const d = segLen(ctr, g.pts[v]);
+          if (d < bd) {
+            bd = d;
+            best = v;
+          }
+        }
+        return { ...c, g, park: [g.pts[best][0], g.pts[best][1]] };
+      });
+    };
+    const subGraph = (g, ids) => {
+      const edges = ids.map((i) => g.edges[i]), adj = g.pts.map(() => []);
+      edges.forEach((e, i) => {
+        adj[e.a].push({ e: i, to: e.b });
+        if (e.a !== e.b) adj[e.b].push({ e: i, to: e.a });
+      });
+      return { pts: g.pts, edges, adj, zoned: true };
+    };
+    const ECO_K = 1.35;
+    const ecoFlyers = (start, F, must, zone) => {
+      const pts = [0.8, 0.85, 0.9, 0.95, 1].map((f) => {
+        const sel = import_planner.default.selectWithMust(G, start, Math.round(F * f), must, zone);
+        const len = sel.ids.reduce((a, i) => a + G.edges[i].len, 0);
+        return { mb: sel.mailboxes, min: import_planner.default.routeMinutes(len * 1.35, sel.mailboxes) };
+      });
+      const base = pts[0].min / Math.max(1, pts[0].mb);
+      let best = pts[0];
+      for (let i = 1; i < pts.length; i++) {
+        const dm = pts[i].mb - pts[0].mb;
+        if (dm <= 0 || (pts[i].min - pts[0].min) / dm <= ECO_K * base) best = pts[i];
+      }
+      return best.mb >= 0.97 * F ? F : Math.max(100, Math.round(best.mb / 50) * 50);
+    };
+    return {
+      // map data around a new start point
+      async load({ start, flyers, must, zone }, stage, stale) {
+        if (G && gKey === keyOf(start)) return info();
+        stage("loadingArea");
+        G = null;
+        gKey = "";
+        await load(start, flyers, void 0, must, stage, stale, "loadingArea", zone);
+        return info();
+      },
+      // plans the routes; loads a larger square first when the plan reaches the edge of what is loaded
+      async plan({ start, flyers, n, days, hours, must, zone, side, quota, bike, travel, split, exact, mainAll, cores, together, first, near }, stage, stale) {
+        const eco = !exact && !mainAll;
+        if (cores) return this.planCores({ start, flyers, n, hours, must, zone, side, travel, together, exact, first }, stage, stale);
+        travel = travel === "bike" || travel === "car" ? travel : bike ? "bike" : "bus";
+        bike = travel !== "bus";
+        import_planner.default.setPace(quota);
+        side = (side || []).filter((c) => c && (c.flyers > 0 || split === "even"));
+        const bus = [];
+        if ((must || []).some((a) => a && a.name && a.p && a.p.length > 2)) {
+          if (!G || gKey !== keyOf(start)) {
+            stage("loadingArea");
+            await load(start, flyers, void 0, must, stage, stale, "loadingArea", zone);
+          }
+          if (stale()) return { skipped: true };
+          const mr = Math.min(import_planner.default.MUST_MAX_R, import_planner.default.mustRadius(start, must));
+          if (mr > G.radius) {
+            stage("loadingMore");
+            await load(start, flyers, mr, must, stage, stale, "loadingMore", zone);
+            if (stale()) return { skipped: true };
+          }
+          const keepMust = [];
+          for (const a of must) {
+            const gap = a && a.name && a.p && a.p.length > 2 ? import_planner.default.emptyGap(G, start, a.p) : 0;
+            if (gap > (bike ? EMPTY_GAP_BIKE : EMPTY_GAP)) {
+              const ctr = a.c || a.p.reduce((x, q) => [x[0] + q[0] / a.p.length, x[1] + q[1] / a.p.length], [0, 0]);
+              side.push({ name: a.name, lat: ctr[0], lng: ctr[1], flyers: a.n || 1e3, zone: a.p, all: !!a.all });
+              bus.push({ name: a.name, gap });
+            } else keepMust.push(a);
+          }
+          must = keepMust;
+        }
+        let splitInfo = null;
+        const seq = split === "even" && !!near && side.length > 0 && !mainAll && !(must || []).some((a) => a && a.name) && !side.some((c) => c.all || c.zone && c.zone.length > 2);
+        if (seq) {
+          if (!G || gKey !== keyOf(start)) {
+            stage("loadingArea");
+            await load(start, flyers, void 0, must, stage, stale, "loadingArea", zone);
+          }
+          if (stale()) return { skipped: true };
+          const seen = /* @__PURE__ */ new Set(), keyE = (g, i) => {
+            const e = g.edges[i];
+            return ((g.pts[e.a][0] + g.pts[e.b][0]) / 2).toFixed(5) + "," + ((g.pts[e.a][1] + g.pts[e.b][1]) / 2).toFixed(5);
+          };
+          const mainSel = import_planner.default.selectWithMust(G, start, flyers, must, zone), mainMb = Math.min(flyers, Math.round(mainSel.mailboxes));
+          mainSel.ids.forEach((i) => seen.add(keyE(G, i)));
+          let rest = flyers - mainMb;
+          const info2 = /* @__PURE__ */ new Map();
+          for (const c of side.slice().sort((x, y) => segLen(start, [x.lat, x.lng]) - segLen(start, [y.lat, y.lng]))) {
+            const hh = c.flyers || 0;
+            if (rest < SEQ_MIN) {
+              c.flyers = 0;
+              info2.set(c, { name: c.name, flyers: 0 });
+              continue;
+            }
+            stage("loadingSide");
+            c.loadFor = Math.min(rest, Math.max(600, Math.round(hh * 1.3)));
+            const g0 = await sideGraph(c, stage, stale);
+            if (stale()) return { skipped: true };
+            const g = { ...g0, edges: g0.edges.map((e, i) => e.mb && seen.has(keyE(g0, i)) ? { ...e, mb: 0, boxes: [] } : e) };
+            const st = import_planner.default.denseEntry(g, start, null, Math.min(300, Math.max(100, rest * 0.2))) || [c.lat, c.lng];
+            const cap = Math.round(import_planner.default.selectForFlyers(g, st, 1e9).mailboxes || 0);
+            c.flyers = Math.min(cap, rest);
+            if (c.flyers < SEQ_MIN) c.flyers = 0;
+            if (c.flyers) {
+              c.g = g;
+              c.st = st;
+              import_planner.default.selectWithMust(g, st, c.flyers).ids.forEach((i) => seen.add(keyE(g, i)));
+            }
+            rest -= c.flyers;
+            info2.set(c, { name: c.name, flyers: c.flyers, cap });
+          }
+          splitInfo = [{ name: null, flyers: mainMb, cap: mainMb }, ...side.map((c) => info2.get(c))];
+          side = side.filter((c) => c.flyers > 0);
+        } else if (split === "even" && ((must || []).some((a) => a && a.name) || side.length)) {
+          if (!G || gKey !== keyOf(start)) {
+            stage("loadingArea");
+            await load(start, flyers, void 0, must, stage, stale, "loadingArea", zone);
+          }
+          if (stale()) return { skipped: true };
+          const nearM = (must || []).filter((a) => a && a.name && a.p && a.p.length > 2);
+          const capNear = nearM.map((a) => import_planner.default.mustPick(G, start, [{ p: a.p, n: 0 }]).info[0].avail);
+          const capFar = [];
+          for (const c of side) {
+            stage("loadingSide");
+            c.flyers = c.flyers || flyers;
+            const g = await sideGraph(c, stage, stale);
+            if (stale()) return { skipped: true };
+            capFar.push(c.zone && c.zone.length > 2 ? import_planner.default.mustPick(g, [c.lat, c.lng], [{ p: c.zone, n: 0 }]).info[0].avail : (g.usable != null ? g.usable : g.mailboxes) || 0);
+          }
+          const capMain = Math.max(0, (G.usable != null ? G.usable : G.mailboxes) - capNear.reduce((a, b) => a + b, 0));
+          const caps = [capMain, ...capNear, ...capFar], share = new Array(caps.length).fill(0);
+          const fixed = new Set([mainAll ? 0 : -1, ...nearM.map((a, i) => a.all ? 1 + i : -1), ...side.map((c, i) => c.all ? 1 + nearM.length + i : -1)].filter((i) => i >= 0));
+          let rest = flyers;
+          fixed.forEach((i) => {
+            share[i] = caps[i];
+            rest -= caps[i];
+          });
+          rest = Math.max(0, rest);
+          let open = caps.map((_, i) => i).filter((i) => !fixed.has(i));
+          while (rest > 0 && open.length) {
+            const each = rest / open.length, full = open.filter((i) => caps[i] - share[i] <= each);
+            if (!full.length) {
+              open.forEach((i) => {
+                share[i] += each;
+              });
+              rest = 0;
+              break;
+            }
+            full.forEach((i) => {
+              rest -= caps[i] - share[i];
+              share[i] = caps[i];
+            });
+            open = open.filter((i) => !full.includes(i));
+          }
+          const r50 = (x) => Math.max(0, Math.round(x / 50) * 50);
+          const shr = (i) => fixed.has(i) ? Math.round(share[i]) : r50(share[i]);
+          nearM.forEach((a, i) => {
+            a.n = a.all ? 0 : Math.max(50, shr(1 + i));
+          });
+          side.forEach((c, i) => {
+            c.flyers = shr(1 + nearM.length + i);
+          });
+          splitInfo = [{ name: null, flyers: r50(share[0]), cap: Math.round(capMain) }, ...nearM.map((a, i) => ({ name: a.name, flyers: shr(1 + i), cap: Math.round(capNear[i]), all: !!a.all })), ...side.map((c, i) => ({ name: c.name, flyers: c.flyers, cap: Math.round(capFar[i]), all: !!c.all }))];
+          side = side.filter((c) => c.flyers > 0);
+        }
+        if (side.length) {
+          const res = await this.planSide({ start, flyers, n, days, hours, must, zone, side, bike, travel, eco, mainAll, mainShare: splitInfo ? splitInfo[0].flyers : null, near: seq }, stage, stale);
+          if (res && res.plan) {
+            res.plan.bus = bus;
+            res.plan.split = splitInfo;
+            if (seq) res.plan.near = true;
+          }
+          return res;
+        }
+        const resM = await this.planMain({ start, flyers, n, days, hours, must, zone, eco, mainAll }, stage, stale);
+        if (resM && resM.plan) {
+          resM.plan.split = splitInfo;
+          if (seq) resM.plan.near = true;
+        }
+        return resM;
+      },
+      // only the dense cores of the main area and of every place; cores are taken best first (mailboxes per hour incl. parking)
+      // until the flyers are reached; one tour by car through all of them. together: everybody in one car – every core is shared
+      // out among the workers, everybody visits the cores in the same order and the days end at the same core for all.
+      async planCores({ start, flyers, n, hours, must, zone, side, travel, together, exact, first }, stage, stale) {
+        if (!G || gKey !== keyOf(start)) {
+          stage("loadingArea");
+          await load(start, flyers, void 0, must, stage, stale, "loadingArea", zone);
+        }
+        if (stale()) return { skipped: true };
+        const hasZone = !!(zone && zone.length > 2);
+        let all;
+        if (hasZone) {
+          const gz = import_planner.default.zoneView(G, zone), ids = import_planner.default.selectWithMust(G, start, 1e9, must, zone).ids;
+          const mb = ids.reduce((a, i) => a + gz.edges[i].mb, 0), len = ids.reduce((a, i) => a + gz.edges[i].len, 0);
+          all = ids.length ? [{ area: null, g: gz, ids, mb, len, park: start, forced: true }] : [];
+        } else if (exact) {
+          const ids = import_planner.default.selectForFlyers(G, start, flyers).ids;
+          const mb = ids.reduce((a, i) => a + G.edges[i].mb, 0), len = ids.reduce((a, i) => a + G.edges[i].len, 0);
+          all = ids.length ? [{ area: null, g: G, ids, mb, len, park: start, forced: true }] : [];
+        } else all = denseCores(G, null);
+        for (const c of side || []) {
+          stage("loadingSide");
+          const g = await sideGraph({ ...c, flyers: c.flyers || 3e3 }, stage, stale);
+          if (stale()) return { skipped: true };
+          const z = c.zone && c.zone.length > 2 ? c.zone : null;
+          all = all.concat(denseCores(z ? import_planner.default.zoneView(g, z) : g, c.name));
+        }
+        {
+          const seenE = /* @__PURE__ */ new Set(), keyE = (g, i) => {
+            const e = g.edges[i];
+            return ((g.pts[e.a][0] + g.pts[e.b][0]) / 2).toFixed(5) + "," + ((g.pts[e.a][1] + g.pts[e.b][1]) / 2).toFixed(5);
+          };
+          all = all.filter((c) => {
+            const ids = c.ids.filter((i) => !seenE.has(keyE(c.g, i)));
+            if (!c.forced && ids.length < c.ids.length * 0.5) return false;
+            ids.forEach((i) => seenE.add(keyE(c.g, i)));
+            c.ids = ids;
+            c.mb = ids.reduce((a, i) => a + c.g.edges[i].mb, 0);
+            c.len = ids.reduce((a, i) => a + c.g.edges[i].len, 0);
+            return c.mb >= 10;
+          });
+        }
+        if (!all.length) return { plan: { routes: [], mailboxes: 0, zone: [], cores: [] }, sug: n };
+        stage("calculating");
+        const K = together ? n : 1;
+        const MAXSPAN = Math.min(90, hours * 60 * 0.25), parkOf = (g, ids) => {
+          let la = 0, lo = 0, w = 0;
+          for (const i of ids) {
+            const e = g.edges[i];
+            la += (g.pts[e.a][0] + g.pts[e.b][0]) / 2 * e.len;
+            lo += (g.pts[e.a][1] + g.pts[e.b][1]) / 2 * e.len;
+            w += e.len;
+          }
+          const ctr = [la / w, lo / w];
+          let best = -1, bd = Infinity;
+          for (const i of ids) for (const v of [g.edges[i].a, g.edges[i].b]) {
+            const d = segLen(ctr, g.pts[v]);
+            if (d < bd) {
+              bd = d;
+              best = v;
+            }
+          }
+          return [g.pts[best][0], g.pts[best][1]];
+        };
+        const pieces = [];
+        for (const c of all) {
+          const m = Math.ceil(import_planner.default.routeMinutes(c.len * 1.35, c.mb) / K / MAXSPAN);
+          if (m <= 1) {
+            if (c.forced) c.park = parkOf(c.g, c.ids);
+            pieces.push(c);
+            continue;
+          }
+          const pp = import_planner.default.planFlyers(subGraph(c.g, c.ids), c.park, 1e9, m, { days: 1, hoursPerDay: 99 });
+          for (const r of pp.routes) {
+            const ids = (r.part || []).map((i) => c.ids[i]);
+            if (!ids.length) continue;
+            const mb = ids.reduce((a, i) => a + c.g.edges[i].mb, 0);
+            if (mb < 10) continue;
+            pieces.push({ area: c.area, g: c.g, ids, mb, len: ids.reduce((a, i) => a + c.g.edges[i].len, 0), park: parkOf(c.g, ids), forced: c.forced });
+          }
+          if (stale()) return { skipped: true };
+        }
+        all = pieces;
+        for (const c of all) {
+          const p = import_planner.default.planFlyers(subGraph(c.g, c.ids), c.park, 1e9, Math.max(1, Math.min(K, Math.floor(c.mb / 30))), { days: 1, hoursPerDay: 99 });
+          c.routes = p.routes.map(({ part, ...r }) => r);
+          c.mb = p.mailboxes;
+          c.work = c.routes.reduce((a, r) => a + r.minutes, 0);
+          c.span = Math.max(...c.routes.map((r) => r.minutes));
+          c.score = c.mb / (c.work + CORE_PARK * c.routes.length);
+          if (stale()) return { skipped: true };
+        }
+        const near = (c) => c.score / (1 + segLen(start, c.park) / 2e4);
+        all.sort((a, b) => (b.forced ? 1 : 0) - (a.forced ? 1 : 0) || near(b) - near(a));
+        const chosen = all.filter((c) => c.forced);
+        let sum = chosen.reduce((a, c) => a + c.mb, 0);
+        const capOf = {};
+        let capSum = 0;
+        for (const c of side || []) if (c.flyers > 0) {
+          capOf[c.name] = c.flyers;
+          capSum += c.flyers;
+        }
+        if (capSum && capSum < flyers) capOf[""] = flyers - capSum;
+        const got = {};
+        chosen.forEach((c) => {
+          const k = c.area || "";
+          got[k] = (got[k] || 0) + c.mb;
+        });
+        for (const c of all) {
+          if (c.forced) continue;
+          if (sum >= flyers) break;
+          const k = c.area || "";
+          if (capSum && capOf[k] != null && (got[k] || 0) + c.mb > capOf[k] * 1.1 + 30) continue;
+          got[k] = (got[k] || 0) + c.mb;
+          if (!exact && sum >= 0.8 * flyers && c.score < 0.55 * sum / chosen.reduce((a, x) => a + x.work + CORE_PARK * x.routes.length, 0)) break;
+          chosen.push(c);
+          sum += c.mb;
+        }
+        const cnt = {};
+        chosen.forEach((c) => {
+          const k = c.area || "";
+          cnt[k] = (cnt[k] || 0) + 1;
+        });
+        const seen = {};
+        chosen.forEach((c) => {
+          const k = c.area || "";
+          seen[k] = (seen[k] || 0) + 1;
+          c.name = (c.area || t0(c)) + (cnt[k] > 1 ? " " + seen[k] : "");
+        });
+        function t0(c) {
+          const r = c.routes[0], st = (r.steps || []).find((x) => x[2]);
+          return st ? st[2] : "Kern";
+        }
+        {
+          const kE = (g, i) => {
+            const e = g.edges[i];
+            return ((g.pts[e.a][0] + g.pts[e.b][0]) / 2).toFixed(5) + "," + ((g.pts[e.a][1] + g.pts[e.b][1]) / 2).toFixed(5);
+          };
+          const taken = /* @__PURE__ */ new Set();
+          chosen.forEach((c) => c.ids.forEach((i) => taken.add(kE(c.g, i))));
+          for (const g of new Set(chosen.map((c) => c.g))) {
+            const cs = chosen.filter((c) => c.g === g), used = new Set(cs.flatMap((c) => c.ids));
+            import_planner.default.reserveFor(g, used, cs.flatMap((c) => c.routes), { skip: (i) => taken.has(kE(g, i)) });
+          }
+          if (stale()) return { skipped: true };
+        }
+        let tour = [], left = chosen.slice(), at = start, origin = start;
+        const firstCores = first ? left.filter((c) => (c.area || "") === first) : [];
+        if (firstCores.length) {
+          const f0 = firstCores.reduce((b, c) => segLen(start, c.park) < segLen(start, b.park) ? c : b);
+          left.splice(left.indexOf(f0), 1);
+          tour.push(f0);
+          at = f0.park;
+        }
+        while (left.length) {
+          let bi = 0;
+          left.forEach((x2, i) => {
+            if (segLen(at, x2.park) < segLen(at, left[bi].park)) bi = i;
+          });
+          const x = left.splice(bi, 1)[0];
+          tour.push(x);
+          at = x.park;
+        }
+        const tl = (tr) => tr.reduce((a, x, i) => a + segLen(i ? tr[i - 1].park : origin, x.park), 0), i0 = firstCores.length ? 1 : 0;
+        for (let improved = true, guard = 0; improved && guard < 60; guard++) {
+          improved = false;
+          for (let i = i0; i < tour.length - 1; i++) for (let j = i + 1; j < tour.length; j++) {
+            const c2 = [...tour.slice(0, i), ...tour.slice(i, j + 1).reverse(), ...tour.slice(j + 1)];
+            if (tl(c2) < tl(tour) - 1) {
+              tour = c2;
+              improved = true;
+            }
+          }
+        }
+        let mat = null;
+        const mPts = [start, ...tour.map((x) => x.park)];
+        if (travel !== "bus" && mPts.length <= 50) {
+          stage("loadingSide");
+          mat = await roadMatrix(mPts, travel === "car" ? "auto" : "bicycle");
+          if (stale()) return { skipped: true };
+        }
+        const ride = (a, b) => {
+          if (travel === "bus") return TRAVEL_MIN;
+          const i = mPts.findIndex((q) => q === a || q[0] === a[0] && q[1] === a[1]), j = mPts.findIndex((q) => q === b || q[0] === b[0] && q[1] === b[1]);
+          const road = mat && i >= 0 && j >= 0 && mat[i][j] != null ? mat[i][j] : segLen(a, b) * 1.3;
+          return 5 + road / SPEED[travel === "car" ? "car" : "bike"];
+        };
+        let routes;
+        if (together) {
+          const breaks = /* @__PURE__ */ new Set();
+          let tday = 0;
+          tour.forEach((c, k) => {
+            const add = (k ? ride(tour[k - 1].park, c.park) : 0) + c.span;
+            if (k && tday + add > hours * 60 + 20) {
+              breaks.add(k);
+              tday = c.span;
+            } else tday += add;
+          });
+          routes = Array.from({ length: n }, (_, w) => buildLine(tour.filter((c) => c.routes[w]).map((c) => ({ r: c.routes[w], name: c.name })), hours, (a, b) => ride(a, b), new Set([...breaks].map((k) => tour.slice(0, k).filter((c) => c.routes[w]).length)), start)).map((r, i) => ({ idx: i, ...r }));
+        } else {
+          const vill = [];
+          {
+            let prev = start;
+            tour.forEach((x) => {
+              vill.push({ min: x.work + ride(prev, x.park), x });
+              prev = x.park;
+            });
+          }
+          const P2 = [0];
+          vill.forEach((v) => P2.push(P2[P2.length - 1] + v.min));
+          const parts = [];
+          let from = 0;
+          for (let w = 0; w < n; w++) {
+            const goal = P2[P2.length - 1] * (w + 1) / n;
+            let to = from;
+            while (to < vill.length && (w === n - 1 || P2[to + 1] - vill[to].min / 2 <= goal)) to++;
+            parts.push(vill.slice(from, to));
+            from = to;
+          }
+          routes = parts.filter((p) => p.length).map((p, i) => ({ idx: i, ...buildLine(p.map((v) => ({ r: v.x.routes[0], name: v.x.name })), hours, (a, b) => ride(a, b), null, start) }));
+        }
+        const plan = { routes, mailboxes: Math.round(sum), zone: [], cores: tour.map((c) => ({ name: c.name, mb: Math.round(c.mb), c: c.park, min: Math.round(c.span) })), road_km: !!mat, side_info: [], side_failed: [], must_mb: 0, must_info: [] };
+        plan.capacity = import_planner.default.capacity(routes, flyers);
+        if (!exact && sum < flyers) plan.eco = { asked: flyers, used: Math.round(sum) };
+        return { plan, sug: n, street_m: Math.round(chosen.reduce((a, c) => a + c.len, 0)) };
+      },
+      async planSide({ start, flyers, n, days, hours, must, zone, side, bike, travel, eco, mainAll, mainShare, near }, stage, stale) {
+        const team = !!near && n > 1;
+        const far = [], failed = [];
+        for (const c of side) {
+          stage("loadingSide");
+          const g = c.g || await sideGraph(c, stage, stale);
+          if (stale()) return { skipped: true };
+          const z = c.zone && c.zone.length > 2 ? c.zone : null, st = c.st || import_planner.default.denseEntry(g, start, z, Math.min(300, Math.max(100, c.flyers * 0.2))) || [c.lat, c.lng];
+          const p = import_planner.default.planFlyers(g, st, c.flyers, team ? n : 1, { days: 1, hoursPerDay: hours, zone: z });
+          const rs = (p && p.routes || []).filter((r) => r.path && r.path.length > 1).map(({ part, ...r }) => r);
+          if (!rs.length) {
+            failed.push(c.name);
+            continue;
+          }
+          far.push({ c, r: rs[0], rs, min: Math.max(...rs.map((r) => r.minutes)), mb: p.mailboxes });
+        }
+        let mainFlyers = Math.max(100, flyers - far.reduce((s, x) => s + x.c.flyers, 0));
+        if (!far.length) {
+          const r1 = await this.planMain({ start, flyers, n, days, hours, must, zone, eco, mainAll }, stage, stale);
+          if (r1 && r1.plan) r1.plan.side_failed = failed;
+          return r1;
+        }
+        let mainEco = null;
+        if (eco && !(zone && zone.length > 2)) {
+          if (!G || gKey !== keyOf(start)) {
+            stage("loadingArea");
+            await load(start, mainFlyers, void 0, must, stage, stale, "loadingArea", zone);
+          }
+          const ef = ecoFlyers(start, mainFlyers, must, zone);
+          if (ef < mainFlyers) {
+            mainEco = { asked: mainFlyers, used: ef };
+            mainFlyers = ef;
+          }
+        }
+        let res = await this.planMain({ start, flyers: mainFlyers, n, days: 1, hours, must, zone, mainAll }, stage, stale);
+        if (!res || res.skipped) return res;
+        const M = res.plan.routes.reduce((s, r) => s + r.minutes, 0);
+        const ent = (x) => x.r.path[0], ext = (x) => x.r.path[x.r.path.length - 1];
+        let tour = [], left = [...far], at = start;
+        while (left.length) {
+          let bi = 0;
+          left.forEach((x2, i) => {
+            if (segLen(at, ent(x2)) < segLen(at, ent(left[bi]))) bi = i;
+          });
+          const x = left.splice(bi, 1)[0];
+          tour.push(x);
+          at = ext(x);
+        }
+        const tourLen = (tr) => tr.reduce((s, x, i) => s + segLen(i ? ext(tr[i - 1]) : start, ent(x)), 0);
+        for (let improved = true, guard = 0; improved && guard < 50; guard++) {
+          improved = false;
+          for (let i = 0; i < tour.length - 1; i++) for (let j = i + 1; j < tour.length; j++) {
+            const cand = [...tour.slice(0, i), ...tour.slice(i, j + 1).reverse(), ...tour.slice(j + 1)];
+            if (tourLen(cand) < tourLen(tour) - 1) {
+              tour = cand;
+              improved = true;
+            }
+          }
+        }
+        let mat = null;
+        const mPts = [start, ...far.map((x) => ent(x))], idx = (p) => mPts.findIndex((q) => Math.abs(q[0] - p[0]) < 1e-7 && Math.abs(q[1] - p[1]) < 1e-7);
+        if (travel !== "bus" && far.length) {
+          stage("loadingSide");
+          mat = await roadMatrix(mPts, travel === "car" ? "auto" : "bicycle");
+          if (stale()) return { skipped: true };
+        }
+        const ride = (a, b) => {
+          if (travel === "bus") return TRAVEL_MIN;
+          const i = idx(a), j = idx(b), road = mat && i >= 0 && j >= 0 && mat[i][j] != null ? mat[i][j] : segLen(a, b) * 1.3;
+          return 5 + road / SPEED[travel];
+        };
+        const vill = [];
+        {
+          let prev = start;
+          tour.forEach((x) => {
+            vill.push({ min: x.min + ride(prev, ent(x)), far: x });
+            prev = ext(x);
+          });
+        }
+        const lim = hours * 60, after = (m) => {
+          if (m <= lim + 60) return m;
+          const r = m % lim;
+          return r < 60 ? lim : r;
+        };
+        const dayStarts = (t0, mins) => {
+          const out = /* @__PURE__ */ new Set();
+          let t = t0;
+          mins.forEach((m, k) => {
+            if (t > 0 && t + m > lim + 20 && m <= lim + 20) {
+              out.add(k);
+              t = m;
+            } else t = after(t + m);
+          });
+          return out;
+        };
+        if (team) {
+          const mains = res.plan.routes, starts = dayStarts(after(Math.max(0, ...mains.map((r) => r.minutes))), vill.map((v) => v.min));
+          const lines = [];
+          for (let w = 0; w < n; w++) {
+            const pieces = mains[w] ? [{ r: mains[w], name: null }] : [], br = /* @__PURE__ */ new Set();
+            tour.forEach((x, k) => {
+              if (!x.rs[w]) return;
+              if (starts.has(k)) br.add(pieces.length);
+              pieces.push({ r: x.rs[w], name: x.c.name });
+            });
+            if (pieces.length) lines.push(buildLine(pieces, hours, ride, br, null, true));
+          }
+          if (mainEco) res.plan.eco = mainEco;
+          res.plan.routes = lines.map((r, k) => ({ idx: k, ...r }));
+          res.plan.road_km = mat ? true : false;
+          res.plan.mailboxes += far.reduce((s, x) => s + x.mb, 0);
+          res.plan.side_failed = failed;
+          res.plan.side_info = [];
+          res.plan.team = far.map((x) => x.c.name);
+          res.plan.capacity = import_planner.default.capacity(res.plan.routes, flyers);
+          res.sug = Math.min(20, import_planner.default.suggestWorkers(res.plan.routes.reduce((s, r) => s + r.minutes, 0), hours, days));
+          return res;
+        }
+        const cut = (items, n2) => {
+          const m = items.length, P = [0];
+          items.forEach((x) => P.push(P[P.length - 1] + x.min));
+          const k = Math.min(n2, m);
+          if (!k) return Array.from({ length: n2 }, () => []);
+          const dp = Array.from({ length: k + 1 }, () => new Array(m + 1).fill(Infinity)), at2 = Array.from({ length: k + 1 }, () => new Array(m + 1).fill(0));
+          dp[0][0] = 0;
+          for (let j = 1; j <= k; j++) for (let i2 = j; i2 <= m; i2++) for (let p = j - 1; p < i2; p++) {
+            const v = Math.max(dp[j - 1][p], P[i2] - P[p]);
+            if (v < dp[j][i2]) {
+              dp[j][i2] = v;
+              at2[j][i2] = p;
+            }
+          }
+          const parts = [];
+          let i = m;
+          for (let j = k; j >= 1; j--) {
+            const p = at2[j][i];
+            parts.unshift(items.slice(p, i));
+            i = p;
+          }
+          while (parts.length < n2) parts.push([]);
+          return parts;
+        };
+        const vparts = cut(vill, n);
+        const share = (mains) => {
+          const bins2 = vparts.map((p) => ({ min: p.reduce((s, x) => s + x.min, 0), mains: [], vill: p }));
+          [...mains].sort((x, y) => y.minutes - x.minutes).forEach((r) => {
+            const b = bins2.reduce((m, x) => x.min < m.min ? x : m, bins2[0]);
+            b.mains.push(r);
+            b.min += r.minutes;
+          });
+          return bins2;
+        };
+        let bestK = n, bestMax = Infinity;
+        for (let k = n; k <= 3 * n; k++) {
+          const mx = Math.max(...share(Array.from({ length: k }, () => ({ minutes: M / k }))).map((b) => b.min));
+          if (mx < bestMax - 15) {
+            bestMax = mx;
+            bestK = k;
+          }
+        }
+        if (bestK !== n) {
+          stage("calculating");
+          const r2 = await this.planMain({ start, flyers: mainFlyers, n: bestK, days: 1, hours, must, zone, mainAll }, stage, stale);
+          if (!r2 || r2.skipped) return r2;
+          res = r2;
+        }
+        if (mainEco) res.plan.eco = mainEco;
+        const bins = share(res.plan.routes).filter((b) => b.mains.length || b.vill.length).map((b) => ({ ...b, items: b.vill }));
+        res.plan.routes = bins.map((b, k) => {
+          const br = dayStarts(after(b.mains.reduce((s, r) => s + r.minutes, 0)), b.vill.map((x) => x.min));
+          return { idx: k, ...buildLine([...b.mains.map((r) => ({ r, name: null })), ...b.vill.map((x) => ({ r: x.far.r, name: x.far.c.name }))], hours, ride, new Set([...br].map((i) => i + b.mains.length)), null, true) };
+        });
+        res.plan.road_km = mat ? true : false;
+        res.plan.mailboxes += far.reduce((s, x) => s + x.mb, 0);
+        res.plan.side_failed = failed;
+        res.plan.side_info = far.map((x) => ({ name: x.c.name, mailboxes: x.mb, worker: bins.findIndex((b) => b.items.some((i) => i.far === x)) }));
+        res.plan.capacity = import_planner.default.capacity(res.plan.routes, flyers);
+        res.sug = Math.min(20, import_planner.default.suggestWorkers(res.plan.routes.reduce((s, r) => s + r.minutes, 0), hours, days));
+        return res;
+      },
+      async planMain({ start, flyers, n, days, hours, must, zone, eco, mainAll }, stage, stale) {
+        if (!G || gKey !== keyOf(start)) {
+          stage("loadingArea");
+          await load(start, flyers, void 0, must, stage, stale, "loadingArea", zone);
+        }
+        if (stale()) return { skipped: true };
+        const hasZone = !!(zone && zone.length > 2);
+        const mr = Math.min(import_planner.default.MUST_MAX_R, Math.max(import_planner.default.mustRadius(start, must), hasZone ? import_planner.default.mustRadius(start, [zone]) : 0));
+        if (mr > G.radius) {
+          stage("loadingMore");
+          await load(start, flyers, mr, must, stage, stale, "loadingMore", zone);
+          if (stale()) return { skipped: true };
+        }
+        const reach = import_planner.default.selectWithMust(G, start, flyers, must, zone).reach_m;
+        G.reach = reach;
+        if (!hasZone && ((G.usable != null ? G.usable : G.mailboxes) < flyers * 1.05 || reach > 0.65 * G.radius) && G.radius < import_planner.default.MAX_R) {
+          stage("loadingMore");
+          const keep = G;
+          try {
+            await load(start, flyers, import_planner.default.nextRadius(G, flyers), must, stage, stale, "loadingMore", zone);
+          } catch (e) {
+            G = keep;
+            gKey = keyOf(start);
+          }
+          if (stale()) return { skipped: true };
+        }
+        stage("calculating");
+        let ecoInfo = null;
+        if (mainAll && hasZone) flyers = Math.max(100, import_planner.default.selectWithMust(G, start, 1e9, must, zone).mailboxes);
+        else if (eco && !hasZone) {
+          const ef = ecoFlyers(start, flyers, must, zone);
+          if (ef < flyers) {
+            ecoInfo = { asked: flyers, used: ef };
+            flyers = ef;
+          }
+        }
+        const sel = import_planner.default.selectWithMust(G, start, flyers, must, zone);
+        const sug = Math.min(20, import_planner.default.suggestWorkers(import_planner.default.routeMinutes(sel.ids.reduce((s, i) => s + G.edges[i].len, 0) * 1.35, sel.mailboxes), hours, days));
+        if (stale()) return { skipped: true };
+        const plan = import_planner.default.planFlyers(G, start, flyers, n, { days, hoursPerDay: hours, must, zone });
+        plan.routes = plan.routes.map(({ part, ...r }) => r);
+        if (ecoInfo) plan.eco = ecoInfo;
+        return { plan, sug, street_m: G.street_m };
+      }
+    };
+  }
+
+  // ../tools/serverplan/entry.mjs
+  var import_planner2 = __toESM(require_planner(), 1);
+  globalThis.FMRun = async (req) => {
+    const start = req.start, flyers = req.flyers, svc = createPlanService(null), log = [], side = [];
+    const plan = () => svc.plan({
+      start,
+      flyers,
+      n: req.n || 2,
+      days: req.days || 2,
+      hours: req.hours || 7,
+      quota: req.quota || 2500,
+      travel: req.travel || "bus",
+      bike: req.travel === "bike",
+      split: "even",
+      exact: true,
+      mainAll: false,
+      cores: false,
+      together: false,
+      first: null,
+      near: side.length > 0,
+      must: [],
+      zone: null,
+      side: side.map((x) => ({ name: x.name, lat: x.lat, lng: x.lng, flyers: x.flyers, zone: null, all: false }))
+    }, () => {
+    }, () => false);
+    let res = await plan();
+    log.push("walk " + res.plan.mailboxes);
+    const hav = (a, b, c, d) => 111320 * Math.hypot(c - a, (d - b) * Math.cos(a * Math.PI / 180));
+    for (let round = 1; round <= 3 && res.plan.mailboxes < flyers * 0.95; round++) {
+      const need = flyers - res.plan.mailboxes;
+      let towns = await townsAround(start[0], start[1], 2500, 3e4);
+      const big = towns.filter((c) => c.households >= 300);
+      if (big.length) towns = big;
+      const pick = [];
+      let got = 0;
+      for (const c of towns) {
+        if (got >= need * 1.1 || pick.length >= 4) break;
+        if (side.some((x) => hav(x.lat, x.lng, c.lat, c.lng) < 1500)) continue;
+        pick.push(c);
+        got += c.households * 0.9;
+      }
+      if (!pick.length) break;
+      pick.forEach((c) => side.push({ name: "Ort " + (side.length + 1), lat: c.lat, lng: c.lng, flyers: c.households, km: Math.round(c.dist / 100) / 10, auto: true }));
+      res = await plan();
+      log.push("round " + round + " +" + pick.length + " -> " + res.plan.mailboxes);
+    }
+    let streets = null;
+    if (req.dump) {
+      streets = [];
+      const census2 = censusSource(), sp = res.plan.split || [];
+      const add = (g) => g.edges.forEach((e) => {
+        if (e.mb > 0 && e.coords) streets.push([Math.round(e.mb), ...e.coords.flatMap((c) => [+c[0].toFixed(5), +c[1].toFixed(5)])]);
+      });
+      add(await import_planner2.default.loadForFlyers(start, flyers, { census: census2 }));
+      for (const x of side) {
+        const f = (sp.find((y) => y.name === x.name) || {}).flyers;
+        if (f > 0) add(await import_planner2.default.loadForFlyers([x.lat, x.lng], f, { census: census2 }));
+      }
+    }
+    return { log, side, sug: res.sug, street_m: res.street_m, plan: res.plan, streets };
+  };
+})();
