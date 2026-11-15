@@ -305,6 +305,17 @@ async function viewPeople(){
     { k:'pace', label:t('colPace'), num:true, sort:x => st(x.w.id).pace != null ? +st(x.w.id).pace : null, cell:x => st(x.w.id).pace != null ? st(x.w.id).pace + ' %' : '–' },
     { k:'act', label:t('colActions'), cls:'act', cell:x => `<a class="icon-btn sm" href="${telLink(x.w.phone)}" title="${esc(t('call'))}" aria-label="${esc(t('call') + ': ' + x.w.name)}">${ICONS.phone}</a><a class="icon-btn sm" target="_blank" rel="noopener" href="${waLink(x.w.phone)}" title="WhatsApp" aria-label="${esc('WhatsApp: ' + x.w.name)}">${ICONS.chat}</a><button class="icon-btn sm" data-wmap="${x.w.id}" title="${esc(t('showOnMap'))}" aria-label="${esc(t('showOnMap') + ': ' + x.w.name)}">${ICONS.map}</button>` },
   ], rows.map(x => ({ ...x, id:x.w.id })), A.wSort);
+  A.dSort = A.dSort || { by:'hours', dir:'desc' }; const openRows = new Set();
+  const sumMin = rs => rs.reduce((a, r) => a + workMin(r), 0), sumKm = rs => rs.reduce((a, r) => a + (r.distance_m || 0), 0);
+  const daysTable = (rows, byW) => tableHtml('dTable', [
+    { k:'name', label:t('colName'), sort:x => x.w.name.toLowerCase(), cell:x => `<span class="tname"><button class="icon-btn sm tx" data-unf="${x.w.id}" aria-expanded="${openRows.has(x.w.id)}" aria-label="${esc(t('colDays'))}">${ICONS.chevron}</button><span class="dotc ${isLive(x.w) ? '' : 'pause'}"></span><b>${esc(x.w.name)}</b></span>` },
+    { k:'days', label:t('colDays'), num:true, sort:x => byW.get(x.w.id).length, cell:x => String(byW.get(x.w.id).length) },
+    { k:'hours', label:t('colHours'), num:true, sort:x => sumMin(byW.get(x.w.id)), cell:x => esc(fmtHm(sumMin(byW.get(x.w.id)))) },
+    { k:'km', label:'km', num:true, sort:x => sumKm(byW.get(x.w.id)), cell:x => esc(fmtDist(sumKm(byW.get(x.w.id)))) },
+    { k:'places', label:t('colPlaces'), sort:x => [...new Set(byW.get(x.w.id).map(r => r.place).filter(Boolean))].join(', '), cell:x => `<small>${esc([...new Set(byW.get(x.w.id).map(r => (r.place || '').split(',').pop().trim()).filter(Boolean))].join(', ') || '–')}</small>` },
+    { k:'last', label:t('colLastDay'), sort:x => -Math.max(...byW.get(x.w.id).map(r => new Date(r.started_at).getTime())), cell:x => esc(fmtDay(byW.get(x.w.id).map(dayKey).sort().pop())) },
+    { k:'act', label:t('colActions'), cls:'act', cell:x => `<a class="icon-btn sm" href="${telLink(x.w.phone)}" title="${esc(t('call'))}" aria-label="${esc(t('call') + ': ' + x.w.name)}">${ICONS.phone}</a><a class="icon-btn sm" target="_blank" rel="noopener" href="${waLink(x.w.phone)}" title="WhatsApp" aria-label="WhatsApp">${ICONS.chat}</a>` },
+  ], rows.map(x => ({ ...x, id:x.w.id })), A.dSort);
   const render = () => {
     const places = [...new Set(days.map(r => r.place).filter(Boolean))].sort(); if(f.place && !places.includes(f.place)) f.place = '';
     $('#dFilter').innerHTML = dayFilterHtml(f, places); bindDayFilter(f, render);
@@ -319,13 +330,20 @@ async function viewPeople(){
     const shown = on ? list.flatMap(x => byW.get(x.w.id)) : [];
     $('#wList').innerHTML = (on ? `<div class="hint">${esc(shown.length ? t('workedSum', { w:list.length, d:daysSum(shown) }) : t('noDaysRange'))}</div>` : '') +
       (place ? `<div class="hint">${esc(t('canReach', { n:list.length, city:place.name }))} <button class="link" id="wClr">${esc(t('reset'))}</button></div>` : '') +
-      (list.length && !on && listView('people') === 'table' ? peopleTable(list) : list.length ? list.map(({ w, km }) => `<div class="card worker-card"><button class="wc-main" data-id="${w.id}">${avatar(w.name, isLive(w) ? 'live' : '')}
+      (list.length && listView('people') === 'table' ? (on ? daysTable(list.filter(x => byW.has(x.w.id)), byW) : peopleTable(list)) : list.length ? list.map(({ w, km }) => `<div class="card worker-card"><button class="wc-main" data-id="${w.id}">${avatar(w.name, isLive(w) ? 'live' : '')}
         <div class="grow"><b>${esc(w.name)} ${okBadge(w.id)}</b>${shortLine(w.id) ? `<span>${esc(shortLine(w.id))}</span>` : ''}<span>${coName(w.company_id) ? esc(coName(w.company_id)) + ' · ' : ''}${esc((w.cities || []).map(c => c.name).join(', '))}${km != null ? ' · ' + Math.round(km) + ' km' : ''} · ${esc(t('zoneChip', { n:w.zone_minutes }))}</span><span>${isLive(w) ? statusPill('live', t('stLive')) : esc(t('lastActive', { a:ago(w.last_seen) }))}</span></div>${ICONS.chevron}</button>
         ${on ? `<div class="wc-days">${byW.get(w.id).map(r => dayLine(r)).join('')}</div>` : ''}
         <div class="wc-act"><a class="btn ghost small" href="${telLink(w.phone)}">${ICONS.phone}${esc(t('call'))}</a><a class="btn ghost small" target="_blank" rel="noopener" href="${waLink(w.phone)}">${ICONS.chat}WhatsApp</a></div></div>`).join('')
        : on ? '' : emptyState(liveOnly ? t('nobodyLiveHint') : A.workers.length ? t('notFound') : t('noWorkers'), A.workers.length ? 'search' : 'users'));
     const clr = $('#wClr'); if(clr) clr.onclick = () => { place = null; $('#wCity').value = ''; render(); };
     bindTable('wTable', A.wSort, render, id => viewWorker(id));
+    bindTable('dTable', A.dSort, render, id => viewWorker(id));
+    // the working days of a person unfold under the row (each day opens its map)
+    { const tb = document.getElementById('dTable');
+      if(tb) tb.querySelectorAll('tbody tr[data-row]').forEach(tr => { const id = tr.dataset.row; if(!openRows.has(id)) return; const rs = byW.get(id) || [];
+        tr.classList.add('unf'); tr.insertAdjacentHTML('afterend', `<tr class="sub"><td colspan="7"><div class="sub-days">${rs.map(r => dayLine(r)).join('')}</div></td></tr>`); });
+      document.querySelectorAll('[data-unf]').forEach(b => b.onclick = e => { e.stopPropagation(); const id = b.dataset.unf; if(openRows.has(id)) openRows.delete(id); else openRows.add(id); render(); });
+      document.querySelectorAll('.sub-days .rbtn').forEach(b => b.onclick = e => { e.stopPropagation(); viewDayMap(b.dataset.r, viewPeople); }); }
     document.querySelectorAll('[data-wmap]').forEach(b => b.onclick = e => { e.stopPropagation(); showOnMap({ kind:'worker', id:b.dataset.wmap }); });
     document.querySelectorAll('.wc-main').forEach(b => b.onclick = () => viewWorker(b.dataset.id));
     document.querySelectorAll('.wc-days .rbtn').forEach(b => b.onclick = () => viewDayMap(b.dataset.r, viewPeople));

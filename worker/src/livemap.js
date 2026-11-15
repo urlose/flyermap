@@ -9,8 +9,9 @@ import { sb, $, esc, css, hav, fmtN, fmtDay, ago, waLink, telLink, searchPlaces 
 import { ICONS, shell, makeMap, fit, every } from './ui.js';
 
 // what the map shows (kept while the app is open, and in the browser for next time)
-const LS = 'fm.mapFilter';
-const F0 = { on:true, off:true, open:true, done:false, areas:true, routes:true, walked:true };
+// people not on the way are off at first: their home towns all over the country only crowd the map (one tap shows them)
+const LS = 'fm.mapFilter2';
+const F0 = { on:true, off:false, open:true, done:false, areas:true, routes:true, walked:true };
 export const LM = { f:(() => { try{ return { ...F0, ...JSON.parse(localStorage.getItem(LS) || '{}') }; }catch{ return { ...F0 }; } })(), sel:null, view:null, sheet:'half', over:true, place:null, km:25 };
 const saveF = () => { try{ localStorage.setItem(LS, JSON.stringify(LM.f)); }catch{} };
 
@@ -118,7 +119,7 @@ export function viewLiveMap(H){
       if(LM.f.walked && tracks[tk.id]) for(const r of tracks[tk.id]) L.polyline(r, { pane:'lmWalk', color:GREEN_C(), weight:on ? 6 : 4, opacity:dim ? .25 : .8, lineJoin:'round', lineCap:'round', interactive:false }).addTo(walkL);
       if(tk.start_lat != null) L.marker([tk.start_lat, tk.start_lng], { icon:L.divIcon({ className:'', iconSize:[30, 38], iconAnchor:[15, 36],
         html:`<div class="lm-pin ${st}${on ? ' sel' : ''}${dim ? ' dim' : ''}" style="--c:${c}"><svg viewBox="0 0 24 30" aria-hidden="true"><path d="M12 29s9-9.3 9-16.2A9 9 0 0 0 3 12.8C3 19.7 12 29 12 29z"/></svg><i>${st === 'done' ? '✓' : st === 'open' ? '!' : ''}</i></div>` }),
-        zIndexOffset:on ? 700 : 200, title:tk.title, keyboard:true, alt:tk.title }).on('click', () => select({ kind:'task', id:tk.id }, true)).addTo(pinL);
+        zIndexOffset:on ? 1700 : 1100, title:tk.title, keyboard:true, alt:tk.title }).on('click', () => select({ kind:'task', id:tk.id }, true)).addTo(pinL);
     }
   };
   // a click on overlapping areas: one of them is chosen in a small list
@@ -338,10 +339,12 @@ export function viewLiveMap(H){
   const firstFit = () => {
     if(fittedOnce || userMoved) return; fittedOnce = true;
     if(LM.place){ focusSel(); return; }
+    // first view: the work – open orders and the people on the way; only when there is none, everybody
     const b = L.latLngBounds([]); A.workers.forEach(w => { const p = posOf(w); if(p && wState(w) !== 'off') b.extend(p.p); });
-    shown().filter(x => x.status === 'open').forEach(tk => areasOf(tk, plansOf(tk.id)).forEach(a => b.extend(L.latLngBounds(a.poly))));
+    shown().filter(x => x.status === 'open').forEach(tk => { areasOf(tk, plansOf(tk.id)).forEach(a => b.extend(L.latLngBounds(a.poly))); if(tk.start_lat != null) b.extend([tk.start_lat, tk.start_lng]); });
     if(!b.isValid()) A.workers.forEach(w => { const p = posOf(w); if(p) b.extend(p.p); });
-    fit(m, b, 70);
+    if(!b.isValid()) return;
+    const d = desk(); try{ m.fitBounds(b, { paddingTopLeft:d ? [40, 90] : [20, 140], paddingBottomRight:d ? [80, 90] : [70, 120], maxZoom:15, animate:false }); }catch{}
   };
   const tick = async () => {
     try{ await Promise.all([loadWorkers(), loadLive()]); lastOk = Date.now(); }catch{ drawOver(); return; }

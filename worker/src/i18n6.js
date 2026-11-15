@@ -16,7 +16,7 @@ Object.assign(T.de, {
   dueDone:'Erledigt', dueNone:'Keine Frist', dueOver:'Überfällig seit {d}', dueToday:'Frist heute',
   viewCards:'Karten', viewTable:'Tabelle', viewAs:'Ansicht', colName:'Name', colCities:'Wohnorte', colActive:'Zuletzt aktiv', colVerified:'Geprüft', colDone:'Erledigt', colHours:'Stunden', colPace:'Tempo', colStatus:'Status', colActions:'Aktionen',
   colOrder:'Auftrag', colPlace:'Ort', colDeadline:'Frist', colFlyers:'Flyer', colTeam:'Verteiler', colProgress:'Routen erledigt', sortBy:'Sortieren nach {c}', yes:'Ja', no:'Nein', showOnMap:'Auf Karte',
-  stPeriod:'Zeitraum: letzte {n} Tage', tSearchPh:'Auftrag oder Ort suchen', stKpiAll:'Kennzahlen: alle Aufträge mit Arbeitstagen seit Beginn · kleine Kurven: letzte {n} Tage', freeN:'{n} frei', stPeriodAll:'Alle Aufträge mit Arbeitstagen in den letzten {n} Tagen',
+  stPeriod:'Zeitraum: letzte {n} Tage', tSearchPh:'Auftrag oder Ort suchen', stKpiAll:'Kennzahlen: alle Aufträge mit Arbeitstagen seit Beginn · kleine Kurven: letzte {n} Tage', freeN:'{n} frei', colDays:'Arbeitstage', colPlaces:'Orte', colLastDay:'Letzter Tag', stPeriodAll:'Alle Aufträge mit Arbeitstagen in den letzten {n} Tagen',
 });
 Object.assign(T.ru, {
   lmSearch:'Поиск: работник, заказ или город', lmFilters:'Что показывает карта', lmTools:'Управление картой', lmZoomIn:'Приблизить', lmZoomOut:'Отдалить',
@@ -34,7 +34,7 @@ Object.assign(T.ru, {
   dueDone:'Выполнен', dueNone:'Без срока', dueOver:'Просрочен с {d}', dueToday:'Срок сегодня',
   viewCards:'Карточки', viewTable:'Таблица', viewAs:'Вид', colName:'Имя', colCities:'Города', colActive:'Был активен', colVerified:'Проверен', colDone:'Выполнено', colHours:'Часы', colPace:'Темп', colStatus:'Статус', colActions:'Действия',
   colOrder:'Заказ', colPlace:'Место', colDeadline:'Срок', colFlyers:'Флаеры', colTeam:'Работники', colProgress:'Маршрутов выполнено', sortBy:'Сортировать по: {c}', yes:'Да', no:'Нет', showOnMap:'На карте',
-  stPeriod:'Период: последние {n} дн.', tSearchPh:'Поиск: заказ или место', stKpiAll:'Показатели: все заказы с рабочими днями с самого начала · мини-графики: последние {n} дн.', freeN:'{n} без работника', stPeriodAll:'Все заказы с рабочими днями за последние {n} дн.',
+  stPeriod:'Период: последние {n} дн.', tSearchPh:'Поиск: заказ или место', stKpiAll:'Показатели: все заказы с рабочими днями с самого начала · мини-графики: последние {n} дн.', freeN:'{n} без работника', colDays:'Рабочие дни', colPlaces:'Места', colLastDay:'Последний день', stPeriodAll:'Все заказы с рабочими днями за последние {n} дн.',
 });
 Object.assign(T.en, {
   lmSearch:'Search a person, order or town', lmFilters:'What the map shows', lmTools:'Map controls', lmZoomIn:'Zoom in', lmZoomOut:'Zoom out',
@@ -52,5 +52,5 @@ Object.assign(T.en, {
   dueDone:'Finished', dueNone:'No deadline', dueOver:'Overdue since {d}', dueToday:'Due today',
   viewCards:'Cards', viewTable:'Table', viewAs:'View', colName:'Name', colCities:'Home towns', colActive:'Last active', colVerified:'Verified', colDone:'Done', colHours:'Hours', colPace:'Pace', colStatus:'Status', colActions:'Actions',
   colOrder:'Order', colPlace:'Place', colDeadline:'Deadline', colFlyers:'Flyers', colTeam:'Distributors', colProgress:'Routes done', sortBy:'Sort by {c}', yes:'Yes', no:'No', showOnMap:'On the map',
-  stPeriod:'Period: last {n} days', tSearchPh:'Search an order or place', stKpiAll:'Figures: all orders with working days since the start · small curves: last {n} days', freeN:'{n} free', stPeriodAll:'All orders with working days in the last {n} days',
+  stPeriod:'Period: last {n} days', tSearchPh:'Search an order or place', stKpiAll:'Figures: all orders with working days since the start · small curves: last {n} days', freeN:'{n} free', colDays:'Working days', colPlaces:'Places', colLastDay:'Last day', stPeriodAll:'All orders with working days in the last {n} days',
 });
