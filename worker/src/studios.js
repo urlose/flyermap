@@ -18,6 +18,7 @@ export const hasStudios = () => !!(cache && cache.length);
 
 export const studioBtnHtml = () => hasStudios() ? `<button class="btn ghost small" id="cStudio" style="margin-top:8px">${ICONS.pin}${esc(t('stPick'))}</button>` : '';
 
+// "bald" (coming soon) first: those are the next orders
 // a studio as a place for the address field (same shape as a search result)
 const asPlace = s => {
   const street = s.zip ? s.address.replace(new RegExp(',\\s*' + s.zip + '.*$'), '') : s.address;
@@ -36,7 +37,7 @@ export function openStudioPicker(onPick){
   const render = () => {
     const all = cache || [], v = norm(q.value.trim());
     const hit = all.filter(s => !v || norm(s.name + ' ' + s.address).includes(v))
-      .sort((a, b) => (a.status === 'opened' ? 0 : 1) - (b.status === 'opened' ? 0 : 1) || a.name.localeCompare(b.name, 'de'));
+      .sort((a, b) => (a.status === 'coming_soon' ? 0 : 1) - (b.status === 'coming_soon' ? 0 : 1) || a.name.localeCompare(b.name, 'de'));
     list.innerHTML = hit.length ? hit.map(s => `<button class="res" data-s="${esc(s.slug)}"><b>${esc(s.name)}${s.status === 'coming_soon' ? ` · <span style="color:var(--color-warning,#B45309)">${esc(t('stSoon'))}</span>` : ''}</b><span>${esc(s.address)}${s.opening_date ? ' · ' + esc(t('stOpens', { d:fmtDay(s.opening_date) })) : ''}</span></button>`).join('')
       : `<div class="res muted">${esc(t('notFound'))}</div>`;
     list.querySelectorAll('[data-s]').forEach(b => b.onclick = () => { const s = all.find(x => x.slug === b.dataset.s); if(!s) return; m.remove(); onPick(asPlace(s), s); });
