@@ -1,4 +1,5 @@
 // Analytics: per-worker rating + "Geprüft" badge (automatic or set by the admin) and the company's statistics tab.
+import { t } from './i18n.js';
 import { I } from './i18n.js';
 import { sb, esc, fmtN } from './core.js';
 import { shell, topbar, statusPill, toast } from './ui.js';
@@ -141,6 +142,7 @@ export async function viewStats(){
   const wdMax = Math.max(1, ...wd), wdName = i => new Date(2026, 10, 2 + i).toLocaleDateString(locale(), { weekday:'long' });
   const topMax = Math.max(1, ...top.map(x => +x.hours || 0));
   box.innerHTML = `
+    <p class="small muted st-period">${esc(t('stKpiAll', { n }))}</p>
     <div class="kpi-row">
       ${card(1, fmtN(tot.orders), S('tasks'), sO)}
       ${card(2, fmtN(tot.flyers), S('flyers'), sF)}

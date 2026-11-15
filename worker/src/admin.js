@@ -18,6 +18,9 @@ const zensusOfPlan = new WeakMap();
 import { loadFirm, firmCardHtml, bindFirmCard, firmComplete, avvOk } from './firm.js';
 import { viewMaster, poolHtml } from './master.js';
 import { loadStudios, studioBtnHtml, openStudioPicker } from './studios.js';
+import { viewLiveMap, dueInfo, LM } from './livemap.js';
+import { listView, viewSwitch, bindViewSwitch, tableHtml, bindTable } from './tables.js';
+import { STATS } from './stats.js';
 const DONE_TX = () => ({ de:{ chip:'Erledigte', tag:'erledigt' }, ru:{ chip:'Выполненные', tag:'выполнен' }, en:{ chip:'Finished', tag:'finished' } }[['ru', 'en'].includes(I.lang) ? I.lang : 'de']);
 
 const GREEN_C = () => css('--color-map-route-completed') || '#16A34A';   // done parts: the theme's "completed" colour
@@ -95,7 +98,11 @@ export const A = { user:null, workers:[], tasks:[], live:[], demo:null, hooks:{}
 async function loadWorkers(){ const { data, error } = await sb.from('workers').select('id,name,phone,cities,zone_minutes,notes,start_anywhere,last_lat,last_lng,last_seen,nav_lat,nav_lng,nav_at,active_route_id,created_at,company_id').order('name'); if(error) throw error; A.workers = data; }
 async function loadTasks(){ const { data, error } = await sb.from('tasks').select('*,task_workers(worker_id)').is('merged_into', null).order('created_at', { ascending:false }); if(error) throw error; A.tasks = data;
   // orders where a worker picked dates after the deadline and the admin has not decided yet (badge on the card)
-  try{ const { data:lp } = await sb.from('task_plans').select('task_id').eq('status', 'accepted').eq('late_dates', true).eq('late_ok', false); A.lateTasks = new Set((lp || []).map(x => x.task_id)); }catch{ A.lateTasks = new Set(); } }
+  try{ const { data:lp } = await sb.from('task_plans').select('task_id').eq('status', 'accepted').eq('late_dates', true).eq('late_ok', false); A.lateTasks = new Set((lp || []).map(x => x.task_id)); }catch{ A.lateTasks = new Set(); }
+  // routes of every order: how many, how many done, how many without a distributor (order table)
+  try{ const { data:ps } = await sb.from('task_plans').select('task_id,status,worker_id'); A.planStat = new Map(); (ps || []).forEach(p => { const x = A.planStat.get(p.task_id) || { n:0, done:0, free:0 }; x.n++; if(p.status === 'done') x.done++; if(!p.worker_id || p.status === 'declined') x.free++; A.planStat.set(p.task_id, x); }); }catch{ A.planStat = new Map(); } }
+// open an order or a person on the map (selected, panel open)
+const showOnMap = sel => { LM.sel = sel; LM.focus = true; if(sel.kind === 'task'){ const tk = A.tasks.find(x => x.id === sel.id); if(tk) LM.f[tk.status === 'done' ? 'done' : 'open'] = true; } adminTab('map'); };
 async function loadLive(){ const { data } = await sb.from('routes').select('id,worker_id,task_id,plan_id,paused_at,last30_m,started_at,break_s').is('ended_at', null); A.live = data || []; }
 async function loadAll(){
   await Promise.all([loadWorkers(), loadTasks(), loadFirm().then(c => { A.company = c; }).catch(() => {})]);
@@ -171,183 +178,9 @@ export function adminTab(tab){
   return viewTasks();
 }
 
-/* ---------- KARTE: who is where right now ---------- */
-const MAPQ = { place:null, km:25 };
+/* ---------- KARTE: who is where right now (livemap.js since 16.11.2026) ---------- */
 function viewLive(){
-  let m = null, layer = null, fitted = false, tickFn = null, lastOk = 0;
-  const sf = searchField('mapQ', t('mapSearchPh'), c => { MAPQ.place = c; refit(); tickFn && tickFn(); }, { citiesOnly:true });
-  shell('map', `<div id="fullMap" class="fullmap"></div>
-    <div class="map-search">${sf.html}<div class="rad-row hidden" id="radRow"></div></div>
-    <div class="float-card"><div class="fc-row"><b id="liveCount">${esc(t('loadingShort'))}</b><span class="muted small" id="liveUpd" role="status"></span></div><div class="live-list" id="liveList"></div>
-      <div class="fc-row" style="margin-top:8px;justify-content:flex-start"><button class="chip ${MAPQ.tasks !== false ? 'on' : ''}" id="mTasks" aria-pressed="${MAPQ.tasks !== false}">${ICONS.route}<span id="mTasksTx">${esc(t('mapOrders'))}</span></button><button class="chip ${MAPQ.done !== false ? 'on' : ''}" id="mDone" aria-pressed="${MAPQ.done !== false}">${ICONS.check}<span id="mDoneTx">${esc(DONE_TX().chip)}</span></button></div></div>`, { map:true });
-  sf.bind();
-  m = makeMap($('#fullMap'), MAPQ.place ? [MAPQ.place.lat, MAPQ.place.lng] : null, 12);
-  // open orders: planned routes in their colours, walked parts green; tap → order
-  const taskLayer = L.layerGroup(); if(MAPQ.tasks !== false) taskLayer.addTo(m);
-  // what was walked (not driven) in these orders: green, under the start pins
-  const walked = async (ids, lay) => {
-    if(!ids.length) return; const { data } = await sb.rpc('company_tracks', { p_tasks:ids }); if(!data || !document.getElementById('mTasks')) return;
-    for(const [tid, pts] of Object.entries(data)){
-      const runs = []; let cur = [];
-      for(const q of pts){ if(!q[0] && !q[1]){ if(cur.length > 1) runs.push(cur); cur = []; } else cur.push(q); }
-      if(cur.length > 1) runs.push(cur);
-      const tk = A.tasks.find(x => x.id === tid), go = () => viewTask(tid);
-      runs.flatMap(splitJumps).forEach(r => L.polyline(r, { color:GREEN_C(), weight:6, opacity:.75, lineJoin:'round', lineCap:'round' }).bindTooltip(tk ? tk.title : '', { sticky:true }).on('click', go).addTo(lay));
-    }
-  };
-  // finished orders: grey dashed routes + green check pin "… · erledigt"; tap → order
-  const doneLayer = L.layerGroup(); if(MAPQ.done !== false) doneLayer.addTo(m);
-  const donePins = L.layerGroup().addTo(doneLayer); let doneItems = [];
-  const drawDone = () => {
-    donePins.clearLayers(); const groups = [];
-    for(const it of doneItems){ const pt = m.latLngToLayerPoint(it.p), g = groups.find(x => x.pt.distanceTo(pt) < 40); if(g) g.items.push(it); else groups.push({ pt, items:[it] }); }
-    for(const g of groups){
-      if(g.items.length === 1){ const it = g.items[0]; L.marker(it.p, { icon:labelIcon('pin-done', it.tk.title + ' · ' + DONE_TX().tag), zIndexOffset:100 }).bindTooltip(it.tip).on('click', () => viewTask(it.tk.id)).addTo(donePins); continue; }
-      const bb = L.latLngBounds(g.items.map(x => x.p));
-      L.marker(bb.getCenter(), { icon:L.divIcon({ className:'', iconSize:[60, 28], iconAnchor:[30, 14], html:`<div class="map-pill done">✓ ${g.items.length} ${esc(DONE_TX().tag)}</div>` }), zIndexOffset:150 })
-        .on('click', () => m.fitBounds(bb.pad(.5), { maxZoom:Math.min(m.getMaxZoom(), m.getZoom() + 4) })).addTo(donePins);
-    }
-  };
-  m.on('zoomend', drawDone);
-  (async () => {
-    const done = A.tasks.filter(x => x.status === 'done' && x.start_lat != null);
-    $('#mDoneTx').textContent = DONE_TX().chip + ' (' + done.length + ')'; if(!done.length) return;
-    const { data:plans } = await sb.from('task_plans').select('task_id,path').in('task_id', done.map(x => x.id));
-    if(!document.getElementById('mDone')) return;
-    for(const tk of done){
-      const go = () => viewTask(tk.id), tip = tk.title + ' · ' + DONE_TX().tag + (tk.work_date ? ' · ' + fmtDay(tk.work_date) : '');
-      (plans || []).filter(p => p.task_id === tk.id && p.path && p.path.length > 1).forEach(p => L.polyline(Planner.pathRuns(p.path), { color:'#94A3B8', weight:3, opacity:.45, dashArray:'6 6', lineJoin:'round' }).bindTooltip(tip, { sticky:true }).on('click', go).addTo(doneLayer));
-      doneItems.push({ tk, tip, p:[tk.start_lat, tk.start_lng] });
-    }
-    drawDone();
-    walked(done.map(x => x.id), doneLayer);
-  })().catch(() => {});
-  layer = L.layerGroup().addTo(m);
-  const wLayer = L.layerGroup().addTo(m); let wItems = [];
-  const drawWorkers = () => {
-    wLayer.clearLayers(); if(!m) return;
-    const R = 46, groups = [];   // px: markers closer than this on screen become one group
-    for(const it of [...wItems].sort((a, c) => c.on - a.on)){
-      const pt = m.latLngToLayerPoint(it.p), g = groups.find(x => x.pt.distanceTo(pt) < R);
-      if(g){ g.items.push(it); } else groups.push({ pt, items:[it] });
-    }
-    for(const g of groups){
-      if(g.items.length === 1){
-        const { w, on, p, city } = g.items[0];
-        if(!on && !city) L.circle(p, { radius:350, color:'#94A3B8', weight:1, fillColor:'#94A3B8', fillOpacity:.15, interactive:false }).addTo(wLayer);
-        L.marker(p, { icon:personIcon(w.name, on, on ? '' : city ? city : ago(w.last_seen)), zIndexOffset:on ? 800 : 400 }).on('click', () => viewWorker(w.id, viewLive)).addTo(wLayer);
-        continue;
-      }
-      const bb = L.latLngBounds(g.items.map(x => x.p)), c = bb.getCenter(), live = g.items.filter(x => x.on).length;
-      const cities = [...new Set(g.items.map(x => x.city).filter(Boolean))], label = cities.length === 1 ? cities[0] : live ? t('liveNow', { n:live }) : '';
-      const html = g.items.map(({ w, on, city }) => `<button class="link" data-wk="${w.id}" style="display:block;margin:4px 0;text-align:left">${on ? '🟢 ' : ''}${esc(w.name)}<small class="muted"> · ${esc(on ? t('stLive') : city || ago(w.last_seen))}</small></button>`).join('');
-      const mk = L.marker(c, { icon:groupIcon(g.items.length, label, live), zIndexOffset:live ? 900 : 500 }).addTo(wLayer);
-      // same place (e.g. home city) or already fully zoomed in: list; otherwise zoom in so the group splits
-      const samePlace = bb.getNorthEast().distanceTo(bb.getSouthWest()) < 30;
-      if(samePlace || m.getZoom() >= m.getMaxZoom() - 1) mk.bindPopup(html, { maxHeight:280 }).on('popupopen', e => e.popup.getElement().querySelectorAll('[data-wk]').forEach(x => x.onclick = () => viewWorker(x.dataset.wk, viewLive)));
-      else mk.on('click', () => m.fitBounds(bb.pad(.4), { maxZoom:Math.min(m.getMaxZoom(), m.getZoom() + 4) }));
-    }
-  };
-  m.on('zoomend', drawWorkers);
-  let taskBounds = null, tasksLoaded = false, lastWB = null, userMoved = false;
-  m.on('dragstart', () => { userMoved = true; });
-  // first view: every worker and every open order; stops as soon as the admin moves the map
-  const autoFit = () => {
-    if(userMoved) return;
-    const all = L.latLngBounds([]); if(lastWB && lastWB.isValid()) all.extend(lastWB); if(taskBounds && MAPQ.tasks !== false) all.extend(taskBounds);
-    if(all.isValid()){ fit(m, all, 70); if(tasksLoaded && lastWB) fitted = true; }   // final only when workers and orders are both known
-  };
-  (async () => {
-    const open = A.tasks.filter(x => x.status === 'open'); if(!open.length){ $('#mTasksTx').textContent = t('mapOrdersN', { n:0 }); return; }
-    const { data:plans } = await sb.from('task_plans').select('id,task_id,idx,color,path').in('task_id', open.map(x => x.id));
-    if(!document.getElementById('mTasks')) return;
-    const b = L.latLngBounds([]);
-    for(const tk of open){
-      const go = () => viewTask(tk.id), tip = `${tk.title}${tk.district || tk.city_name ? ' · ' + [tk.district, tk.city_name].filter(Boolean).join(', ') : ''}`;
-      (plans || []).filter(p => p.task_id === tk.id && p.path && p.path.length > 1).forEach(p => {
-        const ln = L.polyline(Planner.pathRuns(p.path), { color:p.color || '#2563EB', weight:5, opacity:.85, lineJoin:'round' }).bindTooltip(tip, { sticky:true }).on('click', go).addTo(taskLayer); b.extend(ln.getBounds());
-      });
-      L.marker([tk.start_lat, tk.start_lng], { icon:labelIcon('pin-start', tk.title), zIndexOffset:200 }).on('click', go).addTo(taskLayer); b.extend([tk.start_lat, tk.start_lng]);
-    }
-    walked(open.map(x => x.id), taskLayer);
-    $('#mTasksTx').textContent = t('mapOrdersN', { n:open.length });
-    taskBounds = b.isValid() ? b : null; tasksLoaded = true;
-    if(!userMoved && !MAPQ.place) autoFit();
-  })().catch(() => {});
-  $('#mDone').onclick = () => {
-    MAPQ.done = MAPQ.done === false; const on = MAPQ.done !== false;
-    if(on) doneLayer.addTo(m); else m.removeLayer(doneLayer);
-    $('#mDone').classList.toggle('on', on); $('#mDone').setAttribute('aria-pressed', on);
-  };
-  $('#mTasks').onclick = () => {
-    MAPQ.tasks = MAPQ.tasks === false; const on = MAPQ.tasks !== false;
-    if(on) taskLayer.addTo(m); else m.removeLayer(taskLayer);
-    $('#mTasks').classList.toggle('on', on); $('#mTasks').setAttribute('aria-pressed', on);
-    if(on && taskBounds && !MAPQ.place) fit(m, taskBounds, 60);
-  };
-  const refit = () => { if(MAPQ.place){ fitted = true; m.fitBounds(L.latLng(MAPQ.place.lat, MAPQ.place.lng).toBounds(MAPQ.km * 2000), { padding:[20, 20], animate:false }); } };
-  const radRow = () => {
-    const r = $('#radRow'); if(!r) return; r.classList.toggle('hidden', !MAPQ.place);
-    r.innerHTML = MAPQ.place ? `<b class="rad-city">${esc(MAPQ.place.name)}</b>` + [10, 25, 50, 100].map(k => `<button class="chip ${k === MAPQ.km ? 'on' : ''}" data-k="${k}">${k} km</button>`).join('') + `<button class="chip" id="radX" aria-label="clear">×</button>` : '';
-    r.querySelectorAll('[data-k]').forEach(bn => bn.onclick = () => { MAPQ.km = +bn.dataset.k; refit(); tickFn(); });
-    const x = $('#radX'); if(x) x.onclick = () => { MAPQ.place = null; $('#mapQ').value = ''; fitted = false; tickFn(); };
-  };
-  const tick = async () => {
-    try{ await Promise.all([loadWorkers(), loadLive()]); lastOk = Date.now(); }
-    catch{ const u = $('#liveUpd'); if(u){ u.textContent = t('staleData', { x:lastOk ? new Date(lastOk).toLocaleTimeString(loc(), { hour:'2-digit', minute:'2-digit' }) : '—' }); u.classList.add('danger-text'); } return; }
-    { const u = $('#liveUpd'); if(u) u.classList.remove('danger-text'); }
-    const live = A.workers.filter(isLive);
-    // where to draw a worker: live = real position; otherwise the recent position (kept 12 h after work) or the home city
-    // from the profile (the GPS position itself is not kept longer, see purge_old_data)
-    const home = w => (w.cities || []).find(c => c && c.lat != null && c.lng != null);
-    const posOf = new Map(), perCity = new Map();
-    for(const w of A.workers){
-      // after Feierabend everybody goes back to the home city from the profile
-      if(isLive(w) && w.last_lat != null){ posOf.set(w.id, { p:[w.last_lat, w.last_lng], city:null }); continue; }
-      const c = home(w);
-      if(!c){ if(w.last_lat != null) posOf.set(w.id, { p:[w.last_lat, w.last_lng], city:null }); continue; }
-      const k = c.lat.toFixed(2) + ',' + c.lng.toFixed(2); perCity.set(k, [...(perCity.get(k) || []), w]);
-      posOf.set(w.id, { p:[c.lat, c.lng], city:c.name, key:k });
-    }
-    const known = A.workers.filter(w => posOf.has(w.id));
-    layer.clearLayers(); const b = L.latLngBounds([]);
-    const pl = MAPQ.place;
-    if(pl){
-      L.circle([pl.lat, pl.lng], { radius:MAPQ.km * 1000, color:'#2563EB', weight:2, fillColor:'#2563EB', fillOpacity:.06, interactive:false }).addTo(layer);
-      L.circleMarker([pl.lat, pl.lng], { radius:6, color:'#fff', weight:3, fillColor:'#2563EB', fillOpacity:1, interactive:false }).addTo(layer);
-    }
-    // worker markers are clustered by distance on screen: zoomed out they merge into one marker with the number, zooming in splits them
-    wItems = known.map(w => ({ w, on:isLive(w), ...posOf.get(w.id) }));
-    for(const it of wItems){
-      b.extend(it.p);
-      if(it.on){ navTarget(layer, it.w, '#7C3AED', it.w.name); todayTrack(it.w.id).then(pts => { if(pts.length > 1) L.polyline(pts.map(q => [q.lat, q.lng]), { color:css('--route'), weight:4, opacity:.85 }).addTo(layer); }).catch(() => {}); }
-    }
-    drawWorkers();
-    if(!$('#liveCount')) return;
-    radRow();
-    $('#liveUpd').textContent = t('updated', { x:t('justNow') });
-    if(pl){
-      // workers near the searched city: by last known position or by home city
-      const near = A.workers.map(w => {
-        const dLast = w.last_lat != null ? hav(pl.lat, pl.lng, w.last_lat, w.last_lng) / 1000 : Infinity, dh = distTo(w, pl.lat, pl.lng);
-        return dLast <= dh.km ? { w, km:dLast, why:'' } : { w, km:dh.km, why:dh.city ? t('livesIn', { c:dh.city.name }) : '' };
-      }).filter(x => x.km <= MAPQ.km).sort((a, c) => a.km - c.km);
-      $('#liveCount').textContent = near.length ? t('nearN', { n:near.length, c:pl.name }) : t('nearNone', { k:MAPQ.km, c:pl.name });
-      $('#liveList').innerHTML = near.map(({ w, km, why }) => `<button class="live-chip" data-id="${w.id}"><span class="dotc ${isLive(w) ? pace(w).cls : 'pause'}"></span>${esc(w.name)} · ${Math.round(km)} km${why ? ' · ' + esc(why) : ''}</button>`).join('');
-      document.querySelectorAll('.live-chip[data-id]').forEach(c => c.onclick = () => viewWorker(c.dataset.id, viewLive));
-      if($('#chipAll')) $('#chipAll').onclick = () => { MAPQ.allChips = !MAPQ.allChips; tickFn(); };
-    } else {
-      const off = known.length - live.length;
-      $('#liveCount').textContent = (live.length ? t('liveNow', { n:live.length }) : t('nobodyLive')) + (off ? ' · ' + t('offlineN', { n:off }) : '');
-      const shownW = MAPQ.allChips ? known : known.filter(isLive);
-      $('#liveList').innerHTML = (shownW.length ? '' : `<span class="small muted">${esc(t('nobodyLiveHint'))}</span>`) + (known.length > shownW.length || MAPQ.allChips ? `<button class="live-chip more" id="chipAll">${esc(MAPQ.allChips ? t('chipsLess') : t('chipsAll', { n:known.length }))}</button>` : '') + shownW.map(w => { const c = posOf.get(w.id).city; return `<button class="live-chip" data-id="${w.id}"><span class="dotc ${isLive(w) ? pace(w).cls : 'pause'}"></span>${esc(w.name)}${isLive(w) ? (pace(w).label ? ' · ' + esc(pace(w).label) : '') : ' · ' + esc(c ? t('livesIn', { c }) : ago(w.last_seen))}</button>`; }).join('');
-      document.querySelectorAll('.live-chip').forEach(c => c.onclick = () => viewWorker(c.dataset.id, viewLive));
-    }
-    lastWB = b;
-    if(!fitted){ if(pl) refit(); else autoFit(); }
-  };
-  tickFn = tick; radRow();
-  tick(); every(A.demo ? 3000 : 4000, tick);
+  viewLiveMap({ A, isLive, pace, loadWorkers, loadLive, viewTask, viewWorker, viewTaskMap, navTarget, todayTrack, GREEN_C, splitJumps, viewLive });
 }
 
 /* ---------- MITARBEITER: admin profile + team ---------- */
@@ -451,7 +284,7 @@ async function viewPeople(){
       <details class="filters" id="linkBox" style="margin-top:10px"><summary>${ICONS.users}${esc(t('allLinks'))}</summary><div class="f-body" id="linkList"><p class="muted small">${esc(t('loadingShort'))}</p></div></details>
       ${A.company && A.company.id ? `<details class="filters" id="poolBox"><summary>${ICONS.users}${esc(t('poolTitle'))}</summary><div class="f-body" id="poolList"><p class="muted small">${esc(t('loadingShort'))}</p></div></details>` : ''}
       </div></details>
-      <div class="sec-row"><h2>${esc(t('workersN', { n:A.workers.length }))}</h2></div>
+      <div class="sec-row"><h2>${esc(t('workersN', { n:A.workers.length }))}</h2>${viewSwitch('people')}</div>
       <div id="wList"></div>
     </div>`);
   sf.bind();
@@ -460,6 +293,18 @@ async function viewPeople(){
   let liveOnly = false;   // tile "Unterwegs": only the people recording a route right now
   const setLive = v => { liveOnly = v; $('#kAll').classList.toggle('on', !v); $('#kLive').classList.toggle('on', v); $('#kAll').setAttribute('aria-pressed', String(!v)); $('#kLive').setAttribute('aria-pressed', String(v)); render(); if(v) $('#wList').scrollIntoView({ behavior:'smooth', block:'nearest' }); };
   $('#kAll').onclick = () => setLive(false); $('#kLive').onclick = () => setLive(!liveOnly);
+  A.wSort = A.wSort || { by:'name', dir:'asc' };
+  const st = id => STATS.byId.get(id) || {};
+  const peopleTable = rows => tableHtml('wTable', [
+    { k:'name', label:t('colName'), sort:x => x.w.name.toLowerCase(), cell:x => `<span class="tname"><span class="dotc ${isLive(x.w) ? '' : 'pause'}" title="${esc(isLive(x.w) ? t('stLive') : t('lmNotOnWay'))}"></span><b>${esc(x.w.name)}</b></span>${coName(x.w.company_id) ? `<small class="muted"> · ${esc(coName(x.w.company_id))}</small>` : ''}` },
+    { k:'cities', label:t('colCities'), sort:x => x.km != null ? x.km : (x.w.cities || []).map(c => c.name).join(', '), cell:x => esc((x.w.cities || []).map(c => c.name).join(', ') || '–') + (x.km != null ? ` <small class="muted">· ${Math.round(x.km)} km</small>` : '') },
+    { k:'active', label:t('colActive'), sort:x => isLive(x.w) ? 'A' : x.w.last_seen ? 'B' + (9e15 - new Date(x.w.last_seen).getTime()) : 'C', cell:x => isLive(x.w) ? statusPill('live', t('stLive')) : esc(x.w.last_seen ? ago(x.w.last_seen) : t('noData')) },
+    { k:'ver', label:t('colVerified'), sort:x => st(x.w.id).verified ? 0 : 1, cell:x => st(x.w.id).verified ? `<span class="due-ok">✓ ${esc(t('yes'))}</span>` : `<span class="muted">${esc(t('no'))}</span>` },
+    { k:'done', label:t('colDone'), num:true, sort:x => +st(x.w.id).done || 0, cell:x => String(+st(x.w.id).done || 0) },
+    { k:'hours', label:t('colHours'), num:true, sort:x => +st(x.w.id).hours || 0, cell:x => st(x.w.id).hours ? String(st(x.w.id).hours).replace('.', ',') : '–' },
+    { k:'pace', label:t('colPace'), num:true, sort:x => st(x.w.id).pace != null ? +st(x.w.id).pace : null, cell:x => st(x.w.id).pace != null ? st(x.w.id).pace + ' %' : '–' },
+    { k:'act', label:t('colActions'), cls:'act', cell:x => `<a class="icon-btn sm" href="${telLink(x.w.phone)}" title="${esc(t('call'))}" aria-label="${esc(t('call') + ': ' + x.w.name)}">${ICONS.phone}</a><a class="icon-btn sm" target="_blank" rel="noopener" href="${waLink(x.w.phone)}" title="WhatsApp" aria-label="${esc('WhatsApp: ' + x.w.name)}">${ICONS.chat}</a><button class="icon-btn sm" data-wmap="${x.w.id}" title="${esc(t('showOnMap'))}" aria-label="${esc(t('showOnMap') + ': ' + x.w.name)}">${ICONS.map}</button>` },
+  ], rows.map(x => ({ ...x, id:x.w.id })), A.wSort);
   const render = () => {
     const places = [...new Set(days.map(r => r.place).filter(Boolean))].sort(); if(f.place && !places.includes(f.place)) f.place = '';
     $('#dFilter').innerHTML = dayFilterHtml(f, places); bindDayFilter(f, render);
@@ -474,16 +319,19 @@ async function viewPeople(){
     const shown = on ? list.flatMap(x => byW.get(x.w.id)) : [];
     $('#wList').innerHTML = (on ? `<div class="hint">${esc(shown.length ? t('workedSum', { w:list.length, d:daysSum(shown) }) : t('noDaysRange'))}</div>` : '') +
       (place ? `<div class="hint">${esc(t('canReach', { n:list.length, city:place.name }))} <button class="link" id="wClr">${esc(t('reset'))}</button></div>` : '') +
-      (list.length ? list.map(({ w, km }) => `<div class="card worker-card"><button class="wc-main" data-id="${w.id}">${avatar(w.name, isLive(w) ? 'live' : '')}
+      (list.length && !on && listView('people') === 'table' ? peopleTable(list) : list.length ? list.map(({ w, km }) => `<div class="card worker-card"><button class="wc-main" data-id="${w.id}">${avatar(w.name, isLive(w) ? 'live' : '')}
         <div class="grow"><b>${esc(w.name)} ${okBadge(w.id)}</b>${shortLine(w.id) ? `<span>${esc(shortLine(w.id))}</span>` : ''}<span>${coName(w.company_id) ? esc(coName(w.company_id)) + ' · ' : ''}${esc((w.cities || []).map(c => c.name).join(', '))}${km != null ? ' · ' + Math.round(km) + ' km' : ''} · ${esc(t('zoneChip', { n:w.zone_minutes }))}</span><span>${isLive(w) ? statusPill('live', t('stLive')) : esc(t('lastActive', { a:ago(w.last_seen) }))}</span></div>${ICONS.chevron}</button>
         ${on ? `<div class="wc-days">${byW.get(w.id).map(r => dayLine(r)).join('')}</div>` : ''}
         <div class="wc-act"><a class="btn ghost small" href="${telLink(w.phone)}">${ICONS.phone}${esc(t('call'))}</a><a class="btn ghost small" target="_blank" rel="noopener" href="${waLink(w.phone)}">${ICONS.chat}WhatsApp</a></div></div>`).join('')
        : on ? '' : emptyState(liveOnly ? t('nobodyLiveHint') : A.workers.length ? t('notFound') : t('noWorkers'), A.workers.length ? 'search' : 'users'));
     const clr = $('#wClr'); if(clr) clr.onclick = () => { place = null; $('#wCity').value = ''; render(); };
+    bindTable('wTable', A.wSort, render, id => viewWorker(id));
+    document.querySelectorAll('[data-wmap]').forEach(b => b.onclick = e => { e.stopPropagation(); showOnMap({ kind:'worker', id:b.dataset.wmap }); });
     document.querySelectorAll('.wc-main').forEach(b => b.onclick = () => viewWorker(b.dataset.id));
     document.querySelectorAll('.wc-days .rbtn').forEach(b => b.onclick = () => viewDayMap(b.dataset.r, viewPeople));
   };
   $('#wQ').oninput = render; render();
+  bindViewSwitch('people', () => render());
   sb.from('routes').select('id,worker_id,task_id,plan_id,started_at,ended_at,distance_m,break_s,adj_s,together_s,place,task_title').order('started_at', { ascending:false }).limit(2000)
     .then(({ data }) => { if(!document.getElementById('dFilter')) return; days = mergeDays(data || []); render(); fillPlaces(days, () => { if(document.getElementById('dFilter')) render(); }); });
 }
@@ -492,6 +340,7 @@ async function viewPeople(){
 function viewSettings(){
   shell('settings', `${topbar(t('tabSettings'))}
     <div class="pad">
+      <nav class="set-nav" id="setNav" aria-label="${esc(t('tabSettings'))}"></nav>
       ${A.company && A.company.master ? `<button class="btn ghost small" id="tMaster" style="margin-top:8px;width:auto">${ICONS.users}${esc(t('master'))}</button>` : ''}
       ${A.company && A.company.id ? firmCardHtml(A.company) : ''}
       ${A.company && A.company.id ? adminContractHtml() : ''}
@@ -514,6 +363,10 @@ function viewSettings(){
       </div>
       ${legalLinks()}
     </div>`);
+  // section index on top: one chip per section, a tap scrolls there (no section is hidden)
+  { const nav = $('#setNav'), hs = [...document.querySelectorAll('.content h2.sec')];
+    if(nav && hs.length > 2){ nav.innerHTML = hs.map((h, i) => { h.id = h.id || 'set-' + i; return `<a class="mchip" href="#" data-go="${h.id}">${esc(h.textContent)}</a>`; }).join('');
+      nav.querySelectorAll('[data-go]').forEach(a => a.onclick = e => { e.preventDefault(); document.getElementById(a.dataset.go).scrollIntoView({ behavior:matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block:'start' }); }); } }
   store.get('theme').then(v => { A.theme = v; document.querySelectorAll('[data-theme-set]').forEach(b => { const on = b.dataset.themeSet === (v || 'system'); b.classList.toggle('on', on); b.setAttribute('aria-checked', on); }); });
   bindLegal(viewSettings);
   if($('#botCard')){
@@ -966,9 +819,20 @@ function viewTasks(){
   const opts = k => [...new Set(A.tasks.map(x => x[k]).filter(Boolean))].sort();
   const sel = (id, label, list, cur) => `<div><label class="f" for="${id}">${esc(label)}</label><select class="in small" id="${id}"><option value="">${esc(t('fAll'))}</option>${list.map(v => `<option ${v === cur ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></div>`;
   const card = tk => { const [k, txt] = taskState(tk); return `<button class="card acc ${accOf(k)} task-card ${k === 'done' ? 'is-done' : k === 'cancel' ? 'is-cancel' : ''}" data-id="${tk.id}"><div class="tc-main"><b>${k === 'done' ? `<span class="done-ic">${ICONS.check}</span>` : k === 'cancel' ? `<span class="done-ic">${ICONS.close}</span>` : ''}${esc(tk.title)}</b>
-    <div class="tc-meta">${coName(tk.company_id) ? `<i>${ICONS.users}${esc(coName(tk.company_id))}</i>` : ''}<i>${ICONS.calendar}${esc(tk.deadline ? t('dueBy', { d:fmtDay(tk.deadline) }) : fmtDay(tk.work_date))}</i>${A.lateTasks && A.lateTasks.has(tk.id) ? `<i class="err">${esc(t('lateBadge'))}</i>` : ''}${tk.district || tk.city_name ? `<i>${ICONS.pin}${esc([tk.district, tk.city_name].filter(Boolean).join(', '))}</i>` : ''}${tk.flyers ? `<i>${ICONS.mail}${esc(fmtN(tk.flyers))}</i>` : ''}<i>${ICONS.users}${(tk.task_workers || []).length}</i></div>
+    <div class="tc-meta">${coName(tk.company_id) ? `<i>${ICONS.users}${esc(coName(tk.company_id))}</i>` : ''}<i class="due-${dueInfo(tk).cls}">${ICONS.calendar}${esc(tk.deadline || tk.status === 'done' ? dueInfo(tk).txt : tk.work_date ? fmtDay(tk.work_date) : dueInfo(tk).txt)}</i>${A.lateTasks && A.lateTasks.has(tk.id) ? `<i class="err">${esc(t('lateBadge'))}</i>` : ''}${tk.district || tk.city_name ? `<i>${ICONS.pin}${esc([tk.district, tk.city_name].filter(Boolean).join(', '))}</i>` : ''}${tk.flyers ? `<i>${ICONS.mail}${esc(fmtN(tk.flyers))}</i>` : ''}<i>${ICONS.users}${(tk.task_workers || []).length}</i></div>
     ${statusPill(k, txt)}</div>${ICONS.chevron}</button>`; };
-  const f = A.filter, list = A.tasks.filter(taskMatches).sort((a, b) => (a.status !== 'open') - (b.status !== 'open'));
+  const f = A.filter, qn = String(f.q || '').toLowerCase().trim(), list = A.tasks.filter(taskMatches).filter(tk => !qn || (tk.title + ' ' + (tk.city_name || '') + ' ' + (tk.district || '')).toLowerCase().includes(qn)).sort((a, b) => (a.status !== 'open') - (b.status !== 'open'));
+  A.tSort = A.tSort || { by:'deadline', dir:'asc' };
+  const ps = id => (A.planStat && A.planStat.get(id)) || { n:0, done:0, free:0 };
+  const taskTable = rows => tableHtml('tTable', [
+    { k:'title', label:t('colOrder'), cls:'tmain', sort:x => x.title.toLowerCase(), cell:x => `<b>${esc(x.title)}</b>${coName(x.company_id) ? `<small class="muted"> · ${esc(coName(x.company_id))}</small>` : ''}<br><small class="muted">${esc([x.district, x.city_name].filter(Boolean).join(', ') || '–')}</small>` },
+    { k:'deadline', label:t('colDeadline'), cls:'nowrap', sort:x => x.status === 'done' ? 'z' + (x.deadline || '') : x.deadline || 'y', cell:x => { const d = dueInfo(x); return `<span class="due-${d.cls}">${esc(d.txt)}</span>${A.lateTasks && A.lateTasks.has(x.id) ? `<br><small class="err">${esc(t('lateBadge'))}</small>` : ''}`; } },
+    { k:'flyers', label:t('colFlyers'), num:true, sort:x => +x.flyers || 0, cell:x => x.flyers ? fmtN(x.flyers) : '–' },
+    { k:'team', label:t('colTeam'), num:true, sort:x => (x.task_workers || []).length, cell:x => String((x.task_workers || []).length) + (ps(x.id).free ? `<br><small class="due-warn">${esc(t('freeN', { n:ps(x.id).free }))}</small>` : '') },
+    { k:'progress', label:t('colProgress'), num:true, sort:x => ps(x.id).n ? ps(x.id).done / ps(x.id).n : -1, cell:x => ps(x.id).n ? `${ps(x.id).done} / ${ps(x.id).n}` : '–' },
+    { k:'status', label:t('colStatus'), sort:x => taskState(x)[1], cell:x => { const [k, txt] = taskState(x); return statusPill(k, txt); } },
+    { k:'act', label:t('colActions'), cls:'act', cell:x => `<button class="icon-btn sm" data-map="${x.id}" title="${esc(t('showOnMap'))}" aria-label="${esc(t('showOnMap') + ': ' + x.title)}">${ICONS.map}</button>` },
+  ], rows, A.tSort);
   const nOpen = A.tasks.filter(x => x.status === 'open').length, nLive = A.tasks.filter(taskLive).length, nDone = A.tasks.length - nOpen;
   const nf = ['city', 'district', 'from', 'to'].filter(k => f[k]).length;
   const firmTodo = A.company && A.company.id && !A.company.master && (!firmComplete(A.company) || !avvOk(A.company));
@@ -977,11 +841,12 @@ function viewTasks(){
       <div id="helpBox"></div>
       ${firmTodo ? `<button class="warnbox firm-todo" id="firmTodo">${esc(!firmComplete(A.company) ? t('firmMissing') : t('firmAvvMissing'))} ›</button>` : ''}
       <div class="kpis">${[['open', 'k-info', nOpen, t('fOpen')], ['live', 'k-ok', nLive, t('stLive')], ['done', 'k-neutral', nDone, t('fDone')], ['all', 'k-neutral', A.tasks.length, t('fAll')]].map(([k, c, n, l]) => `<button class="kpi ${c} ${f.status === k ? 'on' : ''}" data-st="${f.status === k && k !== 'open' ? 'open' : k}" aria-pressed="${f.status === k}"><b>${n}</b><span>${esc(l)}</span></button>`).join('')}</div>
-      <details class="filters" ${nf ? 'open' : ''}><summary>${ICONS.search}${esc(t('filter'))}${nf ? `<span class="cnt">${nf}</span>` : ''}</summary><div class="f-body">
+      <div class="list-bar"><div class="searchbox grow"><span class="sb-ic">${ICONS.search}</span><input id="tQ" class="sb-in" placeholder="${esc(t('tSearchPh'))}" value="${esc(f.q || '')}" aria-label="${esc(t('tSearchPh'))}"></div>${viewSwitch('tasks')}</div>
+      <details class="filters" ${nf ? 'open' : ''}><summary>${ICONS.sliders}${esc(t('filter'))}${nf ? `<span class="cnt">${nf}</span>` : ''}</summary><div class="f-body">
         <div class="steppers">${sel('fCity', t('fCity'), opts('city_name'), f.city)}${sel('fDist', t('fDistrict'), opts('district'), f.district)}</div>
         <div class="dfilter"><div><label class="f" for="fFrom">${esc(t('fFrom'))}</label><input class="in small" type="date" id="fFrom" value="${esc(f.from)}"></div><div><label class="f" for="fTo">${esc(t('fTo'))}</label><input class="in small" type="date" id="fTo" value="${esc(f.to)}"></div></div>
         ${nf ? `<button class="link" id="fReset" style="margin-top:8px">${esc(t('reset'))}</button>` : ''}</div></details>
-      ${list.length ? `<div class="task-grid">${list.map(card).join('')}</div>` : A.tasks.length ? emptyState(t('noMatch'), 'search') : `${emptyState(t('noOpenTasks'), 'flag')}<button class="btn primary" id="create" style="margin-top:12px">${ICONS.plus}${esc(t('createTask'))}</button>`}
+      ${list.length ? (listView('tasks') === 'table' ? taskTable(list) : `<div class="task-grid">${list.map(card).join('')}</div>`) : A.tasks.length ? emptyState(t('noMatch'), 'search') : `${emptyState(t('noOpenTasks'), 'flag')}<button class="btn primary" id="create" style="margin-top:12px">${ICONS.plus}${esc(t('createTask'))}</button>`}
     </div>`, { fab:t('createTask') });
   $('#fab').onclick = () => viewCreate(); if($('#tNew')) $('#tNew').onclick = () => viewCreate();
   if($('#create')) $('#create').onclick = () => viewCreate();
@@ -995,6 +860,9 @@ function viewTasks(){
   $('#fFrom').onchange = e => { f.from = e.target.value; again(); }; $('#fTo').onchange = e => { f.to = e.target.value; again(); };
   if($('#fReset')) $('#fReset').onclick = () => { f.city = f.district = f.from = f.to = ''; again(); };
   document.querySelectorAll('.task-card').forEach(b => b.onclick = () => viewTask(b.dataset.id));
+  bindViewSwitch('tasks', again); bindTable('tTable', A.tSort, again, id => viewTask(id));
+  document.querySelectorAll('[data-map]').forEach(b => b.onclick = e => { e.stopPropagation(); showOnMap({ kind:'task', id:b.dataset.map }); });
+  { const q = $('#tQ'); let tm; q.oninput = () => { clearTimeout(tm); tm = setTimeout(() => { f.q = q.value; const pos = q.selectionStart; again(); const q2 = $('#tQ'); if(q2){ q2.focus(); q2.setSelectionRange(pos, pos); } }, 250); }; }
   // live routes decide "unterwegs": refresh them once and redraw if something changed
   const before = JSON.stringify((A.live || []).map(r => r.id + r.paused_at));
   loadLive().then(() => { if(document.querySelector('.task-card, .kpis') && UI.tab === 'tasks' && !document.getElementById('cSheet') && JSON.stringify((A.live || []).map(r => r.id + r.paused_at)) !== before) viewTasks(); }).catch(() => {});
