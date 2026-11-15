@@ -1,1 +1,1 @@
-{"name":"eisfeld5","start":[50.4215,10.9105],"flyers":10000,"n":2,"hours":7,"days":5,"quota":2500,"travel":"zones","mainName":"Eisfeld"}
+{"name":"eisfeld-cores","start":[50.4215,10.9105],"flyers":10000,"n":2,"hours":7,"days":5,"quota":2500,"travel":"zones","cores":true,"mainName":"Eisfeld"}
