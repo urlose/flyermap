@@ -2158,6 +2158,32 @@
     }));
     return squares.get(key);
   }
+  async function compare(boxes, fetcher) {
+    const cells = /* @__PURE__ */ new Map();
+    for (const b of boxes || []) {
+      if (!b || b[0] == null) continue;
+      const [cx, cy] = cellOf(b[0], b[1]), k = cx + "," + cy;
+      cells.set(k, (cells.get(k) || 0) + (b[2] || 1));
+    }
+    if (!cells.size) return null;
+    const need = /* @__PURE__ */ new Set();
+    for (const k of cells.keys()) {
+      const [cx, cy] = k.split(",").map(Number);
+      need.add(Math.floor(cx / 500) + "_" + Math.floor(cy / 500));
+    }
+    const sq = {};
+    await Promise.all([...need].map(async (k) => {
+      sq[k] = await square(k, fetcher);
+    }));
+    let ours = 0, households = 0, emptyOurs = 0;
+    for (const [k, n] of cells) {
+      const [cx, cy] = k.split(",").map(Number), h = sq[Math.floor(cx / 500) + "_" + Math.floor(cy / 500)].get(cy % 500 * 500 + cx % 500) || 0;
+      ours += n;
+      households += h;
+      if (!h) emptyOurs += n;
+    }
+    return { ours, households, cells: cells.size, emptyOurs };
+  }
   function unlaea(x, y) {
     let lat = 52 + (y - 321e4) / 111320, lng = 10 + (x - 4321e3) / (111320 * Math.cos(lat * Math.PI / 180));
     for (let k = 0; k < 6; k++) {
@@ -2206,10 +2232,11 @@
       if (seen.has(k0)) continue;
       seen.add(k0);
       const st = [k0];
-      let h = 0, sx = 0, sy = 0, top = null;
+      let h = 0, sx = 0, sy = 0, top = null, nb = 0;
       while (st.length) {
         const k = st.pop(), b = blk.get(k);
         h += b.h;
+        nb++;
         sx += b.sx;
         sy += b.sy;
         if (!top || b.h > top.h) top = b;
@@ -2225,9 +2252,66 @@
       const mx = sx / h, my = sy / h, dist = Math.hypot(mx - x, my - y);
       if (h < 150 || dist < minR || dist > maxR) continue;
       const [la, lo] = unlaea(top.sx / top.h, top.sy / top.h);
-      out.push({ lat: +la.toFixed(6), lng: +lo.toFixed(6), households: h, dist: Math.round(dist) });
+      out.push({ lat: +la.toFixed(6), lng: +lo.toFixed(6), households: h, dist: Math.round(dist), km2: nb, dense: Math.round(h / nb) });
     }
     return out.sort((a, b) => a.dist - b.dist);
+  }
+  async function placeMask(lat, lng, { maxR = 7e3, pick = 1500, fetcher } = {}) {
+    const src = censusSource(fetcher), [x, y] = laea(lat, lng), r = Math.ceil(maxR / 100), cx = Math.floor(x / 100), cy = Math.floor(y / 100);
+    const H = await src.households(cx - r, cy - r, cx + r, cy + r);
+    if (!H.size) return null;
+    const comp = /* @__PURE__ */ new Map();
+    let nc = 0;
+    const info = [];
+    for (const k0 of H.keys()) {
+      if (comp.has(k0)) continue;
+      const id = nc++, st = [k0];
+      comp.set(k0, id);
+      let h = 0, near = Infinity;
+      const cells = [];
+      while (st.length) {
+        const k = st.pop();
+        cells.push(k);
+        h += H.get(k);
+        const [ix, iy] = k.split(",").map(Number);
+        near = Math.min(near, Math.hypot(ix - cx, iy - cy) * 100);
+        for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++) {
+          const n = ix + dx + "," + (iy + dy);
+          if (H.has(n) && !comp.has(n)) {
+            comp.set(n, id);
+            st.push(n);
+          }
+        }
+      }
+      info.push({ id, h, near, cells });
+    }
+    const cand = info.filter((c) => c.near <= pick);
+    if (!cand.length) return null;
+    const best = cand.reduce((a, c) => c.h > a.h ? c : a);
+    const own = /* @__PURE__ */ new Set();
+    for (const k of best.cells) {
+      const [ix, iy] = k.split(",").map(Number);
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) own.add(ix + dx + "," + (iy + dy));
+    }
+    let sx = 0, sy = 0;
+    for (const k of best.cells) {
+      const [ix, iy] = k.split(",").map(Number), h = H.get(k);
+      sx += ix * h;
+      sy += iy * h;
+    }
+    const mx = sx / best.h, my = sy / best.h, ck = best.cells.reduce((a, k) => {
+      const [ix, iy] = k.split(",").map(Number), d = Math.hypot(ix - mx, iy - my);
+      return d < a.d ? { k, d } : a;
+    }, { k: null, d: Infinity }).k.split(",").map(Number);
+    const centre = unlaea(ck[0] * 100 + 50, ck[1] * 100 + 50);
+    const lived = new Set(best.cells);
+    return { households: best.h, cells: best.cells.length, centre, lives: (la, lo) => {
+      const [a, b] = cellOf(la, lo);
+      return lived.has(a + "," + b);
+    }, inside: (la, lo) => {
+      const [a, b] = cellOf(la, lo);
+      return own.has(a + "," + b);
+    } };
   }
 
   // src/plancore.js
@@ -2280,6 +2364,7 @@
       }
     };
     const SPEED = { bike: 250, car: 667 };
+    const EMPTY_CELL = 0.3;
     const SEQ_MIN = 150;
     const TRAVEL_MIN = 30, EMPTY_GAP = 1e3, EMPTY_GAP_BIKE = 600;
     const segLen = (a, b) => {
@@ -2454,11 +2539,14 @@
         return info();
       },
       // plans the routes; loads a larger square first when the plan reaches the edge of what is loaded
-      async plan({ start, flyers, n, days, hours, must, zone, side, quota, bike, travel, split, exact, mainAll, cores, together, first, near }, stage, stale) {
+      async plan({ start, flyers, n, days, hours, must, zone, side, quota, bike, travel, split, exact, mainAll, cores, together, first, near, mainName }, stage, stale) {
         const eco = !exact && !mainAll;
-        if (cores) return this.planCores({ start, flyers, n, hours, must, zone, side, travel, together, exact, first }, stage, stale);
-        travel = travel === "bike" || travel === "car" ? travel : bike ? "bike" : "bus";
-        bike = travel !== "bus";
+        const zones = travel === "zones";
+        if (cores && !zones) return this.planCores({ start, flyers, n, hours, must, zone, side, travel, together, exact, first }, stage, stale);
+        if (!zones) {
+          travel = travel === "bike" || travel === "car" ? travel : bike ? "bike" : "bus";
+          bike = travel !== "bus";
+        }
         import_planner.default.setPace(quota);
         side = (side || []).filter((c) => c && (c.flyers > 0 || split === "even"));
         const bus = [];
@@ -2486,6 +2574,11 @@
           must = keepMust;
         }
         let splitInfo = null;
+        if (zones) {
+          const res = await this.planZones({ start, flyers, n, days, hours, must, zone, side, mainAll, cores, mainName }, stage, stale);
+          if (res && res.plan) res.plan.bus = bus;
+          return res;
+        }
         const seq = split === "even" && !!near && side.length > 0 && !mainAll && !(must || []).some((a) => a && a.name) && !side.some((c) => c.all || c.zone && c.zone.length > 2);
         if (seq) {
           if (!G || gKey !== keyOf(start)) {
@@ -3001,6 +3094,108 @@
         res.sug = Math.min(20, import_planner.default.suggestWorkers(res.plan.routes.reduce((s, r) => s + r.minutes, 0), hours, days));
         return res;
       },
+      // Zones (new orders): every place is planned on its own, on foot, and shared out among all workers – everyone gets a zone
+      // in every place (a small place: one person). Nothing is drawn or counted between the places: people drive there themselves,
+      // like the hand-made Weidenberg order (one order per town, joined). Each route = one place × one person: r.place, r.w.
+      // cores: in every place only its dense streets (Ortskerne), thin outskirts and the roads between hamlets are left out.
+      async planZones({ start, flyers, n, days, hours, must, zone, side, mainAll, cores, mainName }, stage, stale) {
+        const maxDays = Math.max(1, Math.min(14, days || 1)), routes = [], failed = [], split = [];
+        let mb = 0, rest = flyers;
+        const view = (g, mask) => {
+          const cv = cores ? new Set(denseCores(g, null).flatMap((c) => c.ids)) : null;
+          return { ...g, zoned: g.zoned || !!mask, edges: g.edges.map((e, i) => {
+            if (!e.mb) return e;
+            const m = e.coords && e.coords[Math.floor(e.coords.length / 2)], mid = m || g.pts[e.a];
+            if (mask && !mask.inside(mid[0], mid[1]) || cv && !cv.has(i)) return { ...e, mb: 0, boxes: [] };
+            if (mask && !mask.lives(mid[0], mid[1])) return { ...e, mb: e.mb * EMPTY_CELL, boxes: (e.boxes || []).map((b) => [b[0], b[1], (b[2] || 1) * EMPTY_CELL]) };
+            return e;
+          }) };
+        };
+        const maskOf = async (lat, lng) => {
+          try {
+            return await placeMask(lat, lng);
+          } catch {
+            return null;
+          }
+        };
+        const load0 = (k) => routes.filter((x) => x.w === k).reduce((a, x) => a + x.minutes, 0);
+        const people = (m) => Math.max(1, Math.min(n, Math.floor(m / 150)));
+        const whom = (k) => Array.from({ length: n }, (_, i) => i).sort((a, b) => load0(a) - load0(b)).slice(0, k).sort((a, b) => a - b);
+        const seen = /* @__PURE__ */ new Set(), keyE = (g, i) => {
+          const e = g.edges[i];
+          return ((g.pts[e.a][0] + g.pts[e.b][0]) / 2).toFixed(5) + "," + ((g.pts[e.a][1] + g.pts[e.b][1]) / 2).toFixed(5);
+        };
+        const planPlace = async (g0, st, name, ask, zn, isMain, mask) => {
+          stage("calculating");
+          const g = { ...g0, edges: g0.edges.map((e, i) => e.mb && seen.has(keyE(g0, i)) ? { ...e, mb: 0, boxes: [] } : e) };
+          const cap = Math.round(import_planner.default.selectWithMust(g, st, 1e9, isMain ? must : [], zn).mailboxes || 0);
+          const want = Math.min(cap, ask != null ? ask : rest, rest);
+          split.push({ name, flyers: want, cap, hh: mask ? mask.households : null });
+          if (want < SEQ_MIN && !(isMain && want > 0)) return;
+          const p = import_planner.default.planFlyers(g, st, want, people(want), { days: maxDays, hoursPerDay: hours, must: isMain ? must : void 0, zone: zn });
+          const rs = (p && p.routes || []).filter((r) => r.path && r.path.length > 1).map(({ part, ...r }) => r);
+          if (!rs.length) {
+            failed.push(name);
+            return;
+          }
+          const ws = whom(rs.length);
+          rs.forEach((r, k) => {
+            r.place = name || "";
+            r.w = ws[k];
+            (r.days || []).forEach((d) => {
+              d.place = name || void 0;
+            });
+            routes.push(r);
+          });
+          import_planner.default.selectWithMust(g, st, want, isMain ? must : [], zn).ids.forEach((i) => seen.add(keyE(g, i)));
+          mb += p.mailboxes || 0;
+          rest -= Math.round(p.mailboxes || 0);
+        };
+        if (!G || gKey !== keyOf(start)) {
+          stage("loadingArea");
+          await load(start, Math.max(flyers, 2e3), void 0, must, stage, stale, "loadingArea", zone);
+        }
+        if (stale()) return { skipped: true };
+        const hasZone = !!(zone && zone.length > 2);
+        const mMask = hasZone ? null : await maskOf(start[0], start[1]);
+        const gm = view(G, mMask);
+        let st0 = start;
+        if (mMask) {
+          const at = (s0) => import_planner.default.selectWithMust(gm, s0, 1e9, must, null).mailboxes || 0, a = at(start);
+          const c0 = import_planner.default.denseEntry(gm, mMask.centre, null, 150) || mMask.centre;
+          if (at(c0) > a * 1.3) st0 = c0;
+        }
+        await planPlace(gm, st0, mainName || "", mainAll ? 1e9 : null, hasZone ? zone : null, true, mMask);
+        if (stale()) return { skipped: true };
+        for (const c of side || []) {
+          if (rest < SEQ_MIN) {
+            split.push({ name: c.name, flyers: 0, cap: null });
+            continue;
+          }
+          const zn = c.zone && c.zone.length > 2 ? c.zone : null;
+          stage("loadingSide");
+          c.loadFor = Math.max(600, Math.round(Math.min(rest, c.flyers || rest) * 1.3));
+          const g0 = await sideGraph({ ...c, flyers: c.loadFor }, stage, stale);
+          if (stale()) return { skipped: true };
+          const mask = zn ? null : await maskOf(c.lat, c.lng);
+          const g = view(g0, mask);
+          let st = import_planner.default.denseEntry(g, start, zn, Math.min(300, Math.max(100, rest * 0.2))) || [c.lat, c.lng];
+          if (mask) {
+            const at = (s0) => import_planner.default.selectWithMust(g, s0, 1e9, [], zn).mailboxes || 0, c0 = import_planner.default.denseEntry(g, mask.centre, zn, 150) || mask.centre;
+            if (at(c0) > at(st) * 1.3) st = c0;
+          }
+          await planPlace(g, st, c.name, c.all ? 1e9 : c.auto ? null : c.flyers || null, zn, false, mask);
+          if (stale()) return { skipped: true };
+        }
+        routes.forEach((r, i) => {
+          r.idx = i;
+        });
+        const perW = Array.from({ length: n }, (_, k) => load0(k));
+        const plan = { routes, mailboxes: Math.round(mb), zone: [], zones: true, split, side_failed: failed, side_info: [], must_mb: 0, must_info: [], per_worker: perW };
+        plan.capacity = import_planner.default.capacity(perW.map((m, k) => ({ idx: k, minutes: m })), flyers, { hoursPerDay: hours, days });
+        const sug = Math.min(20, import_planner.default.suggestWorkers(perW.reduce((a, b) => a + b, 0), hours, days));
+        return { plan, sug, street_m: G.street_m };
+      },
       async planMain({ start, flyers, n, days, hours, must, zone, eco, mainAll }, stage, stale) {
         if (!G || gKey !== keyOf(start)) {
           stage("loadingArea");
@@ -3064,7 +3259,8 @@
       split: "even",
       exact: true,
       mainAll: false,
-      cores: false,
+      mainName: req.mainName || "Start",
+      cores: !!req.cores,
       together: false,
       first: null,
       near: side.length > 0,
@@ -3073,6 +3269,26 @@
       side: side.map((x) => ({ name: x.name, lat: x.lat, lng: x.lng, flyers: x.flyers, zone: null, all: false }))
     }, () => {
     }, () => false);
+    if (req.debug) {
+      const m = await placeMask(start[0], start[1]);
+      log.push("mask " + (m ? m.households + " hh, " + m.cells + " cells" : "none"));
+      const G0 = await import_planner2.default.loadForFlyers(start, flyers, { census: censusSource() });
+      let tot = 0, ins = 0;
+      G0.edges.forEach((e) => {
+        if (e.mb > 0) {
+          const c = e.coords[Math.floor(e.coords.length / 2)];
+          tot += e.mb;
+          if (m && m.inside(c[0], c[1])) ins += e.mb;
+        }
+      });
+      log.push("graph mb " + Math.round(tot) + " inside " + Math.round(ins) + " r " + G0.radius);
+      const gv = { ...G0, zoned: true, edges: G0.edges.map((e) => {
+        const c = e.coords && e.coords[Math.floor(e.coords.length / 2)];
+        return e.mb && m && !m.inside(c[0], c[1]) ? { ...e, mb: 0, boxes: [] } : e;
+      }) };
+      const st = import_planner2.default.denseEntry(gv, start, null, 150);
+      log.push("entry " + JSON.stringify(st) + " sel " + Math.round(import_planner2.default.selectWithMust(gv, st || start, 1e9, [], null).mailboxes) + " sel@start " + Math.round(import_planner2.default.selectWithMust(gv, start, 1e9, [], null).mailboxes) + " sel@centre " + (m ? Math.round(import_planner2.default.selectWithMust(gv, import_planner2.default.denseEntry(gv, m.centre, null, 150) || m.centre, 1e9, [], null).mailboxes) + " " + JSON.stringify(m.centre) : ""));
+    }
     let res = await plan();
     log.push("walk " + res.plan.mailboxes);
     const hav = (a, b, c, d) => 111320 * Math.hypot(c - a, (d - b) * Math.cos(a * Math.PI / 180));
@@ -3081,6 +3297,7 @@
       let towns = await townsAround(start[0], start[1], 2500, 3e4);
       const big = towns.filter((c) => c.households >= 300);
       if (big.length) towns = big;
+      if (req.travel === "zones") towns = towns.filter((c) => c.dist <= 25e3).sort((a, b) => b.dense / (1 + b.dist / 12e3) - a.dense / (1 + a.dist / 12e3));
       const pick = [];
       let got = 0;
       for (const c of towns) {
@@ -3107,6 +3324,15 @@
         if (f > 0) add(await import_planner2.default.loadForFlyers([x.lat, x.lng], f, { census: census2 }));
       }
     }
-    return { log, side, sug: res.sug, street_m: res.street_m, plan: res.plan, streets };
+    let places = null;
+    if (res.plan.zones) {
+      places = [];
+      for (const name of [...new Set(res.plan.routes.map((r) => r.place))]) {
+        const rs = res.plan.routes.filter((r) => r.place === name), c = await compare(rs.flatMap((r) => r.boxes || []));
+        places.push({ name, routes: rs.length, mailboxes: Math.round(rs.reduce((a, r) => a + r.mailboxes, 0)), census: c && c.households, minutes: Math.round(rs.reduce((a, r) => a + r.minutes, 0)), km: Math.round(rs.reduce((a, r) => a + r.length_m, 0) / 100) / 10, reserve: rs.reduce((a, r) => a + (r.reserve || []).length, 0) });
+      }
+    }
+    const all = await compare(res.plan.routes.flatMap((r) => r.boxes || []));
+    return { log, places, census: all, side, sug: res.sug, street_m: res.street_m, plan: res.plan, streets };
   };
 })();

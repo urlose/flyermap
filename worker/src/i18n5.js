@@ -303,3 +303,9 @@ Object.assign(T.ru, { stPick:'Выбрать студию', stTitle:'Студи�
 // reported pieces (orange): admin decision on the map
 Object.assign(T.de, { rvRepOk:'Gemeldet · bestätigt', repAccept:'Bestätigen – bleibt draußen', repBack:'Zurück in die Route' });
 Object.assign(T.ru, { rvRepOk:'Сообщено · подтверждено', repAccept:'Подтвердить – не раздавать', repBack:'Вернуть в маршрут' });
+
+// zones (orders with several places, since 15.11.2026): every place its own zone, no rides between the places
+Object.assign(T.de, { personN:'Person {n}', mainCityShort:'Hauptort', zonesHint:'Jeder Ort wird als eigene Zone geplant und unter allen Verteilern aufgeteilt. Zwischen den Orten wird nichts gezeichnet – die Verteiler fahren selbst hin.',
+  coresZonesHint:'In jedem Ort nur die dichten Straßen – Ortsränder und Wege zwischen Weilern fallen weg.' });
+Object.assign(T.ru, { personN:'Человек {n}', mainCityShort:'Основной город', zonesHint:'Каждый город планируется как отдельная зона и делится на всех работников. Между городами ничего не рисуется – работники едут туда сами.',
+  coresZonesHint:'В каждом городе только плотные улицы – окраины и дороги между хуторами отпадают.' });

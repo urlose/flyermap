@@ -85,13 +85,41 @@ export async function townsAround(lat, lng, minR, maxR, fetcher){
   const dense = new Set([...blk].filter(([, b]) => b.h >= 25).map(([k]) => k)), seen = new Set(), out = [];
   for(const k0 of dense){
     if(seen.has(k0)) continue; seen.add(k0);
-    const st = [k0]; let h = 0, sx = 0, sy = 0, top = null;
-    while(st.length){ const k = st.pop(), b = blk.get(k); h += b.h; sx += b.sx; sy += b.sy; if(!top || b.h > top.h) top = b; const [bx, by] = k.split(',').map(Number);
+    const st = [k0]; let h = 0, sx = 0, sy = 0, top = null, nb = 0;
+    while(st.length){ const k = st.pop(), b = blk.get(k); h += b.h; nb++; sx += b.sx; sy += b.sy; if(!top || b.h > top.h) top = b; const [bx, by] = k.split(',').map(Number);
       for(let dx = -1; dx <= 1; dx++) for(let dy = -1; dy <= 1; dy++){ const n = (bx + dx) + ',' + (by + dy); if(dense.has(n) && !seen.has(n)){ seen.add(n); st.push(n); } } }
     const mx = sx / h, my = sy / h, dist = Math.hypot(mx - x, my - y);
     if(h < 150 || dist < minR || dist > maxR) continue;
     // the place's point is its densest 1 km block (the town centre); the middle of a big group can lie in a neighbouring village
-    const [la, lo] = unlaea(top.sx / top.h, top.sy / top.h); out.push({ lat:+la.toFixed(6), lng:+lo.toFixed(6), households:h, dist:Math.round(dist) });
+    const [la, lo] = unlaea(top.sx / top.h, top.sy / top.h); out.push({ lat:+la.toFixed(6), lng:+lo.toFixed(6), households:h, dist:Math.round(dist), km2:nb, dense:Math.round(h / nb) });   // dense: households per km² block
   }
   return out.sort((a, b) => a.dist - b.dist);
+}
+
+// The built-up place around a point, from the census: 100 m cells with households, joined where they are at most 200 m apart
+// (a park or a wide road does not cut a town; open fields between a town and its hamlets do). Of the places with a cell within
+// `pick` metres of the point the one with the most households is taken (a start in an industrial area still gets its town).
+// Returns { households, cells, inside(lat, lng) } – inside: in one of the place's cells or right next to one (100 m) – or null.
+export async function placeMask(lat, lng, { maxR = 7000, pick = 1500, fetcher } = {}){
+  const src = censusSource(fetcher), [x, y] = laea(lat, lng), r = Math.ceil(maxR / 100), cx = Math.floor(x / 100), cy = Math.floor(y / 100);
+  const H = await src.households(cx - r, cy - r, cx + r, cy + r);
+  if(!H.size) return null;
+  const comp = new Map(); let nc = 0; const info = [];
+  for(const k0 of H.keys()){
+    if(comp.has(k0)) continue;
+    const id = nc++, st = [k0]; comp.set(k0, id); let h = 0, near = Infinity; const cells = [];
+    while(st.length){ const k = st.pop(); cells.push(k); h += H.get(k); const [ix, iy] = k.split(',').map(Number);
+      near = Math.min(near, Math.hypot(ix - cx, iy - cy) * 100);
+      for(let dx = -2; dx <= 2; dx++) for(let dy = -2; dy <= 2; dy++){ const n = (ix + dx) + ',' + (iy + dy); if(H.has(n) && !comp.has(n)){ comp.set(n, id); st.push(n); } } }
+    info.push({ id, h, near, cells });
+  }
+  const cand = info.filter(c => c.near <= pick); if(!cand.length) return null;
+  const best = cand.reduce((a, c) => c.h > a.h ? c : a);
+  const own = new Set(); for(const k of best.cells){ const [ix, iy] = k.split(',').map(Number); for(let dx = -1; dx <= 1; dx++) for(let dy = -1; dy <= 1; dy++) own.add((ix + dx) + ',' + (iy + dy)); }
+  // centre: the cell nearest to the household-weighted middle (a town's centre, not a hole between two parts)
+  let sx = 0, sy = 0; for(const k of best.cells){ const [ix, iy] = k.split(',').map(Number), h = H.get(k); sx += ix * h; sy += iy * h; }
+  const mx = sx / best.h, my = sy / best.h, ck = best.cells.reduce((a, k) => { const [ix, iy] = k.split(',').map(Number), d = Math.hypot(ix - mx, iy - my); return d < a.d ? { k, d } : a; }, { k:null, d:Infinity }).k.split(',').map(Number);
+  const centre = unlaea(ck[0] * 100 + 50, ck[1] * 100 + 50);
+  const lived = new Set(best.cells);
+  return { households:best.h, cells:best.cells.length, centre, lives:(la, lo) => { const [a, b] = cellOf(la, lo); return lived.has(a + ',' + b); }, inside:(la, lo) => { const [a, b] = cellOf(la, lo); return own.has(a + ',' + b); } };
 }
