@@ -1,1 +1,1 @@
-{"name":"weidenberg-zones","start":[49.942445,11.729003],"flyers":10000,"n":2,"hours":7,"days":5,"quota":2500,"travel":"zones","mainName":"Weidenberg","v":9}
+{"name":"weidenberg-cores","start":[49.942445,11.729003],"flyers":10000,"n":2,"hours":7,"days":5,"quota":2500,"travel":"zones","cores":true,"mainName":"Weidenberg","v":10}
