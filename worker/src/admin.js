@@ -983,7 +983,7 @@ function viewCreate(edit){
   if(tkE) Object.assign(d, { flyers:tkE.flyers || 5000, hours:+tkE.work_hours || 7, quota:tkE.quota_m30 || 2000, days:tkE.work_days || 2, n:Math.max(1, edit.plans.length), nAuto:false });
   d.side = tkE && Array.isArray(tkE.side_towns) ? tkE.side_towns : [];
   d.split = tkE ? (tkE.split || null) : 'even';
-  d.exact = !!tkE; d.mainAll = false; d.cores = !!(tkE && tkE.cores); d.together = !!(tkE && tkE.together); d.first = (tkE && tkE.first_place) || null;   // new orders: economical amount unless "exactly N"; whole main town on request   // new orders: total flyers shared evenly over all places; old orders keep their numbers
+  d.exact = true; d.mainAll = false; d.cores = !!(tkE && tkE.cores); d.together = !!(tkE && tkE.together); d.first = (tkE && tkE.first_place) || null;   // the number of flyers the admin typed is what gets planned; the economical amount is only offered ("Effizienter planen"); whole main town on request   // new orders: total flyers shared evenly over all places; old orders keep their numbers
   d.travel = (tkE && tkE.travel) || (tkE && tkE.bike ? 'bike' : 'bus'); d.bike = d.travel !== 'bus';   // how the places of the order are reached   // far places of this order (own start, own day, reached by bus / train)
   // the start address (also typed in step 1 under "Hauptstadt"); the main town comes from it
   const pickAddr = (c, q) => { saved = keep(); d.place = c; d.mainCity = null; const txt = c.name + (c.sub ? ', ' + c.sub : ''); if(q) q.value = txt; const top = $('#cSearch'); if(top) top.value = txt; setStart(c.lat, c.lng); };
