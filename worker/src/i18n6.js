@@ -1,6 +1,7 @@
 // UI redesign 16.11.2026: map (areas, filters, detail panel), tables for people and orders, deadlines
 import { T } from './i18n.js';
 Object.assign(T.de, {
+  lmShow:'Anzeigen', lmNothing:'Nichts ausgewählt', lmOnMap:'Auf der Karte', lmOnWayHint:'Schicht läuft gerade – Live-Standort', lmNotOnWayHint:'Keine Schicht – Wohnort oder letzter GPS-Punkt', lmOpenHint:'Noch nicht fertig verteilt', lmDoneHint:'Abgeschlossene Aufträge', lmAreasHint:'Flächen der Aufträge, anklickbar', lmPlannedHint:'Geplante Laufwege', lmWalkedHint:'Was schon gelaufen wurde (grün)', lmFok:'Fertig',
   lmSearch:'Person, Auftrag, Stadt', lmFilters:'Was die Karte zeigt', lmTools:'Kartensteuerung', lmZoomIn:'Hineinzoomen', lmZoomOut:'Herauszoomen',
   lmFitWorkers:'Alle Mitarbeiter zeigen', lmFitOrders:'Offene Aufträge zeigen', lmFocusSel:'Auswahl fokussieren', lmReset:'Auswahl aufheben', lmDetails:'Details', lmSheetToggle:'Details größer oder kleiner',
   lmOnWay:'Unterwegs', lmNotOnWay:'Nicht unterwegs', lmOpenOrders:'Offene Aufträge', lmDoneOrders:'Erledigte', lmAreas:'Gebiete', lmPlanned:'Geplante Routen', lmWalked:'Gelaufen',
@@ -19,6 +20,7 @@ Object.assign(T.de, {
   stPeriod:'Zeitraum: letzte {n} Tage', tSearchPh:'Auftrag oder Ort suchen', stKpiAll:'Kennzahlen: alle Aufträge mit Arbeitstagen seit Beginn · kleine Kurven: letzte {n} Tage', freeN:'{n} frei', lmOrdersG:'Aufträge', lmOpenShort:'Offen', lmLayers:'Ebenen', colDays:'Arbeitstage', colPlaces:'Orte', colLastDay:'Letzter Tag', stPeriodAll:'Alle Aufträge mit Arbeitstagen in den letzten {n} Tagen',
 });
 Object.assign(T.ru, {
+  lmShow:'Показать', lmNothing:'Ничего не выбрано', lmOnMap:'На карте', lmOnWayHint:'Смена идёт – местоположение сейчас', lmNotOnWayHint:'Нет смены – город из профиля или последняя GPS-точка', lmOpenHint:'Ещё не разнесены', lmDoneHint:'Завершённые заказы', lmAreasHint:'Зоны заказов, можно нажать', lmPlannedHint:'Запланированные маршруты', lmWalkedHint:'Что уже пройдено (зелёным)', lmFok:'Готово',
   lmSearch:'Работник, заказ, город', lmFilters:'Что показывает карта', lmTools:'Управление картой', lmZoomIn:'Приблизить', lmZoomOut:'Отдалить',
   lmFitWorkers:'Показать всех работников', lmFitOrders:'Показать открытые заказы', lmFocusSel:'Показать выбранное', lmReset:'Снять выбор', lmDetails:'Подробности', lmSheetToggle:'Панель больше или меньше',
   lmOnWay:'В пути', lmNotOnWay:'Не в пути', lmOpenOrders:'Открытые заказы', lmDoneOrders:'Выполненные', lmAreas:'Зоны', lmPlanned:'Маршруты', lmWalked:'Пройдено',
@@ -37,6 +39,7 @@ Object.assign(T.ru, {
   stPeriod:'Период: последние {n} дн.', tSearchPh:'Поиск: заказ или место', stKpiAll:'Показатели: все заказы с рабочими днями с самого начала · мини-графики: последние {n} дн.', freeN:'{n} без работника', lmOrdersG:'Заказы', lmOpenShort:'Открытые', lmLayers:'Слои', colDays:'Рабочие дни', colPlaces:'Места', colLastDay:'Последний день', stPeriodAll:'Все заказы с рабочими днями за последние {n} дн.',
 });
 Object.assign(T.en, {
+  lmShow:'Show', lmNothing:'Nothing selected', lmOnMap:'On the map', lmOnWayHint:'Shift running – live position', lmNotOnWayHint:'No shift – home town or last GPS point', lmOpenHint:'Not finished yet', lmDoneHint:'Finished orders', lmAreasHint:'Order areas, clickable', lmPlannedHint:'Planned walking routes', lmWalkedHint:'Already walked (green)', lmFok:'Done',
   lmSearch:'Person, order, town', lmFilters:'What the map shows', lmTools:'Map controls', lmZoomIn:'Zoom in', lmZoomOut:'Zoom out',
   lmFitWorkers:'Show all people', lmFitOrders:'Show open orders', lmFocusSel:'Focus selection', lmReset:'Clear selection', lmDetails:'Details', lmSheetToggle:'Make details bigger or smaller',
   lmOnWay:'On the way', lmNotOnWay:'Not on the way', lmOpenOrders:'Open orders', lmDoneOrders:'Finished', lmAreas:'Areas', lmPlanned:'Planned routes', lmWalked:'Walked',

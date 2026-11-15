@@ -900,6 +900,29 @@ h2.sec{scroll-margin-top:16px}
   .content:has(.lm-panel:not(.hidden)) .lm-top{right:412px}
 }
 @media (min-width:900px) and (max-width:1350px){.lm-gl{display:none}}
+
+/* map: one "Anzeigen" button + a clear panel (16.11.2026, 3rd pass) */
+.lm-bar{background:none;box-shadow:none;padding:0;overflow:visible;position:relative}
+.lm-fbtn{display:flex;align-items:center;gap:10px;height:48px;padding:0 10px 0 14px;border:0;border-radius:var(--radius-md);background:var(--color-surface-elevated);color:var(--color-text);box-shadow:var(--shadow-md);cursor:pointer;font:inherit;max-width:100%}
+.lm-fbtn>svg{width:20px;height:20px;flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.lm-fb-t{display:flex;flex-direction:column;align-items:flex-start;min-width:0;text-align:left}
+.lm-fb-t b{font-size:15px;line-height:18px;font-weight:650}.lm-fb-t small{font-size:12.5px;line-height:16px;color:var(--color-text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
+.lm-fb-n{min-width:26px;height:26px;padding:0 7px;border-radius:13px;background:var(--color-primary);color:#fff;font:700 13px/26px var(--font-family);text-align:center;margin-left:4px}
+.lm-fbtn.open{outline:2px solid var(--color-primary)}
+.lm-fbtn:focus-visible{outline:2px solid var(--color-primary);outline-offset:2px}
+.lm-pop,.lm-pop[style]{position:absolute!important;top:56px!important;left:0!important;right:auto!important;width:min(360px,calc(100vw - 24px))!important;max-height:calc(100vh - 140px);overflow:auto;padding:8px 8px 10px;border-radius:var(--radius-lg)}
+.lm-pop h4{margin:10px 10px 4px;font-size:12px;font-weight:650;letter-spacing:.05em;text-transform:uppercase;color:var(--color-text-secondary)}
+.lm-pop h4:first-child{margin-top:4px}
+.lm-frow{display:flex;align-items:center;gap:12px;min-height:56px;padding:6px 10px;border-radius:var(--radius-md);cursor:pointer}
+.lm-frow input{width:20px;height:20px;margin:0;flex:none;accent-color:var(--color-primary)}
+.lm-fmark{width:22px;display:grid;place-items:center;flex:none}.lm-fmark .fdot{width:14px;height:14px}
+.lm-fmark svg{width:20px;height:20px;fill:none;stroke:var(--color-text-secondary);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.lm-ftx{flex:1;min-width:0;display:flex;flex-direction:column}.lm-ftx b{font-size:15px;line-height:20px;font-weight:600}.lm-ftx small{font-size:13px;line-height:17px;color:var(--color-text-secondary)}
+.lm-fn{font:700 16px/1 var(--font-family);font-variant-numeric:tabular-nums;color:var(--color-text);min-width:24px;text-align:right}
+@media (hover:hover){.lm-frow:hover{background:var(--color-surface-subtle)}}
+.lm-pop .lm-fdone{width:calc(100% - 20px)!important;margin:8px 10px 2px;justify-content:center;min-height:44px}
+@media (min-width:900px){.lm-bar{overflow:visible}.content:has(.lm-panel:not(.hidden)) .lm-search{flex-basis:300px}}
+@media (max-width:899px){.lm-fbtn{width:100%}.lm-fb-t small{max-width:none}}
 </style>
 </head>
 <body>

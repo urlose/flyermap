@@ -273,27 +273,33 @@ export function viewLiveMap(H){
   document.addEventListener('keydown', onKey);
 
   /* ---------- filters, tools, overview ---------- */
-  // one bar, three groups of the same height: people (on the way / not), orders (open / finished), layers (a small menu)
+  // What the map shows: one big button "Anzeigen" (with how many things are on), a panel with three sections in plain words –
+  // people, orders, what is drawn – each line with its colour, its number and one sentence what it means.
   let fHtml = '', layOpen = false;
   const drawFilters = () => {
     const ws = A.workers.filter(w => posOf(w)), on = ws.filter(w => wState(w) !== 'off').length, ts = shown().map(tk => ordState(tk, plansOf(tk.id)));
-    const nLay = ['areas', 'routes', 'walked'].filter(k => LM.f[k]).length;
-    const row = (k, icon, label) => `<label class="lm-lrow"><input type="checkbox" data-f="${k}" ${LM.f[k] ? 'checked' : ''}><span class="lm-lic">${icon}</span><span>${esc(label)}</span></label>`;
-    const html = `<div class="lm-grp" role="group" aria-label="${esc(t('lmWorkers'))}"><span class="lm-gl">${esc(t('lmWorkers'))}</span>${chip('on', '<span class="fdot on"></span>', t('lmOnWay'), on)}${chip('off', '<span class="fdot off"></span>', t('lmNotOnWay'), ws.length - on)}</div>
-      <div class="lm-grp" role="group" aria-label="${esc(t('lmOrdersG'))}"><span class="lm-gl">${esc(t('lmOrdersG'))}</span>${chip('open', '<span class="fdot open"></span>', t('lmOpenShort'), ts.filter(x => x !== 'done').length)}${chip('done', '<span class="fdot done"></span>', t('lmDoneOrders'), ts.filter(x => x === 'done').length)}</div>
-      <div class="lm-grp lm-lay"><button class="mchip ${nLay ? 'on' : ''}" id="lmLay" aria-haspopup="true" aria-expanded="${layOpen}">${ICONS.layers}<span>${esc(t('lmLayers'))}</span><b>${nLay}/3</b></button>
-        <div class="lm-pop ${layOpen ? '' : 'hidden'}" id="lmPop" role="menu">${row('areas', ICONS.layers, t('lmAreas'))}${row('routes', ICONS.route, t('lmPlanned'))}${row('walked', ICONS.activity, t('lmWalked'))}</div></div>`;
+    const nOpen = ts.filter(x => x !== 'done').length, nDone = ts.filter(x => x === 'done').length;
+    const row = (k, mark, label, hint, n) => `<label class="lm-frow"><input type="checkbox" data-f="${k}" ${LM.f[k] ? 'checked' : ''}><span class="lm-fmark">${mark}</span><span class="lm-ftx"><b>${esc(label)}</b><small>${esc(hint)}</small></span>${n != null ? `<span class="lm-fn">${n}</span>` : ''}</label>`;
+    const nOn = ['on', 'off', 'open', 'done', 'areas', 'routes', 'walked'].filter(k => LM.f[k]).length;
+    const summary = [LM.f.on && t('lmOnWay'), LM.f.off && t('lmNotOnWay'), LM.f.open && t('lmOpenShort'), LM.f.done && t('lmDoneOrders')].filter(Boolean).join(' · ') || t('lmNothing');
+    const html = `<button class="lm-fbtn ${layOpen ? 'open' : ''}" id="lmLay" aria-haspopup="true" aria-expanded="${layOpen}">${ICONS.sliders}<span class="lm-fb-t"><b>${esc(t('lmShow'))}</b><small>${esc(summary)}</small></span><span class="lm-fb-n">${nOn}</span></button>
+      <div class="lm-pop ${layOpen ? '' : 'hidden'}" id="lmPop" role="dialog" aria-label="${esc(t('lmShow'))}">
+        <h4>${esc(t('lmWorkers'))}</h4>
+        ${row('on', '<span class="fdot on"></span>', t('lmOnWay'), t('lmOnWayHint'), on)}${row('off', '<span class="fdot off"></span>', t('lmNotOnWay'), t('lmNotOnWayHint'), ws.length - on)}
+        <h4>${esc(t('lmOrdersG'))}</h4>
+        ${row('open', '<span class="fdot open"></span>', t('lmOpenShort'), t('lmOpenHint'), nOpen)}${row('done', '<span class="fdot done"></span>', t('lmDoneOrders'), t('lmDoneHint'), nDone)}
+        <h4>${esc(t('lmOnMap'))}</h4>
+        ${row('areas', ICONS.layers, t('lmAreas'), t('lmAreasHint'))}${row('routes', ICONS.route, t('lmPlanned'), t('lmPlannedHint'))}${row('walked', ICONS.activity, t('lmWalked'), t('lmWalkedHint'))}
+        <button class="btn primary small lm-fdone" id="lmFok">${esc(t('lmFok'))}</button>
+      </div>`;
     if(html === fHtml) return; fHtml = html;
     $('#lmF').innerHTML = html;
     const apply = k => { saveF(); drawFilters(); drawOrders(); drawWorkers(true); if(k === 'walked' || k === 'on'){ trackAt = 0; liveTracks(); } };
-    $('#lmF').querySelectorAll('button[data-f]').forEach(b => b.onclick = () => { const k = b.dataset.f; LM.f[k] = !LM.f[k]; apply(k); });
     $('#lmF').querySelectorAll('input[data-f]').forEach(b => b.onchange = () => { const k = b.dataset.f; LM.f[k] = b.checked; apply(k); });
     $('#lmLay').onclick = e => { e.stopPropagation(); layOpen = !layOpen; fHtml = ''; drawFilters(); };
-    // the menu is placed under its button on the screen (the bar may scroll sideways and must not cut it off)
-    if(layOpen){ const r = $('#lmLay').getBoundingClientRect(), pop = $('#lmPop'), w = 230;
-      Object.assign(pop.style, { position:'fixed', top:(r.bottom + 6) + 'px', left:Math.max(8, Math.min(innerWidth - w - 8, r.right - w)) + 'px', right:'auto', marginTop:'0', width:w + 'px' }); }
+    $('#lmFok').onclick = e => { e.stopPropagation(); layOpen = false; fHtml = ''; drawFilters(); };
   };
-  document.addEventListener('click', e => { if(layOpen && !e.target.closest('.lm-lay')){ layOpen = false; fHtml = ''; if($('#lmF')) drawFilters(); } });
+  document.addEventListener('click', e => { if(layOpen && !e.target.closest('#lmF')){ layOpen = false; fHtml = ''; if($('#lmF')) drawFilters(); } });
   const drawOver = () => {
     const ws = A.workers.length, on = A.workers.filter(w => wState(w) !== 'off').length, open = shown().filter(x => x.status === 'open').length;
     const upd = lastOk ? new Date(lastOk).toLocaleTimeString(I.lang === 'en' ? 'en-GB' : I.lang === 'ru' ? 'ru-RU' : 'de-DE', { hour:'2-digit', minute:'2-digit', second:'2-digit' }) : '–';
