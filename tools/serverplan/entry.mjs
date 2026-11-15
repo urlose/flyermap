@@ -11,7 +11,7 @@ globalThis.FMRun = async req => {
   if(req.debug){ const m = await placeMask(start[0], start[1]); log.push('mask ' + (m ? m.households + ' hh, ' + m.cells + ' cells' : 'none'));
     const G0 = await Planner.loadForFlyers(start, flyers, { census:censusSource() }); let tot = 0, ins = 0; G0.edges.forEach(e => { if(e.mb > 0){ const c = e.coords[Math.floor(e.coords.length / 2)]; tot += e.mb; if(m && m.inside(c[0], c[1])) ins += e.mb; } }); log.push('graph mb ' + Math.round(tot) + ' inside ' + Math.round(ins) + ' r ' + G0.radius);
     const gv = { ...G0, edges:G0.edges.map(e => { const c = e.coords && e.coords[Math.floor(e.coords.length / 2)]; return e.mb && m && !m.inside(c[0], c[1]) ? { ...e, mb:0, boxes:[] } : e; }) };
-    const st = Planner.denseEntry(gv, start, null, 150); log.push('entry ' + JSON.stringify(st) + ' sel ' + Math.round(Planner.selectWithMust(gv, st || start, 1e9, [], null).mailboxes) + ' sel@start ' + Math.round(Planner.selectWithMust(gv, start, 1e9, [], null).mailboxes)); }
+    const st = Planner.denseEntry(gv, start, null, 150); log.push('entry ' + JSON.stringify(st) + ' sel ' + Math.round(Planner.selectWithMust(gv, st || start, 1e9, [], null).mailboxes) + ' sel@start ' + Math.round(Planner.selectWithMust(gv, start, 1e9, [], null).mailboxes) + ' sel@centre ' + (m ? Math.round(Planner.selectWithMust(gv, Planner.denseEntry(gv, m.centre, null, 150) || m.centre, 1e9, [], null).mailboxes) + ' ' + JSON.stringify(m.centre) : '')); }
   let res = await plan(); log.push('walk ' + res.plan.mailboxes);
   const hav = (a, b, c, d) => 111320 * Math.hypot(c - a, (d - b) * Math.cos(a * Math.PI / 180));
   for(let round = 1; round <= 3 && res.plan.mailboxes < flyers * 0.95; round++){

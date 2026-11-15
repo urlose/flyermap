@@ -477,7 +477,12 @@ export function createPlanService(cache){
       if(stale()) return { skipped:true };
       const hasZone = !!(zone && zone.length > 2);
       const mMask = hasZone ? null : await maskOf(start[0], start[1]);
-      const gm = view(G, mMask), st0 = mMask ? (Planner.denseEntry(gm, start, null, 150) || start) : start;
+      const gm = view(G, mMask);
+      // where the walking starts: at the start when the town is all around it, else in the town's centre (a start in an industrial
+      // estate or at the edge would only reach the few streets next to it)
+      let st0 = start;
+      if(mMask){ const at = s0 => Planner.selectWithMust(gm, s0, 1e9, must, null).mailboxes || 0, a = at(start);
+        const c0 = Planner.denseEntry(gm, mMask.centre, null, 150) || mMask.centre; if(at(c0) > a * 1.3) st0 = c0; }
       await planPlace(gm, st0, mainName || '', mainAll ? 1e9 : null, hasZone ? zone : null, true, mMask);
       if(stale()) return { skipped:true };
       // the other places in the order the admin has them (suggested ones: densest first)
@@ -486,7 +491,8 @@ export function createPlanService(cache){
         const zn = c.zone && c.zone.length > 2 ? c.zone : null;
         stage('loadingSide'); c.loadFor = Math.max(600, Math.round(Math.min(rest, (c.flyers || rest)) * 1.3)); const g0 = await sideGraph({ ...c, flyers:c.loadFor }, stage, stale); if(stale()) return { skipped:true };
         const mask = zn ? null : await maskOf(c.lat, c.lng);
-        const g = view(g0, mask), st = Planner.denseEntry(g, start, zn, Math.min(300, Math.max(100, rest * 0.2))) || [c.lat, c.lng];
+        const g = view(g0, mask); let st = Planner.denseEntry(g, start, zn, Math.min(300, Math.max(100, rest * 0.2))) || [c.lat, c.lng];
+        if(mask){ const at = s0 => Planner.selectWithMust(g, s0, 1e9, [], zn).mailboxes || 0, c0 = Planner.denseEntry(g, mask.centre, zn, 150) || mask.centre; if(at(c0) > at(st) * 1.3) st = c0; }
         await planPlace(g, st, c.name, c.all ? 1e9 : (c.auto ? null : c.flyers || null), zn, false, mask);
         if(stale()) return { skipped:true };
       }

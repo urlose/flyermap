@@ -116,5 +116,9 @@ export async function placeMask(lat, lng, { maxR = 7000, pick = 1500, fetcher } 
   const cand = info.filter(c => c.near <= pick); if(!cand.length) return null;
   const best = cand.reduce((a, c) => c.h > a.h ? c : a);
   const own = new Set(); for(const k of best.cells){ const [ix, iy] = k.split(',').map(Number); for(let dx = -1; dx <= 1; dx++) for(let dy = -1; dy <= 1; dy++) own.add((ix + dx) + ',' + (iy + dy)); }
-  return { households:best.h, cells:best.cells.length, inside:(la, lo) => { const [a, b] = cellOf(la, lo); return own.has(a + ',' + b); } };
+  // centre: the cell nearest to the household-weighted middle (a town's centre, not a hole between two parts)
+  let sx = 0, sy = 0; for(const k of best.cells){ const [ix, iy] = k.split(',').map(Number), h = H.get(k); sx += ix * h; sy += iy * h; }
+  const mx = sx / best.h, my = sy / best.h, ck = best.cells.reduce((a, k) => { const [ix, iy] = k.split(',').map(Number), d = Math.hypot(ix - mx, iy - my); return d < a.d ? { k, d } : a; }, { k:null, d:Infinity }).k.split(',').map(Number);
+  const centre = unlaea(ck[0] * 100 + 50, ck[1] * 100 + 50);
+  return { households:best.h, cells:best.cells.length, centre, inside:(la, lo) => { const [a, b] = cellOf(la, lo); return own.has(a + ',' + b); } };
 }

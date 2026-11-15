@@ -2293,7 +2293,18 @@
       const [ix, iy] = k.split(",").map(Number);
       for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) own.add(ix + dx + "," + (iy + dy));
     }
-    return { households: best.h, cells: best.cells.length, inside: (la, lo) => {
+    let sx = 0, sy = 0;
+    for (const k of best.cells) {
+      const [ix, iy] = k.split(",").map(Number), h = H.get(k);
+      sx += ix * h;
+      sy += iy * h;
+    }
+    const mx = sx / best.h, my = sy / best.h, ck = best.cells.reduce((a, k) => {
+      const [ix, iy] = k.split(",").map(Number), d = Math.hypot(ix - mx, iy - my);
+      return d < a.d ? { k, d } : a;
+    }, { k: null, d: Infinity }).k.split(",").map(Number);
+    const centre = unlaea(ck[0] * 100 + 50, ck[1] * 100 + 50);
+    return { households: best.h, cells: best.cells.length, centre, inside: (la, lo) => {
       const [a, b] = cellOf(la, lo);
       return own.has(a + "," + b);
     } };
@@ -3140,7 +3151,13 @@
         if (stale()) return { skipped: true };
         const hasZone = !!(zone && zone.length > 2);
         const mMask = hasZone ? null : await maskOf(start[0], start[1]);
-        const gm = view(G, mMask), st0 = mMask ? import_planner.default.denseEntry(gm, start, null, 150) || start : start;
+        const gm = view(G, mMask);
+        let st0 = start;
+        if (mMask) {
+          const at = (s0) => import_planner.default.selectWithMust(gm, s0, 1e9, must, null).mailboxes || 0, a = at(start);
+          const c0 = import_planner.default.denseEntry(gm, mMask.centre, null, 150) || mMask.centre;
+          if (at(c0) > a * 1.3) st0 = c0;
+        }
         await planPlace(gm, st0, mainName || "", mainAll ? 1e9 : null, hasZone ? zone : null, true, mMask);
         if (stale()) return { skipped: true };
         for (const c of side || []) {
@@ -3154,7 +3171,12 @@
           const g0 = await sideGraph({ ...c, flyers: c.loadFor }, stage, stale);
           if (stale()) return { skipped: true };
           const mask = zn ? null : await maskOf(c.lat, c.lng);
-          const g = view(g0, mask), st = import_planner.default.denseEntry(g, start, zn, Math.min(300, Math.max(100, rest * 0.2))) || [c.lat, c.lng];
+          const g = view(g0, mask);
+          let st = import_planner.default.denseEntry(g, start, zn, Math.min(300, Math.max(100, rest * 0.2))) || [c.lat, c.lng];
+          if (mask) {
+            const at = (s0) => import_planner.default.selectWithMust(g, s0, 1e9, [], zn).mailboxes || 0, c0 = import_planner.default.denseEntry(g, mask.centre, zn, 150) || mask.centre;
+            if (at(c0) > at(st) * 1.3) st = c0;
+          }
           await planPlace(g, st, c.name, c.all ? 1e9 : c.auto ? null : c.flyers || null, zn, false, mask);
           if (stale()) return { skipped: true };
         }
@@ -3258,7 +3280,7 @@
         return e.mb && m && !m.inside(c[0], c[1]) ? { ...e, mb: 0, boxes: [] } : e;
       }) };
       const st = import_planner2.default.denseEntry(gv, start, null, 150);
-      log.push("entry " + JSON.stringify(st) + " sel " + Math.round(import_planner2.default.selectWithMust(gv, st || start, 1e9, [], null).mailboxes) + " sel@start " + Math.round(import_planner2.default.selectWithMust(gv, start, 1e9, [], null).mailboxes));
+      log.push("entry " + JSON.stringify(st) + " sel " + Math.round(import_planner2.default.selectWithMust(gv, st || start, 1e9, [], null).mailboxes) + " sel@start " + Math.round(import_planner2.default.selectWithMust(gv, start, 1e9, [], null).mailboxes) + " sel@centre " + (m ? Math.round(import_planner2.default.selectWithMust(gv, import_planner2.default.denseEntry(gv, m.centre, null, 150) || m.centre, 1e9, [], null).mailboxes) + " " + JSON.stringify(m.centre) : ""));
     }
     let res = await plan();
     log.push("walk " + res.plan.mailboxes);
