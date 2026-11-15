@@ -2,7 +2,7 @@
 // Runs inside a Web Worker (planworker.js) so the screen never freezes; the same code is the fallback on the main thread.
 // The street graph stays here between calls: changing flyers / workers / hours only re-plans, it does not reload the map.
 import Planner from '../../admin/planner.js';
-import { censusSource } from './zensus.js';
+import { censusSource, placeMask } from './zensus.js';
 const census = censusSource();   // Zensus 2022 lifts the mailbox estimate where our own rules count too few (old town centres)
 
 export function createPlanService(cache){
@@ -163,6 +163,11 @@ export function createPlanService(cache){
       // new orders (split 'even'): the flyers of the order are shared out evenly over the main town and all Nebenstädte;
       // a place with fewer mailboxes than its share gets what it has, the rest goes to the others. Old orders: unchanged.
       let splitInfo = null;
+      if(zones){
+        const res = await this.planZones({ start, flyers, n, days, hours, must, zone, side, mainAll, cores, mainName }, stage, stale);
+        if(res && res.plan) res.plan.bus = bus;
+        return res;
+      }
       // Towns the app added itself ("exactly N", too few mailboxes around the start): no even sharing. The main town gets every
       // street worth walking, the nearest town what is still missing, the next one the rest of that – a town is done whole
       // before the next one is touched, and only the last one is cut (a compact area on its side towards the main town).
@@ -217,11 +222,6 @@ export function createPlanService(cache){
         side.forEach((c, i) => { c.flyers = shr(1 + nearM.length + i); });
         splitInfo = [{ name:null, flyers:r50(share[0]), cap:Math.round(capMain) }, ...nearM.map((a, i) => ({ name:a.name, flyers:shr(1 + i), cap:Math.round(capNear[i]), all:!!a.all })), ...side.map((c, i) => ({ name:c.name, flyers:c.flyers, cap:Math.round(capFar[i]), all:!!c.all }))];
         side = side.filter(c => c.flyers > 0);
-      }
-      if(zones && (side.length || cores)){
-        const res = await this.planZones({ start, flyers, n, days, hours, must, zone, side, eco, mainAll, cores, mainName, mainShare:splitInfo ? splitInfo[0].flyers : null }, stage, stale);
-        if(res && res.plan){ res.plan.bus = bus; res.plan.split = splitInfo; if(seq) res.plan.near = true; }
-        return res;
       }
       if(side.length){
         const res = await this.planSide({ start, flyers, n, days, hours, must, zone, side, bike, travel, eco, mainAll, mainShare:splitInfo ? splitInfo[0].flyers : null, near:seq }, stage, stale);
@@ -442,45 +442,57 @@ export function createPlanService(cache){
     // in every place (a small place: one person). Nothing is drawn or counted between the places: people drive there themselves,
     // like the hand-made Weidenberg order (one order per town, joined). Each route = one place × one person: r.place, r.w.
     // cores: in every place only its dense streets (Ortskerne), thin outskirts and the roads between hamlets are left out.
-    async planZones({ start, flyers, n, days, hours, must, zone, side, eco, mainAll, cores, mainName, mainShare }, stage, stale){
-      const maxDays = Math.max(1, Math.min(14, days || 1)), routes = [], failed = [], info = [];
-      let mb = 0;
-      const coreView = g => { const ids = new Set(denseCores(g, null).flatMap(c => c.ids)); return { ...g, edges:g.edges.map((e, i) => ids.has(i) ? e : (e.mb ? { ...e, mb:0, boxes:[] } : e)) }; };
-      const tag = (rs, place, ws) => rs.forEach((r, k) => { r.place = place || ''; r.w = ws[k]; (r.days || []).forEach(d => { d.place = place || undefined; }); routes.push(r); });
-      const load0 = (r, k) => routes.filter(x => x.w === k).reduce((a, x) => a + x.minutes, 0);
-      // a place with few mailboxes is not cut into n pieces: one person (the one with the least work so far), or as many as make sense
-      const people = m => Math.max(1, Math.min(n, Math.floor(m / 150)));
-      const whom = k => { const order = Array.from({ length:n }, (_, i) => i).sort((a, b) => load0(null, a) - load0(null, b)); return order.slice(0, k).sort((a, b) => a - b); };
-      // main place
-      let mainFl = mainShare != null ? mainShare : Math.max(100, flyers - (side || []).reduce((a, c) => a + (c.flyers || 0), 0));
-      if(!G || gKey !== keyOf(start)){ stage('loadingArea'); await load(start, mainFl, undefined, must, stage, stale, 'loadingArea', zone); }
-      if(stale()) return { skipped:true };
-      if(mainFl >= 100){
-        let rm;
-        if(cores){ stage('calculating'); const p = Planner.planFlyers(coreView(G), start, mainFl, people(mainFl), { days:maxDays, hoursPerDay:hours, must, zone }); rm = { plan:{ ...p, routes:p.routes.map(({ part, ...r }) => r) } }; }
-        else rm = await this.planMain({ start, flyers:mainFl, n:people(mainFl), days:maxDays, hours, must, zone, eco, mainAll }, stage, stale);
-        if(!rm || rm.skipped) return rm || { skipped:true };
-        const rs = rm.plan.routes.filter(r => r.path && r.path.length > 1);
-        tag(rs, mainName, whom(rs.length)); mb += rm.plan.mailboxes || 0; info.push({ name:mainName || '', mailboxes:Math.round(rm.plan.mailboxes || 0) });
-        if(rm.plan.eco) var ecoInfo = rm.plan.eco;
-      }
-      // the other places, nearest first
-      for(const c of (side || []).slice().sort((x, y) => segLen(start, [x.lat, x.lng]) - segLen(start, [y.lat, y.lng]))){
-        stage('loadingSide'); let g = c.g || await sideGraph(c, stage, stale); if(stale()) return { skipped:true };
-        if(cores) g = coreView(g);
-        const z = c.zone && c.zone.length > 2 ? c.zone : null, st = c.st || Planner.denseEntry(g, start, z, Math.min(300, Math.max(100, c.flyers * 0.2))) || [c.lat, c.lng];
+    async planZones({ start, flyers, n, days, hours, must, zone, side, mainAll, cores, mainName }, stage, stale){
+      const maxDays = Math.max(1, Math.min(14, days || 1)), routes = [], failed = [], split = [];
+      let mb = 0, rest = flyers;
+      // a place = its built-up area from the census (100 m cells with households, gaps up to 200 m): streets outside it – the
+      // roads to the next village, hamlets, farms, industrial estates – are not walked, and no mailbox is counted where nobody lives
+      const view = (g, mask) => {
+        const cv = cores ? new Set(denseCores(g, null).flatMap(c => c.ids)) : null;
+        return { ...g, edges:g.edges.map((e, i) => { if(!e.mb) return e; const m = e.coords && e.coords[Math.floor(e.coords.length / 2)], mid = m || g.pts[e.a];
+          return (mask && !mask.inside(mid[0], mid[1])) || (cv && !cv.has(i)) ? { ...e, mb:0, boxes:[] } : e; }) };
+      };
+      const maskOf = async (lat, lng) => { try{ return await placeMask(lat, lng); }catch{ return null; } };
+      const load0 = k => routes.filter(x => x.w === k).reduce((a, x) => a + x.minutes, 0);
+      const people = m => Math.max(1, Math.min(n, Math.floor(m / 150)));   // a small place: fewer people (the ones with least work so far)
+      const whom = k => Array.from({ length:n }, (_, i) => i).sort((a, b) => load0(a) - load0(b)).slice(0, k).sort((a, b) => a - b);
+      const seen = new Set(), keyE = (g, i) => { const e = g.edges[i]; return ((g.pts[e.a][0] + g.pts[e.b][0]) / 2).toFixed(5) + ',' + ((g.pts[e.a][1] + g.pts[e.b][1]) / 2).toFixed(5); };
+      const planPlace = async (g0, st, name, ask, zn, isMain) => {
         stage('calculating');
-        const p = Planner.planFlyers(g, st, c.flyers, people(c.flyers), { days:maxDays, hoursPerDay:hours, zone:z });
+        const g = { ...g0, edges:g0.edges.map((e, i) => e.mb && seen.has(keyE(g0, i)) ? { ...e, mb:0, boxes:[] } : e) };   // streets of a place planned before
+        const cap = Math.round(Planner.selectWithMust(g, st, 1e9, isMain ? must : [], zn).mailboxes || 0);
+        const want = Math.min(cap, ask != null ? ask : rest, rest);
+        split.push({ name, flyers:want, cap });
+        if(want < SEQ_MIN && !(isMain && want > 0)) return;
+        const p = Planner.planFlyers(g, st, want, people(want), { days:maxDays, hoursPerDay:hours, must:isMain ? must : undefined, zone:zn });
         const rs = ((p && p.routes) || []).filter(r => r.path && r.path.length > 1).map(({ part, ...r }) => r);
-        if(!rs.length){ failed.push(c.name); continue; }
-        tag(rs, c.name, whom(rs.length)); mb += p.mailboxes || 0; info.push({ name:c.name, mailboxes:Math.round(p.mailboxes || 0) });
+        if(!rs.length){ failed.push(name); return; }
+        const ws = whom(rs.length);
+        rs.forEach((r, k) => { r.place = name || ''; r.w = ws[k]; (r.days || []).forEach(d => { d.place = name || undefined; }); routes.push(r); });
+        Planner.selectWithMust(g, st, want, isMain ? must : [], zn).ids.forEach(i => seen.add(keyE(g, i)));
+        mb += p.mailboxes || 0; rest -= Math.round(p.mailboxes || 0);
+      };
+      // main place: its own built-up area around the start (a drawn area or "whole town" keep their borders)
+      if(!G || gKey !== keyOf(start)){ stage('loadingArea'); await load(start, Math.max(flyers, 2000), undefined, must, stage, stale, 'loadingArea', zone); }
+      if(stale()) return { skipped:true };
+      const hasZone = !!(zone && zone.length > 2);
+      const mMask = hasZone ? null : await maskOf(start[0], start[1]);
+      const gm = view(G, mMask), st0 = mMask ? (Planner.denseEntry(gm, start, null, 150) || start) : start;
+      await planPlace(gm, st0, mainName || '', mainAll ? 1e9 : null, hasZone ? zone : null, true);
+      if(stale()) return { skipped:true };
+      // the other places in the order the admin has them (suggested ones: densest first)
+      for(const c of side || []){
+        if(rest < SEQ_MIN){ split.push({ name:c.name, flyers:0, cap:null }); continue; }
+        const zn = c.zone && c.zone.length > 2 ? c.zone : null;
+        stage('loadingSide'); c.loadFor = Math.max(600, Math.round(Math.min(rest, (c.flyers || rest)) * 1.3)); const g0 = await sideGraph({ ...c, flyers:c.loadFor }, stage, stale); if(stale()) return { skipped:true };
+        const mask = zn ? null : await maskOf(c.lat, c.lng);
+        const g = view(g0, mask), st = Planner.denseEntry(g, start, zn, Math.min(300, Math.max(100, rest * 0.2))) || [c.lat, c.lng];
+        await planPlace(g, st, c.name, c.all ? 1e9 : (c.auto ? null : c.flyers || null), zn, false);
         if(stale()) return { skipped:true };
       }
       routes.forEach((r, i) => { r.idx = i; });
-      const perW = Array.from({ length:n }, (_, k) => load0(null, k));
-      const plan = { routes, mailboxes:Math.round(mb), zone:[], zones:true, zone_info:info, side_failed:failed, side_info:[], must_mb:0, must_info:[], per_worker:perW };
-      if(ecoInfo) plan.eco = ecoInfo;
-      // capacity: the work of a person over all places against the days of the order
+      const perW = Array.from({ length:n }, (_, k) => load0(k));
+      const plan = { routes, mailboxes:Math.round(mb), zone:[], zones:true, split, side_failed:failed, side_info:[], must_mb:0, must_info:[], per_worker:perW };
       plan.capacity = Planner.capacity(perW.map((m, k) => ({ idx:k, minutes:m })), flyers, { hoursPerDay:hours, days });
       const sug = Math.min(20, Planner.suggestWorkers(perW.reduce((a, b) => a + b, 0), hours, days));
       return { plan, sug, street_m:G.street_m };
