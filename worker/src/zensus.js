@@ -120,5 +120,6 @@ export async function placeMask(lat, lng, { maxR = 7000, pick = 1500, fetcher } 
   let sx = 0, sy = 0; for(const k of best.cells){ const [ix, iy] = k.split(',').map(Number), h = H.get(k); sx += ix * h; sy += iy * h; }
   const mx = sx / best.h, my = sy / best.h, ck = best.cells.reduce((a, k) => { const [ix, iy] = k.split(',').map(Number), d = Math.hypot(ix - mx, iy - my); return d < a.d ? { k, d } : a; }, { k:null, d:Infinity }).k.split(',').map(Number);
   const centre = unlaea(ck[0] * 100 + 50, ck[1] * 100 + 50);
-  return { households:best.h, cells:best.cells.length, centre, inside:(la, lo) => { const [a, b] = cellOf(la, lo); return own.has(a + ',' + b); } };
+  const lived = new Set(best.cells);
+  return { households:best.h, cells:best.cells.length, centre, lives:(la, lo) => { const [a, b] = cellOf(la, lo); return lived.has(a + ',' + b); }, inside:(la, lo) => { const [a, b] = cellOf(la, lo); return own.has(a + ',' + b); } };
 }

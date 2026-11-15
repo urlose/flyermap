@@ -40,6 +40,7 @@ export function createPlanService(cache){
     }catch{ return null; }
   };
   const SPEED = { bike:250, car:667 };   // metres per minute: bike ≈ 15 km/h, car ≈ 40 km/h (villages, parking) – plus 5 min per trip
+  const EMPTY_CELL = 0.3;   // zones: share of our mailbox estimate kept in 100 m cells without census households
   const SEQ_MIN = 150;   // nearest-first sharing: a town is not visited for fewer flyers than this
   const TRAVEL_MIN = 30, EMPTY_GAP = 1000, EMPTY_GAP_BIKE = 600;   // with a bike, a shorter empty road is already worth riding   // bus ride counted for packing; > 1 km without mailboxes on the way → bus
   const segLen = (a, b) => { const k = Math.cos(a[0] * Math.PI / 180); return 111320 * Math.hypot(b[0] - a[0], (b[1] - a[1]) * k); };
@@ -451,7 +452,11 @@ export function createPlanService(cache){
         const cv = cores ? new Set(denseCores(g, null).flatMap(c => c.ids)) : null;
         // inside the place everything is walked, like an area the admin drew (zoned): no street is skipped as too thin
         return { ...g, zoned:g.zoned || !!mask, edges:g.edges.map((e, i) => { if(!e.mb) return e; const m = e.coords && e.coords[Math.floor(e.coords.length / 2)], mid = m || g.pts[e.a];
-          return (mask && !mask.inside(mid[0], mid[1])) || (cv && !cv.has(i)) ? { ...e, mb:0, boxes:[] } : e; }) };
+          if((mask && !mask.inside(mid[0], mid[1])) || (cv && !cv.has(i))) return { ...e, mb:0, boxes:[] };
+          // next to the houses but in a cell where the census has nobody (sheds, firms, garages – or a cell with 1–2 households
+          // hidden for privacy): only a third of our estimate counts, so the order is not planned for mailboxes that are not there
+          if(mask && !mask.lives(mid[0], mid[1])) return { ...e, mb:e.mb * EMPTY_CELL, boxes:(e.boxes || []).map(b => [b[0], b[1], (b[2] || 1) * EMPTY_CELL]) };
+          return e; }) };
       };
       const maskOf = async (lat, lng) => { try{ return await placeMask(lat, lng); }catch{ return null; } };
       const load0 = k => routes.filter(x => x.w === k).reduce((a, x) => a + x.minutes, 0);

@@ -2304,7 +2304,11 @@
       return d < a.d ? { k, d } : a;
     }, { k: null, d: Infinity }).k.split(",").map(Number);
     const centre = unlaea(ck[0] * 100 + 50, ck[1] * 100 + 50);
-    return { households: best.h, cells: best.cells.length, centre, inside: (la, lo) => {
+    const lived = new Set(best.cells);
+    return { households: best.h, cells: best.cells.length, centre, lives: (la, lo) => {
+      const [a, b] = cellOf(la, lo);
+      return lived.has(a + "," + b);
+    }, inside: (la, lo) => {
       const [a, b] = cellOf(la, lo);
       return own.has(a + "," + b);
     } };
@@ -2360,6 +2364,7 @@
       }
     };
     const SPEED = { bike: 250, car: 667 };
+    const EMPTY_CELL = 0.3;
     const SEQ_MIN = 150;
     const TRAVEL_MIN = 30, EMPTY_GAP = 1e3, EMPTY_GAP_BIKE = 600;
     const segLen = (a, b) => {
@@ -3101,7 +3106,9 @@
           return { ...g, zoned: g.zoned || !!mask, edges: g.edges.map((e, i) => {
             if (!e.mb) return e;
             const m = e.coords && e.coords[Math.floor(e.coords.length / 2)], mid = m || g.pts[e.a];
-            return mask && !mask.inside(mid[0], mid[1]) || cv && !cv.has(i) ? { ...e, mb: 0, boxes: [] } : e;
+            if (mask && !mask.inside(mid[0], mid[1]) || cv && !cv.has(i)) return { ...e, mb: 0, boxes: [] };
+            if (mask && !mask.lives(mid[0], mid[1])) return { ...e, mb: e.mb * EMPTY_CELL, boxes: (e.boxes || []).map((b) => [b[0], b[1], (b[2] || 1) * EMPTY_CELL]) };
+            return e;
           }) };
         };
         const maskOf = async (lat, lng) => {
