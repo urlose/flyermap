@@ -75,7 +75,7 @@ export function viewLiveMap(H){
   shell('map', `<div id="fullMap" class="fullmap lm"></div>
     <div class="lm-top">
       <div class="lm-search"><div class="searchbox"><span class="sb-ic">${ICONS.search}</span><input id="lmQ" class="sb-in" placeholder="${esc(t('lmSearch'))}" autocomplete="off" autocorrect="off" aria-label="${esc(t('lmSearch'))}"><button class="icon-btn sm hidden" id="lmQx" aria-label="${esc(t('close'))}">${ICONS.close}</button></div><div id="lmR" class="results hidden" role="listbox"></div></div>
-      <div class="lm-filters" id="lmF" role="toolbar" aria-label="${esc(t('lmFilters'))}"></div>
+      <div class="lm-bar" id="lmF" role="toolbar" aria-label="${esc(t('lmFilters'))}"></div>
     </div>
     <div class="lm-tools" role="toolbar" aria-label="${esc(t('lmTools'))}">
       <button class="map-tool" id="lmZin" title="${esc(t('lmZoomIn'))}" aria-label="${esc(t('lmZoomIn'))}">${ICONS.plus}</button>
@@ -273,13 +273,27 @@ export function viewLiveMap(H){
   document.addEventListener('keydown', onKey);
 
   /* ---------- filters, tools, overview ---------- */
+  // one bar, three groups of the same height: people (on the way / not), orders (open / finished), layers (a small menu)
+  let fHtml = '', layOpen = false;
   const drawFilters = () => {
     const ws = A.workers.filter(w => posOf(w)), on = ws.filter(w => wState(w) !== 'off').length, ts = shown().map(tk => ordState(tk, plansOf(tk.id)));
-    $('#lmF').innerHTML = chip('on', '<span class="fdot on"></span>', t('lmOnWay'), on) + chip('off', '<span class="fdot off"></span>', t('lmNotOnWay'), ws.length - on)
-      + chip('open', '<span class="fdot open"></span>', t('lmOpenOrders'), ts.filter(s => s !== 'done').length) + chip('done', '<span class="fdot done"></span>', t('lmDoneOrders'), ts.filter(s => s === 'done').length)
-      + '<span class="sep"></span>' + chip('areas', ICONS.layers, t('lmAreas')) + chip('routes', ICONS.route, t('lmPlanned')) + chip('walked', ICONS.activity, t('lmWalked'));
-    $('#lmF').querySelectorAll('[data-f]').forEach(b => b.onclick = () => { const k = b.dataset.f; LM.f[k] = !LM.f[k]; saveF(); drawFilters(); drawOrders(); drawWorkers(true); if(k === 'walked' || k === 'on'){ trackAt = 0; liveTracks(); } });
+    const nLay = ['areas', 'routes', 'walked'].filter(k => LM.f[k]).length;
+    const row = (k, icon, label) => `<label class="lm-lrow"><input type="checkbox" data-f="${k}" ${LM.f[k] ? 'checked' : ''}><span class="lm-lic">${icon}</span><span>${esc(label)}</span></label>`;
+    const html = `<div class="lm-grp" role="group" aria-label="${esc(t('lmWorkers'))}"><span class="lm-gl">${esc(t('lmWorkers'))}</span>${chip('on', '<span class="fdot on"></span>', t('lmOnWay'), on)}${chip('off', '<span class="fdot off"></span>', t('lmNotOnWay'), ws.length - on)}</div>
+      <div class="lm-grp" role="group" aria-label="${esc(t('lmOrdersG'))}"><span class="lm-gl">${esc(t('lmOrdersG'))}</span>${chip('open', '<span class="fdot open"></span>', t('lmOpenShort'), ts.filter(x => x !== 'done').length)}${chip('done', '<span class="fdot done"></span>', t('lmDoneOrders'), ts.filter(x => x === 'done').length)}</div>
+      <div class="lm-grp lm-lay"><button class="mchip ${nLay ? 'on' : ''}" id="lmLay" aria-haspopup="true" aria-expanded="${layOpen}">${ICONS.layers}<span>${esc(t('lmLayers'))}</span><b>${nLay}/3</b></button>
+        <div class="lm-pop ${layOpen ? '' : 'hidden'}" id="lmPop" role="menu">${row('areas', ICONS.layers, t('lmAreas'))}${row('routes', ICONS.route, t('lmPlanned'))}${row('walked', ICONS.activity, t('lmWalked'))}</div></div>`;
+    if(html === fHtml) return; fHtml = html;
+    $('#lmF').innerHTML = html;
+    const apply = k => { saveF(); drawFilters(); drawOrders(); drawWorkers(true); if(k === 'walked' || k === 'on'){ trackAt = 0; liveTracks(); } };
+    $('#lmF').querySelectorAll('button[data-f]').forEach(b => b.onclick = () => { const k = b.dataset.f; LM.f[k] = !LM.f[k]; apply(k); });
+    $('#lmF').querySelectorAll('input[data-f]').forEach(b => b.onchange = () => { const k = b.dataset.f; LM.f[k] = b.checked; apply(k); });
+    $('#lmLay').onclick = e => { e.stopPropagation(); layOpen = !layOpen; fHtml = ''; drawFilters(); };
+    // the menu is placed under its button on the screen (the bar may scroll sideways and must not cut it off)
+    if(layOpen){ const r = $('#lmLay').getBoundingClientRect(), pop = $('#lmPop'), w = 230;
+      Object.assign(pop.style, { position:'fixed', top:(r.bottom + 6) + 'px', left:Math.max(8, Math.min(innerWidth - w - 8, r.right - w)) + 'px', right:'auto', marginTop:'0', width:w + 'px' }); }
   };
+  document.addEventListener('click', e => { if(layOpen && !e.target.closest('.lm-lay')){ layOpen = false; fHtml = ''; if($('#lmF')) drawFilters(); } });
   const drawOver = () => {
     const ws = A.workers.length, on = A.workers.filter(w => wState(w) !== 'off').length, open = shown().filter(x => x.status === 'open').length;
     const upd = lastOk ? new Date(lastOk).toLocaleTimeString(I.lang === 'en' ? 'en-GB' : I.lang === 'ru' ? 'ru-RU' : 'de-DE', { hour:'2-digit', minute:'2-digit', second:'2-digit' }) : '–';

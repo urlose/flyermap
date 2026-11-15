@@ -1,7 +1,7 @@
 // UI redesign 16.11.2026: map (areas, filters, detail panel), tables for people and orders, deadlines
 import { T } from './i18n.js';
 Object.assign(T.de, {
-  lmSearch:'Mitarbeiter, Auftrag oder Stadt suchen', lmFilters:'Was die Karte zeigt', lmTools:'Kartensteuerung', lmZoomIn:'Hineinzoomen', lmZoomOut:'Herauszoomen',
+  lmSearch:'Person, Auftrag, Stadt', lmFilters:'Was die Karte zeigt', lmTools:'Kartensteuerung', lmZoomIn:'Hineinzoomen', lmZoomOut:'Herauszoomen',
   lmFitWorkers:'Alle Mitarbeiter zeigen', lmFitOrders:'Offene Aufträge zeigen', lmFocusSel:'Auswahl fokussieren', lmReset:'Auswahl aufheben', lmDetails:'Details', lmSheetToggle:'Details größer oder kleiner',
   lmOnWay:'Unterwegs', lmNotOnWay:'Nicht unterwegs', lmOpenOrders:'Offene Aufträge', lmDoneOrders:'Erledigte', lmAreas:'Gebiete', lmPlanned:'Geplante Routen', lmWalked:'Gelaufen',
   lmDerived:'Umriss aus den Routen abgeleitet', lmPickOne:'Welcher Auftrag?', lmGroup:'{n} Mitarbeiter, davon {live} unterwegs',
@@ -16,10 +16,10 @@ Object.assign(T.de, {
   dueDone:'Erledigt', dueNone:'Keine Frist', dueOver:'Überfällig seit {d}', dueToday:'Frist heute',
   viewCards:'Karten', viewTable:'Tabelle', viewAs:'Ansicht', colName:'Name', colCities:'Wohnorte', colActive:'Zuletzt aktiv', colVerified:'Geprüft', colDone:'Erledigt', colHours:'Stunden', colPace:'Tempo', colStatus:'Status', colActions:'Aktionen',
   colOrder:'Auftrag', colPlace:'Ort', colDeadline:'Frist', colFlyers:'Flyer', colTeam:'Verteiler', colProgress:'Routen erledigt', sortBy:'Sortieren nach {c}', yes:'Ja', no:'Nein', showOnMap:'Auf Karte',
-  stPeriod:'Zeitraum: letzte {n} Tage', tSearchPh:'Auftrag oder Ort suchen', stKpiAll:'Kennzahlen: alle Aufträge mit Arbeitstagen seit Beginn · kleine Kurven: letzte {n} Tage', freeN:'{n} frei', colDays:'Arbeitstage', colPlaces:'Orte', colLastDay:'Letzter Tag', stPeriodAll:'Alle Aufträge mit Arbeitstagen in den letzten {n} Tagen',
+  stPeriod:'Zeitraum: letzte {n} Tage', tSearchPh:'Auftrag oder Ort suchen', stKpiAll:'Kennzahlen: alle Aufträge mit Arbeitstagen seit Beginn · kleine Kurven: letzte {n} Tage', freeN:'{n} frei', lmOrdersG:'Aufträge', lmOpenShort:'Offen', lmLayers:'Ebenen', colDays:'Arbeitstage', colPlaces:'Orte', colLastDay:'Letzter Tag', stPeriodAll:'Alle Aufträge mit Arbeitstagen in den letzten {n} Tagen',
 });
 Object.assign(T.ru, {
-  lmSearch:'Поиск: работник, заказ или город', lmFilters:'Что показывает карта', lmTools:'Управление картой', lmZoomIn:'Приблизить', lmZoomOut:'Отдалить',
+  lmSearch:'Работник, заказ, город', lmFilters:'Что показывает карта', lmTools:'Управление картой', lmZoomIn:'Приблизить', lmZoomOut:'Отдалить',
   lmFitWorkers:'Показать всех работников', lmFitOrders:'Показать открытые заказы', lmFocusSel:'Показать выбранное', lmReset:'Снять выбор', lmDetails:'Подробности', lmSheetToggle:'Панель больше или меньше',
   lmOnWay:'В пути', lmNotOnWay:'Не в пути', lmOpenOrders:'Открытые заказы', lmDoneOrders:'Выполненные', lmAreas:'Зоны', lmPlanned:'Маршруты', lmWalked:'Пройдено',
   lmDerived:'контур построен по маршрутам', lmPickOne:'Какой заказ?', lmGroup:'{n} работников, в пути {live}',
@@ -34,10 +34,10 @@ Object.assign(T.ru, {
   dueDone:'Выполнен', dueNone:'Без срока', dueOver:'Просрочен с {d}', dueToday:'Срок сегодня',
   viewCards:'Карточки', viewTable:'Таблица', viewAs:'Вид', colName:'Имя', colCities:'Города', colActive:'Был активен', colVerified:'Проверен', colDone:'Выполнено', colHours:'Часы', colPace:'Темп', colStatus:'Статус', colActions:'Действия',
   colOrder:'Заказ', colPlace:'Место', colDeadline:'Срок', colFlyers:'Флаеры', colTeam:'Работники', colProgress:'Маршрутов выполнено', sortBy:'Сортировать по: {c}', yes:'Да', no:'Нет', showOnMap:'На карте',
-  stPeriod:'Период: последние {n} дн.', tSearchPh:'Поиск: заказ или место', stKpiAll:'Показатели: все заказы с рабочими днями с самого начала · мини-графики: последние {n} дн.', freeN:'{n} без работника', colDays:'Рабочие дни', colPlaces:'Места', colLastDay:'Последний день', stPeriodAll:'Все заказы с рабочими днями за последние {n} дн.',
+  stPeriod:'Период: последние {n} дн.', tSearchPh:'Поиск: заказ или место', stKpiAll:'Показатели: все заказы с рабочими днями с самого начала · мини-графики: последние {n} дн.', freeN:'{n} без работника', lmOrdersG:'Заказы', lmOpenShort:'Открытые', lmLayers:'Слои', colDays:'Рабочие дни', colPlaces:'Места', colLastDay:'Последний день', stPeriodAll:'Все заказы с рабочими днями за последние {n} дн.',
 });
 Object.assign(T.en, {
-  lmSearch:'Search a person, order or town', lmFilters:'What the map shows', lmTools:'Map controls', lmZoomIn:'Zoom in', lmZoomOut:'Zoom out',
+  lmSearch:'Person, order, town', lmFilters:'What the map shows', lmTools:'Map controls', lmZoomIn:'Zoom in', lmZoomOut:'Zoom out',
   lmFitWorkers:'Show all people', lmFitOrders:'Show open orders', lmFocusSel:'Focus selection', lmReset:'Clear selection', lmDetails:'Details', lmSheetToggle:'Make details bigger or smaller',
   lmOnWay:'On the way', lmNotOnWay:'Not on the way', lmOpenOrders:'Open orders', lmDoneOrders:'Finished', lmAreas:'Areas', lmPlanned:'Planned routes', lmWalked:'Walked',
   lmDerived:'outline derived from the routes', lmPickOne:'Which order?', lmGroup:'{n} people, {live} on the way',
@@ -52,5 +52,5 @@ Object.assign(T.en, {
   dueDone:'Finished', dueNone:'No deadline', dueOver:'Overdue since {d}', dueToday:'Due today',
   viewCards:'Cards', viewTable:'Table', viewAs:'View', colName:'Name', colCities:'Home towns', colActive:'Last active', colVerified:'Verified', colDone:'Done', colHours:'Hours', colPace:'Pace', colStatus:'Status', colActions:'Actions',
   colOrder:'Order', colPlace:'Place', colDeadline:'Deadline', colFlyers:'Flyers', colTeam:'Distributors', colProgress:'Routes done', sortBy:'Sort by {c}', yes:'Yes', no:'No', showOnMap:'On the map',
-  stPeriod:'Period: last {n} days', tSearchPh:'Search an order or place', stKpiAll:'Figures: all orders with working days since the start · small curves: last {n} days', freeN:'{n} free', colDays:'Working days', colPlaces:'Places', colLastDay:'Last day', stPeriodAll:'All orders with working days in the last {n} days',
+  stPeriod:'Period: last {n} days', tSearchPh:'Search an order or place', stKpiAll:'Figures: all orders with working days since the start · small curves: last {n} days', freeN:'{n} free', lmOrdersG:'Orders', lmOpenShort:'Open', lmLayers:'Layers', colDays:'Working days', colPlaces:'Places', colLastDay:'Last day', stPeriodAll:'All orders with working days in the last {n} days',
 });

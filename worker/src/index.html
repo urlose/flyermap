@@ -863,6 +863,43 @@ h2.sec{scroll-margin-top:16px}
 .dtable .icon-btn.tx{margin:0 2px 0 -6px;width:30px;height:30px;border:0;background:none}.dtable .icon-btn.tx svg{transition:transform .15s}.dtable .icon-btn.tx[aria-expanded="true"] svg{transform:rotate(90deg)}
 .dtable tr.sub td{background:var(--color-surface-subtle);padding:4px 12px 8px 44px;cursor:default}.dtable tr.unf td{border-bottom:0}
 .sub-days{display:flex;flex-direction:column}.sub-days .row-line{border-bottom:1px solid var(--color-border)}.sub-days .row-line:last-child{border-bottom:0}
+
+/* map controls on one grid (16.11.2026, 2nd pass): every control 44 px high, same radius, same 12/16 px edges */
+.lm-top{gap:10px}
+.lm-search .searchbox{height:46px}
+.lm-bar{display:flex;align-items:center;gap:4px;background:var(--color-surface-elevated);border-radius:var(--radius-md);box-shadow:var(--shadow-md);padding:4px;overflow-x:auto;scrollbar-width:none;max-width:100%;align-self:flex-start}
+.lm-bar::-webkit-scrollbar{display:none}
+.lm-grp{display:flex;align-items:center;gap:2px;flex:none}
+.lm-grp+.lm-grp{border-left:1px solid var(--color-border);padding-left:6px;margin-left:2px}
+.lm-gl{font-size:11px;font-weight:600;color:var(--color-text-secondary);text-transform:uppercase;letter-spacing:.04em;padding:0 6px 0 4px;display:none}
+.lm-bar .mchip{height:38px;border:0;box-shadow:none;background:none;padding:0 10px;border-radius:var(--radius-sm)}
+.lm-bar .mchip.on{background:var(--color-primary-tint);color:var(--color-primary-text)}
+@media (hover:hover){.lm-bar .mchip:not(.on):hover{background:var(--color-surface-subtle)}}
+.lm-lay{position:static}
+.lm-pop{position:absolute;z-index:1200;margin-top:6px;top:100%;right:0;min-width:220px;background:var(--color-surface-elevated);border:1px solid var(--color-border);border-radius:var(--radius-md);box-shadow:var(--shadow-lg);padding:6px}
+.lm-pop.hidden{display:none}
+.lm-lrow{display:flex;align-items:center;gap:10px;padding:0 10px;min-height:44px;border-radius:var(--radius-sm);cursor:pointer;font-size:14px;font-weight:500}
+.lm-lrow input{width:18px;height:18px;accent-color:var(--color-primary);margin:0}
+.lm-lic svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;display:block;color:var(--color-text-secondary)}
+@media (hover:hover){.lm-lrow:hover{background:var(--color-surface-subtle)}}
+.lm-bar{position:static}   /* phone: the layers menu hangs under the whole bar (the bar scrolls sideways and would cut it) */
+.lm-tools,.lm-over{border-radius:var(--radius-md)}
+.lm-tools{right:12px}
+@media (min-width:900px){
+  .lm-top{left:16px;right:16px;top:calc(var(--st) + 16px);align-items:center}
+  .lm-search{flex:0 0 340px}
+  .lm-gl{display:inline}
+  .lm-bar{flex:0 1 auto;min-width:0}
+  .content:has(.lm-panel:not(.hidden)) .lm-search{flex-basis:260px}
+  .content:has(.lm-panel:not(.hidden)) .lm-gl{display:none}
+  .lm-tools{flex-direction:row;align-items:center;right:16px;bottom:16px;height:48px;padding:4px}
+  .lm-tools .sep{width:1px;height:24px;margin:0 4px}
+  .lm-over{left:16px;bottom:16px;height:48px;padding:0 16px 0 6px}
+  .lm-panel,.lm-panel[data-s]{right:16px;top:calc(var(--st) + 16px);bottom:16px}
+  .content:has(.lm-panel:not(.hidden)) .lm-tools{right:412px}
+  .content:has(.lm-panel:not(.hidden)) .lm-top{right:412px}
+}
+@media (min-width:900px) and (max-width:1350px){.lm-gl{display:none}}
 </style>
 </head>
 <body>
