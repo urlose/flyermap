@@ -3098,7 +3098,7 @@
         let mb = 0, rest = flyers;
         const view = (g, mask) => {
           const cv = cores ? new Set(denseCores(g, null).flatMap((c) => c.ids)) : null;
-          return { ...g, edges: g.edges.map((e, i) => {
+          return { ...g, zoned: g.zoned || !!mask, edges: g.edges.map((e, i) => {
             if (!e.mb) return e;
             const m = e.coords && e.coords[Math.floor(e.coords.length / 2)], mid = m || g.pts[e.a];
             return mask && !mask.inside(mid[0], mid[1]) || cv && !cv.has(i) ? { ...e, mb: 0, boxes: [] } : e;
@@ -3275,7 +3275,7 @@
         }
       });
       log.push("graph mb " + Math.round(tot) + " inside " + Math.round(ins) + " r " + G0.radius);
-      const gv = { ...G0, edges: G0.edges.map((e) => {
+      const gv = { ...G0, zoned: true, edges: G0.edges.map((e) => {
         const c = e.coords && e.coords[Math.floor(e.coords.length / 2)];
         return e.mb && m && !m.inside(c[0], c[1]) ? { ...e, mb: 0, boxes: [] } : e;
       }) };

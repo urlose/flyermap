@@ -449,7 +449,8 @@ export function createPlanService(cache){
       // roads to the next village, hamlets, farms, industrial estates – are not walked, and no mailbox is counted where nobody lives
       const view = (g, mask) => {
         const cv = cores ? new Set(denseCores(g, null).flatMap(c => c.ids)) : null;
-        return { ...g, edges:g.edges.map((e, i) => { if(!e.mb) return e; const m = e.coords && e.coords[Math.floor(e.coords.length / 2)], mid = m || g.pts[e.a];
+        // inside the place everything is walked, like an area the admin drew (zoned): no street is skipped as too thin
+        return { ...g, zoned:g.zoned || !!mask, edges:g.edges.map((e, i) => { if(!e.mb) return e; const m = e.coords && e.coords[Math.floor(e.coords.length / 2)], mid = m || g.pts[e.a];
           return (mask && !mask.inside(mid[0], mid[1])) || (cv && !cv.has(i)) ? { ...e, mb:0, boxes:[] } : e; }) };
       };
       const maskOf = async (lat, lng) => { try{ return await placeMask(lat, lng); }catch{ return null; } };
