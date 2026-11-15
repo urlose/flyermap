@@ -40,6 +40,7 @@ export function createPlanService(cache){
     }catch{ return null; }
   };
   const SPEED = { bike:250, car:667 };   // metres per minute: bike ≈ 15 km/h, car ≈ 40 km/h (villages, parking) – plus 5 min per trip
+  const SEQ_MIN = 150;   // nearest-first sharing: a town is not visited for fewer flyers than this
   const TRAVEL_MIN = 30, EMPTY_GAP = 1000, EMPTY_GAP_BIKE = 600;   // with a bike, a shorter empty road is already worth riding   // bus ride counted for packing; > 1 km without mailboxes on the way → bus
   const segLen = (a, b) => { const k = Math.cos(a[0] * Math.PI / 180); return 111320 * Math.hypot(b[0] - a[0], (b[1] - a[1]) * k); };
   // items: { min, far? } → n bins. Far places first, each to a DIFFERENT worker while there are workers left (fair: everybody
@@ -55,7 +56,9 @@ export function createPlanService(cache){
   // one worker's line from its pieces (routes of the planner); pieces: [{ r, name|null }] in walking order
   // breaks (optional): indices of the pieces that start a new day (workers travelling together cut their days at the same place)
   // origin (optional): the order's start point – the line begins there and the first piece is reached by a ride
-  const buildLine = (pieces, hours, rideMin, breaks, origin) => {
+  // hoursToo: the breaks are extra day starts (a town that does not fit into the rest of the day); inside a town the days are
+  // still cut where the hours are full – but not when less than an hour of it is left (no trip back for a few streets)
+  const buildLine = (pieces, hours, rideMin, breaks, origin, hoursToo) => {
     const path = [], steps = [], boxes = [], segMin = [], segMb = [], segSt = [], place = [], cutAt = new Set();
     if(origin && pieces.length && segLen(origin, pieces[0].r.path[0]) > 30){ path.push([origin[0], origin[1]]); segMin.push(0); segMb.push(0); segSt.push(0); place.push(''); }
     let length_m = 0, street_m = 0, minutes = 0, mailboxes = 0;
@@ -74,8 +77,10 @@ export function createPlanService(cache){
     // days: cut where the hours of a day are full; a last bit under 45 min goes to the day before
     const lim = hours * 60, days = []; let i0 = 0, t = 0, mb = 0, st = 0, ln = 0, pl = new Set();
     const close = i1 => { days.push({ i0, i1, minutes:Math.round(t), mailboxes:Math.round(mb), street_m:Math.round(st), length_m:Math.round(ln), place:[...pl].filter(Boolean).join(' + ') || undefined }); i0 = i1; t = 0; mb = 0; st = 0; ln = 0; pl = new Set(); };
+    const left = new Float64Array(path.length + 1);   // minutes from a point to the next forced day start (or the end)
+    if(hoursToo) for(let i = path.length - 1; i >= 1; i--) left[i] = segMin[i] + (cutAt.has(i + 1) ? 0 : left[i + 1]);
     for(let i = 1; i < path.length; i++){
-      if(breaks ? cutAt.has(i) && t > 0 : t >= lim && t > 0) close(i - 1);
+      if((hoursToo ? cutAt.has(i) || (t >= lim && left[i] >= 60) : breaks ? cutAt.has(i) : t >= lim) && t > 0) close(i - 1);
       t += segMin[i]; mb += segMb[i]; st += segSt[i]; ln += path[i][2] === 1 ? 0 : segLen(path[i - 1], path[i]); pl.add(place[i]);
     }
     if(t > 0 || !days.length) close(path.length - 1);
@@ -130,7 +135,7 @@ export function createPlanService(cache){
       return info();
     },
     // plans the routes; loads a larger square first when the plan reaches the edge of what is loaded
-    async plan({ start, flyers, n, days, hours, must, zone, side, quota, bike, travel, split, exact, mainAll, cores, together, first }, stage, stale){
+    async plan({ start, flyers, n, days, hours, must, zone, side, quota, bike, travel, split, exact, mainAll, cores, together, first, near }, stage, stale){
       const eco = !exact && !mainAll;
       if(cores) return this.planCores({ start, flyers, n, hours, must, zone, side, travel, together, exact, first }, stage, stale);
       travel = travel === 'bike' || travel === 'car' ? travel : (bike ? 'bike' : 'bus'); bike = travel !== 'bus';
@@ -156,11 +161,29 @@ export function createPlanService(cache){
       // new orders (split 'even'): the flyers of the order are shared out evenly over the main town and all Nebenstädte;
       // a place with fewer mailboxes than its share gets what it has, the rest goes to the others. Old orders: unchanged.
       let splitInfo = null;
-      if(split === 'even' && ((must || []).some(a => a && a.name) || side.length)){
+      // Towns the app added itself ("exactly N", too few mailboxes around the start): no even sharing. The main town gets every
+      // street worth walking, the nearest town what is still missing, the next one the rest of that – a town is done whole
+      // before the next one is touched, and only the last one is cut (a compact area on its side towards the main town).
+      const seq = split === 'even' && !!near && side.length > 0 && !mainAll && !(must || []).some(a => a && a.name) && !side.some(c => c.all || (c.zone && c.zone.length > 2));
+      if(seq){
         if(!G || gKey !== keyOf(start)){ stage('loadingArea'); await load(start, flyers, undefined, must, stage, stale, 'loadingArea', zone); }
         if(stale()) return { skipped:true };
-        const near = (must || []).filter(a => a && a.name && a.p && a.p.length > 2);
-        const capNear = near.map(a => Planner.mustPick(G, start, [{ p:a.p, n:0 }]).info[0].avail);
+        const mainMb = Math.min(flyers, Math.round(Planner.selectWithMust(G, start, flyers, must, zone).mailboxes));
+        let rest = flyers - mainMb; const info = new Map();
+        for(const c of side.slice().sort((x, y) => segLen(start, [x.lat, x.lng]) - segLen(start, [y.lat, y.lng]))){
+          if(rest < SEQ_MIN){ c.flyers = 0; info.set(c, { name:c.name, flyers:0 }); continue; }   // not worth the trip for a handful of flyers
+          stage('loadingSide'); c.flyers = rest; const g = await sideGraph(c, stage, stale); if(stale()) return { skipped:true };
+          const cap = Math.round((g.usable != null ? g.usable : g.mailboxes) || 0);
+          c.flyers = Math.min(cap, rest); if(c.flyers < SEQ_MIN) c.flyers = 0;
+          rest -= c.flyers; info.set(c, { name:c.name, flyers:c.flyers, cap });
+        }
+        splitInfo = [{ name:null, flyers:mainMb, cap:mainMb }, ...side.map(c => info.get(c))];
+        side = side.filter(c => c.flyers > 0);
+      }else if(split === 'even' && ((must || []).some(a => a && a.name) || side.length)){
+        if(!G || gKey !== keyOf(start)){ stage('loadingArea'); await load(start, flyers, undefined, must, stage, stale, 'loadingArea', zone); }
+        if(stale()) return { skipped:true };
+        const nearM = (must || []).filter(a => a && a.name && a.p && a.p.length > 2);
+        const capNear = nearM.map(a => Planner.mustPick(G, start, [{ p:a.p, n:0 }]).info[0].avail);
         const capFar = [];
         for(const c of side){
           stage('loadingSide'); c.flyers = c.flyers || flyers; const g = await sideGraph(c, stage, stale); if(stale()) return { skipped:true };
@@ -169,7 +192,7 @@ export function createPlanService(cache){
         const capMain = Math.max(0, (G.usable != null ? G.usable : G.mailboxes) - capNear.reduce((a, b) => a + b, 0));
         const caps = [capMain, ...capNear, ...capFar], share = new Array(caps.length).fill(0);
         // a place marked "all mailboxes" gets exactly what it has; the rest of the flyers is shared out over the others
-        const fixed = new Set([mainAll ? 0 : -1, ...near.map((a, i) => a.all ? 1 + i : -1), ...side.map((c, i) => c.all ? 1 + near.length + i : -1)].filter(i => i >= 0));
+        const fixed = new Set([mainAll ? 0 : -1, ...nearM.map((a, i) => a.all ? 1 + i : -1), ...side.map((c, i) => c.all ? 1 + nearM.length + i : -1)].filter(i => i >= 0));
         let rest = flyers; fixed.forEach(i => { share[i] = caps[i]; rest -= caps[i]; }); rest = Math.max(0, rest);
         let open = caps.map((_, i) => i).filter(i => !fixed.has(i));
         while(rest > 0 && open.length){   // water filling: equal shares, capped by what a place has
@@ -179,18 +202,18 @@ export function createPlanService(cache){
         }
         const r50 = x => Math.max(0, Math.round(x / 50) * 50);
         const shr = i => fixed.has(i) ? Math.round(share[i]) : r50(share[i]);
-        near.forEach((a, i) => { a.n = a.all ? 0 : Math.max(50, shr(1 + i)); });   // 0 = every mailbox in the area
-        side.forEach((c, i) => { c.flyers = shr(1 + near.length + i); });
-        splitInfo = [{ name:null, flyers:r50(share[0]), cap:Math.round(capMain) }, ...near.map((a, i) => ({ name:a.name, flyers:shr(1 + i), cap:Math.round(capNear[i]), all:!!a.all })), ...side.map((c, i) => ({ name:c.name, flyers:c.flyers, cap:Math.round(capFar[i]), all:!!c.all }))];
+        nearM.forEach((a, i) => { a.n = a.all ? 0 : Math.max(50, shr(1 + i)); });   // 0 = every mailbox in the area
+        side.forEach((c, i) => { c.flyers = shr(1 + nearM.length + i); });
+        splitInfo = [{ name:null, flyers:r50(share[0]), cap:Math.round(capMain) }, ...nearM.map((a, i) => ({ name:a.name, flyers:shr(1 + i), cap:Math.round(capNear[i]), all:!!a.all })), ...side.map((c, i) => ({ name:c.name, flyers:c.flyers, cap:Math.round(capFar[i]), all:!!c.all }))];
         side = side.filter(c => c.flyers > 0);
       }
       if(side.length){
-        const res = await this.planSide({ start, flyers, n, days, hours, must, zone, side, bike, travel, eco, mainAll, mainShare:splitInfo ? splitInfo[0].flyers : null }, stage, stale);
-        if(res && res.plan){ res.plan.bus = bus; res.plan.split = splitInfo; }
+        const res = await this.planSide({ start, flyers, n, days, hours, must, zone, side, bike, travel, eco, mainAll, mainShare:splitInfo ? splitInfo[0].flyers : null, near:seq }, stage, stale);
+        if(res && res.plan){ res.plan.bus = bus; res.plan.split = splitInfo; if(seq) res.plan.near = true; }
         return res;
       }
       const resM = await this.planMain({ start, flyers, n, days, hours, must, zone, eco, mainAll }, stage, stale);
-      if(resM && resM.plan) resM.plan.split = splitInfo;
+      if(resM && resM.plan){ resM.plan.split = splitInfo; if(seq) resM.plan.near = true; }
       return resM;
     },
     // only the dense cores of the main area and of every place; cores are taken best first (mailboxes per hour incl. parking)
@@ -299,7 +322,10 @@ export function createPlanService(cache){
       if(!exact && sum < flyers) plan.eco = { asked:flyers, used:Math.round(sum) };
       return { plan, sug:n, street_m:Math.round(chosen.reduce((a, c) => a + c.len, 0)) };
     },
-    async planSide({ start, flyers, n, days, hours, must, zone, side, bike, travel, eco, mainAll, mainShare }, stage, stale){
+    async planSide({ start, flyers, n, days, hours, must, zone, side, bike, travel, eco, mainAll, mainShare, near }, stage, stale){
+        // fewer towns than people (towns added by the app): nobody gets a town alone – every town, like the main town, is
+        // shared out among all workers, and everybody moves on to the next town together
+        const team = !!near && n > 1 && side.length < n;
 
         // each far place as one whole route (one worker)
         const far = [], failed = [];
@@ -307,10 +333,10 @@ export function createPlanService(cache){
           stage('loadingSide'); const g = await sideGraph(c, stage, stale); if(stale()) return { skipped:true };
           // begin on the side towards the main town where there are enough mailboxes (not in the middle of the place)
           const z = c.zone && c.zone.length > 2 ? c.zone : null, st = Planner.denseEntry(g, start, z, Math.min(300, Math.max(100, c.flyers * 0.2))) || [c.lat, c.lng];
-          const p = Planner.planFlyers(g, st, c.flyers, 1, { days:1, hoursPerDay:hours, zone:z });   // inside its borders (named place or drawn)
-          const r0 = p && p.routes && p.routes[0];
-          if(!r0 || !r0.path || r0.path.length < 2){ failed.push(c.name); continue; }   // no street with mailboxes inside its border: skip, tell the admin
-          const { part, ...r } = r0; far.push({ c, r, min:r.minutes, mb:p.mailboxes });
+          const p = Planner.planFlyers(g, st, c.flyers, team ? n : 1, { days:1, hoursPerDay:hours, zone:z });   // inside its borders (named place or drawn)
+          const rs = ((p && p.routes) || []).filter(r => r.path && r.path.length > 1).map(({ part, ...r }) => r);
+          if(!rs.length){ failed.push(c.name); continue; }   // no street with mailboxes inside its border: skip, tell the admin
+          far.push({ c, r:rs[0], rs, min:Math.max(...rs.map(r => r.minutes)), mb:p.mailboxes });   // min: until the slowest has finished
         }
         let mainFlyers = Math.max(100, flyers - far.reduce((s, x) => s + x.c.flyers, 0));
         if(!far.length){ const r1 = await this.planMain({ start, flyers, n, days, hours, must, zone, eco, mainAll }, stage, stale); if(r1 && r1.plan) r1.plan.side_failed = failed; return r1; }
@@ -340,6 +366,27 @@ export function createPlanService(cache){
         if(travel !== 'bus' && far.length){ stage('loadingSide'); mat = await roadMatrix(mPts, travel === 'car' ? 'auto' : 'bicycle'); if(stale()) return { skipped:true }; }
         const ride = (a, b) => { if(travel === 'bus') return TRAVEL_MIN; const i = idx(a), j = idx(b), road = mat && i >= 0 && j >= 0 && mat[i][j] != null ? mat[i][j] : segLen(a, b) * 1.3; return 5 + road / SPEED[travel]; };
         const vill = []; { let prev = start; tour.forEach(x => { vill.push({ min:x.min + ride(prev, ent(x)), far:x }); prev = ext(x); }); }
+        // days: a town that fits into one working day but not into the rest of this one starts a new day (nobody travels to a
+        // town for the last hour and comes back the next morning); a town larger than a day is begun right away and cut by the hours
+        const lim = hours * 60, after = m => { if(m <= lim + 60) return m; const r = m % lim; return r < 60 ? lim : r; };   // minutes worked on the last day of a block
+        const dayStarts = (t0, mins) => { const out = new Set(); let t = t0; mins.forEach((m, k) => { if(t > 0 && t + m > lim + 20 && m <= lim + 20){ out.add(k); t = m; } else t = after(t + m); }); return out; };
+        if(team){
+          const mains = res.plan.routes, starts = dayStarts(after(Math.max(0, ...mains.map(r => r.minutes))), vill.map(v => v.min));
+          const lines = [];
+          for(let w = 0; w < n; w++){
+            const pieces = mains[w] ? [{ r:mains[w], name:null }] : [], br = new Set();
+            tour.forEach((x, k) => { if(!x.rs[w]) return; if(starts.has(k)) br.add(pieces.length); pieces.push({ r:x.rs[w], name:x.c.name }); });
+            if(pieces.length) lines.push(buildLine(pieces, hours, ride, br, null, true));
+          }
+          if(mainEco) res.plan.eco = mainEco;
+          res.plan.routes = lines.map((r, k) => ({ idx:k, ...r }));
+          res.plan.road_km = mat ? true : false;
+          res.plan.mailboxes += far.reduce((s, x) => s + x.mb, 0);
+          res.plan.side_failed = failed; res.plan.side_info = []; res.plan.team = far.map(x => x.c.name);
+          res.plan.capacity = Planner.capacity(res.plan.routes, flyers);
+          res.sug = Math.min(20, Planner.suggestWorkers(res.plan.routes.reduce((s, r) => s + r.minutes, 0), hours, days));
+          return res;
+        }
         const cut = (items, n) => {   // contiguous partition minimising the largest sum (small n · m², fine here)
           const m = items.length, P = [0]; items.forEach(x => P.push(P[P.length - 1] + x.min));
           const k = Math.min(n, m); if(!k) return Array.from({ length:n }, () => []);
@@ -358,7 +405,8 @@ export function createPlanService(cache){
         if(bestK !== n){ stage('calculating'); const r2 = await this.planMain({ start, flyers:mainFlyers, n:bestK, days:1, hours, must, zone, mainAll }, stage, stale); if(!r2 || r2.skipped) return r2; res = r2; }
         if(mainEco) res.plan.eco = mainEco;
         const bins = share(res.plan.routes).filter(b => b.mains.length || b.vill.length).map(b => ({ ...b, items:b.vill }));
-        res.plan.routes = bins.map((b, k) => ({ idx:k, ...buildLine([...b.mains.map(r => ({ r, name:null })), ...b.vill.map(x => ({ r:x.far.r, name:x.far.c.name }))], hours, ride) }));
+        res.plan.routes = bins.map((b, k) => { const br = dayStarts(after(b.mains.reduce((s, r) => s + r.minutes, 0)), b.vill.map(x => x.min));
+          return { idx:k, ...buildLine([...b.mains.map(r => ({ r, name:null })), ...b.vill.map(x => ({ r:x.far.r, name:x.far.c.name }))], hours, ride, new Set([...br].map(i => i + b.mains.length)), null, true) }; });
         res.plan.road_km = mat ? true : false;
         res.plan.mailboxes += far.reduce((s, x) => s + x.mb, 0);
         res.plan.side_failed = failed;

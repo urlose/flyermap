@@ -234,3 +234,4 @@ Object.assign(T.en, { autoTourOn:'Not enough nearby – car tour through {n} mor
 Object.assign(T.en, { repOk:'Reported. Instead, {n} street(s) nearby with ≈ {mb} mailboxes were added to your route.', repNone:'Reported. No replacement street nearby – please bring the remaining flyers back to the start point.', rvReported:'Reported (not walkable)' });
 
 Object.assign(T.en, { autoCores:'Not enough on foot nearby – car tour through the dense cores.' });
+Object.assign(T.en, { autoTownsOn:'Not enough nearby – nearest places added: {names}. Places can be removed below.', nearHint:'Main town completely, what is missing in the nearest place: {list}', nearTeamHint:'Main town completely, what is missing in the nearest place; every place is shared out among all workers: {list}' });

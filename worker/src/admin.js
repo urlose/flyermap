@@ -1154,7 +1154,7 @@ function viewCreate(edit){
     if(!d.loaded){ renderSheet(); return; }
     const tok = ++d.token, pr = progress(tok, false);
     let res = null;
-    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, quota:Math.max(200, Math.round(+saved.quota || 2000)), bike:d.bike, travel:d.travel, split:d.split, exact:d.exact, mainAll:d.mainAll, cores:d.cores && d.travel === 'car', together:d.cores && d.travel === 'car' && d.together, first:d.cores && d.travel === 'car' ? d.first : null, must:d.must, zone:d.zone, side:d.side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers, zone:x.p && x.p.length > 2 ? x.p : null, all:!!x.all })) }, pr.stage); }
+    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, quota:Math.max(200, Math.round(+saved.quota || 2000)), bike:d.bike, travel:d.travel, split:d.split, exact:d.exact, mainAll:d.mainAll, cores:d.cores && d.travel === 'car', together:d.cores && d.travel === 'car' && d.together, first:d.cores && d.travel === 'car' ? d.first : null, near:d.side.length > 0 && d.side.every(x => x.auto), must:d.must, zone:d.zone, side:d.side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers, zone:x.p && x.p.length > 2 ? x.p : null, all:!!x.all })) }, pr.stage); }
     catch(e){ pr.stop(); if(tok !== d.token || !alive()) return; d.err = errText2(e); d.busy = false; toast(t('streetsFail', { e:d.err })); renderSheet(); return; }
     pr.stop();
     if(tok !== d.token || !alive() || !res || res.skipped) return;
@@ -1162,28 +1162,30 @@ function viewCreate(edit){
     if(d.plan.cores) d.days = Math.max(1, ...d.plan.routes.map(r => (r.days || []).length));   // village cores: the days follow from the tour
     if(tkE && !d.prefilled){ d.prefilled = true; edit.plans.forEach(p => { if(p.worker_id && p.idx < d.plan.routes.length) d.assign[p.idx] = p.worker_id; }); }
     draw(); renderSheet();
-    if(d.exact && !tkE && (d.autoRound || 0) < 3 && d.side.every(x => x.auto) && !d.zone && !(d.must || []).length && d.plan.mailboxes < d.flyers * 0.95) autoTour(tok);
+    if(d.exact && !tkE && (d.autoRound || 0) < 3 && d.side.every(x => x.auto) && !d.zone && !(d.must || []).length && d.plan.mailboxes < d.flyers * 0.95) autoTowns(tok);
   }
-  // "exactly N" and the area around the start is too small: the nearest towns (found in the census) are added and the order
-  // becomes a tour by car through their dense cores, until the flyers are covered. Tried once; places can be removed afterwards.
-  async function autoTour(tok){
-    // first step: the dense cores of the area itself by car (it often holds enough, e.g. a second town inside the 6 km)
-    if(!d.cores || d.travel !== 'car'){ d.travel = 'car'; d.cores = true; d.dirty = true; toast(t('autoCores')); return recompute(); }
-    d.autoRound = (d.autoRound || 0) + 1;   // up to 3 rounds: the dense cores of a place hold less than its households
+  // "exactly N" and the area around the start is too small: the nearest towns (found in the census) are added as ordinary
+  // Nebenstädte – nearest first, walked like the main town (every street, a compact area), the flyers that are still missing
+  // go to the nearest town first. Way of travel and "only dense cores" stay as the admin set them: the tour by car through
+  // the dense cores is never switched on by the app. Up to 3 rounds; places can be removed afterwards.
+  async function autoTowns(tok){
+    const tour = d.cores && d.travel === 'car';   // tour chosen by hand: the dense cores hold only part of a place → more places
+    d.autoRound = (d.autoRound || 0) + 1;
     const need = d.flyers - d.plan.mailboxes; let towns = [];
     try{ towns = await townsAround(d.start.lat, d.start.lng, 2500, 30000); }catch{ return; }   // from 2.5 km: a town next door may not belong to the start's street network (overlaps are counted once)
     if(tok !== d.token || !alive()) return;
     const had = c => d.side.some(x => hav(x.lat, x.lng, c.lat, c.lng) < 1500);
+    const big = towns.filter(c => c.households >= 300); if(!tour && big.length) towns = big;   // no trip to a hamlet while there is a real place
     const pick = []; let got = 0;
-    for(const c of towns){ if(got >= need * 1.25 || pick.length >= 8) break; if(had(c)) continue; pick.push(c); got += c.households * 0.6; }   // the dense cores hold only part of a place
+    for(const c of towns){ if(got >= need * (tour ? 1.25 : 1.1) || pick.length >= (tour ? 8 : 4)) break; if(had(c)) continue; pick.push(c); got += c.households * (tour ? 0.6 : 0.9); }
     if(!pick.length){ if(d.autoRound === 1) toast(t('autoTourNone')); return; }
     const names = [];   // one after another: the free geocoder refuses many requests at once
     for(const c of pick){ let nm = null; for(let k = 0; k < 2 && !nm; k++){ try{ const r = await reversePlace(c.lat, c.lng); nm = r ? r.split(', ').pop() : null; }catch{ await new Promise(r => setTimeout(r, 800)); } } names.push(nm); if(tok !== d.token || !alive()) return; }
     const used = new Set(d.side.map(x => x.name)), added = [];
     pick.forEach((c, i) => { let nm = names[i] || t('areaN', { n:d.side.length + 1 }); for(let j = 2; used.has(nm); j++) nm = (names[i] || t('areaN', { n:d.side.length + 1 })) + ' (' + j + ')'; used.add(nm); added.push(nm);
       d.side.push({ name:nm, lat:c.lat, lng:c.lng, p:null, flyers:c.households, km:Math.round(c.dist / 100) / 10, auto:true }); });
-    d.travel = 'car'; d.cores = true; d.dirty = true;
-    toast(t('autoTourOn', { n:pick.length, names:added.join(', ') }));
+    d.dirty = true;
+    toast(t(tour ? 'autoTourOn' : 'autoTownsOn', { n:pick.length, names:added.join(', ') }));
     recompute();
   }
   function draw(){
@@ -1289,7 +1291,7 @@ function viewCreate(edit){
         ${d.zone && !d.mainAll && p && p.zone_mb != null && p.zone_mb > (d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0)) * 1.05 ? `<div class="note" style="margin:0 0 8px">${esc(t('zoneBig', { mb:fmtN(p.zone_mb), f:fmtN((d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0))) }))} <button class="link" id="cZoneAll">${esc(t('zoneAll', { f:fmtN(p.zone_mb) }))}</button></div>` : ''}
         ${d.zone && !d.mainAll && p && p.zone_mb != null && p.zone_mb < (d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0)) * 0.95 ? `<div class="warnbox" style="margin:0 0 8px">${esc(t('zoneSmall', { mb:fmtN(p.zone_mb), f:fmtN((d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0))) }))} <button class="link" id="cZoneFit">${esc(t('reduceTo', { f:fmtN(Math.max(100, Math.floor(p.zone_mb / 50) * 50)) }))}</button></div>` : ''}
         <div class="tool-row"><button class="btn ghost small" id="cZoneDraw" ${d.start ? '' : 'disabled'}>${ICONS.edit}${esc(t(d.zone ? 'zoneRedraw' : 'zoneDraw'))}</button>${d.zone ? `<button class="btn ghost small" id="cZoneAuto">${esc(t('zoneBackAuto'))}</button>` : ''}</div></div>
-      ${p && p.split ? `<div class="hint">${esc(t('splitHint', { list:p.split.map(x => (x.name || mainCity() || t('mainCity')) + ' ' + fmtN(x.flyers)).join(' · ') }))}</div>` : ''}
+      ${p && p.split ? `<div class="hint">${esc(t(p.near ? (p.team ? 'nearTeamHint' : 'nearHint') : 'splitHint', { list:p.split.map(x => (x.name || mainCity() || t('mainCity')) + ' ' + fmtN(x.flyers)).join(' · ') }))}</div>` : ''}
       ${p && !d.split && p.must_mb > d.flyers ? `<div class="warnbox" style="margin:8px 0">${esc(t('mustTooMany', { mb:fmtN(p.must_mb), f:fmtN(d.flyers) }))}</div>` : ''}
       ${p ? p.routes.map((r, i) => routeRow(r, i, false)).join('') : ''}`;
     else if(d.step === 3) body = `

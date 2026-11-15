@@ -291,3 +291,5 @@ Object.assign(T.ru, { repOk:'Отправлено. Вместо этого в т
 Object.assign(T.de, { autoCores:'Im Umkreis reicht es zu Fuß nicht – Tour mit dem Auto durch die dichten Ortskerne.' });
 
 Object.assign(T.ru, { autoCores:'Пешком рядом не хватает — тур на машине по плотным центрам.' });
+Object.assign(T.de, { autoTownsOn:'Im Umkreis reicht es nicht – nächste Orte dazugenommen: {names}. Orte lassen sich unten entfernen.', nearHint:'Hauptort komplett, was fehlt im nächsten Ort: {list}', nearTeamHint:'Hauptort komplett, was fehlt im nächsten Ort; jeder Ort wird unter allen Mitarbeitern aufgeteilt: {list}' });
+Object.assign(T.ru, { autoTownsOn:'Рядом ящиков не хватает — добавлены ближайшие места: {names}. Места можно убрать ниже.', nearHint:'Основной город целиком, остаток в ближайшем месте: {list}', nearTeamHint:'Основной город целиком, остаток в ближайшем месте; каждое место делится на всех работников: {list}' });
