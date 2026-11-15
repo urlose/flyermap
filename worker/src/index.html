@@ -406,7 +406,7 @@ button.kpi{cursor:pointer}button.kpi.on{border-color:var(--color-primary);backgr
 .sheet.calc{opacity:.75}
 .sheet-min{position:absolute;top:6px;right:8px;z-index:3;display:inline-flex;align-items:center;gap:4px;height:30px;padding:0 10px;border:0;border-radius:var(--radius-full);background:var(--color-surface-subtle);color:var(--color-text-secondary,var(--color-text));font:600 13px/1 var(--font-family);cursor:pointer}
 .sheet-min svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;transition:transform var(--dur)}
-.sheet.mini{max-height:52px!important;overflow:hidden}.sheet.mini .sheet-min svg{transform:rotate(180deg)}
+.sheet.mini{max-height:none!important;overflow:hidden}.sheet.mini>*:not(.wz):not(.sheet-min):not(#grip){display:none!important}.sheet.mini .wz{margin:0 0 2px}.sheet.mini .sheet-min svg{transform:rotate(180deg)}
 .sheet{position:absolute}
 .cbusy{position:absolute;right:16px;top:8px;display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--color-text-secondary);background:var(--color-surface-subtle);padding:3px 10px;border-radius:var(--radius-full)}
 .cbusy::before{content:"";width:10px;height:10px;border-radius:50%;border:2px solid var(--color-primary);border-right-color:transparent;animation:spin .8s linear infinite}

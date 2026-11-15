@@ -382,7 +382,11 @@ const todayTrack = async wid => {
   return dayPoints({ ids:(data || []).map(r => r.id) });
 };
 const dayPoints = async g => { const lists = await Promise.all((g.ids || [g.id]).map(id => fetchPoints(id).catch(() => []))); return lists.flat().sort((a, b) => new Date(a.t) - new Date(b.t)); };
-const placeTxt = r => [r.place, r.task_title].filter(Boolean).join(' · ');
+// place of a working day + order name, without repeats: "Rosenhammer, Weidenberg · Weidenberg 1" instead of
+// "Rosenhammer, Weidenberg · Weidenberg 1 · Weidenberg (Tag 1)" (the "(Tag 1)" of a merged order was wrong on every other day)
+const placeTxt = r => { const pl = String(r.place || ''), low = pl.toLowerCase(), seen = new Set();
+  const parts = String(r.task_title || '').split(' · ').map(x => x.replace(/\s*\(Tag \d+\)\s*$/i, '').trim()).filter(x => { const k = x.toLowerCase(); if(!x || seen.has(k) || low.split(/,\s*/).includes(k)) return false; seen.add(k); return true; });
+  return [pl, ...parts].filter(Boolean).join(' · '); };
 const hhmm = d => new Date(d).toLocaleTimeString(loc(), { hour:'2-digit', minute:'2-digit' });
 const dayFilter = () => A.dFilter || (A.dFilter = { from:'', to:'', place:'' });
 const dayMatches = (r, f) => { const d = dayKey(r); return (!f.from || d >= f.from) && (!f.to || d <= f.to) && (!f.place || r.place === f.place); };
