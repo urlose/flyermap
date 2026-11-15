@@ -650,6 +650,7 @@ const drawSkips = (g, plans) => (plans || []).forEach(p => workerSkips(p).forEac
 // GPS track: its own colour (yellow with a dark edge) so it never looks like a planned route
 const GPS = '#FACC15';
 const splitJumps = ll => { const out = []; let cur = []; for(let i = 0; i < ll.length; i++){ if(i && hav(ll[i - 1][0], ll[i - 1][1], ll[i][0], ll[i][1]) > 150){ if(cur.length > 1) out.push(cur); cur = []; } cur.push(ll[i]); } if(cur.length > 1) out.push(cur); return out; };
+const NEW_QUOTA = 2500;   // quota of a new order: metres per 30 minutes (orders saved earlier keep theirs)
 const DRIVE_C = () => css('--color-drive') || '#7C3AED';   // driving (> 14 km/h): violet, dashed (token)
 const driveLine = (g, ll, w = 3) => ll.length > 1 ? L.polyline(ll, { color:DRIVE_C(), weight:w, opacity:.95, dashArray:'8 6', lineJoin:'round' }).bindTooltip(t('driveTip', { km:fmtDist(ll.reduce((x, q, k) => x + (k ? hav(ll[k-1][0], ll[k-1][1], q[0], q[1]) : 0), 0)) }), { sticky:true }).addTo(g) : null;
 const gpsLine = (g, ll, w = 3) => { const parts = splitJumps(ll); if(!parts.length) return null; L.polyline(parts, { color:'#111827', weight:w + 3, opacity:.45, lineJoin:'round' }).addTo(g); return L.polyline(parts, { color:GPS, weight:w, opacity:1, lineJoin:'round' }).addTo(g); };
@@ -1154,7 +1155,7 @@ function viewCreate(edit){
     if(!d.loaded){ renderSheet(); return; }
     const tok = ++d.token, pr = progress(tok, false);
     let res = null;
-    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, quota:Math.max(200, Math.round(+saved.quota || 2000)), bike:d.bike, travel:d.travel, split:d.split, exact:d.exact, mainAll:d.mainAll, cores:d.cores && d.travel === 'car', together:d.cores && d.travel === 'car' && d.together, first:d.cores && d.travel === 'car' ? d.first : null, near:d.side.length > 0 && d.side.every(x => x.auto), must:d.must, zone:d.zone, side:d.side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers, zone:x.p && x.p.length > 2 ? x.p : null, all:!!x.all })) }, pr.stage); }
+    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, quota:Math.max(200, Math.round(+saved.quota || NEW_QUOTA)), bike:d.bike, travel:d.travel, split:d.split, exact:d.exact, mainAll:d.mainAll, cores:d.cores && d.travel === 'car', together:d.cores && d.travel === 'car' && d.together, first:d.cores && d.travel === 'car' ? d.first : null, near:d.side.length > 0 && d.side.every(x => x.auto), must:d.must, zone:d.zone, side:d.side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers, zone:x.p && x.p.length > 2 ? x.p : null, all:!!x.all })) }, pr.stage); }
     catch(e){ pr.stop(); if(tok !== d.token || !alive()) return; d.err = errText2(e); d.busy = false; toast(t('streetsFail', { e:d.err })); renderSheet(); return; }
     pr.stop();
     if(tok !== d.token || !alive() || !res || res.skipped) return;
@@ -1222,7 +1223,7 @@ function viewCreate(edit){
     return k;
   }
   function restore(k){ if($('#cTitle')) $('#cTitle').value = k.title || ''; if($('#cDate')) $('#cDate').value = k.date || ''; if($('#cNotes')) $('#cNotes').value = k.notes || ''; if($('#cQuota')) $('#cQuota').value = k.quota; }
-  let saved = tkE ? { title:tkE.title, date:tkE.work_date ? String(tkE.work_date).slice(0, 10) : '', notes:tkE.notes || '', quota:tkE.quota_m30 || 2000, noQuota:!!tkE.no_quota } : { title:'', date:'', notes:'', quota:2000 };
+  let saved = tkE ? { title:tkE.title, date:tkE.work_date ? String(tkE.work_date).slice(0, 10) : '', notes:tkE.notes || '', quota:tkE.quota_m30 || 2000, noQuota:!!tkE.no_quota } : { title:'', date:'', notes:'', quota:NEW_QUOTA };
   // five steps on top of the live map: 1 start · 2 route · 3 time · 4 workers · 5 review. Planning keeps running underneath.
   const STEPS = ['wzStart', 'wzRoute', 'wzTime', 'wzTeam', 'wzReview'];
   d.step = tkE ? 2 : 1;
@@ -1309,7 +1310,7 @@ function viewCreate(edit){
         <div><span>${esc(t('workersCount'))}</span><b>${p ? p.routes.length : '—'} · ${esc(t('assignedN', { a:assigned, n:p ? p.routes.length : 0 }))}</b></div>
         <div><span>${esc(t('dist2'))}</span><b>${esc(km)} · ${esc(fmtHm(p ? p.routes.reduce((s, r) => s + r.minutes, 0) : 0))} ${esc(t('h'))}</b></div>
         <div><span>${esc(t('startDate'))}</span><b>${esc(saved.date ? fmtDay(saved.date) : t('noDate'))} · ${esc(String(d.hours).replace('.', ','))} ${esc(t('h'))}/${esc(t('dayShort'))}</b></div>
-        <div><span>${esc(t('quota'))}</span><b>${esc(fmtN(+saved.quota || 2000))} m / 30 ${esc(t('min'))}</b></div>
+        <div><span>${esc(t('quota'))}</span><b>${esc(fmtN(+saved.quota || NEW_QUOTA))} m / 30 ${esc(t('min'))}</b></div>
         ${d.side.length ? `<div><span>${esc(t('sideTitle'))}</span><b>${esc(d.side.map(x => x.name + ' (' + fmtN(x.flyers) + ')').join(', '))}</b></div>` : ''}
         <div><span>${esc(t('zoneTitle'))}</span><b>${esc(d.zone ? t('zoneOwn') : t('zoneAuto'))}</b></div>
         ${d.must.length ? `<div><span>${esc(t('mustTitle'))}</span><b>${esc((d.must.some(a => a.name) ? d.must.map((a, k) => mName(a, k)).join(', ') + ' · ' : '') + t('mustSum', { n:d.must.length, mb:fmtN((p && p.must_mb) || 0) }))}</b></div>` : ''}
@@ -1386,7 +1387,7 @@ function viewCreate(edit){
     const title = (saved.title || '').trim(); if(!title){ goStep(1); toast(t('needTitle')); return; }
     $('#cSave').disabled = true; $('#cSave').classList.add('loading');
     try{
-      const pl = d.plan, quota = Math.max(200, Math.round(+saved.quota || 2000)), date = saved.date || null;
+      const pl = d.plan, quota = Math.max(200, Math.round(+saved.quota || NEW_QUOTA)), date = saved.date || null;
       const cityN = mainCity() || null;
       if(pl.split){ const by = new Map(pl.split.filter(x => x.name).map(x => [x.name, x.flyers])); d.must.forEach(a => { if(by.has(a.name)) a.n = by.get(a.name); }); d.side.forEach(x => { if(by.has(x.name)) x.flyers = by.get(x.name); }); }
       const row = { title:withCity(title, cityN), city_name:cityN, district:(d.place && d.place.district) || (tkE && tkE.district) || null, start_lat:d.start.lat, start_lng:d.start.lng,

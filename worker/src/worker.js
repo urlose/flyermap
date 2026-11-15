@@ -176,10 +176,27 @@ function onLocation(lat, lng, acc, time, sim){
     if(dt < 30 && d / dt > 12) return;
     W.route.distance += d;
   }
-  // driving or riding between villages (faster than 14 km/h): no flyers then – streets passed do not count as done
-  const riding = !!last && sim !== 'first' && (time - last[2]) > 0 && hav(last[0], last[1], lat, lng) > 30 && hav(last[0], last[1], lat, lng) / ((time - last[2]) / 1000) > Planner.DRIVE_MS;   // > 14 km/h: car, bus, bike
-  if(W.tracker && !riding){ if(last && sim !== 'first'){ const g = hav(last[0], last[1], lat, lng); if(g < 120) W.tracker.markLine(last, [lat, lng, time]); else { W.tracker.fillGap([last[0], last[1]], [lat, lng]); W.tracker.addTrack([[lat, lng, time]]); } } else W.tracker.addTrack([[lat, lng, time]]); }   // a long gap (screen was off) counts only along the route
-  if(W.counter && !riding){ if(last && sim !== 'first') W.counter.visitLine([last[0], last[1]], [lat, lng]); else W.counter.visit(lat, lng); }
+  // driving or riding between villages (faster than 14 km/h): no flyers then – streets passed do not count as done.
+  // One fast step alone is usually a GPS jump: the fast steps wait until they add up to a real ride (DRIVE_MIN_M of way, ending
+  // DRIVE_NET_M away from where they began). A fast run that ends earlier was walking and is counted after all.
+  const fast = !!last && sim !== 'first' && (time - last[2]) > 0 && hav(last[0], last[1], lat, lng) > 30 && hav(last[0], last[1], lat, lng) / ((time - last[2]) / 1000) > Planner.DRIVE_MS;
+  const walked = (a, b) => {
+    if(W.tracker){ if(hav(a[0], a[1], b[0], b[1]) < 120) W.tracker.markLine(a, b); else { W.tracker.fillGap([a[0], a[1]], [b[0], b[1]]); W.tracker.addTrack([b]); } }   // a long gap (screen was off) counts only along the route
+    if(W.counter) W.counter.visitLine([a[0], a[1]], [b[0], b[1]]);
+  };
+  if(fast){
+    const F = W.fast || (W.fast = { segs:[], len:0, from:[last[0], last[1]], ride:false });
+    F.len += hav(last[0], last[1], lat, lng);
+    if(!F.ride){
+      F.segs.push([last, [lat, lng, time]]);
+      if(F.len >= Planner.DRIVE_MIN_M && hav(F.from[0], F.from[1], lat, lng) >= Planner.DRIVE_NET_M){ F.ride = true; F.segs = []; }
+      else if(F.segs.length > 30){ F.segs.forEach(([a, b]) => walked(a, b)); W.fast = null; }   // hopping around one spot for a long time: walking
+    }
+  }else{
+    if(W.fast){ if(!W.fast.ride) W.fast.segs.forEach(([a, b]) => walked(a, b)); W.fast = null; }
+    if(last && sim !== 'first') walked(last, [lat, lng, time]);
+    else { if(W.tracker) W.tracker.addTrack([[lat, lng, time]]); if(W.counter) W.counter.visit(lat, lng); }
+  }
   W.track.push([lat, lng, time]);
   W.queue.push({ t:new Date(time).toISOString(), lat:+lat.toFixed(6), lng:+lng.toFixed(6), acc: acc == null ? null : Math.round(acc) });
   saveRoute();

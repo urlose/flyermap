@@ -1001,14 +1001,23 @@
 
   // GPS points → walking runs and driving runs. A step faster than 14 km/h (car, bus, bike) is driving: it is working time,
   // but streets passed then are not distributed. pts: [{lat,lng,t}] or [lat,lng,ms]
-  const DRIVE_MS = 14 / 3.6;
+  // One fast step alone is usually a GPS jump (the position hops 40–100 m between houses): fast steps are a ride only when
+  // they follow each other for at least DRIVE_MIN_M of way and end at least DRIVE_NET_M away from where they began.
+  const DRIVE_MS = 14 / 3.6, DRIVE_MIN_M = 200, DRIVE_NET_M = 150;
   function walkRuns(pts){
-    const P = (pts || []).map(p => Array.isArray(p) ? p : [p.lat, p.lng, +new Date(p.t)]), walk = [], drive = [];
+    const P = (pts || []).map(p => Array.isArray(p) ? p : [p.lat, p.lng, +new Date(p.t)]), walk = [], drive = [], fast = new Uint8Array(P.length);
+    for(let i = 1; i < P.length; i++){ const a = P[i-1], b = P[i], d = dist(a, b), dt = ((b[2] || 0) - (a[2] || 0)) / 1000; if(d > 30 && dt > 0 && d / dt > DRIVE_MS) fast[i] = 1; }
+    for(let i = 1; i < P.length;){
+      if(!fast[i]){ i++; continue; }
+      let j = i, len = 0; while(j < P.length && fast[j]){ len += dist(P[j-1], P[j]); j++; }
+      if(len < DRIVE_MIN_M || dist(P[i-1], P[j-1]) < DRIVE_NET_M) for(let k = i; k < j; k++) fast[k] = 0;   // a jump, not a ride
+      i = j;
+    }
     let w = [], dr = [];
     for(let i = 0; i < P.length; i++){
       const b = P[i]; if(!i){ w.push([b[0], b[1], b[2]]); continue; }
-      const a = P[i-1], d = dist(a, b), dt = ((b[2] || 0) - (a[2] || 0)) / 1000;
-      if(d > 30 && dt > 0 && d / dt > DRIVE_MS){ if(w.length) walk.push(w); w = []; if(!dr.length) dr.push([a[0], a[1]]); dr.push([b[0], b[1]]); }
+      const a = P[i-1];
+      if(fast[i]){ if(w.length) walk.push(w); w = []; if(!dr.length) dr.push([a[0], a[1]]); dr.push([b[0], b[1]]); }
       else { if(dr.length){ drive.push(dr); dr = []; } if(!w.length) w.push([a[0], a[1], a[2]]); w.push([b[0], b[1], b[2]]); }
     }
     if(w.length) walk.push(w); if(dr.length > 1) drive.push(dr);
@@ -1324,6 +1333,6 @@
     return partition(g, start, n).map((part, k) => ({ idx:k, ...planPart(g, part, start) }));
   }
 
-  const api = { censusFill, setTileStamp, setPace, denseEntry, pathRuns, emptyGap, tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, DIR_FROM, makeBoxCounter, walkRuns, DRIVE_MS, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
+  const api = { censusFill, setTileStamp, setPace, denseEntry, pathRuns, emptyGap, tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, DIR_FROM, makeBoxCounter, walkRuns, DRIVE_MS, DRIVE_MIN_M, DRIVE_NET_M, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
   if(typeof module !== 'undefined' && module.exports) module.exports = api; else root.Planner = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -1,7 +1,7 @@
 name: Server plan (one order, without the admin page)
 on:
   push:
-    branches: [main]
+    branches: [main, near-towns]
     paths: ['tools/serverplan/req.json']
   workflow_dispatch:
 permissions:
