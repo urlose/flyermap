@@ -93,7 +93,9 @@ export const A = { user:null, workers:[], tasks:[], live:[], demo:null, hooks:{}
 
 /* ---------- data ---------- */
 async function loadWorkers(){ const { data, error } = await sb.from('workers').select('id,name,phone,cities,zone_minutes,notes,start_anywhere,last_lat,last_lng,last_seen,nav_lat,nav_lng,nav_at,active_route_id,created_at,company_id').order('name'); if(error) throw error; A.workers = data; }
-async function loadTasks(){ const { data, error } = await sb.from('tasks').select('*,task_workers(worker_id)').is('merged_into', null).order('created_at', { ascending:false }); if(error) throw error; A.tasks = data; }
+async function loadTasks(){ const { data, error } = await sb.from('tasks').select('*,task_workers(worker_id)').is('merged_into', null).order('created_at', { ascending:false }); if(error) throw error; A.tasks = data;
+  // orders where a worker picked dates after the deadline and the admin has not decided yet (badge on the card)
+  try{ const { data:lp } = await sb.from('task_plans').select('task_id').eq('status', 'accepted').eq('late_dates', true).eq('late_ok', false); A.lateTasks = new Set((lp || []).map(x => x.task_id)); }catch{ A.lateTasks = new Set(); } }
 async function loadLive(){ const { data } = await sb.from('routes').select('id,worker_id,task_id,plan_id,paused_at,last30_m,started_at,break_s').is('ended_at', null); A.live = data || []; }
 async function loadAll(){
   await Promise.all([loadWorkers(), loadTasks(), loadFirm().then(c => { A.company = c; }).catch(() => {})]);
@@ -670,7 +672,11 @@ const drawSkips = (g, plans, reload) => (plans || []).forEach(p => workerSkips(p
 // GPS track: its own colour (yellow with a dark edge) so it never looks like a planned route
 const GPS = '#FACC15';
 const splitJumps = ll => { const out = []; let cur = []; for(let i = 0; i < ll.length; i++){ if(i && hav(ll[i - 1][0], ll[i - 1][1], ll[i][0], ll[i][1]) > 150){ if(cur.length > 1) out.push(cur); cur = []; } cur.push(ll[i]); } if(cur.length > 1) out.push(cur); return out; };
-const NEW_QUOTA = 2500;   // quota of a new order: metres per 30 minutes (orders saved earlier keep theirs)
+const NEW_QUOTA = 2500;
+// deadline of an order ("fertig bis"): working days from tomorrow up to and including it, Sundays not counted
+const isoDay = dt => new Date(dt.getTime() - dt.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+const plusDays = (iso, n) => { const x = new Date(iso + 'T12:00:00'); x.setDate(x.getDate() + n); return isoDay(x); };
+const workDaysTo = dl => { if(!dl) return null; let n = 0; for(let x = plusDays(isoDay(new Date()), 1); x <= dl && n < 60; x = plusDays(x, 1)) if(new Date(x + 'T12:00:00').getDay() !== 0) n++; return Math.max(1, n); };   // quota of a new order: metres per 30 minutes (orders saved earlier keep theirs)
 const DRIVE_C = () => css('--color-drive') || '#7C3AED';   // driving (> 14 km/h): violet, dashed (token)
 const driveLine = (g, ll, w = 3) => ll.length > 1 ? L.polyline(ll, { color:DRIVE_C(), weight:w, opacity:.95, dashArray:'8 6', lineJoin:'round' }).bindTooltip(t('driveTip', { km:fmtDist(ll.reduce((x, q, k) => x + (k ? hav(ll[k-1][0], ll[k-1][1], q[0], q[1]) : 0), 0)) }), { sticky:true }).addTo(g) : null;
 const gpsLine = (g, ll, w = 3) => { const parts = splitJumps(ll); if(!parts.length) return null; L.polyline(parts, { color:'#111827', weight:w + 3, opacity:.45, lineJoin:'round' }).addTo(g); return L.polyline(parts, { color:GPS, weight:w, opacity:1, lineJoin:'round' }).addTo(g); };
@@ -956,7 +962,7 @@ function viewTasks(){
   const opts = k => [...new Set(A.tasks.map(x => x[k]).filter(Boolean))].sort();
   const sel = (id, label, list, cur) => `<div><label class="f" for="${id}">${esc(label)}</label><select class="in small" id="${id}"><option value="">${esc(t('fAll'))}</option>${list.map(v => `<option ${v === cur ? 'selected' : ''}>${esc(v)}</option>`).join('')}</select></div>`;
   const card = tk => { const [k, txt] = taskState(tk); return `<button class="card acc ${accOf(k)} task-card ${k === 'done' ? 'is-done' : k === 'cancel' ? 'is-cancel' : ''}" data-id="${tk.id}"><div class="tc-main"><b>${k === 'done' ? `<span class="done-ic">${ICONS.check}</span>` : k === 'cancel' ? `<span class="done-ic">${ICONS.close}</span>` : ''}${esc(tk.title)}</b>
-    <div class="tc-meta">${coName(tk.company_id) ? `<i>${ICONS.users}${esc(coName(tk.company_id))}</i>` : ''}<i>${ICONS.calendar}${esc(fmtDay(tk.work_date))}</i>${tk.district || tk.city_name ? `<i>${ICONS.pin}${esc([tk.district, tk.city_name].filter(Boolean).join(', '))}</i>` : ''}${tk.flyers ? `<i>${ICONS.mail}${esc(fmtN(tk.flyers))}</i>` : ''}<i>${ICONS.users}${(tk.task_workers || []).length}</i></div>
+    <div class="tc-meta">${coName(tk.company_id) ? `<i>${ICONS.users}${esc(coName(tk.company_id))}</i>` : ''}<i>${ICONS.calendar}${esc(tk.deadline ? t('dueBy', { d:fmtDay(tk.deadline) }) : fmtDay(tk.work_date))}</i>${A.lateTasks && A.lateTasks.has(tk.id) ? `<i class="err">${esc(t('lateBadge'))}</i>` : ''}${tk.district || tk.city_name ? `<i>${ICONS.pin}${esc([tk.district, tk.city_name].filter(Boolean).join(', '))}</i>` : ''}${tk.flyers ? `<i>${ICONS.mail}${esc(fmtN(tk.flyers))}</i>` : ''}<i>${ICONS.users}${(tk.task_workers || []).length}</i></div>
     ${statusPill(k, txt)}</div>${ICONS.chevron}</button>`; };
   const f = A.filter, list = A.tasks.filter(taskMatches).sort((a, b) => (a.status !== 'open') - (b.status !== 'open'));
   const nOpen = A.tasks.filter(x => x.status === 'open').length, nLive = A.tasks.filter(taskLive).length, nDone = A.tasks.length - nOpen;
@@ -1137,9 +1143,9 @@ function viewCreate(edit){
     if(!alive()) return;
     d.busy = true; const sv = $('#cSave'); if(sv) sv.disabled = true;
     const sh = $('#cSheet'); if(!$('#cWz')) renderSheet();
-    if(full && d.step >= 2) sh.classList.add('calc');
+    if(full && d.step >= 3) sh.classList.add('calc');
     let b = $('#cBusy'); if(!b){ b = document.createElement('div'); b.id = 'cBusy'; b.className = 'cbusy'; b.setAttribute('role', 'status'); sh.appendChild(b); } b.textContent = txt;
-    const nx = $('#cNext') || $('#cSave'); if(nx && d.step >= 2) nx.disabled = true;
+    const nx = $('#cNext') || $('#cSave'); if(nx && d.step >= 3) nx.disabled = true;
   };
   // status with a running seconds counter, so a slow map server is visibly "working"; the text follows the planner's stage
   const progress = (tok, full) => {
@@ -1246,17 +1252,19 @@ function viewCreate(edit){
     const k = { ...saved }, v = id => $(id) ? $(id).value : undefined;
     if(v('#cTitle') !== undefined) k.title = v('#cTitle');
     if(v('#cDate') !== undefined) k.date = v('#cDate');
+    if(v('#cDeadline') !== undefined) k.deadline = v('#cDeadline');
     if(v('#cNotes') !== undefined) k.notes = v('#cNotes');
     if(v('#cQuota') !== undefined) k.quota = v('#cQuota');
     if($('#cNoQ')) k.noQuota = $('#cNoQ').checked;
     return k;
   }
-  function restore(k){ if($('#cTitle')) $('#cTitle').value = k.title || ''; if($('#cDate')) $('#cDate').value = k.date || ''; if($('#cNotes')) $('#cNotes').value = k.notes || ''; if($('#cQuota')) $('#cQuota').value = k.quota; }
-  let saved = tkE ? { title:tkE.title, date:tkE.work_date ? String(tkE.work_date).slice(0, 10) : '', notes:tkE.notes || '', quota:tkE.quota_m30 || 2000, noQuota:!!tkE.no_quota } : { title:'', date:'', notes:'', quota:NEW_QUOTA };
+  function restore(k){ if($('#cTitle')) $('#cTitle').value = k.title || ''; if($('#cDate')) $('#cDate').value = k.date || ''; if($('#cDeadline')) $('#cDeadline').value = k.deadline || ''; if($('#cNotes')) $('#cNotes').value = k.notes || ''; if($('#cQuota')) $('#cQuota').value = k.quota; }
+  let saved = tkE ? { title:tkE.title, date:tkE.work_date ? String(tkE.work_date).slice(0, 10) : '', deadline:tkE.deadline ? String(tkE.deadline).slice(0, 10) : '', notes:tkE.notes || '', quota:tkE.quota_m30 || 2000, noQuota:!!tkE.no_quota } : { title:'', date:'', deadline:plusDays(isoDay(new Date()), 3), notes:'', quota:NEW_QUOTA };
   // five steps on top of the live map: 1 start · 2 route · 3 time · 4 workers · 5 review. Planning keeps running underneath.
-  const STEPS = ['wzStart', 'wzRoute', 'wzTime', 'wzTeam', 'wzReview'];
-  d.step = tkE ? 2 : 1;
-  const canReach = k => k === 1 || (!!d.start && (k === 2 || (!!d.plan && !d.busy)));
+  const STEPS = ['wzStart', 'wzTime', 'wzRoute', 'wzTeam', 'wzReview'];   // the time comes before the route: the deadline decides how many days the plan has
+  d.step = tkE ? 3 : 1;
+  if(saved.deadline) d.days = workDaysTo(saved.deadline);
+  const canReach = k => k === 1 || (!!d.start && (k <= 3 || (!!d.plan && !d.busy)));
   const goStep = k => { if(!canReach(k)) return; saved = keep(); d.step = k; const sh = $('#cSheet'); if(sh){ sh.scrollTop = 0; if(k >= 2) sh.classList.add('tall'); } renderSheet();
     if(k >= 2 && d.start){ if(!d.loaded) loadArea(); else if(!d.plan || d.dirty) recompute(); } };
   function renderSheet(){
@@ -1313,7 +1321,7 @@ function viewCreate(edit){
       ${d.travel === 'zones' ? '' : `<label class="f">${esc(t('travelLbl'))}</label><div class="opt3" role="radiogroup">${[['car', '🚗'], ['bus', '🚌'], ['bike', '🚲']].map(([v, ic]) => `<button role="radio" aria-checked="${d.travel === v}" class="${d.travel === v ? 'on' : ''}" data-travel="${v}"><i>${d.travel === v ? '✓' : ''}</i><span>${ic} ${esc(t('travel_' + v))}</span></button>`).join('')}</div><p class="small muted" style="margin:4px 0 0">${esc(t('travelHint'))}</p>`}
       ${d.travel === 'car' ? `<label class="check" style="margin-top:10px"><input type="checkbox" id="cCores" ${d.cores ? 'checked' : ''}><span><b>${esc(t('coresLbl'))}</b><br><span class="small muted">${esc(t('coresHint'))}</span></span></label>
         ${d.cores ? `<label class="check" style="margin-top:6px"><input type="checkbox" id="cTogether" ${d.together ? 'checked' : ''}><span><b>${esc(t('togetherLbl'))}</b><br><span class="small muted">${esc(t('togetherHint'))}</span></span></label>` : ''}` : ''}`;
-    else if(d.step === 2) body = `
+    else if(d.step === 3) body = `
       <div class="steppers">
         <div><label class="f">${esc(t('flyersCount'))}</label><div class="stepper"><button data-s="f:-500" aria-label="−500">−</button><input id="cFly" type="number" inputmode="numeric" min="100" step="100" value="${d.flyers}"><button data-s="f:500" aria-label="+500">+</button></div></div>
         <div><label class="f">${esc(t('workersCount'))}</label><div class="stepper"><button data-s="n:-1" ${p ? '' : 'disabled'} aria-label="−1">−</button><b id="vN">${p ? d.n : '—'}</b><button data-s="n:1" ${p ? '' : 'disabled'} aria-label="+1">+</button></div></div>
@@ -1332,10 +1340,11 @@ function viewCreate(edit){
       ${p && p.split ? `<div class="hint">${esc(t(p.near ? (p.team ? 'nearTeamHint' : 'nearHint') : 'splitHint', { list:p.split.map(x => (x.name || mainCity() || t('mainCity')) + ' ' + fmtN(x.flyers)).join(' · ') }))}</div>` : ''}
       ${p && !d.split && p.must_mb > d.flyers ? `<div class="warnbox" style="margin:8px 0">${esc(t('mustTooMany', { mb:fmtN(p.must_mb), f:fmtN(d.flyers) }))}</div>` : ''}
       ${p ? (p.zones ? personRows(false) : p.routes.map((r, i) => routeRow(r, i, false)).join('')) : ''}`;
-    else if(d.step === 3) body = `
-      <div class="steppers"><div><label class="f" for="cDate">${esc(t('startDate'))}</label><input class="in" type="date" id="cDate"></div><div><label class="f" for="cHours">${esc(t('hoursDay'))}</label><input class="in" type="number" id="cHours" min="1" max="12" step="0.5" value="${d.hours}"></div></div>
+    else if(d.step === 2) body = `
+      <div class="steppers"><div><label class="f" for="cDeadline">${esc(t('deadline'))}</label><input class="in" type="date" id="cDeadline" min="${plusDays(isoDay(new Date()), 1)}"></div><div><label class="f" for="cHours">${esc(t('hoursDay'))}</label><input class="in" type="number" id="cHours" min="1" max="12" step="0.5" value="${d.hours}"></div></div>
       <label class="f" for="cQuota">${esc(t('quota'))}</label><input class="in" type="number" id="cQuota" min="200" step="100" value="${esc(saved.quota)}">
       <label class="f" for="cNotes">${esc(t('note'))}</label><textarea class="in" id="cNotes" placeholder="${esc(t('notesPh'))}"></textarea>
+      <p class="small muted" style="margin:6px 0 0">${esc(saved.deadline ? t('deadlineDays', { d:d.days }) : t('deadlineNone'))}</p>
       ${p ? `<div class="${cap.ok ? 'hint' : 'warnbox'}">${cap.ok ? esc(needDays === 1 ? t('fitsOne') : t('fitsOk', { d:needDays })) : esc(t('tooBig', { h:cap.slowest.toFixed(1).replace('.', ','), lim:cap.limit, d:d.days }))}</div>` : ''}`;
     else if(d.step === 4) body = `<p class="small muted" style="margin:0 0 4px">${esc(t('assignHint'))}</p>${p ? (p.zones ? personRows(true) : p.routes.map((r, i) => routeRow(r, i, true)).join('')) : ''}`;
     else {
@@ -1346,7 +1355,7 @@ function viewCreate(edit){
         <div><span>${esc(t('flyersCount'))}</span><b>${esc(fmtN(effFlyers))}${p ? ' · ' + esc(t('mbApprox', { n:fmtN(p.mailboxes) })) : ''}</b></div>
         <div><span>${esc(t('workersCount'))}</span><b>${p ? p.routes.length : '—'} · ${esc(t('assignedN', { a:assigned, n:p ? p.routes.length : 0 }))}</b></div>
         <div><span>${esc(t('dist2'))}</span><b>${esc(km)} · ${esc(fmtHm(p ? p.routes.reduce((s, r) => s + r.minutes, 0) : 0))} ${esc(t('h'))}</b></div>
-        <div><span>${esc(t('startDate'))}</span><b>${esc(saved.date ? fmtDay(saved.date) : t('noDate'))} · ${esc(String(d.hours).replace('.', ','))} ${esc(t('h'))}/${esc(t('dayShort'))}</b></div>
+        <div><span>${esc(t('deadline'))}</span><b>${esc(saved.deadline ? fmtDay(saved.deadline) + ' · ' + t('daysN', { n:d.days }) : t('noDate'))} · ${esc(String(d.hours).replace('.', ','))} ${esc(t('h'))}/${esc(t('dayShort'))}</b></div>
         <div><span>${esc(t('quota'))}</span><b>${esc(fmtN(+saved.quota || NEW_QUOTA))} m / 30 ${esc(t('min'))}</b></div>
         ${d.side.length ? `<div><span>${esc(t('sideTitle'))}</span><b>${esc(d.side.map(x => x.name + ' (' + fmtN(x.flyers) + ')').join(', '))}</b></div>` : ''}
         <div><span>${esc(t('zoneTitle'))}</span><b>${esc(d.zone ? t('zoneOwn') : t('zoneAuto'))}</b></div>
@@ -1394,6 +1403,7 @@ function viewCreate(edit){
       const { p:pts } = await placeArea({ name:mainCity(), lat:d.start.lat, lng:d.start.lng, kind:'town' }); if(!alive()) return;
       d.zoneBeforeAll = d.zone; d.zone = pts; d.mainAll = true; drawMust(); recompute();
     };
+    if($('#cDeadline')) $('#cDeadline').onchange = () => { saved = keep(); const nd = workDaysTo(saved.deadline) || 2; if(nd !== d.days){ d.days = nd; recompute(); } else renderSheet(); };
     if($('#cHours')) $('#cHours').onchange = () => { saved = keep(); d.hours = Math.max(1, Math.min(12, num('#cHours', 7))); recompute(); };
     const od = $('#cOneDay'); if(od) od.onclick = () => { saved = keep(); d.n = 1; d.days = 1; d.assign = {}; recompute(); };
     const sg = $('#cSug'); if(sg) sg.onclick = () => { saved = keep(); d.n = d.sug; d.assign = {}; recompute(); };
@@ -1426,11 +1436,11 @@ function viewCreate(edit){
     const title = (saved.title || '').trim(); if(!title){ goStep(1); toast(t('needTitle')); return; }
     $('#cSave').disabled = true; $('#cSave').classList.add('loading');
     try{
-      const pl = d.plan, quota = Math.max(200, Math.round(+saved.quota || NEW_QUOTA)), date = saved.date || null;
+      const pl = d.plan, quota = Math.max(200, Math.round(+saved.quota || NEW_QUOTA)), date = saved.date || null, deadline = saved.deadline || null;
       const cityN = mainCity() || null;
       if(pl.split){ const by = new Map(pl.split.filter(x => x.name).map(x => [x.name, x.flyers])); d.must.forEach(a => { if(by.has(a.name)) a.n = by.get(a.name); }); d.side.forEach(x => { if(by.has(x.name)) x.flyers = by.get(x.name); }); }
       const row = { title:withCity(title, cityN), city_name:cityN, district:(d.place && d.place.district) || (tkE && tkE.district) || null, start_lat:d.start.lat, start_lng:d.start.lng,
-        walk_minutes:15, zone_polygon:pl.zone, must_areas:d.must.length ? d.must.map(a => ({ p:a.p, n:a.n, name:a.name || undefined, c:a.c })) : null, side_towns:d.side.length ? d.side : null, bike:d.travel !== 'bus', travel:d.travel, split:d.split, cores:!!(d.cores && (d.travel === 'car' || d.travel === 'zones')), together:!!(d.cores && d.travel === 'car' && d.together), first_place:d.cores && d.travel === 'car' && d.first && d.side.some(x => x.name === d.first) ? d.first : null, work_area:d.zone || null, work_date:date, notes:(saved.notes || '').trim() || null, street_m:d.streetM || null,
+        walk_minutes:15, zone_polygon:pl.zone, must_areas:d.must.length ? d.must.map(a => ({ p:a.p, n:a.n, name:a.name || undefined, c:a.c })) : null, side_towns:d.side.length ? d.side : null, bike:d.travel !== 'bus', travel:d.travel, split:d.split, cores:!!(d.cores && (d.travel === 'car' || d.travel === 'zones')), together:!!(d.cores && d.travel === 'car' && d.together), first_place:d.cores && d.travel === 'car' && d.first && d.side.some(x => x.name === d.first) ? d.first : null, work_area:d.zone || null, work_date:date, deadline, notes:(saved.notes || '').trim() || null, street_m:d.streetM || null,
         flyers:pl && (d.mainAll || (pl.eco && !d.exact) || (pl.cores && pl.mailboxes < d.flyers)) ? Math.round(pl.mailboxes) : d.flyers, quota_m30:quota, no_quota:saved.noQuota != null ? !!saved.noQuota : d.travel === 'car', work_days:d.days, work_hours:d.hours, est_mailboxes:pl.mailboxes, route_m:pl.routes.reduce((s, r) => s + r.length_m, 0) };
       let tk, old = null;
       if(tkE){
@@ -1495,7 +1505,7 @@ function editTaskSheet(tk, plans, routes){
   const day = tk.work_date ? String(tk.work_date).slice(0, 10) : '';
   const mo = modal(`<h2>${esc(t('editTask'))}</h2>
     <label class="f">${esc(t('title'))}</label><input class="in" id="eTitle" value="${esc(tk.title)}">
-    <div class="steppers"><div><label class="f">${esc(t('startDate'))}</label><input class="in" type="date" id="eDate" value="${esc(day)}"></div><div><label class="f">${esc(t('hoursDay'))}</label><input class="in" type="number" id="eHours" min="1" max="12" step="0.5" value="${+tk.work_hours || 7}"></div></div>
+    <div class="steppers"><div><label class="f">${esc(t('deadline'))}</label><input class="in" type="date" id="eDeadline" value="${esc(tk.deadline ? String(tk.deadline).slice(0, 10) : '')}"></div><div><label class="f">${esc(t('hoursDay'))}</label><input class="in" type="number" id="eHours" min="1" max="12" step="0.5" value="${+tk.work_hours || 7}"></div></div>
     <label class="f">${esc(t('quota'))}</label><input class="in" type="number" id="eQuota" min="200" step="100" value="${tk.quota_m30 || 2000}">
     ${tk.travel === 'zones' ? '' : `<label class="f" for="eTravel">${esc(t('travelLbl'))}</label><select class="in" id="eTravel">${['bus', 'bike', 'car'].map(v => `<option value="${v}" ${(tk.travel || (tk.bike ? 'bike' : 'bus')) === v ? 'selected' : ''}>${esc(t('travel_' + v))}</option>`).join('')}</select>`}
     <label class="f">${esc(t('note'))}</label><textarea class="in" id="eNotes">${esc(tk.notes || '')}</textarea>
@@ -1505,7 +1515,7 @@ function editTaskSheet(tk, plans, routes){
   mo.querySelector('#eClose').onclick = () => mo.remove();
   mo.querySelector('#eSave').onclick = async () => {
     const title = mo.querySelector('#eTitle').value.trim(); if(!title){ mo.querySelector('#eErr').textContent = t('needTitle'); return; }
-    const { error } = await sb.from('tasks').update({ title:withCity(title, tk.city_name), work_date:mo.querySelector('#eDate').value || null, work_hours:Math.max(1, Math.min(12, parseFloat(mo.querySelector('#eHours').value) || 7)), quota_m30:Math.max(200, Math.round(+mo.querySelector('#eQuota').value || 2000)), notes:mo.querySelector('#eNotes').value.trim() || null, bike:mo.querySelector('#eTravel') ? mo.querySelector('#eTravel').value !== 'bus' : tk.bike, travel:mo.querySelector('#eTravel') ? mo.querySelector('#eTravel').value : tk.travel }).eq('id', tk.id);
+    const { error } = await sb.from('tasks').update({ title:withCity(title, tk.city_name), deadline:mo.querySelector('#eDeadline').value || null, work_hours:Math.max(1, Math.min(12, parseFloat(mo.querySelector('#eHours').value) || 7)), quota_m30:Math.max(200, Math.round(+mo.querySelector('#eQuota').value || 2000)), notes:mo.querySelector('#eNotes').value.trim() || null, bike:mo.querySelector('#eTravel') ? mo.querySelector('#eTravel').value !== 'bus' : tk.bike, travel:mo.querySelector('#eTravel') ? mo.querySelector('#eTravel').value : tk.travel }).eq('id', tk.id);
     if(error){ mo.querySelector('#eErr').textContent = error.message; return; }
     // new quota → the hours of the routes follow (route length ÷ quota × 30 min), no new planning needed
     const q = Math.max(200, Math.round(+mo.querySelector('#eQuota').value || 2000));
@@ -1572,6 +1582,7 @@ async function viewTask(id){
       <div class="info">
         <div><span>${esc(t('place'))}</span><b>${esc([tk.district, tk.city_name].filter(Boolean).join(', ') || '—')}</b></div>
         <div><span>${esc(t('date'))}</span><b>${esc(fmtDay(tk.work_date))}</b></div>
+        ${tk.deadline ? `<div><span>${esc(t('deadline'))}</span><b>${esc(fmtDay(tk.deadline))}</b></div>` : ''}
         ${tk.flyers ? `<div><span>${esc(t('flyers'))}</span><b>${esc(fmtN(tk.flyers))} · ${esc(t('mbApprox', { n:fmtN(estMb || 0) }))}</b></div>` : ''}
         <div id="tZen" style="display:none"><span>${esc(t('zLabel'))}</span><b id="tZenB"></b><small class="muted">${esc(t('zHint'))}</small></div>
         ${routeM ? `<div><span>${esc(t('dist2'))}</span><b>${esc(fmtDist(routeM))}</b></div>` : ''}
@@ -1607,6 +1618,7 @@ async function viewTask(id){
         ${dayLines(p.days, p.color, p.idx)}<span class="small" id="prest${p.idx}" style="font-weight:600"></span><button class="link small hidden" id="pred${p.idx}" data-reday="${p.id}" style="align-self:flex-start">${ICONS.calendar}${esc(t('redayBtn'))}</button>
         <div class="bar"><i id="pb${p.idx}"></i></div><span id="pf${p.idx}" style="margin-top:4px"></span><span class="small" id="pw${p.idx}">${planWalked(p, routes)}</span>${prevWorkers(p, routes)}
         ${p.worker_id ? `<div class="rr-status"><span class="pill ${(A.live || []).some(r => r.plan_id === p.id && !r.paused_at) ? 'live' : stCls(p)}">${(A.live || []).some(r => r.plan_id === p.id && !r.paused_at) ? esc(t('stLive')) + ' · ' : ''}${esc(stText(p))}${p.status === 'accepted' && (p.work_dates || []).length ? ' · ' + esc(p.work_dates.map(fmtDay).join(', ')) : ''}</span>${p.status === 'accepted' ? `<button class="link small" data-dates="${p.id}">${ICONS.edit}${esc(t('chgDates'))}</button>` : ''}</div>` : ''}
+        ${p.worker_id && p.status === 'accepted' && p.late_dates && !p.late_ok ? `<div class="warnbox" style="margin:6px 0 0">${esc(t('lateAsk', { dl:fmtDay(tk.deadline), dates:(p.work_dates || []).map(fmtDay).join(', ') }))}<div class="tool-row" style="margin-top:6px"><button class="btn primary small" data-lateok="${p.id}">${esc(t('lateOk'))}</button><button class="btn ghost small" data-lateno="${p.id}">${esc(t('lateNo'))}</button></div></div>` : ''}
         ${w ? `<button class="rr-worker" data-wk="${w.id}">${avatar()}<span class="grow"><b>${esc(w.name)}</b><small>${esc(t('openWorker'))}</small></span><span class="rr-chev">›</span></button>
         <div class="rr-btns"><a class="btn ghost small" target="_blank" rel="noopener" href="${waLink(w.phone, invite(w))}">${ICONS.chat}${esc(t('write'))}</a><button class="btn ghost small" data-swap="${p.id}">${ICONS.users}${esc(t('swapWorker'))}</button></div>` : ''}
         <div class="rr-swap" id="sw${p.id}" ${w ? 'hidden' : ''}><select class="in small" data-plan="${p.id}">${workerOptions(tk.start_lat, tk.start_lng, p.worker_id)}</select><span class="small muted">${esc(t('replaceHint'))}</span></div></div></div>`; }).join('') : `<p class="muted small">${esc(t('noPlans'))}</p>`}
@@ -1693,6 +1705,14 @@ async function viewTask(id){
   });
   document.querySelectorAll('[data-swap]').forEach(bt => bt.onclick = () => { const b = document.getElementById('sw' + bt.dataset.swap); if(b) b.hidden = !b.hidden; });
   document.querySelectorAll('[data-wk]').forEach(bt => bt.onclick = () => viewWorker(bt.dataset.wk, () => viewTask(id)));
+  // dates after the deadline: the admin approves them or sends the route back to the worker to pick other dates
+  document.querySelectorAll('[data-lateok]').forEach(bt => bt.onclick = async () => { bt.disabled = true; const { error } = await sb.from('task_plans').update({ late_ok:true }).eq('id', bt.dataset.lateok); if(error){ toast(errText(error)); bt.disabled = false; return; } toast(t('saved')); viewTask(id); });
+  document.querySelectorAll('[data-lateno]').forEach(bt => bt.onclick = async () => {
+    const p = plans.find(x => x.id === bt.dataset.lateno); if(!p || !await confirmBox(t('lateNo'), t('lateNoQ', { dl:fmtDay(tk.deadline) }), t('lateNo'))) return;
+    const { error } = await sb.from('task_plans').update({ status:'offered', work_dates:[], accepted_at:null }).eq('id', p.id); if(error){ toast(errText(error)); return; }
+    await sb.from('notifications').insert({ worker_id:p.worker_id, kind:'assigned', task_id:id, plan_id:p.id, title:t('lateNoTitle', { title:tk.title }), body:t('lateNoBody', { dl:fmtDay(tk.deadline) }) });
+    toast(t('saved')); viewTask(id);
+  });
   document.querySelectorAll('[data-dates]').forEach(bt => bt.onclick = () => {
     const p = plans.find(x => x.id === bt.dataset.dates), ds = (p.work_dates || []).map(d => String(d).slice(0, 10)).sort(), n = Math.max(1, ds.length, (p.days || []).length);
     const mo = modal(`<h2>${esc(t('chgDates'))}</h2><p class="muted small">${esc(t('planRoute', { n:p.idx + 1 }))}${wById(p.worker_id) ? ' · ' + esc(wById(p.worker_id).name) : ''}</p>
@@ -1704,6 +1724,7 @@ async function viewTask(id){
       if(!dates.length || new Set(dates).size !== dates.length){ mo.querySelector('#adErr').textContent = t('e_date_required'); return; }
       const { error } = await sb.from('task_plans').update({ work_dates:dates }).eq('id', p.id);
       if(error){ mo.querySelector('#adErr').textContent = error.message; return; }
+      await sb.from('task_plans').update({ late_ok:true }).eq('id', p.id);   // dates the admin sets himself need no approval
       await sb.from('notifications').insert({ worker_id:p.worker_id, kind:'assigned', task_id:id, plan_id:p.id, title:t('datesChangedTitle', { title:tk.title }), body:dates.map(fmtDay).join(', ') });
       mo.remove(); toast(t('saved')); viewTask(id);
     };

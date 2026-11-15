@@ -309,3 +309,12 @@ Object.assign(T.de, { personN:'Person {n}', mainCityShort:'Hauptort', zonesHint:
   coresZonesHint:'In jedem Ort nur die dichten Straßen – Ortsränder und Wege zwischen Weilern fallen weg.' });
 Object.assign(T.ru, { personN:'Человек {n}', mainCityShort:'Основной город', zonesHint:'Каждый город планируется как отдельная зона и делится на всех работников. Между городами ничего не рисуется – работники едут туда сами.',
   coresZonesHint:'В каждом городе только плотные улицы – окраины и дороги между хуторами отпадают.' });
+
+// deadline of an order ("fertig bis") – set by the admin, seen by the workers; later dates need the admin's approval
+Object.assign(T.de, { deadline:'Fertig bis', deadlineW:'Fertig bis', dueBy:'bis {d}', deadlineDays:'= {d} Arbeitstage bis dahin (ohne Sonntag). Danach richtet sich der Plan.', deadlineNone:'Ohne Frist wird mit 2 Arbeitstagen geplant.',
+  lateAsk:'Termine nach der Frist ({dl}): {dates}. Zustimmen?', lateOk:'Zustimmen', lateNo:'Ablehnen', lateNoQ:'Der Verteiler muss neue Termine bis {dl} wählen.', lateNoTitle:'Neue Termine nötig: {title}', lateNoBody:'Bitte Termine bis {dl} wählen.',
+  stLateWait:'wartet auf Freigabe', lateWaitText:'Deine Termine liegen nach der Frist ({dl}). Der Admin muss zustimmen.', lateWarn:'Nach der Frist ({dl}) – der Admin muss zustimmen.', lateHint:'spätere Termine nur mit Zustimmung des Admins' });
+Object.assign(T.ru, { deadline:'Сделать до', deadlineW:'Сделать до', dueBy:'до {d}', deadlineDays:'= {d} рабочих дн. до этой даты (без воскресений). По ним строится план.', deadlineNone:'Без срока план строится на 2 рабочих дня.',
+  lateAsk:'Даты после срока ({dl}): {dates}. Одобрить?', lateOk:'Одобрить', lateNo:'Отклонить', lateNoQ:'Работнику придётся выбрать новые даты до {dl}.', lateNoTitle:'Нужны новые даты: {title}', lateNoBody:'Пожалуйста, выбери даты до {dl}.',
+  stLateWait:'ждёт одобрения', lateWaitText:'Твои даты после срока ({dl}). Админ должен одобрить.', lateWarn:'После срока ({dl}) – нужно одобрение админа.', lateHint:'более поздние даты – только с одобрения админа' });
+Object.assign(T.de, { lateBadge:'Termin nach Frist – zustimmen?' }); Object.assign(T.ru, { lateBadge:'Дата после срока – одобрить?' });

@@ -431,9 +431,10 @@ export function workerTab(tab){
 function planInfo(task){ return task.plan ? fmtDist(task.plan.length_m) : '—'; }
 
 const dayList = pl => (pl && pl.work_dates || []).map(d => String(d).slice(0, 10)).sort();
-const stClass = p => !p ? '' : p.status === 'open' ? 'info' : p.status === 'accepted' ? '' : p.status === 'declined' ? 'bad' : p.status === 'done' ? 'ok' : 'warn';
+const stClass = p => !p ? '' : (p.status === 'accepted' && p.late_dates && !p.late_ok) ? 'warn' : p.status === 'open' ? 'info' : p.status === 'accepted' ? '' : p.status === 'declined' ? 'bad' : p.status === 'done' ? 'ok' : 'warn';
 const accClass = p => ({ '':'acc-info', bad:'acc-bad', ok:'acc-ok', warn:'acc-warn' }[stClass(p)] || 'acc-neutral');
-const stLabel = p => !p ? '' : p.status === 'open' ? t('stOpen') : p.status === 'accepted' ? t('stAccepted') : p.status === 'declined' ? t('stDeclined') : p.status === 'done' ? t('stDone') : t('stNew');
+const lateWait = p => !!(p && p.status === 'accepted' && p.late_dates && !p.late_ok);   // dates after the deadline, admin has not approved yet
+const stLabel = p => !p ? '' : lateWait(p) ? t('stLateWait') : p.status === 'open' ? t('stOpen') : p.status === 'accepted' ? t('stAccepted') : p.status === 'declined' ? t('stDeclined') : p.status === 'done' ? t('stDone') : t('stNew');
 function taskDates(tk){ const d = dayList(zoneSum(tk)); return d.length ? d.map(fmtDay).join(', ') : fmtDay(tk.work_date); }
 function viewTasks(){
   const list = tasks(), open = openRoutes(), unread = ((W.me && W.me.inbox) || []).filter(n => !n.read).length;
@@ -528,6 +529,7 @@ function viewTaskDetail(task){
       <div class="info">
         <div><span>${esc(t('route'))}</span><b>${esc(task._zone ? task._base.title : task.title)}</b></div>
         <div><span>${esc(t('place'))}</span><b>${esc([task.district, task.city_name].filter(Boolean).join(', ') || '—')}</b></div>
+        ${task.deadline ? `<div><span>${esc(t('deadlineW'))}</span><b>${esc(fmtDay(task.deadline))}</b></div>` : ''}
         <div><span>${esc(t('dates'))}</span><b>${esc(taskDates(task))}</b></div>
         ${plan ? `<div><span>${esc(t('mailboxes'))}</span><b>${esc(t('mbApprox', { n:fmtN(plan.mailboxes || 0) }))}</b></div>
         <div><span>${esc(t('duration'))}</span><b>${esc(planInfo(task))}</b></div>
@@ -544,15 +546,23 @@ function viewTaskDetail(task){
       ${plan && st === 'open' ? `<p class="hint">${esc(t('openDetailHint'))}</p>` : ''}
       ${plan && (st === 'offered' || st === 'open') ? `<h2 class="sec">${esc(t('pickDays'))}</h2><p class="small muted" style="margin-top:-6px">${esc(t('dayHintW', { n:need }))}</p>
         <div class="dates">${Array.from({ length:need }, (_, i) => `<label><span>${esc(t('dayN', { n:i + 1 }))}</span><input class="in" type="date" data-day="${i}" min="${today}" value="${addDays(first, i)}"></label>`).join('')}</div>
+        <p class="small" id="lateNote" hidden style="color:var(--color-warning,#B45309);margin:6px 0 0"></p>
         ${st === 'open' ? `<button class="btn primary" id="claim">${esc(t('claim'))}</button>` : `<button class="btn primary" id="acc">${esc(t('accept'))}</button><button class="btn ghost" id="dec">${esc(t('decline'))}</button>`}<div class="err" id="accErr"></div><p class="small muted" id="cmNote" style="margin:10px 0 0"></p>` : ''}
+      ${plan && lateWait(plan) ? `<div class="warnbox">${esc(t('lateWaitText', { dl:fmtDay(task.deadline) }))}</div>` : ''}
       ${plan && st === 'accepted' ? `<p class="hint">${esc(t('yourDates'))}: <b>${esc(dayList(plan).map(fmtDay).join(', '))}</b> <button class="link" id="chgDates">${esc(t('chgDates'))}</button> · <button class="link danger-text" id="cnPlan">${esc(cancelLabel())}</button></p>
         <div id="chgBox" hidden><div class="dates">${Array.from({ length:need }, (_, i) => `<label><span>${esc(t('dayN', { n:i + 1 }))}</span><input class="in" type="date" data-cday="${i}" value="${esc(dayList(plan)[i] || addDays(dayList(plan)[0] || first, i))}"></label>`).join('')}</div>
-        <button class="btn primary" id="chgSave">${esc(t('save'))}</button><div class="err" id="chgErr"></div></div>` : ''}
+        <p class="small" id="lateNote2" hidden style="color:var(--color-warning,#B45309);margin:6px 0 0"></p><button class="btn primary" id="chgSave">${esc(t('save'))}</button><div class="err" id="chgErr"></div></div>` : ''}
       ${plan && st === 'declined' ? `<p class="note">${esc(t('stDeclined'))}</p>` : ''}
       ${(!plan || st === 'accepted') ? `<button class="btn primary big" id="go">${ICONS.play}<span>${esc(t('startRoute'))}</span></button>` : ''}
       <div class="rr-btns" id="dirRow"><a class="btn ghost" id="dirG" target="_blank" rel="noopener" href="${esc((task.bike ? rideLink(task) : gTransit)(task.start_lat, task.start_lng))}">${ICONS.pin}${esc(t(task.bike ? rideTxt(task) : 'directions'))}</a><a class="btn ghost" id="dirA" target="_blank" rel="noopener" href="${esc(aTransit(task.start_lat, task.start_lng))}">${ICONS.map}${esc(t('appleMaps'))}</a></div>
     </div>`); setLoc('task/' + task.id);
   bindBack(() => task._zone ? viewZones(tasks().find(x => x.id === task.id) || task._base) : workerTab('tasks'));
+  // a date after the order's deadline is allowed, but the admin has to approve it: say so while the dates are picked
+  const lateCheck = (sel, note) => { const el = $(note); if(!el || !task.deadline) return; const dl = String(task.deadline).slice(0, 10);
+    const late = [...document.querySelectorAll(sel)].map(i => i.value).filter(v => v && v > dl);
+    el.hidden = !late.length; el.textContent = late.length ? t('lateWarn', { dl:fmtDay(dl) }) : ''; };
+  document.querySelectorAll('[data-day]').forEach(i => i.addEventListener('change', () => lateCheck('[data-day]', '#lateNote'))); lateCheck('[data-day]', '#lateNote');
+  document.querySelectorAll('[data-cday]').forEach(i => i.addEventListener('change', () => lateCheck('[data-cday]', '#lateNote2')));
   if(st === 'open'){ const p0 = document.querySelector('.sec-row'); if(p0) p0.insertAdjacentHTML('afterend', `<p class="small muted" style="margin:-4px 0 10px">${esc(t('planRoute', { n:plan.idx + 1 }))}</p>`); }
   const m = makeMap($('#tdMap'), [task.start_lat, task.start_lng], 14, { dragging:true });
   const base = drawTaskBase(m, task), { b } = base; fit(m, b, 16);
@@ -736,7 +746,7 @@ async function viewZones(task){
       </div>`).join('')}</div>
       ${nOffered ? `<h2 class="sec">${esc(t('zonesAll'))}</h2><p class="small muted" style="margin-top:-6px">${esc(t('zonesAllHint', { h:String(hrs).replace('.', ',') }))}</p>
         <div class="dates"><label><span>${esc(t('zonesFrom'))}</span><input class="in" type="date" id="zFrom" min="${today}" value="${String(task.work_date || '').slice(0, 10) >= today ? String(task.work_date).slice(0, 10) : tomorrow}"></label></div>
-        <button class="btn primary" id="zAcc">${esc(t('zonesAll'))}</button><div class="err" id="zErr"></div>` : ''}
+        ${task.deadline ? `<p class="small muted" style="margin:6px 0 0">${esc(t('deadlineW'))}: ${esc(fmtDay(task.deadline))} · ${esc(t('lateHint'))}</p>` : ''}<button class="btn primary" id="zAcc">${esc(t('zonesAll'))}</button><div class="err" id="zErr"></div>` : ''}
     </div>`); setLoc('task/' + task.id);
   bindBack(() => workerTab('tasks'));
   const open = id => { const p = task.plans.find(q => q.id === id); if(p) viewTaskDetail(zoneTask(task, p)); };

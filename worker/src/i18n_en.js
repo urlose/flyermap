@@ -241,3 +241,7 @@ Object.assign(T.en, { stPick:'Choose studio', stTitle:'Studio as start address',
 Object.assign(T.en, { rvRepOk:'Reported · confirmed', repAccept:'Confirm – leave out', repBack:'Back into the route' });
 Object.assign(T.en, { personN:'Person {n}', mainCityShort:'Main town', zonesHint:'Every place is planned as its own zone and shared out among all distributors. Nothing is drawn between the places – the distributors get there themselves.',
   coresZonesHint:'In every place only the dense streets – outskirts and roads between hamlets are left out.' });
+Object.assign(T.en, { deadline:'Done by', deadlineW:'Done by', dueBy:'by {d}', deadlineDays:'= {d} working days until then (Sundays not counted). The plan follows from it.', deadlineNone:'Without a deadline the plan uses 2 working days.',
+  lateAsk:'Dates after the deadline ({dl}): {dates}. Approve?', lateOk:'Approve', lateNo:'Decline', lateNoQ:'The distributor has to pick new dates by {dl}.', lateNoTitle:'New dates needed: {title}', lateNoBody:'Please pick dates by {dl}.',
+  stLateWait:'waiting for approval', lateWaitText:'Your dates are after the deadline ({dl}). The admin has to approve.', lateWarn:'After the deadline ({dl}) – the admin has to approve.', lateHint:'later dates only with the admin\'s approval' });
+Object.assign(T.en, { lateBadge:'Date after deadline – approve?' });
