@@ -17,6 +17,7 @@ const zensusHtml = c => { const d = zensusDiff(c); return d == null ? '' : `${es
 const zensusOfPlan = new WeakMap();
 import { loadFirm, firmCardHtml, bindFirmCard, firmComplete, avvOk } from './firm.js';
 import { viewMaster, poolHtml } from './master.js';
+import { loadStudios, studioBtnHtml, openStudioPicker } from './studios.js';
 const DONE_TX = () => ({ de:{ chip:'Erledigte', tag:'erledigt' }, ru:{ chip:'Выполненные', tag:'выполнен' }, en:{ chip:'Finished', tag:'finished' } }[['ru', 'en'].includes(I.lang) ? I.lang : 'de']);
 
 const GREEN_C = () => css('--color-map-route-completed') || '#16A34A';   // done parts: the theme's "completed" colour
@@ -989,6 +990,12 @@ function viewCreate(edit){
   const pickAddr = (c, q) => { saved = keep(); d.place = c; d.mainCity = null; const txt = c.name + (c.sub ? ', ' + c.sub : ''); if(q) q.value = txt; const top = $('#cSearch'); if(top) top.value = txt; setStart(c.lat, c.lng); };
   const mainCity = () => (d.place && (d.place.city || (d.place.kind === 'city' || d.place.kind === 'town' || d.place.kind === 'village' ? d.place.name : ''))) || d.mainCity || (tkE && tkE.city_name) || '';
   const sf = searchField('cSearch', t('searchAddr'), pickAddr, { near:() => d.start ? [d.start.lat, d.start.lng] : null });
+  // studio of the client as start address (only firms with a studio list see the button); the order title is filled if empty
+  const bindStudio = () => { const b = $('#cStudio'); if(b) b.onclick = () => openStudioPicker((c, s) => {
+    const ti = $('#cTitle'); if(ti && !ti.value.trim()) ti.value = 'FITYES ' + s.name;
+    pickAddr(c, $('#cAddr'));
+  }); };
+  loadStudios().then(() => { const sl = $('#cStudioSlot'); if(sl && !sl.firstChild){ sl.innerHTML = studioBtnHtml(); bindStudio(); } });
   shell('tasks', `<div id="fullMap" class="fullmap"></div>
     <div class="map-top"><button class="icon-btn" id="cBack" aria-label="${esc(t('back'))}">${ICONS.back}</button><div class="grow">${sf.html}</div></div>
     <button class="chip pick-btn" id="cPick" hidden></button>
@@ -1264,7 +1271,7 @@ function viewCreate(edit){
     let body = '';
     if(d.step === 1) body = `
       <label class="f" for="cTitle">${esc(t('title'))}</label><input class="in" id="cTitle" value="${esc(title)}" autocomplete="off">
-      <label class="f" for="cAddr">${esc(t('addrMain'))}</label>${sfAddr().html}
+      <label class="f" for="cAddr">${esc(t('addrMain'))}</label>${sfAddr().html}<div id="cStudioSlot">${studioBtnHtml()}</div>
       ${d.start && !d.place ? `<p class="small muted" style="margin:4px 0 0">${esc(t('startOnMap'))}</p>` : ''}
       <label class="f">${esc(t('mainCity'))}</label><div class="note" style="margin:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="grow">${esc(mainCity() || t('mainCityAuto'))}</span>${d.start && mainCity() ? `<button class="all-btn${d.mainAll ? ' on' : ''}" id="cMainAll" title="${esc(t('mainAllHint'))}">${d.mainAll ? '✓ ' + esc(t('mainAllOn', { mb:p && d.mainAll ? fmtN(Math.round(p.mailboxes)) : '…' })) : esc(t('mainAllBtn'))}</button>` : ''}</div>
       <label class="f">${esc(t('sideTowns'))}</label><p class="small muted" style="margin:-2px 0 6px">${esc(t('sideTownsHint'))}</p>
@@ -1366,6 +1373,7 @@ function viewCreate(edit){
     if($('#cMustAdd')) $('#cMustAdd').onclick = () => drawMode(true, 'must');
     Object.values(towns).forEach(x => x.bind());
     if(addrSf){ addrSf.bind(); const ai = $('#cAddr'); if(ai && d.place) ai.value = d.place.name + (d.place.sub ? ', ' + d.place.sub : ''); }
+    bindStudio();
     document.querySelectorAll('[data-srm]').forEach(b => b.onclick = () => { saved = keep(); d.side.splice(+b.dataset.srm, 1); recompute(); });
     // "all mailboxes" of a place: it gets exactly what it has, the other places share the rest
     document.querySelectorAll('[data-all]').forEach(b => b.onclick = () => { saved = keep(); const [kind, k] = b.dataset.all.split(':'), x = (kind === 's' ? d.side : d.must)[+k]; if(!x) return; x.all = !x.all; d.dirty = true; drawMust(); recompute(); });

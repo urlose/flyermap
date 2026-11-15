@@ -293,3 +293,9 @@ Object.assign(T.de, { autoCores:'Im Umkreis reicht es zu Fuß nicht – Tour mit
 Object.assign(T.ru, { autoCores:'Пешком рядом не хватает — тур на машине по плотным центрам.' });
 Object.assign(T.de, { autoTownsOn:'Im Umkreis reicht es nicht – nächste Orte dazugenommen: {names}. Orte lassen sich unten entfernen.', nearHint:'Hauptort komplett, was fehlt im nächsten Ort: {list}', nearTeamHint:'Hauptort komplett, was fehlt im nächsten Ort; jeder Ort wird unter allen Mitarbeitern aufgeteilt: {list}' });
 Object.assign(T.ru, { autoTownsOn:'Рядом ящиков не хватает — добавлены ближайшие места: {names}. Места можно убрать ниже.', nearHint:'Основной город целиком, остаток в ближайшем месте: {list}', nearTeamHint:'Основной город целиком, остаток в ближайшем месте; каждое место делится на всех работников: {list}' });
+
+// studio picker (Neuer Auftrag): studios of the firm's client as start addresses
+Object.assign(T.de, { stPick:'Studio wählen', stTitle:'Studio als Startadresse', stSearch:'Ort oder Studio suchen', stSoon:'bald', stOpens:'Eröffnung {d}',
+  stInfo:'{n} Studios · Stand {d}', stSync:'Liste aktualisieren', stSyncing:'Wird aktualisiert …', stSyncNew:'Neu: {list}', stSyncSame:'Liste ist aktuell – keine neuen Studios.', stSyncFail:'Aktualisieren hat nicht geklappt. Später noch einmal versuchen.' });
+Object.assign(T.ru, { stPick:'Выбрать студию', stTitle:'Студия как адрес старта', stSearch:'Город или студия', stSoon:'скоро', stOpens:'открытие {d}',
+  stInfo:'{n} студий · обновлено {d}', stSync:'Обновить список', stSyncing:'Обновляется …', stSyncNew:'Новые: {list}', stSyncSame:'Список актуален – новых студий нет.', stSyncFail:'Не удалось обновить. Попробуйте позже.' });

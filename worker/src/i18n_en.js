@@ -235,3 +235,6 @@ Object.assign(T.en, { repOk:'Reported. Instead, {n} street(s) nearby with ≈ {m
 
 Object.assign(T.en, { autoCores:'Not enough on foot nearby – car tour through the dense cores.' });
 Object.assign(T.en, { autoTownsOn:'Not enough nearby – nearest places added: {names}. Places can be removed below.', nearHint:'Main town completely, what is missing in the nearest place: {list}', nearTeamHint:'Main town completely, what is missing in the nearest place; every place is shared out among all workers: {list}' });
+
+Object.assign(T.en, { stPick:'Choose studio', stTitle:'Studio as start address', stSearch:'Search town or studio', stSoon:'soon', stOpens:'opens {d}',
+  stInfo:'{n} studios · updated {d}', stSync:'Refresh list', stSyncing:'Refreshing …', stSyncNew:'New: {list}', stSyncSame:'List is up to date – no new studios.', stSyncFail:'Refresh failed. Try again later.' });
