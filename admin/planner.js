@@ -1049,6 +1049,7 @@
   // has more households than we count, the missing ones go to our houses in that cell (in proportion), or to the cell centre
   // when we have no house there. Where we count more than the census, nothing is lowered (small cells are hidden for privacy).
   // census = { cellOf(lat, lng) -> [cx, cy], centre(cx, cy) -> [lat, lng], households(list of [cx, cy]) -> Promise<Map "cx,cy" -> n> }
+  const CENSUS_SLACK = 1.1;   // mailboxes per census household at most (a cell with more is cut down)
   async function censusFill(buildings, box, census){
     const las = box.map(p => p[0]), los = box.map(p => p[1]);
     const c0 = census.cellOf(Math.min(...las), Math.min(...los)), c1 = census.cellOf(Math.max(...las), Math.max(...los)), c2 = census.cellOf(Math.min(...las), Math.max(...los)), c3 = census.cellOf(Math.max(...las), Math.min(...los));
@@ -1056,7 +1057,20 @@
     const H = await census.households(x0, y0, x1, y1);
     if(!H || !H.size) return buildings;
     const own = new Map(); buildings.forEach((b, i) => { const c = census.cellOf(b.lat, b.lng), k = c[0] + ',' + c[1]; let l = own.get(k); if(!l) own.set(k, l = []); l.push(i); });
-    const out = buildings.map(b => ({ ...b })); let added = 0;
+    const out = buildings.map(b => ({ ...b })); let added = 0, removed = 0;
+    // too many: a cell where we count clearly more mailboxes than the census has households is cut down to the census
+    // + CENSUS_SLACK (firms, empty flats and shops have mailboxes too). Our rules guess big buildings by floor area, which can
+    // give 129 mailboxes where the whole 100 m cell has 94 households (Chemnitz-Sonnenberg). Cells without census households
+    // (not lived in, or hidden for privacy) stay as they are.
+    for(const [k, idx] of own){
+      const h = H.get(k); if(!h) continue;
+      const ours = idx.reduce((a, i) => a + out[i].n, 0), cap = Math.round(h * CENSUS_SLACK) + 2;
+      if(ours <= cap) continue;
+      const share = idx.map(i => ({ i, x:Math.max(1, cap * out[i].n / ours) })); let left = cap;   // every house keeps at least one
+      share.forEach(s => { const f = Math.max(1, Math.floor(s.x)); left -= f; s.f = f; s.r = s.x - Math.floor(s.x); });
+      share.sort((a, b) => b.r - a.r); for(let j = 0; j < left; j++) share[j % share.length].f += 1;
+      share.forEach(s => { removed += out[s.i].n - s.f; out[s.i].n = s.f; });
+    }
     for(const [k, h] of H){
       const [cx, cy] = k.split(',').map(Number); if(cx < x0 || cx > x1 || cy < y0 || cy > y1) continue;
       const idx = own.get(k) || [], ours = idx.reduce((a, i) => a + out[i].n, 0), miss = h - ours;
@@ -1070,7 +1084,7 @@
       share.sort((a, b) => b.r - a.r); for(let j = 0; j < left; j++) out[share[j % share.length].i].n += 1;
       added += miss;
     }
-    out.added = added; return out;
+    out.added = added; out.removed = removed; return out;
   }
   // main entry: streets + buildings around the start; grows the radius until enough mailboxes exist.
   // opt: { cache, radius, must, tiles (Map kept between calls), progress(done, total), stale(), fetchImpl }
