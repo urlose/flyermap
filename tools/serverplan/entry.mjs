@@ -2,7 +2,8 @@
 // too little, the nearest census towns are added as ordinary Nebenstädte (nearest first), up to 3 rounds.
 // Build: cd worker && npx esbuild ../tools/serverplan/entry.mjs --bundle --format=iife --outfile=../tools/serverplan/bundle.js
 import { createPlanService } from '../../worker/src/plancore.js';
-import { townsAround } from '../../worker/src/zensus.js';
+import { townsAround, censusSource } from '../../worker/src/zensus.js';
+import Planner from '../../admin/planner.js';
 globalThis.FMRun = async req => {
   const start = req.start, flyers = req.flyers, svc = createPlanService(null), log = [], side = [];
   const plan = () => svc.plan({ start, flyers, n:req.n || 2, days:req.days || 2, hours:req.hours || 7, quota:req.quota || 2500, travel:req.travel || 'bus', bike:req.travel === 'bike', split:'even', exact:true, mainAll:false,
@@ -18,5 +19,13 @@ globalThis.FMRun = async req => {
     pick.forEach(c => side.push({ name:'Ort ' + (side.length + 1), lat:c.lat, lng:c.lng, flyers:c.households, km:Math.round(c.dist / 100) / 10, auto:true }));
     res = await plan(); log.push('round ' + round + ' +' + pick.length + ' -> ' + res.plan.mailboxes);
   }
-  return { log, side, sug:res.sug, street_m:res.street_m, plan:res.plan };
+  // req.dump: all streets with mailboxes around the start and around every added town (to draw the plan over them)
+  let streets = null;
+  if(req.dump){
+    streets = []; const census = censusSource(), sp = res.plan.split || [];
+    const add = g => g.edges.forEach(e => { if(e.mb > 0 && e.coords) streets.push([Math.round(e.mb), ...e.coords.flatMap(c => [+c[0].toFixed(5), +c[1].toFixed(5)])]); });
+    add(await Planner.loadForFlyers(start, flyers, { census }));
+    for(const x of side){ const f = (sp.find(y => y.name === x.name) || {}).flyers; if(f > 0) add(await Planner.loadForFlyers([x.lat, x.lng], f, { census })); }
+  }
+  return { log, side, sug:res.sug, street_m:res.street_m, plan:res.plan, streets };
 };
