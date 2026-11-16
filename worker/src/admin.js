@@ -11,7 +11,7 @@ window.addEventListener('fm-open-task', e => viewTask(e.detail, () => viewStats(
 import { makePlanEngine, setStampClient, tileStamp } from './planengine.js';
 import { openMapView } from './routeview.js';
 import { checkpoints, addSkips, dayProgress, makeNav } from './nav.js';
-import { compare as zensusCompare, diffPct as zensusDiff, townsAround } from './zensus.js';
+import { compare as zensusCompare, diffPct as zensusDiff, censusPlaces, MIN_HH } from './zensus.js';
 // census line: official households next to our mailbox estimate; more than 25 % apart is marked
 const zensusHtml = c => { const d = zensusDiff(c); return d == null ? '' : `${esc(t('zLine', { hh:fmtN(c.households) }))} · <i class="zd ${Math.abs(d) > 25 ? 'err' : ''}" >${esc(t('zDiff', { d:(d > 0 ? '+' : d < 0 ? '−' : '±') + Math.abs(d) }))}</i>`; };
 const zensusOfPlan = new WeakMap();
@@ -21,7 +21,7 @@ import { loadStudios, studioBtnHtml, openStudioPicker } from './studios.js';
 import { viewLiveMap, dueInfo, LM } from './livemap.js';
 import { listView, viewSwitch, bindViewSwitch, tableHtml, bindTable } from './tables.js';
 import { STATS } from './stats.js';
-import { coverage, rankSuggestions, addSuggestion, startKey, placesApart } from './expand.js';
+import { coverage, addSuggestion, placesApart, suggestionFlow, sugKey as sugKeyOf, MAX_KM, PAGE } from './expand.js';
 // a save button while the database works: disabled, "Speichert …"; back to normal afterwards (also after an error)
 async function busy(btn, fn){ if(!btn || btn.disabled) return; const html = btn.innerHTML; btn.disabled = true; btn.setAttribute('aria-busy', 'true'); btn.textContent = t('saving');
   try{ await fn(); }catch(e){ toast(errText(e)); } finally{ if(btn.isConnected){ btn.disabled = false; btn.removeAttribute('aria-busy'); btn.innerHTML = html; } } }
@@ -1077,7 +1077,7 @@ function viewCreate(edit){
   const startArr = () => [d.start.lat, d.start.lng];
   const errText2 = e => /abort|overpass|fetch/i.test((e && e.message) || '') ? t('mapSlow') : ((e && e.message) || 'net');
   async function setStart(lat, lng, fromClick){
-    const tok = ++d.token; d.start = { lat, lng }; d.sugT = null; d.keepView = !!fromClick;   // a tap on the map keeps the zoom the admin chose
+    const tok = ++d.token; d.start = { lat, lng }; d.sugT = null; sugFlow.reset(); d.keepView = !!fromClick;   // a tap on the map keeps the zoom the admin chose
     d.pick = false; updPick();
     d.loaded = false; d.plan = null; d.err = null; d.assign = {};
     zoneLayer.clearLayers(); planLayer.clearLayers();
@@ -1117,24 +1117,32 @@ function viewCreate(edit){
     // Phase 1 (16.11.2026): never add places by itself – too few mailboxes only leads to suggestions the admin may add
     if(!tkE && !d.zone && !d.mainAll && !(d.plan.eco && !d.exact) && !coverage(d.flyers, d.plan.mailboxes).ok) findSuggestions();
   }
-  // Suggestions for more places (census, townsAround) – shown in step "Route", added only by the admin ("Ort hinzufügen").
-  // Kept apart from d.side (the confirmed places) in d.sugT; results for another start or another set of places are dropped.
-  const sugKey = () => startKey(d.start) + '|' + d.side.map(x => x.name).join(',');
-  // names: "Lehen (Weidenberg)" for a district of a town; a city (≥ 5.000 households) is named as the city
-  async function findSuggestions(){
-    const key = sugKey(); if(d.sugT && d.sugT.key === key) return;
-    d.sugT = { key, loading:true, list:[] }; renderSheet();
-    const missing = coverage(d.flyers, d.plan.mailboxes).missing, st = { ...d.start };
-    let towns = [];
-    try{ towns = await townsAround(st.lat, st.lng, 2500, 30000); }catch{ towns = null; }
-    if(!alive() || !d.sugT || d.sugT.key !== key) return;   // start or places changed meanwhile: these results belong to another order
-    if(!towns){ d.sugT = { key, list:[], failed:true }; renderSheet(); return; }
-    const list = rankSuggestions(towns, { start:st, side:d.side, missing });
-    d.sugT = { key, list, loading:false }; renderSheet();
-    // names one after another (the free geocoder refuses many requests at once); the list is usable before they arrive
-    for(const sg of list){ let nm = null; for(let k = 0; k < 2 && !nm; k++){ try{ const r = await reversePlace(sg.lat, sg.lng); const ps = r ? r.split(', ') : []; nm = ps.length > 1 && sg.households < 5000 ? ps[0] + ' (' + ps[1] + ')' : ps[ps.length - 1] || null; }catch{ await new Promise(r => setTimeout(r, 800)); } }   // "Lehen (Weidenberg)": a district of the main town is named as such
-      if(!alive() || !d.sugT || d.sugT.key !== key) return; sg.name = nm; renderSheet(); }
+  // Suggestions for more places (census, Phase 2A) – shown in step "Route", added only by the admin ("Ort hinzufügen").
+  // Kept apart from d.side (the confirmed places) in d.sugT. The census window around the ORIGINAL start is loaded once per
+  // (start, max distance); adding or removing a place only ranks the same list anew (expand.js: suggestionFlow). Results of an
+  // older start / set of places / radius are dropped there. Names come one by one from the geocoder and are remembered.
+  d.maxKm = d.maxKm || MAX_KM; d.sugNames = d.sugNames || new Map();
+  const sugCtx = () => ({ start:d.start, side:d.side, maxKm:d.maxKm, missing:d.plan ? coverage(d.flyers, d.plan.mailboxes).missing : 0 });
+  const sugKey = () => sugKeyOf(sugCtx());
+  const nameKey = x => x.id || x.lat + ',' + x.lng;
+  const sugFlow = suggestionFlow({
+    load:(st, km) => censusPlaces(st.lat, st.lng, (km + 3) * 1000, { minH:MIN_HH }),   // +3 km margin: places at the edge are whole
+    onUpdate:st => { if(!alive()) return; d.sugT = st; if(st.list) st.list.forEach(x => { if(!x.name && d.sugNames.has(nameKey(x))) x.name = d.sugNames.get(nameKey(x)); }); renderSheet(); nameShown(st); },
+  });
+  // "Lehen (Weidenberg)": a district of a town is named as such; a city (≥ 5.000 households) as the city. One request at a time
+  // (the free geocoder refuses many at once); the list is usable before the names arrive; stops when the list is replaced.
+  async function nameShown(st){
+    if(st.naming || st.loading || !st.list) return; st.naming = true;
+    try{
+      for(let i = 0; i < st.shown; i++){
+        const sg = st.list[i]; if(!sg || sg.name) continue; let nm = null;
+        for(let k = 0; k < 2 && !nm; k++){ try{ const r = await reversePlace(sg.lat, sg.lng); const ps = r ? r.split(', ') : []; nm = ps.length > 1 && sg.households < 5000 ? ps[0] + ' (' + ps[1] + ')' : ps[ps.length - 1] || null; }catch{ await new Promise(r => setTimeout(r, 800)); } }
+        if(!alive() || d.sugT !== st) return; if(nm){ d.sugNames.set(nameKey(sg), nm); sg.name = nm; renderSheet(); }
+      }
+    } finally { st.naming = false; }
+    if(alive() && d.sugT === st && st.list.slice(0, st.shown).some(x => !x.name && !d.sugNames.has(nameKey(x)))) nameShown(st);   // "more" was pressed meanwhile
   }
+  function findSuggestions(){ if(!d.start || !d.plan) return; sugFlow.refresh(sugCtx()).catch(() => {}); }
   function draw(){
     zoneLayer.clearLayers(); planLayer.clearLayers();
     if(d.plan.zone.length > 2) var z = L.polygon(d.plan.zone, { color:css('--brand'), weight:2, fillOpacity:.06, interactive:false }).addTo(zoneLayer);
@@ -1217,10 +1225,17 @@ function viewCreate(edit){
       const c = coverage(d.flyers, p.mailboxes), apart = placesApart(d.start, d.side);
       const sideList = d.side.length ? `<div class="cov-side"><b>${esc(t('covChosen'))}</b>${d.side.map((x, k) => `<span class="chip">${esc(x.name)} · ${esc(t('covKm', { km:String(x.km != null ? x.km : '–').replace('.', ',') }))}<button class="link" data-srm="${k}" aria-label="${esc(t('del') + ': ' + x.name)}">✕</button></span>`).join('')}</div>` : '';
       const sg = d.sugT && d.sugT.key === sugKey() ? d.sugT : null;
+      const f1 = v => String(v).replace('.', ',');
+      const sugRow = (x, i) => `<div class="sug-row"><div class="grow"><b>${esc(x.name || t('sugUnnamed', { km:f1(x.km) }))}</b>
+            <span class="small muted">${esc(t('sugLine', { hh:fmtN(x.households), km:f1(x.km) }))}</span>
+            <span class="small muted">${esc(t(x.adjacent ? 'sugGapAdj' : 'sugGap', { km:f1(x.gapKm), to:x.gapTo || t('sugGapStart') }))}</span>
+            <span class="small sug-not">${esc(t('sugNotYet'))}${x.small ? ' · ' + esc(t('sugSmall')) : ''}</span></div><button class="btn ghost small" data-sadd="${i}">${ICONS.plus}<span>${esc(t('sugAdd'))}</span></button></div>`;
       const sugList = !c.ok && !tkE && !d.zone ? `<div class="cov-sug"><h4>${ICONS.pin}${esc(t('sugTitle'))}</h4>
-          ${!sg || sg.loading ? `<p class="small muted">${esc(t('sugLoading'))}</p>` : sg.failed ? `<p class="small err">${esc(t('sugFailed'))}</p>` : !sg.list.length ? `<p class="small muted">${esc(t('sugNone'))}</p>`
-          : sg.list.map((x, i) => `<div class="sug-row"><div class="grow"><b>${esc(x.name || t('sugUnnamed', { km:String(x.km).replace('.', ',') }))}</b><span class="small muted">${esc(t('sugLine', { hh:fmtN(x.households), km:String(x.km).replace('.', ',') }))}</span><span class="small sug-not">${esc(t('sugNotYet'))}</span></div><button class="btn ghost small" data-sadd="${i}">${ICONS.plus}<span>${esc(t('sugAdd'))}</span></button></div>`).join('')}
-          <p class="small muted" style="margin:6px 0 0">${esc(t('sugHint'))}</p></div>` : '';
+          <label class="small muted sug-km">${esc(t('sugMaxKm'))} <select id="sugKm" aria-label="${esc(t('sugMaxKm'))}">${[5, 10, 15, 20, 30].map(k => `<option value="${k}"${k === d.maxKm ? ' selected' : ''}>${k} km</option>`).join('')}</select></label>
+          ${!sg || sg.loading ? `<p class="small muted">${esc(t('sugLoading'))}</p>` : sg.failed ? `<p class="small err">${esc(t('sugFailed'))}</p>` : !sg.list.length ? `<p class="small muted">${esc(t('sugNone', { km:d.maxKm }))}</p>`
+          : sg.list.slice(0, sg.shown).map(sugRow).join('') + (sg.shown < sg.list.length ? `<button class="btn ghost small" id="sugMore">${esc(t('sugMore', { n:sg.list.length - sg.shown }))}</button>` : '')
+            + (sg.hh < c.missing ? `<p class="small warn">${esc(t('sugShort', { n:sg.list.length, km:d.maxKm, hh:fmtN(sg.hh), miss:fmtN(c.missing) }))}</p>` : '')}
+          <p class="small muted" style="margin:6px 0 0">${esc(t('sugHint'))}</p><p class="small muted" style="margin:4px 0 0">${esc(t('sugHh'))}</p></div>` : '';
       return `<div class="cov ${c.ok ? 'ok' : 'short'}" role="status">
         <div class="cov-h">${c.ok ? ICONS.circleCheck : ICONS.alert}<b>${esc(c.ok ? t('covOk') : t('covShort'))}</b></div>
         <div class="cov-n"><div><span>${esc(t('covWant'))}</span><b>${fmtN(c.want)}</b></div><div><span>${esc(t('covHave'))}</span><b>≈ ${fmtN(c.have)}</b></div><div><span>${esc(t('covMissing'))}</span><b>${c.missing ? '≈ ' + fmtN(c.missing) : '0'}</b></div></div>
@@ -1354,14 +1369,17 @@ function viewCreate(edit){
     if(addrSf){ addrSf.bind(); const ai = $('#cAddr'); if(ai && d.place) ai.value = d.place.name + (d.place.sub ? ', ' + d.place.sub : ''); }
     bindStudio();
     document.querySelectorAll('[data-srm]').forEach(b => b.onclick = () => { saved = keep(); d.side.splice(+b.dataset.srm, 1); recompute(); });
-    // the admin adds a suggested place: only now it becomes part of the order (a second click does nothing)
+    // the admin adds a suggested place: only now it becomes part of the order (a second click does nothing). Older searches are dropped.
     document.querySelectorAll('[data-sadd]').forEach(b => b.onclick = () => {
-      const sg = d.sugT && d.sugT.key === sugKey() ? d.sugT.list[+b.dataset.sadd] : null; if(!sg || b.disabled) return; b.disabled = true;
+      const sg = d.sugT && d.sugT.key === sugKey() ? d.sugT.list[+b.dataset.sadd] : null; if(!sg || b.disabled || d.adding) return; b.disabled = true; d.adding = true;
       saved = keep(); const before = d.side.length;
       d.side = addSuggestion(d.side, sg, sg.name || t('sugUnnamed', { km:String(sg.km).replace('.', ',') }));
-      if(d.side.length === before) return;
-      d.sugT = null; d.dirty = true; recompute();
+      d.adding = false; if(d.side.length === before) return;
+      sugFlow.invalidate(); d.sugT = null; d.dirty = true; recompute();
     });
+    if($('#sugMore')) $('#sugMore').onclick = () => sugFlow.more();
+    // max distance from the ORIGINAL start (straight line); a new value is a new search (the loaded census squares are reused)
+    if($('#sugKm')) $('#sugKm').onchange = e => { const km = +e.target.value; if(!km || km === d.maxKm) return; d.maxKm = km; sugFlow.invalidate(); d.sugT = null; findSuggestions(); renderSheet(); };
     // "all mailboxes" of a place: it gets exactly what it has, the other places share the rest
     document.querySelectorAll('[data-all]').forEach(b => b.onclick = () => { saved = keep(); const [kind, k] = b.dataset.all.split(':'), x = (kind === 's' ? d.side : d.must)[+k]; if(!x) return; x.all = !x.all; d.dirty = true; drawMust(); recompute(); });
     if($('#cAllFit')) $('#cAllFit').onclick = () => { saved = keep(); d.flyers = Math.ceil(p.split.filter(x => x.all).reduce((a, x) => a + (x.cap || 0), 0) / 50) * 50; d.nAuto = true; recompute(); };
