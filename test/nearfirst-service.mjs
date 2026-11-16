@@ -2,6 +2,8 @@
 import assert from 'node:assert/strict';
 import Planner from '../admin/planner.js';
 import { createPlanService } from '../worker/src/plancore.js';
+// Synthetic roads must not be clipped by live census settlements at these coordinates.
+globalThis.fetch = async () => { throw new Error('Network disabled for synthetic planner fixtures'); };
 
 const start=[48.46,10.21], pts=[], edges=[], adj=[];
 const latM=1/111320, lngM=1/(111320*Math.cos(start[0]*Math.PI/180));
