@@ -202,6 +202,12 @@ export function drawJumps(g, path, bike){
   (path || []).forEach((q, i) => {
     if(!i || q[2] !== 1 || q[3] === 'r') return;   // 'r': short walk over to a replacement street – no bus / car trip
     const a = [path[i - 1][0], path[i - 1][1]], b = [q[0], q[1]];
+    if(mode === 'zones'){   // time-budget / zone orders: how the people get from one place to the next is NOT known - no car, bike or bus is assumed, no route is requested
+      L.polyline([a, b], { color:css('--color-map-route-pending') || '#64748B', weight:2, opacity:.55, dashArray:'2 8', lineCap:'round', interactive:false }).addTo(g);
+      const km = Math.round(Math.hypot(b[0] - a[0], (b[1] - a[1]) * Math.cos(a[0] * Math.PI / 180)) * 111.32 * 10) / 10;
+      L.marker([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], { icon:L.divIcon({ className:'', html:'<span class="jump-ic">↔</span>', iconSize:[26, 26], iconAnchor:[13, 13] }), keyboard:false }).addTo(g).bindTooltip(t('rideTipUnknown', { km:km.toLocaleString('de-DE') }), { direction:'top', offset:[0, -12] });
+      return;
+    }
     const ln = L.polyline([a, b], { color:bike ? (css('--color-drive') || '#8B5CF6') : (css('--color-map-route-pending') || '#64748B'), weight:4, opacity:.9, dashArray:bike ? '6 6' : '2 9', lineCap:'round', interactive:false }).addTo(g);
     const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
     const mk = L.marker(mid, { icon:L.divIcon({ className:'', html:`<span class="jump-ic">${mode === 'car' ? '🚗' : mode === 'bike' ? '🚲' : '🚌'}</span>`, iconSize:[26, 26], iconAnchor:[13, 13] }), keyboard:false }).addTo(g);
