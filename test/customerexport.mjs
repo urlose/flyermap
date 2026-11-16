@@ -11,10 +11,11 @@ const routes=[
 const data=customerGeoJSON(task,routes);
 assert.equal(data.type,'FeatureCollection');
 assert.equal(data.features[0].properties.estimatedFlyers,36);
-assert.equal(data.features[0].geometry.type,'MultiLineString');
+assert.equal(data.features[0].geometry.type,'MultiPolygon');
 assert.equal(data.features[0].geometry.coordinates.length,3);
-assert.deepEqual(data.features[0].geometry.coordinates[0],[[8,50],[8.001,50]]);
+const first=data.features[0].geometry.coordinates[0][0];
+assert.ok(first.length>=4 && first[0][0]===first.at(-1)[0]&&first[0][1]===first.at(-1)[1]);
 const json=JSON.stringify(data);
 for(const secret of ['worker-secret','other-secret','created_by','work_hours','minutes','540','470'])assert.ok(!json.includes(secret),secret);
 assert.equal(customerGeoJSON(task,[]).features[0].properties.estimatedFlyers,40);
-console.log('Customer export: area/estimated flyers only; no private staff or hours');
+console.log('Customer export: approximate polygon/estimated flyers only; no private staff or hours');
