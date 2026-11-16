@@ -1001,7 +1001,7 @@ function viewCreate(edit){
   });
   const drawMode = (on, kind, init, edit) => {
     d.drawing = on ? (init || []).map(q => [q[0], q[1]]) : null; if(on){ d.drawFor = kind || 'must'; d.drawEdit = edit == null ? null : edit; }
-    const ht = $('#cDrawT'); if(ht) ht.textContent = t(d.drawFor === 'zone' ? 'zoneDrawHint' : 'mustDrawHint');
+    const ht = $('#cDrawT'); if(ht) ht.textContent = t(d.drawFor === 'zone' ? 'zoneDrawHint' : d.drawFor === 'side' ? 'sideDrawHint' : 'mustDrawHint');
     $('#cDraw').hidden = !on; $('#cSheet').hidden = on; const mt = document.querySelector('.map-top'); if(mt) mt.hidden = on; const pk = $('#cPick'); if(pk && on) pk.hidden = true; else updPick();
     m.getContainer().style.cursor = on ? 'crosshair' : '';
     updDraw(); drawMust();
@@ -1258,11 +1258,22 @@ function viewCreate(edit){
     if(p && !zensusOfPlan.has(p)){ zensusOfPlan.set(p, ''); zensusCompare(p.routes.flatMap(r => r.boxes || [])).then(c => { const h = zensusHtml(c); if(!h) return; zensusOfPlan.set(p, esc(t('zLabel')) + ': ' + h); const el = $('#cZen'); if(el && d.plan === p) el.innerHTML = zensusOfPlan.get(p); }).catch(() => {}); }
     // what the plan covers: wanted flyers, estimated mailboxes, what is missing; confirmed places; suggestions to add
     const covShown = () => p && !d.mainAll && !(p.eco && !d.exact) && !p.cores;
+    // Uniform selected-place rows for both the start and route steps (fixed right-hand remove control).
+    // Counts shown are estimated; changing one fixes its target and replans the remaining flyers.
+    const chosenRows = (noRoute = () => false) => d.side.length ? `<div class="chosen-places">${d.side.map((x,k) => {
+      const assigned = p && p.split && p.split.find(z => z.name === x.name);
+      const count = Math.round(x.auto && assigned ? assigned.flyers : (+x.flyers || 0));
+      const dist = t('covKm', { km:String(x.km != null ? x.km : '–').replace('.', ',') });
+      return `<div class="chosen-row${noRoute(x) ? ' no-route' : ''}" title="${esc(x.name)}">
+        <div class="chosen-info"><b>${esc(x.name)}</b><span>${esc(dist)}${noRoute(x) ? ' ⚠' : ''}</span></div>
+        <label class="chosen-qty"><span>${esc(t('flyersCount'))}</span><input type="number" min="30" max="100000" step="10" data-scnt="${k}" value="${Math.max(30, count)}" aria-label="${esc(t('flyersCount') + ': ' + x.name)}"></label>
+        <button class="chosen-remove" type="button" data-srm="${k}" title="${esc(t('del') + ': ' + x.name)}" aria-label="${esc(t('del') + ': ' + x.name)}">✕</button>
+      </div>`; }).join('')}</div>` : '';
     const covBlock = () => {
       if(!covShown()) return '';
       const c = coverage(d.flyers, p.mailboxes), apart = placesApart(d.start, d.side);
       const noRoute = x => !!(p.zones && p.split && p.split.some(sp => sp.name === x.name) && !(p.routes || []).some(r => r.place === x.name));   // the planner skips a place with < 150 flyers ("not worth the trip"): no route, no change of the numbers
-      const sideList = d.side.length ? `<div class="cov-side"><b>${esc(t('covChosen'))}</b>${d.side.map((x, k) => `<span class="chip${noRoute(x) ? ' no-route' : ''}"${noRoute(x) ? ` title="${esc(t('sideNoRoute'))}"` : ''}>${esc(x.name)} · ${esc(t('covKm', { km:String(x.km != null ? x.km : '–').replace('.', ',') }))}${noRoute(x) ? ' ⚠' : ''}<button class="link" data-srm="${k}" aria-label="${esc(t('del') + ': ' + x.name)}">✕</button></span>`).join('')}${d.side.some(noRoute) ? `<p class="small warn cov-noroute">${esc(t('sideNoRoute'))}</p>` : ''}</div>` : '';
+      const sideList = d.side.length ? `<div class="cov-side"><b>${esc(t('covChosen'))}</b>${chosenRows(noRoute)}${d.side.some(noRoute) ? `<p class="small warn cov-noroute">${esc(t('sideNoRoute'))}</p>` : ''}</div>` : '';
       const sg = d.sugT && d.sugT.key === sugKey() ? d.sugT : null;
       const f1 = v => String(v).replace('.', ',');
       const sugRow = (x, i) => `<div class="sug-row" data-srow="${i}"><div class="grow"><button class="sug-name" data-sfocus="${i}" title="${esc(t('sugFocusT'))}" aria-label="${esc(t('sugFocusT') + ': ' + (x.name || t('sugUnnamed', { km:f1(x.km) })))}"><b>${esc(x.name || t('sugUnnamed', { km:f1(x.km) }))}</b></button>
@@ -1296,9 +1307,9 @@ function viewCreate(edit){
       <label class="f">${esc(t('mainCity'))}</label><div class="note" style="margin:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="grow">${esc(mainCity() || t('mainCityAuto'))}</span>${d.start && mainCity() ? `<button class="all-btn${d.mainAll ? ' on' : ''}" id="cMainAll" title="${esc(t('mainAllHint'))}">${d.mainAll ? '✓ ' + esc(t('mainAllOn', { mb:p && d.mainAll ? fmtN(Math.round(p.mailboxes)) : '…' })) : esc(t('mainAllBtn'))}</button>` : ''}</div>
       <label class="f">${esc(t('sideTowns'))}</label><p class="small muted" style="margin:-2px 0 6px">${esc(t('sideTownsHint'))}</p>
       ${d.must.length ? `<div class="chips" style="margin:0 0 8px">${d.must.map((a, k) => `<span class="chip">${d.split ? `<span>${esc(mName(a, k))}${spText(a.name)}</span>${allBtn(a.name, a.all, 'm', k)}` : `<button class="link" data-med="${k}">${esc(mName(a, k))} · ${esc(a.n ? fmtN(a.n) : t('mustAllShort'))}</button>`}${a.p && a.p.length > 2 ? `<button class="link" data-mpt="${k}" aria-label="${esc(t('shapeEdit'))}" title="${esc(t('shapeEdit'))}">✎</button>` : ''}<button class="link" data-mrm="${k}" aria-label="${esc(t('del'))}">✕</button></span>`).join('')}</div>` : ''}
-      ${d.side.length ? `<div class="chips" style="margin:0 0 8px">${d.side.map((x, k) => `<span class="chip">${esc(x.name)} · ${esc(d.split ? t('sideOwnKm', { km:String(x.km).replace('.', ',') }) : t('sideOwn', { km:String(x.km).replace('.', ','), n:fmtN(x.flyers) }))}${d.split ? spText(x.name) + allBtn(x.name, x.all, 's', k) : ''}${d.cores && d.travel === 'car' ? `<button class="all-btn${d.first === x.name ? ' on' : ''}" data-first="${k}" title="${esc(t('firstHint'))}">${d.first === x.name ? '✓ ' + esc(t('firstOn')) : '▶ ' + esc(t('firstBtn'))}</button>` : ''}<button class="link" data-srm="${k}" aria-label="${esc(t('del'))}">✕</button></span>`).join('')}</div><p class="small muted" style="margin:-4px 0 8px">${esc(t('sideOwnHint'))}</p>` : ''}
+      ${d.side.length ? `<label class="f">${esc(t('covChosen'))}</label>${chosenRows()}<p class="small muted">${esc(t('sideOwnHint'))}</p>` : ''}
       ${fixedMb > d.flyers ? `<div class="warnbox" style="margin:0 0 8px">${esc(t('allMbTooMany', { mb:fmtN(fixedMb), f:fmtN(d.flyers) }))} <button class="link" id="cAllFit">${esc(t('allMbRaise', { f:fmtN(Math.ceil(fixedMb / 50) * 50) }))}</button></div>` : ''}
-      ${d.start ? sfTown('cTown1').html + `<button class="btn ghost small" id="cMustAdd" style="margin-top:8px">${ICONS.edit}${esc(t('drawOwn'))}</button>` : `<p class="small muted">${esc(t('sideNeedStart'))}</p>`}
+      ${d.start ? sfTown('cTown1').html + `<button class="btn ghost small" id="cMustAdd" style="margin-top:8px">${ICONS.edit}${esc(t('sideDrawBtn'))}</button>` : `<p class="small muted">${esc(t('sideNeedStart'))}</p>`}
       <label class="f" for="cQuota">${esc(t('quota'))}</label><input class="in" type="number" id="cQuota" min="200" step="100" value="${esc(saved.quota)}"><p class="small muted" style="margin:4px 0 0">${esc(t('quotaHours'))}</p><label class="check" style="margin-top:6px"><input type="checkbox" id="cNoQ" ${(saved.noQuota != null ? saved.noQuota : d.travel === 'car') ? 'checked' : ''}><span>${esc(t('noQuota'))}</span></label>
       ${d.travel === 'zones' ? `<label class="check" style="margin-top:10px"><input type="checkbox" id="cCores" ${d.cores ? 'checked' : ''}><span><b>${esc(t('coresLbl'))}</b><br><span class="small muted">${esc(t('coresZonesHint'))}</span></span></label><p class="small muted" style="margin:8px 0 0">${esc(t('zonesHint'))}</p>` : ''}
       ${d.travel === 'zones' ? '' : `<label class="f">${esc(t('travelLbl'))}</label><div class="opt3" role="radiogroup">${[['car', '🚗'], ['bus', '🚌'], ['bike', '🚲']].map(([v, ic]) => `<button role="radio" aria-checked="${d.travel === v}" class="${d.travel === v ? 'on' : ''}" data-travel="${v}"><i>${d.travel === v ? '✓' : ''}</i><span>${ic} ${esc(t('travel_' + v))}</span></button>`).join('')}</div><p class="small muted" style="margin:4px 0 0">${esc(t('travelHint'))}</p>`}
@@ -1316,11 +1327,12 @@ function viewCreate(edit){
       ${p && oneDay ? `<div class="hint">${esc(t('oneDayHint', { h:fmtHm(totMin) }))} <button class="link" id="cOneDay">${esc(t('applySug'))}</button></div>` : p && d.sug && d.sug !== d.n ? `<div class="hint">${esc(t('sugWorkers', { n:d.sug, d:d.days }))} <button class="link" id="cSug">${esc(t('applySug'))}</button></div>` : ''}
       ${p && p.cores && p.cores.length ? `<div class="hint">${esc(t('coresSum', { n:p.cores.length, mb:fmtN(p.mailboxes) }))}<br><span class="small">${esc(p.cores.map(c => c.name + ' ' + fmtN(c.mb)).join(' · '))}</span></div>` : ''}
       ${planBlock()}
-      <div class="must-box zone-box"><div class="sec-row" style="margin:0"><b>${esc(t('zoneTitle'))}</b><span class="small muted">${esc(d.zone ? t('zoneOwn') + (p && p.zone_mb != null ? ' · ' + t('mustMb', { mb:fmtN(p.zone_mb) }) : '') : t('zoneAuto'))}</span></div>
-        <p class="small muted" style="margin:2px 0 8px">${esc(t(d.zone ? 'zoneHintOwn' : 'zoneHint'))}</p>
-        ${d.zone && !d.mainAll && p && p.zone_mb != null && p.zone_mb > (d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0)) * 1.05 ? `<div class="note" style="margin:0 0 8px">${esc(t('zoneBig', { mb:fmtN(p.zone_mb), f:fmtN((d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0))) }))} <button class="link" id="cZoneAll">${esc(t('zoneAll', { f:fmtN(p.zone_mb) }))}</button></div>` : ''}
-        ${d.zone && !d.mainAll && p && p.zone_mb != null && p.zone_mb < (d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0)) * 0.95 ? `<div class="warnbox" style="margin:0 0 8px">${esc(t('zoneSmall', { mb:fmtN(p.zone_mb), f:fmtN((d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0))) }))} <button class="link" id="cZoneFit">${esc(t('reduceTo', { f:fmtN(Math.max(100, Math.floor(p.zone_mb / 50) * 50)) }))}</button></div>` : ''}
-        <div class="tool-row"><button class="btn ghost small" id="cZoneDraw" ${d.start ? '' : 'disabled'}>${ICONS.edit}${esc(t(d.zone ? 'zoneRedraw' : 'zoneDraw'))}</button>${d.zone ? `<button class="btn ghost small" id="cZoneAuto">${esc(t('zoneBackAuto'))}</button>` : ''}</div></div>
+      <div class="must-box zone-box">
+        <b>${esc(t('sideDrawTitle'))}</b>
+        <p class="small muted" style="margin:4px 0 8px">${esc(t('sideDrawDescription'))}</p>
+        <button class="btn ghost small" id="cSideDraw" ${d.start ? '' : 'disabled'}>${ICONS.edit}${esc(t('sideDrawBtn'))}</button>
+        ${d.zone ? `<button class="btn ghost small" id="cZoneAuto">${esc(t('zoneBackAuto'))}</button>` : ''}
+      </div>
       ${p && p.split ? `<div class="hint">${esc(t(p.near ? (p.team ? 'nearTeamHint' : 'nearHint') : 'splitHint', { list:p.split.map(x => (x.name || mainCity() || t('mainCity')) + ' ' + fmtN(x.flyers)).join(' · ') }))}</div>` : ''}
       ${p && !d.split && p.must_mb > d.flyers ? `<div class="warnbox" style="margin:8px 0">${esc(t('mustTooMany', { mb:fmtN(p.must_mb), f:fmtN(d.flyers) }))}</div>` : ''}
       ${p ? (p.zones ? personRows(false) : p.routes.map((r, i) => routeRow(r, i, false)).join('')) : ''}`;
@@ -1403,11 +1415,18 @@ function viewCreate(edit){
     document.querySelectorAll('[data-r]').forEach(s => s.onchange = () => { d.assign[+s.dataset.r] = s.value || null; });
     document.querySelectorAll('[data-wsel]').forEach(s => s.onchange = () => { const w = +s.dataset.wsel; p.routes.forEach((r, i) => { if(r.w === w) d.assign[i] = s.value || null; }); });
     if($('#cSave')) $('#cSave').onclick = save;
-    if($('#cMustAdd')) $('#cMustAdd').onclick = () => drawMode(true, 'must');
+    if($('#cMustAdd')) $('#cMustAdd').onclick = () => drawMode(true, 'side');
+    if($('#cSideDraw')) $('#cSideDraw').onclick = () => { saved = keep(); drawMode(true, 'side'); };
     Object.values(towns).forEach(x => x.bind());
     if(addrSf){ addrSf.bind(); const ai = $('#cAddr'); if(ai && d.place) ai.value = d.place.name + (d.place.sub ? ', ' + d.place.sub : ''); }
     bindStudio();
-    document.querySelectorAll('[data-srm]').forEach(b => b.onclick = () => { saved = keep(); d.side.splice(+b.dataset.srm, 1); recompute(); });
+    document.querySelectorAll('[data-srm]').forEach(b => b.onclick = () => { saved = keep(); d.side.splice(+b.dataset.srm, 1); sugHl.clear(); d.autoPicked = true; recompute(); });
+    document.querySelectorAll('[data-scnt]').forEach(input => input.onchange = () => {
+      const x = d.side[+input.dataset.scnt], n = Math.round(+input.value);
+      if(!x || !Number.isFinite(n) || n < 30 || n > 100000){ renderSheet(); return; }
+      saved = keep(); x.flyers = n; x.auto = false; x.all = false;
+      d.autoPicked = true; d.dirty = true; recompute();
+    });
     // the admin adds a suggested place: only now it becomes part of the order (a second click does nothing). Older searches are dropped.
     document.querySelectorAll('[data-sadd]').forEach(b => b.onclick = () => {
       const sg = d.sugT && d.sugT.key === sugKey() ? d.sugT.list[+b.dataset.sadd] : null; if(!sg || b.disabled || d.adding) return; b.disabled = true; d.adding = true;
@@ -1428,7 +1447,6 @@ function viewCreate(edit){
     // "all mailboxes" of a place: it gets exactly what it has, the other places share the rest
     document.querySelectorAll('[data-all]').forEach(b => b.onclick = () => { saved = keep(); const [kind, k] = b.dataset.all.split(':'), x = (kind === 's' ? d.side : d.must)[+k]; if(!x) return; x.all = !x.all; d.dirty = true; drawMust(); recompute(); });
     if($('#cAllFit')) $('#cAllFit').onclick = () => { saved = keep(); d.flyers = Math.ceil(p.split.filter(x => x.all).reduce((a, x) => a + (x.cap || 0), 0) / 50) * 50; d.nAuto = true; recompute(); };
-    if($('#cZoneDraw')) $('#cZoneDraw').onclick = () => { saved = keep(); drawMode(true, 'zone', d.zone); };
     if($('#cZoneAuto')) $('#cZoneAuto').onclick = () => { saved = keep(); d.zone = null; d.mainAll = false; drawMust(); recompute(); };
     if($('#cZoneAll')) $('#cZoneAll').onclick = () => { saved = keep(); d.flyers += p.zone_mb - (d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0)); d.nAuto = true; recompute(); };
     if($('#cZoneFit')) $('#cZoneFit').onclick = () => { saved = keep(); d.flyers = Math.max(100, d.flyers - (d.flyers - (d.side || []).reduce((a, x) => a + (+x.flyers || 0), 0)) + Math.floor(p.zone_mb / 50) * 50); d.nAuto = true; recompute(); };
