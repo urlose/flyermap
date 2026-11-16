@@ -1433,6 +1433,8 @@ function viewCreate(edit){
       const sg = d.sugT && d.sugT.key === sugKey() ? d.sugT.list[+b.dataset.sadd] : null; if(!sg || b.disabled || d.adding) return; b.disabled = true; d.adding = true;
       saved = keep(); const before = d.side.length;
       d.side = addSuggestion(d.side, sg, sg.name || t('sugUnnamed', { km:String(sg.km).replace('.', ',') }));
+      // Explicitly added towns must receive real flyer allocation even after coverage is full.
+      const added = d.side[d.side.length - 1]; if(added && added.cid === sg.id){ added.auto = false; added.flyers = Math.max(30, Math.min(d.flyers, Math.round(sg.households))); }
       d.adding = false; if(d.side.length === before) return;
       sugHl.clear(); sugFlow.invalidate(); d.sugT = null; d.dirty = true; recompute();
     });
