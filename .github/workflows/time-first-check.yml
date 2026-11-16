@@ -55,9 +55,6 @@ jobs:
           bash test/sql/atomic_task_plans.sh
       - run: npm run build
         working-directory: worker
-      # The legacy budget suite fails in this isolated runner; its fixture/baseline
-      # discrepancy is still being investigated. Keep the diagnostic result visible
-      # while strictly gating the new-mode unit, integration, export and build checks.
       - name: Install Chromium E2E
         working-directory: test/ui
         run: |
@@ -74,6 +71,5 @@ jobs:
           name: time-first-e2e
           path: test/ui/out-timefirst
           retention-days: 4
-      - name: Legacy budget diagnostics (known baseline failures)
+      - name: Legacy budget regression (offline fixtures)
         run: node test/budget.mjs
-        continue-on-error: true
