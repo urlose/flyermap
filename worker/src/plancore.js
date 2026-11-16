@@ -41,7 +41,8 @@ export function createPlanService(cache){
   };
   const SPEED = { bike:250, car:667 };   // metres per minute: bike ≈ 15 km/h, car ≈ 40 km/h (villages, parking) – plus 5 min per trip
   const EMPTY_CELL = 0.3;   // zones: share of our mailbox estimate kept in 100 m cells without census households
-  const SEQ_MIN = 150;   // nearest-first sharing: a town is not visited for fewer flyers than this
+  const SEQ_MIN = 150;   // nearest-first sharing: a town is not visited for fewer flyers than this (places the APP picks; unchanged)
+  const CHOSEN_MIN = 30;   // a place the admin confirmed himself (side.cid, from the census suggestions): planned from this many flyers on
   const TRAVEL_MIN = 30, EMPTY_GAP = 1000, EMPTY_GAP_BIKE = 600;   // with a bike, a shorter empty road is already worth riding   // bus ride counted for packing; > 1 km without mailboxes on the way → bus
   const segLen = (a, b) => { const k = Math.cos(a[0] * Math.PI / 180); return 111320 * Math.hypot(b[0] - a[0], (b[1] - a[1]) * k); };
   // items: { min, far? } → n bins. Far places first, each to a DIFFERENT worker while there are workers left (fair: everybody
@@ -458,18 +459,20 @@ export function createPlanService(cache){
           if(mask && !mask.lives(mid[0], mid[1])) return { ...e, mb:e.mb * EMPTY_CELL, boxes:(e.boxes || []).map(b => [b[0], b[1], (b[2] || 1) * EMPTY_CELL]) };
           return e; }) };
       };
-      const maskOf = async (lat, lng) => { try{ return await placeMask(lat, lng); }catch{ return null; } };
+      // pick: radius (m) in which a place's cell must lie. Default 1500 (a start in an industrial estate still gets its town); a confirmed census
+      // place passes 150 – its point is a cell of its own built-up area, so a bigger neighbour within 1.5 km can no longer replace it
+      const maskOf = async (lat, lng, pick) => { try{ return await placeMask(lat, lng, pick ? { pick } : {}); }catch{ return null; } };
       const load0 = k => routes.filter(x => x.w === k).reduce((a, x) => a + x.minutes, 0);
       const people = m => Math.max(1, Math.min(n, Math.floor(m / 150)));   // a small place: fewer people (the ones with least work so far)
       const whom = k => Array.from({ length:n }, (_, i) => i).sort((a, b) => load0(a) - load0(b)).slice(0, k).sort((a, b) => a - b);
       const seen = new Set(), keyE = (g, i) => { const e = g.edges[i]; return ((g.pts[e.a][0] + g.pts[e.b][0]) / 2).toFixed(5) + ',' + ((g.pts[e.a][1] + g.pts[e.b][1]) / 2).toFixed(5); };
-      const planPlace = async (g0, st, name, ask, zn, isMain, mask) => {
+      const planPlace = async (g0, st, name, ask, zn, isMain, mask, minWant = SEQ_MIN) => {
         stage('calculating');
         const g = { ...g0, edges:g0.edges.map((e, i) => e.mb && seen.has(keyE(g0, i)) ? { ...e, mb:0, boxes:[] } : e) };   // streets of a place planned before
         const cap = Math.round(Planner.selectWithMust(g, st, 1e9, isMain ? must : [], zn).mailboxes || 0);
         const want = Math.min(cap, ask != null ? ask : rest, rest);
         split.push({ name, flyers:want, cap, hh:mask ? mask.households : null });
-        if(want < SEQ_MIN && !(isMain && want > 0)) return;
+        if(want < minWant && !(isMain && want > 0)) return;
         const p = Planner.planFlyers(g, st, want, people(want), { days:maxDays, hoursPerDay:hours, must:isMain ? must : undefined, zone:zn });
         const rs = ((p && p.routes) || []).filter(r => r.path && r.path.length > 1).map(({ part, ...r }) => r);
         if(!rs.length){ failed.push(name); return; }
@@ -493,13 +496,14 @@ export function createPlanService(cache){
       if(stale()) return { skipped:true };
       // the other places in the order the admin has them (suggested ones: densest first)
       for(const c of side || []){
-        if(rest < SEQ_MIN){ split.push({ name:c.name, flyers:0, cap:null }); continue; }
+        const chosen = !!c.cid;   // confirmed by the admin from a census suggestion
+        if(rest < (chosen ? CHOSEN_MIN : SEQ_MIN)){ split.push({ name:c.name, flyers:0, cap:null }); continue; }
         const zn = c.zone && c.zone.length > 2 ? c.zone : null;
         stage('loadingSide'); c.loadFor = Math.max(600, Math.round(Math.min(rest, (c.flyers || rest)) * 1.3)); const g0 = await sideGraph({ ...c, flyers:c.loadFor }, stage, stale); if(stale()) return { skipped:true };
-        const mask = zn ? null : await maskOf(c.lat, c.lng);
+        const mask = zn ? null : await maskOf(c.lat, c.lng, chosen ? 150 : 0);
         const g = view(g0, mask); let st = Planner.denseEntry(g, start, zn, Math.min(300, Math.max(100, rest * 0.2))) || [c.lat, c.lng];
         if(mask){ const at = s0 => Planner.selectWithMust(g, s0, 1e9, [], zn).mailboxes || 0, c0 = Planner.denseEntry(g, mask.centre, zn, 150) || mask.centre; if(at(c0) > at(st) * 1.3) st = c0; }
-        await planPlace(g, st, c.name, c.all ? 1e9 : (c.auto ? null : c.flyers || null), zn, false, mask);
+        await planPlace(g, st, c.name, c.all ? 1e9 : (c.auto ? null : c.flyers || null), zn, false, mask, chosen ? CHOSEN_MIN : SEQ_MIN);
         if(stale()) return { skipped:true };
       }
       routes.forEach((r, i) => { r.idx = i; });

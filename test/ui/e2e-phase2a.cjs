@@ -43,8 +43,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       const inb = (la, lo) => la >= S && la <= N && lo >= W && lo <= E; let wid = 1;
       for(const [k, h] of H){
         const [cx, cy] = k.split(',').map(Number), [la, lo] = ll(cx, cy); if(!inb(la, lo)) continue;
-        for(const [dx, dy] of [[1, 0], [0, 1]]){   // road to the next populated cell east / north (up to 12 cells = 1.2 km of open ground)
-          for(let s = 1; s <= 12; s++){ const nx = cx + dx * s, ny = cy + dy * s; if(!H.has(nx + ',' + ny)) continue;
+        for(const [dx, dy] of [[1, 0], [0, 1]]){   // road to the next populated cell east / north (up to 30 cells = 3 km of open ground, so villages are connected like on real roads)
+          for(let s = 1; s <= 30; s++){ const nx = cx + dx * s, ny = cy + dy * s; if(!H.has(nx + ',' + ny)) continue;
             const ns = []; for(let q = 0; q <= s; q++) ns.push(addNode(cx + dx * q, cy + dy * q));
             els.push({ type:'way', id:id(cx, cy) * 2 + dx, nodes:ns, tags:{ highway:'residential', name:'Str ' + cx + '-' + cy } }); break; } }
         const n = Math.min(40, h); for(let i = 0; i < n; i++) els.push({ type:'way', id:900000000000 + wid++, center:{ lat:la + (rnd(cx, cy, i) - .5) * 80 / 111320, lon:lo + (rnd(cy, cx, i + 9) - .5) * 80 / (111320 * Math.cos(la * Math.PI / 180)) }, tags:{ building:'house' } });
@@ -146,11 +146,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await pg.click('[data-srm]'); await sleep(1500); await until(() => document.querySelectorAll('.cov-side .chip').length === 0, 30000); await stable(5000, 240000); await until(() => document.querySelectorAll('.sug-row').length > 0, 120000); await sleep(3000);
     const R9 = await rows(), c9 = await chips(); await shot('9-removed');
     ok(`${name} 9: removing the village empties the confirmed list and the village is suggested again; no "bis <village>" rows left`, c9.length === 0 && R9.some(r => r.name === target.name) && !R9.some(r => r.to && r.to !== 'Startadresse'), `rows=${R9.length}, back=${R9.some(r => r.name === target.name)}`);
-    // 7b — a small village (< 150 households): the planner gives it no route of its own; the UI must say so
-    { const sm = R9.find(r => r.small && r.km >= 2 && !r.adj), b4 = await have(); ok(`${name} 7b: small villages carry the warning "legt keine eigene Route an" in the list`, await pg.evaluate(() => [...document.querySelectorAll('.sug-row')].some(r => r.classList.contains('sug-row') && /keine eigene Route/.test(r.innerText) && /kleiner Ort/.test(r.innerText))));
+    // 7b — a small village (< 150 households), confirmed by the admin: the planner now gives it a route of its own
+    { const sm = R9.find(r => r.small && r.km >= 2 && !r.adj), b4 = await have();
       await pg.click(`[data-sadd="${sm.i}"]`); await until(() => document.querySelectorAll('.cov-side .chip').length > 0, 30000); await stable(5000, 240000); const a4 = await have();
-      const flagged = await pg.evaluate(() => ({ chip:!!document.querySelector('.cov-side .chip.no-route'), note:!!document.querySelector('.cov-noroute') })); await shot('7b-small');
-      ok(`${name} 7b: adding a small village (${sm.hh} hh): numbers unchanged (${b4.have}→${a4.have}) AND the order says why (dashed chip ⚠ + note)`, a4.have === b4.have ? (flagged.chip && flagged.note) : true, JSON.stringify(flagged));
+      const flagged = await pg.evaluate(() => !!document.querySelector('.cov-side .chip.no-route')); await shot('7b-small'); if(process.env.DEBUG7B) console.log('   plan7b', JSON.stringify(await pg.evaluate(() => (window.__plans || []).slice(-1))));
+      ok(`${name} 7b: adding a small village (${sm.hh} hh) gets it a route: mailboxes ${b4.have} -> ${a4.have}, no "no route" notice`, parseInt(a4.have.replace(/\D/g, '')) > parseInt(b4.have.replace(/\D/g, '')) && !flagged, 'flagged=' + flagged);
       await pg.click('[data-srm]'); await until(() => document.querySelectorAll('.cov-side .chip').length === 0, 30000); await stable(4000, 240000); }
     // 10 — nothing saved
     const stored = await pg.evaluate(() => Object.keys(localStorage));
@@ -161,8 +161,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await ctx.close();
   }
   try{
-    await town('Weidenberg', 49.942445, 11.729003);
-    await town('Eisfeld', 50.4215, 10.9105);
+    if(!process.env.ONLY || process.env.ONLY === 'Weidenberg') await town('Weidenberg', 49.942445, 11.729003);
+    if(!process.env.ONLY || process.env.ONLY === 'Eisfeld') await town('Eisfeld', 50.4215, 10.9105);
   }catch(e){ ok('test run completed without an exception', false, e.stack.split('\n').slice(0, 3).join(' ')); }
   fs.writeFileSync(path.join(OUT, 'e2e-results.json'), JSON.stringify(results, null, 1));
   console.log('\n' + (fail ? fail + ' FAILED' : 'all ok'));
