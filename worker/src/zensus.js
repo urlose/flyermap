@@ -123,3 +123,55 @@ export async function placeMask(lat, lng, { maxR = 7000, pick = 1500, fetcher } 
   const lived = new Set(best.cells);
   return { households:best.h, cells:best.cells.length, centre, lives:(la, lo) => { const [a, b] = cellOf(la, lo); return lived.has(a + ',' + b); }, inside:(la, lo) => { const [a, b] = cellOf(la, lo); return own.has(a + ',' + b); } };
 }
+
+// ---- Phase 2A (16.11.2026): small villages and districts ------------------------------------------------------------------
+// townsAround() above glues 1 km blocks (>= 25 households each) and drops groups under 150 households: neighbouring villages
+// become one "place" and scattered hamlets vanish. censusPlaces() instead joins the 100 m cells themselves, exactly like
+// placeMask(): cells at most MAX_GAP cells (= 200 m) apart belong to one built-up area; open fields between two villages split
+// them. Every area is a candidate from MIN_HH households up (a census cell with < 3 households is hidden for privacy, so very
+// small hamlets are partly missing in the data – that is a limit of the source, not of this code).
+export const MIN_HH = 50;     // smallest place that is worth a suggestion (30 gave ~25 % more places, mostly 3–5 farms; see test/places-real.mjs)
+export const MAX_GAP = 2;     // cells (= 200 m) of open ground that still count as the same built-up area
+
+// H: Map "cx,cy" -> households (as censusSource.households returns it). Pure. Returns ALL areas (also the small ones; the caller
+// filters by `minH`): { id, x, y, households, n, cells (flat [cx, cy, …]) } with x, y = the centre in metres (EPSG:3035).
+// id = the smallest cell of the area ("cx,cy"): the same area found from two search centres has the same id.
+export function clusterCells(H, gap = MAX_GAP){
+  const seen = new Set(), out = [];
+  for(const k0 of H.keys()){
+    if(seen.has(k0)) continue; seen.add(k0);
+    const st = [k0], cells = []; let h = 0;
+    while(st.length){ const k = st.pop(), [ix, iy] = k.split(',').map(Number); cells.push(ix, iy); h += H.get(k);
+      for(let dx = -gap; dx <= gap; dx++) for(let dy = -gap; dy <= gap; dy++){ const q = (ix + dx) + ',' + (iy + dy); if(H.has(q) && !seen.has(q)){ seen.add(q); st.push(q); } } }
+    out.push({ ...describe(H, cells, h), households:h, n:cells.length / 2, cells:Int32Array.from(cells) });
+  }
+  return out;
+}
+// the place's point: a small area -> household-weighted middle; a big one -> the middle of its densest ~1.4 km (the town centre,
+// not a hole between two districts). Always snapped to a populated cell.
+function describe(H, cells, h){
+  const n = cells.length / 2; let px, py;
+  const wmid = (pred) => { let sx = 0, sy = 0, sh = 0; for(let i = 0; i < cells.length; i += 2){ if(pred && !pred(cells[i], cells[i + 1])) continue; const v = H.get(cells[i] + ',' + cells[i + 1]); sx += cells[i] * v; sy += cells[i + 1] * v; sh += v; } return [sx / sh, sy / sh]; };
+  if(n <= 60) [px, py] = wmid();
+  else {
+    let best = -1, bx = 0, by = 0;
+    for(let i = 0; i < cells.length; i += 2){ let s = 0; for(let dx = -2; dx <= 2; dx++) for(let dy = -2; dy <= 2; dy++) s += H.get((cells[i] + dx) + ',' + (cells[i + 1] + dy)) || 0; if(s > best){ best = s; bx = cells[i]; by = cells[i + 1]; } }
+    [px, py] = wmid((cx, cy) => Math.hypot(cx - bx, cy - by) <= 7);
+  }
+  let d = Infinity, sx = 0, sy = 0, id = null;
+  for(let i = 0; i < cells.length; i += 2){ const dd = Math.hypot(cells[i] - px, cells[i + 1] - py); if(dd < d){ d = dd; sx = cells[i]; sy = cells[i + 1]; }
+    if(id == null || cells[i] < id[0] || (cells[i] === id[0] && cells[i + 1] < id[1])) id = [cells[i], cells[i + 1]]; }
+  return { id:id[0] + ',' + id[1], x:sx * 100 + 50, y:sy * 100 + 50 };
+}
+
+// All places (>= minH households) in the census within maxR metres of a point. One window, loaded once; the squares are cached
+// (square()), so a second call with another radius costs no download. Result: [{ id, lat, lng, households, n, dense, dist, x, y, cells }].
+// dist = metres from the given point, dense = households per populated 100 m cell × 100 (households per km² of built-up ground).
+export async function censusPlaces(lat, lng, maxR, { minH = MIN_HH, gap = MAX_GAP, fetcher } = {}){
+  const src = censusSource(fetcher), [x, y] = laea(lat, lng), r = Math.ceil(maxR / 100), cx = Math.floor(x / 100), cy = Math.floor(y / 100);
+  const H = await src.households(cx - r, cy - r, cx + r, cy + r);
+  return clusterCells(H, gap).filter(c => c.households >= minH).map(c => {
+    const [la, lo] = unlaea(c.x, c.y);
+    return { id:c.id, lat:+la.toFixed(6), lng:+lo.toFixed(6), households:c.households, n:c.n, dense:Math.round(c.households / c.n * 100), dist:Math.round(Math.hypot(c.x - x, c.y - y)), x:c.x, y:c.y, cells:c.cells };
+  }).sort((a, b) => a.dist - b.dist);
+}

@@ -23,7 +23,8 @@ const TOWNS = [
   ok('A suggestions exist, Bayreuth among them', sug.some(s => s.lat === 49.9456), sug.map(s => s.km).join(','));
   ok('A suggestions do not change the order (side stays empty)', side.length === 0);
   ok('A not only by density: a nearer place ranks before Bayreuth', sug.findIndex(s => s.lat === 49.9456) > 0, sug.map(s => s.households).join(','));
-  ok('A hamlet (< 300 households) and far place (> 30 km) not suggested', !sug.some(s => s.households < 300) && !sug.some(s => s.km > 30));
+  // Phase 2A: small villages are no longer thrown out (was: hamlets < 300 households never suggested); the distance limit stays
+  ok('A small place is suggested (Phase 2A); a far place (> 15 km) is not', sug.some(s => s.households === 40) && !sug.some(s => s.km > 15));
 }
 // B — the admin adds a suggestion: confirmed place, flyers recomputed by the caller
 { const sug = rankSuggestions(TOWNS, { start:START, side:[], missing:8472 }), b = sug.find(s => s.lat === 49.9456);
