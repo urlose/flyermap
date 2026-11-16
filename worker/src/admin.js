@@ -22,7 +22,7 @@ import { viewLiveMap, dueInfo, LM } from './livemap.js';
 import { listView, viewSwitch, bindViewSwitch, tableHtml, bindTable } from './tables.js';
 import { STATS } from './stats.js';
 import { createHighlighter, keyOf, nameShown as nameShownOf } from './sugmap.js';
-import { coverage, addSuggestion, placesApart, suggestionFlow, sugKey as sugKeyOf, MAX_KM, PAGE } from './expand.js';
+import { coverage, addSuggestion, chooseNearbyPlaces, placesApart, suggestionFlow, sugKey as sugKeyOf, MAX_KM, PAGE } from './expand.js';
 // a save button while the database works: disabled, "Speichert …"; back to normal afterwards (also after an error)
 async function busy(btn, fn){ if(!btn || btn.disabled) return; const html = btn.innerHTML; btn.disabled = true; btn.setAttribute('aria-busy', 'true'); btn.textContent = t('saving');
   try{ await fn(); }catch(e){ toast(errText(e)); } finally{ if(btn.isConnected){ btn.disabled = false; btn.removeAttribute('aria-busy'); btn.innerHTML = html; } } }
@@ -928,6 +928,7 @@ function viewCreate(edit){
   if(tkE && Array.isArray(tkE.work_area) && tkE.work_area.length > 2) d.zone = tkE.work_area;
   if(tkE) Object.assign(d, { flyers:tkE.flyers || 5000, hours:+tkE.work_hours || 7, quota:tkE.quota_m30 || 2000, days:tkE.work_days || 2, n:Math.max(1, edit.plans.length), nAuto:false });
   d.side = tkE && Array.isArray(tkE.side_towns) ? tkE.side_towns : [];
+  d.autoPicked = !!tkE; // one automatic initial proposal; never override subsequent admin edits
   d.split = tkE ? (tkE.split || null) : 'even';
   d.exact = true; d.mainAll = false; d.cores = !!(tkE && tkE.cores); d.together = !!(tkE && tkE.together); d.first = (tkE && tkE.first_place) || null;   // the number of flyers the admin typed is what gets planned; the economical amount is only offered ("Effizienter planen"); whole main town on request   // new orders: total flyers shared evenly over all places; old orders keep their numbers
   d.travel = tkE ? (tkE.travel || (tkE.bike ? 'bike' : 'bus')) : 'zones'; d.bike = d.travel !== 'bus';   // new orders: every place its own zone, no rides between places   // how the places of the order are reached   // far places of this order (own start, own day, reached by bus / train)
@@ -1014,7 +1015,7 @@ function viewCreate(edit){
     drawMode(false);
     if(kind === 'zone'){ d.zone = pts; drawMust(); return recompute(); }
     if(d.drawEdit != null && d.must[d.drawEdit]){ d.must[d.drawEdit] = { ...d.must[d.drawEdit], p:pts }; d.drawEdit = null; drawMust(); d.dirty = true; return recompute(); }
-    const nm = t('areaN', { n:d.must.length + d.side.length + 1 });
+    const nm = t('sideDrawnName', { n:d.must.length + d.side.length + 1 });
     return addArea({ name:nm, drawn:true }, pts, true);
   };
   const SIDE_R = 3000;   // a place further away than this gets its own order with its own start point (planning stays fast, no walking between towns)
@@ -1140,13 +1141,29 @@ function viewCreate(edit){
   const nameKey = x => x.id || x.lat + ',' + x.lng;
   const sugFlow = suggestionFlow({
     load:(st, km) => censusPlaces(st.lat, st.lng, (km + 3) * 1000, { minH:MIN_HH }),   // +3 km margin: places at the edge are whole
-    onUpdate:st => { if(!alive()) return; d.sugT = st; if(st.list) st.list.forEach(x => { if(!x.name && d.sugNames.has(nameKey(x))) x.name = d.sugNames.get(nameKey(x)); }); renderSheet(); nameShown(st); },
+    onUpdate:st => {
+      if(!alive()) return;
+      d.sugT = st;
+      if(st.list) st.list.forEach(x => { if(!x.name && d.sugNames.has(nameKey(x))) x.name = d.sugNames.get(nameKey(x)); });
+      if(!st.loading && !st.failed && !d.autoPicked && !tkE && !d.side.length && !d.zone && d.plan){
+        d.autoPicked = true; // do not put removed places back; the admin controls the selection from here on
+        const picks = chooseNearbyPlaces(st.list, coverage(d.flyers, d.plan.mailboxes).missing, { maxPlaces:8, maxKm:d.maxKm });
+        for(const x of picks) d.side = addSuggestion(d.side, x, x.name || t('sugUnnamed', { km:String(x.km).replace('.', ',') }));
+        if(picks.length){ sugFlow.invalidate(); d.sugT = null; d.dirty = true; Promise.resolve().then(() => { if(alive()) recompute(); }); }
+      }
+      renderSheet(); nameShown(st);
+    },
   });
   // "Lehen (Weidenberg)": a district of a town is named as such; a city (≥ 5.000 households) as the city. One request at a time
   // (the free geocoder refuses many at once); the list is usable before the names arrive; stops when the list is replaced.
   d.sugTries = d.sugTries || new Map();   // lookups per place (max 2 in total, see sugmap.js nameShown): an empty geocoder answer cannot loop
   const geoName = async sg => { const r = await reversePlace(sg.lat, sg.lng), ps = r ? r.split(', ') : []; return ps.length > 1 && sg.households < 5000 ? ps[0] + ' (' + ps[1] + ')' : ps[ps.length - 1] || null; };
-  const nameShown = st => nameShownOf(st, { resolve:geoName, cache:d.sugNames, tries:d.sugTries, isCurrent:s => alive() && d.sugT === s, onName:() => renderSheet() });
+  const nameShown = st => nameShownOf(st, { resolve:geoName, cache:d.sugNames, tries:d.sugTries, isCurrent:s => alive() && d.sugT === s, onName:() => {
+    let changed = false;
+    d.side.forEach(x => { const name = x.cid && d.sugNames.get(x.cid); if(x.auto && name && x.name !== name){ x.name = name; changed = true; } });
+    renderSheet();
+    if(changed){ clearTimeout(d.nameTimer); d.nameTimer = setTimeout(() => { if(alive()) recompute(); }, 1000); }
+  } });
   function findSuggestions(){ if(!d.start || !d.plan) return; sugFlow.refresh(sugCtx()).catch(() => {}); }
   function draw(){
     zoneLayer.clearLayers(); planLayer.clearLayers();
@@ -1161,14 +1178,14 @@ function viewCreate(edit){
   // values typed in any step survive re-renders and step changes (only fields that are on screen are read)
   function saveDraft(){
     if(tkE || !d.start) return;
-    try{ localStorage.setItem(DRAFT_KEY, JSON.stringify({ at:Date.now(), saved, d:{ start:d.start, place:d.place, must:d.must, side:d.side, flyers:d.flyers, n:d.n, hours:d.hours, days:d.days, bike:d.bike, travel:d.travel, split:d.split, zone:d.zone, mainCity:d.mainCity, exact:d.exact, mainAll:d.mainAll, cores:d.cores, together:d.together, first:d.first } })); }catch{}
+    try{ localStorage.setItem(DRAFT_KEY, JSON.stringify({ at:Date.now(), saved, d:{ start:d.start, place:d.place, must:d.must, side:d.side, flyers:d.flyers, n:d.n, hours:d.hours, days:d.days, bike:d.bike, travel:d.travel, split:d.split, zone:d.zone, autoPicked:d.autoPicked, mainCity:d.mainCity, exact:d.exact, mainAll:d.mainAll, cores:d.cores, together:d.together, first:d.first } })); }catch{}
   }
   async function restoreDraft(){
     const x = readDraft(); if(!x || !x.d || !x.d.start) return;
     const name = (x.saved && x.saved.title) || (x.d.place && x.d.place.name) || '—';
     if(!await confirmBox(t('draftQ'), t('draftText', { name }), t('draftYes'))){ clearDraft(); return; }
     if(!alive()) return;
-    Object.assign(d, x.d); if(!x.d.travel) d.travel = x.d.bike ? 'bike' : 'bus'; d.bike = d.travel !== 'bus'; saved = { ...saved, ...(x.saved || {}) };
+    Object.assign(d, x.d); d.autoPicked = true; if(!x.d.travel) d.travel = x.d.bike ? 'bike' : 'bus'; d.bike = d.travel !== 'bus'; saved = { ...saved, ...(x.saved || {}) };
     const qi = $('#cSearch'); if(qi && d.place) qi.value = d.place.name + (d.place.sub ? ', ' + d.place.sub : '');
     drawMust(); setStart(d.start.lat, d.start.lng);
   }
