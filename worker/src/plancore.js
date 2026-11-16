@@ -662,7 +662,7 @@ export function createPlanService(cache){
       const plan={routes,mailboxes,zone:[],zones:true,merged:true,per_worker,
         split:planned.map(p=>({name:p.name,flyers:Math.round(p.mailboxes),cap:null})),
         side_failed:[],side_dropped:[],side_info:[],must_mb:0,must_info:[],
-        budget:{strategy:'near-first',hours:budget.hours,tolerance:tol,
+        budget:{strategy:'near-first',hours:budget.hours,tolerance:tol,car:!!budget.car,
           minutes:Math.round(B),effective_minutes:Math.round(B),
           target_minutes:Math.round(B),max_minutes:Math.round(B*(1+tol)),
           actual_minutes:Math.round(actual),work_minutes:Math.round(walking),
