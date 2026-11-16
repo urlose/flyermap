@@ -759,7 +759,15 @@
     });
     let used = 0, dropped = 0;
     for(const b of buildings){
-      const x = b.lng * kx, y = b.lat * ky, cand = grid.get(key(x, y));
+      const x = b.lng * kx, y = b.lat * ky;
+      // The index covers one 80 m cell around each sampled road point.
+      // Census points may snap up to 110 m: query adjacent cells too, then
+      // retain the exact per-building distance check below.
+      const extra = Math.max(0, Math.ceil(((b.snap || maxSnap) + 15) / cell) - 1), cand = [];
+      for(let dx = -extra; dx <= extra; dx++) for(let dy = -extra; dy <= extra; dy++){
+        const entries = grid.get(key(x + dx * cell, y + dy * cell));
+        if(entries) cand.push(...entries);
+      }
       let best = -1, bd = Infinity;
       if(cand) for(const [ei, ax, ay, bx, by] of cand){
         const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;

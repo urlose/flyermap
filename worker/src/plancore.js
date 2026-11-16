@@ -2,7 +2,7 @@
 // Runs inside a Web Worker (planworker.js) so the screen never freezes; the same code is the fallback on the main thread.
 // The street graph stays here between calls: changing flyers / workers / hours only re-plans, it does not reload the map.
 import Planner from '../../admin/planner.js';
-import { outwardStreetOrder } from './nearfirst.js';
+import { outwardStreetOrder, streetGeometryKey } from './nearfirst.js';
 import { censusSource, placeMask } from './zensus.js';
 const census = censusSource();   // Zensus 2022 lifts the mailbox estimate where our own rules count too few (old town centres)
 
@@ -576,10 +576,7 @@ export function createPlanService(cache){
       stage('calculating');
       // Adjacent map tiles and towns overlap. Suppress streets already handed
       // out, based on physical edge midpoints rather than tentative selections.
-      const seen=new Set(), edgeKey=(g,i)=>{
-        const e=g.edges[i],a=g.pts[e.a],b=g.pts[e.b];
-        return ((a[0]+b[0])/2).toFixed(5)+','+((a[1]+b[1])/2).toFixed(5);
-      };
+      const seen=new Set(), edgeKey=streetGeometryKey;
       const planned=[];
       // Reserve manually selected areas FIRST. The main place then grows around
       // the start without re-using their streets, so additions shrink its radius.
@@ -611,7 +608,7 @@ export function createPlanService(cache){
         // are excluded from later towns.
         (best?.p.routes||[]).forEach(r=>(r.part||[]).forEach(i=>seen.add(edgeKey(g,i))));
         planned.push({...pl,routes,mailboxes:routes.reduce((a,r)=>a+(r.mailboxes||0),0),
-          minutes:routes.reduce((a,r)=>a+(r.minutes||0),0),exhausted:best?.count===eligible.length});
+          minutes:routes.reduce((a,r)=>a+(r.minutes||0),0),exhausted:eligible.length===0||best?.count===eligible.length});
       }
       // A time target must not be arbitrarily capped by the first loaded map
       // square. If we exhausted every nearby street but still have plenty of
@@ -633,11 +630,11 @@ export function createPlanService(cache){
       planned.sort((a,b)=>Number(b.isMain)-Number(a.isMain));
       const bins=Array.from({length:N},(_,w)=>({w,items:[],minutes:0}));
       planned[0].routes.forEach((r,i)=>{
-        const b=bins[i%N];b.items.push({r,name:planned[0].name,part:i+1});b.minutes+=r.minutes||0;
+        const b=bins[i%N];b.items.push({r,name:planned[0].name,part:i+1,isMain:true});b.minutes+=r.minutes||0;
       });
       for(const pl of planned.slice(1))for(const [i,r] of pl.routes.entries()){
         const b=bins.reduce((a,c)=>c.minutes<a.minutes?c:a,bins[0]);
-        b.items.push({r,name:pl.name,part:i+1});b.minutes+=(r.minutes||0)+(b.items.length>1?travelMin:0);
+        b.items.push({r,name:pl.name,part:i+1,isMain:false});b.minutes+=(r.minutes||0)+(travelMin||0);
       }
       const routes=[],jumpsAll=[];
       for(const bin of bins){
@@ -645,9 +642,9 @@ export function createPlanService(cache){
         const its=bin.items;
         // If a worker starts in a side town without a main-town section, the
         // journey from the order's starting point must also appear and count.
-        const origin=its[0].name!==planned[0].name ? start : undefined;
+        const origin=!its[0].isMain ? start : undefined;
         const hasOrigin=!!origin && segLen(start,its[0].r.path[0])>30;
-        const line=buildLine(its.map(x=>({r:x.r,name:x.name})),H,
+        const line=buildLine(its.map(x=>({r:x.r,name:x.name||'·'})),H,
           () => travelMin||0,undefined,origin,false);
         let off=hasOrigin?1:0;
         const parts=its.map(x=>{
@@ -662,7 +659,6 @@ export function createPlanService(cache){
             km,min:travelMin,known:true,far:km>3,same:false});
         }
         for(let i=1;i<its.length;i++){
-          if(its[i-1].name===its[i].name)continue;
           const a=its[i-1].r.path.at(-1),b=its[i].r.path[0],km=Math.round(segLen(a,b)/100)/10;
           jumps.push({w:bin.w,from:its[i-1].name,to:its[i].name,idx:parts[i].i0,
             km,min:travelMin,known:travelMin!=null,far:km>3,same:false});
