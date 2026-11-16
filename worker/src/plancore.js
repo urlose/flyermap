@@ -545,7 +545,7 @@ export function createPlanService(cache){
         stage('loadingArea'); await load(start,12000,undefined,[],stage,stale,'loadingArea');
       }
       if(stale())return {skipped:true};
-      const Bwalk=B-reservedTravel, shareSide=side.length ? Math.min(.4,Bwalk*.4) : 0;
+      const Bwalk=B-reservedTravel, shareSide=side.length ? .4 : 0;
       // A manually selected place receives a slice of the time, not a fixed
       // number of flyers. The main start area gets the remainder (at least 60%).
       const sideWork=Bwalk*shareSide, mainWork=Bwalk-sideWork;
@@ -614,15 +614,24 @@ export function createPlanService(cache){
       for(const bin of bins){
         if(!bin.items.length)continue;
         const its=bin.items;
+        // If a worker starts in a side town without a main-town section, the
+        // journey from the order's starting point must also appear and count.
+        const origin=its[0].name!==planned[0].name ? start : undefined;
+        const hasOrigin=!!origin && segLen(start,its[0].r.path[0])>30;
         const line=buildLine(its.map(x=>({r:x.r,name:x.name})),H,
-          () => travelMin||0,undefined,undefined,false);
-        let off=0;
+          () => travelMin||0,undefined,origin,false);
+        let off=hasOrigin?1:0;
         const parts=its.map(x=>{
           const part={place:x.name,part:x.part,i0:off,i1:off+x.r.path.length-1,
             mailboxes:Math.round(x.r.mailboxes||0),minutes:Math.round(x.r.minutes||0)};
           off+=x.r.path.length;return part;
         });
         const jumps=[];
+        if(hasOrigin){
+          const km=Math.round(segLen(start,its[0].r.path[0])/100)/10;
+          jumps.push({w:bin.w,from:planned[0].name||'Start',to:its[0].name,idx:1,
+            km,min:travelMin,known:true,far:km>3,same:false});
+        }
         for(let i=1;i<its.length;i++){
           if(its[i-1].name===its[i].name)continue;
           const a=its[i-1].r.path.at(-1),b=its[i].r.path[0],km=Math.round(segLen(a,b)/100)/10;
