@@ -3,6 +3,7 @@
 const http = require('http'), fs = require('fs'), path = require('path');
 const { chromium } = require('playwright');
 const F = require('./fixtures.cjs');
+const REAL = !!process.env.REAL_NET;   // CI: real map tiles, census and geocoder; only the database is faked
 const ROOT = path.join(__dirname, '../../worker/www'), OUT = process.argv[2] || '.', STEPS = JSON.parse(process.argv[3] || '[]');
 const types = { '.js':'text/javascript', '.html':'text/html', '.css':'text/css', '.png':'image/png', '.woff2':'font/woff2', '.json':'application/json', '.svg':'image/svg+xml', '.mp4':'video/mp4' };
 const srv = http.createServer((q, s) => { let p = decodeURIComponent(q.url.split('?')[0]); if(p.endsWith('/')) p += 'index.html'; const f = path.join(ROOT, p);
@@ -24,6 +25,7 @@ const filt = (rows, sp) => { let r = rows; for(const [k, v] of sp){ if(['select'
     pg.on('pageerror', e => logs.push('ERR ' + e.message)); pg.on('console', m => { if(m.type() === 'error' && !/Failed to load resource/.test(m.text())) logs.push('console ' + m.text()); });
     await pg.route(/supabase\.co/, async route => {
       const u = new URL(route.request().url()), acc = route.request().headers()['accept'] || '';
+      if(REAL && u.pathname.startsWith('/storage/')) return route.continue();
       if(u.pathname.startsWith('/auth/')) return route.fulfill({ json:{ id:'u1', email:'admin@example.com', aud:'authenticated', role:'authenticated' } });
       if(u.pathname.startsWith('/functions/')) return route.fulfill({ json:{ ok:true } });
       const m = u.pathname.match(/^\/rest\/v1\/(rpc\/)?([a-z_0-9]+)/); if(!m) return route.fulfill({ json:null });
@@ -36,13 +38,17 @@ const filt = (rows, sp) => { let r = rows; for(const [k, v] of sp){ if(['select'
       return route.fulfill({ status:200, headers:{ 'content-range':`0-${Math.max(0, rows.length - 1)}/${rows.length}`, 'content-type':'application/json' }, body:JSON.stringify(single ? (rows[0] || null) : rows) });
     });
     const TILE = fs.readFileSync(path.join(__dirname, 'tile.png'));
-    await pg.route(/tile\.openstreetmap|openstreetmap\.de/, r => r.fulfill({ status:200, contentType:'image/png', body:TILE }));
-    await pg.route(/photon|valhalla|overpass|github\.io/, r => r.fulfill({ status:200, json:{ features:[] } }));
+    if(!REAL) await pg.route(/tile\.openstreetmap|openstreetmap\.de/, r => r.fulfill({ status:200, contentType:'image/png', body:TILE }));
+    if(!REAL) await pg.route(/photon|valhalla|overpass|github\.io/, r => r.fulfill({ status:200, json:{ features:[] } }));
     const sess = { access_token:'x', token_type:'bearer', expires_in:3600, expires_at:Math.floor(Date.now() / 1000) + 3600, refresh_token:'y', user:{ id:'u1', email:'admin@example.com', aud:'authenticated', role:'authenticated' } };
     await pg.addInitScript(([s, th, lg]) => { localStorage.setItem('fm-admin-auth', JSON.stringify(s)); localStorage.setItem('CapacitorStorage.role', '"admin"'); localStorage.setItem('CapacitorStorage.theme', JSON.stringify(th)); localStorage.setItem('CapacitorStorage.lang', JSON.stringify(lg)); localStorage.setItem('CapacitorStorage.introSeen', 'true'); }, [sess, st.theme || 'dark', st.lang || 'de']);
     await pg.goto('http://localhost:4517/' + (st.hash || ''), { waitUntil:'load' });
     await pg.waitForTimeout(st.boot || 1800);
-    for(const js of [].concat(st.js || [])){ try{ await pg.evaluate(js); }catch(e){ logs.push('JS ' + e.message); } await pg.waitForTimeout(st.wait || 700); }
+    for(const js of [].concat(st.js || [])){
+      // "wait:<css>" waits until an element shows up (planning takes a while with real maps)
+      if(typeof js === 'string' && js.startsWith('wait:')){ try{ await pg.waitForSelector(js.slice(5), { timeout:180000 }); }catch(e){ logs.push('WAIT ' + js); } continue; }
+      if(typeof js === 'string' && js.startsWith('shot:')){ await pg.screenshot({ path:path.join(OUT, js.slice(5) + '.png') }); continue; }
+      try{ const r = await pg.evaluate(js); if(r != null) console.log('  =>', typeof r === 'string' ? r : JSON.stringify(r)); }catch(e){ logs.push('JS ' + e.message); } await pg.waitForTimeout(st.wait || 700); }
     if(st.click) for(const c of [].concat(st.click)){ try{ await pg.click(c, { timeout:3000 }); }catch(e){ logs.push('CLICK ' + c + ' ' + e.message.split('\n')[0]); } await pg.waitForTimeout(st.wait || 700); }
     await pg.screenshot({ path:path.join(OUT, (st.shot || 'shot') + '.png'), fullPage:!!st.full });
     if(st.dump) console.log(await pg.evaluate(st.dump));

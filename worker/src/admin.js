@@ -21,6 +21,7 @@ import { loadStudios, studioBtnHtml, openStudioPicker } from './studios.js';
 import { viewLiveMap, dueInfo, LM } from './livemap.js';
 import { listView, viewSwitch, bindViewSwitch, tableHtml, bindTable } from './tables.js';
 import { STATS } from './stats.js';
+import { coverage, rankSuggestions, addSuggestion, startKey, placesApart } from './expand.js';
 const DONE_TX = () => ({ de:{ chip:'Erledigte', tag:'erledigt' }, ru:{ chip:'Выполненные', tag:'выполнен' }, en:{ chip:'Finished', tag:'finished' } }[['ru', 'en'].includes(I.lang) ? I.lang : 'de']);
 
 const GREEN_C = () => css('--color-map-route-completed') || '#16A34A';   // done parts: the theme's "completed" colour
@@ -1048,7 +1049,7 @@ function viewCreate(edit){
   const startArr = () => [d.start.lat, d.start.lng];
   const errText2 = e => /abort|overpass|fetch/i.test((e && e.message) || '') ? t('mapSlow') : ((e && e.message) || 'net');
   async function setStart(lat, lng, fromClick){
-    const tok = ++d.token; d.start = { lat, lng }; d.keepView = !!fromClick;   // a tap on the map keeps the zoom the admin chose
+    const tok = ++d.token; d.start = { lat, lng }; d.sugT = null; d.keepView = !!fromClick;   // a tap on the map keeps the zoom the admin chose
     d.pick = false; updPick();
     d.loaded = false; d.plan = null; d.err = null; d.assign = {};
     zoneLayer.clearLayers(); planLayer.clearLayers();
@@ -1085,34 +1086,26 @@ function viewCreate(edit){
     if(d.plan.cores) d.days = Math.max(1, ...d.plan.routes.map(r => (r.days || []).length));   // village cores: the days follow from the tour
     if(tkE && !d.prefilled){ d.prefilled = true; edit.plans.forEach(p => { if(p.worker_id && p.idx < d.plan.routes.length) d.assign[p.idx] = p.worker_id; }); }
     draw(); renderSheet();
-    if(d.exact && !tkE && (d.autoRound || 0) < 3 && d.side.every(x => x.auto) && !d.zone && !(d.must || []).length && d.plan.mailboxes < d.flyers * 0.95) autoTowns(tok);
+    // Phase 1 (16.11.2026): never add places by itself – too few mailboxes only leads to suggestions the admin may add
+    if(!tkE && !d.zone && !d.mainAll && !(d.plan.eco && !d.exact) && !coverage(d.flyers, d.plan.mailboxes).ok) findSuggestions();
   }
-  // "exactly N" and the area around the start is too small: the nearest towns (found in the census) are added as ordinary
-  // Nebenstädte – nearest first, walked like the main town (every street, a compact area), the flyers that are still missing
-  // go to the nearest town first. Way of travel and "only dense cores" stay as the admin set them: the tour by car through
-  // the dense cores is never switched on by the app. Up to 3 rounds; places can be removed afterwards.
-  async function autoTowns(tok){
-    const tour = d.cores && d.travel === 'car';   // tour chosen by hand: the dense cores hold only part of a place → more places
-    d.autoRound = (d.autoRound || 0) + 1;
-    const need = d.flyers - d.plan.mailboxes; let towns = [];
-    try{ towns = await townsAround(d.start.lat, d.start.lng, 2500, 30000); }catch{ return; }   // from 2.5 km: a town next door may not belong to the start's street network (overlaps are counted once)
-    if(tok !== d.token || !alive()) return;
-    const had = c => d.side.some(x => hav(x.lat, x.lng, c.lat, c.lng) < 1500);
-    const big = towns.filter(c => c.households >= 300); if(!tour && big.length) towns = big;   // no trip to a hamlet while there is a real place
-    // zones: the places where many households are close together come first (many flyers per hour, short walks), a nearer one
-    // is preferred when it is about as dense; a place far out has to be clearly denser to be worth the drive
-    if(d.travel === 'zones') towns = towns.filter(c => c.dist <= 25000).sort((a, b) => b.dense / (1 + b.dist / 12000) - a.dense / (1 + a.dist / 12000));
-    const pick = []; let got = 0;
-    for(const c of towns){ if(got >= need * (tour ? 1.25 : 1.1) || pick.length >= (tour ? 8 : 4)) break; if(had(c)) continue; pick.push(c); got += c.households * (tour ? 0.6 : 0.9); }
-    if(!pick.length){ if(d.autoRound === 1) toast(t('autoTourNone')); return; }
-    const names = [];   // one after another: the free geocoder refuses many requests at once
-    for(const c of pick){ let nm = null; for(let k = 0; k < 2 && !nm; k++){ try{ const r = await reversePlace(c.lat, c.lng); nm = r ? r.split(', ').pop() : null; }catch{ await new Promise(r => setTimeout(r, 800)); } } names.push(nm); if(tok !== d.token || !alive()) return; }
-    const used = new Set(d.side.map(x => x.name)), added = [];
-    pick.forEach((c, i) => { let nm = names[i] || t('areaN', { n:d.side.length + 1 }); for(let j = 2; used.has(nm); j++) nm = (names[i] || t('areaN', { n:d.side.length + 1 })) + ' (' + j + ')'; used.add(nm); added.push(nm);
-      d.side.push({ name:nm, lat:c.lat, lng:c.lng, p:null, flyers:c.households, km:Math.round(c.dist / 100) / 10, auto:true }); });
-    d.dirty = true;
-    toast(t(tour ? 'autoTourOn' : 'autoTownsOn', { n:pick.length, names:added.join(', ') }));
-    recompute();
+  // Suggestions for more places (census, townsAround) – shown in step "Route", added only by the admin ("Ort hinzufügen").
+  // Kept apart from d.side (the confirmed places) in d.sugT; results for another start or another set of places are dropped.
+  const sugKey = () => startKey(d.start) + '|' + d.side.map(x => x.name).join(',');
+  // names: "Lehen (Weidenberg)" for a district of a town; a city (≥ 5.000 households) is named as the city
+  async function findSuggestions(){
+    const key = sugKey(); if(d.sugT && d.sugT.key === key) return;
+    d.sugT = { key, loading:true, list:[] }; renderSheet();
+    const missing = coverage(d.flyers, d.plan.mailboxes).missing, st = { ...d.start };
+    let towns = [];
+    try{ towns = await townsAround(st.lat, st.lng, 2500, 30000); }catch{ towns = null; }
+    if(!alive() || !d.sugT || d.sugT.key !== key) return;   // start or places changed meanwhile: these results belong to another order
+    if(!towns){ d.sugT = { key, list:[], failed:true }; renderSheet(); return; }
+    const list = rankSuggestions(towns, { start:st, side:d.side, missing });
+    d.sugT = { key, list, loading:false }; renderSheet();
+    // names one after another (the free geocoder refuses many requests at once); the list is usable before they arrive
+    for(const sg of list){ let nm = null; for(let k = 0; k < 2 && !nm; k++){ try{ const r = await reversePlace(sg.lat, sg.lng); const ps = r ? r.split(', ') : []; nm = ps.length > 1 && sg.households < 5000 ? ps[0] + ' (' + ps[1] + ')' : ps[ps.length - 1] || null; }catch{ await new Promise(r => setTimeout(r, 800)); } }   // "Lehen (Weidenberg)": a district of the main town is named as such
+      if(!alive() || !d.sugT || d.sugT.key !== key) return; sg.name = nm; renderSheet(); }
   }
   function draw(){
     zoneLayer.clearLayers(); planLayer.clearLayers();
@@ -1189,6 +1182,24 @@ function viewCreate(edit){
         ${dayLines(r.days, rc(r, i))}
         ${withSelect ? `<select class="in small" data-r="${i}" aria-label="${esc(t('planRoute', { n:i + 1 }))}">${workerOptions(d.start.lat, d.start.lng, d.assign[i])}</select>` : ''}</div></div>`;
     if(p && !zensusOfPlan.has(p)){ zensusOfPlan.set(p, ''); zensusCompare(p.routes.flatMap(r => r.boxes || [])).then(c => { const h = zensusHtml(c); if(!h) return; zensusOfPlan.set(p, esc(t('zLabel')) + ': ' + h); const el = $('#cZen'); if(el && d.plan === p) el.innerHTML = zensusOfPlan.get(p); }).catch(() => {}); }
+    // what the plan covers: wanted flyers, estimated mailboxes, what is missing; confirmed places; suggestions to add
+    const covShown = () => p && !d.mainAll && !(p.eco && !d.exact) && !p.cores;
+    const covBlock = () => {
+      if(!covShown()) return '';
+      const c = coverage(d.flyers, p.mailboxes), apart = placesApart(d.start, d.side);
+      const sideList = d.side.length ? `<div class="cov-side"><b>${esc(t('covChosen'))}</b>${d.side.map((x, k) => `<span class="chip">${esc(x.name)} · ${esc(t('covKm', { km:String(x.km != null ? x.km : '–').replace('.', ',') }))}<button class="link" data-srm="${k}" aria-label="${esc(t('del') + ': ' + x.name)}">✕</button></span>`).join('')}</div>` : '';
+      const sg = d.sugT && d.sugT.key === sugKey() ? d.sugT : null;
+      const sugList = !c.ok && !tkE && !d.zone ? `<div class="cov-sug"><h4>${ICONS.pin}${esc(t('sugTitle'))}</h4>
+          ${!sg || sg.loading ? `<p class="small muted">${esc(t('sugLoading'))}</p>` : sg.failed ? `<p class="small err">${esc(t('sugFailed'))}</p>` : !sg.list.length ? `<p class="small muted">${esc(t('sugNone'))}</p>`
+          : sg.list.map((x, i) => `<div class="sug-row"><div class="grow"><b>${esc(x.name || t('sugUnnamed', { km:String(x.km).replace('.', ',') }))}</b><span class="small muted">${esc(t('sugLine', { hh:fmtN(x.households), km:String(x.km).replace('.', ',') }))}</span><span class="small sug-not">${esc(t('sugNotYet'))}</span></div><button class="btn ghost small" data-sadd="${i}">${ICONS.plus}<span>${esc(t('sugAdd'))}</span></button></div>`).join('')}
+          <p class="small muted" style="margin:6px 0 0">${esc(t('sugHint'))}</p></div>` : '';
+      return `<div class="cov ${c.ok ? 'ok' : 'short'}" role="status">
+        <div class="cov-h">${c.ok ? ICONS.circleCheck : ICONS.alert}<b>${esc(c.ok ? t('covOk') : t('covShort'))}</b></div>
+        <div class="cov-n"><div><span>${esc(t('covWant'))}</span><b>${fmtN(c.want)}</b></div><div><span>${esc(t('covHave'))}</span><b>≈ ${fmtN(c.have)}</b></div><div><span>${esc(t('covMissing'))}</span><b>${c.missing ? '≈ ' + fmtN(c.missing) : '0'}</b></div></div>
+        ${c.ok ? '' : `<p class="small">${esc(t(d.zone ? 'covShortZone' : 'covShortText', { have:fmtN(c.have) }))}</p>`}
+        <p class="small muted" style="margin:4px 0 0">${esc(t('covEstimate'))}</p>
+        ${sideList}${apart ? `<p class="small cov-apart">${ICONS.alert}${esc(t('covApart'))}</p>` : ''}${sugList}</div>`;
+    };
     const planBlock = () => p ? `${(p.side_failed || []).length ? `<div class="warnbox">${esc(t('sideFailed', { list:p.side_failed.join(', ') }))}</div>` : ''}${(p.bus || []).length ? `<div class="hint">${esc(t('busHint', { list:p.bus.map(x => x.name + ' (' + fmtDist(x.gap) + ')').join(', ') }))}</div>` : ''}${(p.side_info || []).length ? `<p class="small muted" style="margin:8px 0 0">${esc(p.side_info.map(x => x.name + ' → ' + t('planRoute', { n:x.worker + 1 })).join(' · '))}</p>` : ''}<p class="small muted" style="margin:10px 0 0">${esc(t('planSum', { mb:fmtN(p.mailboxes), km, h:fmtHm(p.routes.reduce((s, r) => s + r.minutes, 0)) }))}</p><p class="small muted" id="cZen" style="margin:4px 0 0">${zensusOfPlan.get(p) || ''}</p>
         ${p.mailboxes < d.flyers * 0.95 && !d.mainAll && !(p.eco && !d.exact) ? `<p class="small err">${esc(t(p.cores ? 'coresSmall' : 'areaSmall', { mb:fmtN(p.mailboxes) }))}</p>` : ''}
         <div class="${cap.ok ? 'hint' : 'warnbox'}">${cap.ok ? esc(needDays === 1 ? t('fitsOne') : t('fitsOk', { d:needDays })) : `${esc(t('tooBig', { h:cap.slowest.toFixed(1).replace('.', ','), lim:cap.limit, d:d.days }))} <button class="link" id="cReduce">${esc(t('reduceTo', { f:fmtN(cap.suggestedFlyers) }))}</button> ${esc(t('moreWorkers'))}`}</div>`
@@ -1219,6 +1230,7 @@ function viewCreate(edit){
       ${p && d.mainAll ? `<div class="hint">${esc(t('mainAllNote', { city:mainCity(), mb:fmtN(Math.round(p.mailboxes)) }))}</div>`
         : p && p.eco && !d.exact ? `<div class="hint">${esc(t('ecoNote', { used:fmtN(Math.round(p.mailboxes)), asked:fmtN(d.flyers) }))} <button class="link" id="cExact">${esc(t('exactBtn', { f:fmtN(d.flyers) }))}</button></div>`
         : p && d.exact && !tkE ? `<p class="small muted" style="margin:6px 0 0">${esc(t('exactOn', { f:fmtN(d.flyers) }))} <button class="link" id="cEco">${esc(t('ecoBtn'))}</button></p>` : ''}
+      ${covBlock()}
       ${p && oneDay ? `<div class="hint">${esc(t('oneDayHint', { h:fmtHm(totMin) }))} <button class="link" id="cOneDay">${esc(t('applySug'))}</button></div>` : p && d.sug && d.sug !== d.n ? `<div class="hint">${esc(t('sugWorkers', { n:d.sug, d:d.days }))} <button class="link" id="cSug">${esc(t('applySug'))}</button></div>` : ''}
       ${p && p.cores && p.cores.length ? `<div class="hint">${esc(t('coresSum', { n:p.cores.length, mb:fmtN(p.mailboxes) }))}<br><span class="small">${esc(p.cores.map(c => c.name + ' ' + fmtN(c.mb)).join(' · '))}</span></div>` : ''}
       ${planBlock()}
@@ -1243,6 +1255,7 @@ function viewCreate(edit){
         <div><span>${esc(t('title'))}</span><b>${esc(saved.title || '—')}</b></div>
         <div><span>${esc(t('place'))}</span><b>${esc(d.place ? [d.place.district, d.place.city].filter(Boolean).join(', ') || d.place.name : (tkE ? [tkE.district, tkE.city_name].filter(Boolean).join(', ') : '—'))}</b></div>
         <div><span>${esc(t('flyersCount'))}</span><b>${esc(fmtN(effFlyers))}${p ? ' · ' + esc(t('mbApprox', { n:fmtN(p.mailboxes) })) : ''}</b></div>
+        ${covShown() && !coverage(d.flyers, p.mailboxes).ok ? `<div class="rv-short"><span>${esc(t('covMissing'))}</span><b>${ICONS.alert}≈ ${esc(fmtN(coverage(d.flyers, p.mailboxes).missing))} · ${esc(t('covReviewNote'))}</b></div>` : ''}
         <div><span>${esc(t('workersCount'))}</span><b>${p ? p.routes.length : '—'} · ${esc(t('assignedN', { a:assigned, n:p ? p.routes.length : 0 }))}</b></div>
         <div><span>${esc(t('dist2'))}</span><b>${esc(km)} · ${esc(fmtHm(p ? p.routes.reduce((s, r) => s + r.minutes, 0) : 0))} ${esc(t('h'))}</b></div>
         <div><span>${esc(t('deadline'))}</span><b>${esc(saved.deadline ? fmtDay(saved.deadline) + ' · ' + t('daysN', { n:d.days }) : t('noDate'))} · ${esc(String(d.hours).replace('.', ','))} ${esc(t('h'))}/${esc(t('dayShort'))}</b></div>
@@ -1283,7 +1296,7 @@ function viewCreate(edit){
     document.querySelectorAll('[data-first]').forEach(b => b.onclick = () => { saved = keep(); const x = d.side[+b.dataset.first]; if(!x) return; d.first = d.first === x.name ? null : x.name; recompute(); });
     if($('#cCores')) $('#cCores').onchange = e => { saved = keep(); d.cores = e.target.checked; recompute(); };
     if($('#cTogether')) $('#cTogether').onchange = e => { saved = keep(); d.together = e.target.checked; recompute(); };
-    if($('#cExact')) $('#cExact').onclick = () => { saved = keep(); d.exact = true; d.autoRound = 0; recompute(); };
+    if($('#cExact')) $('#cExact').onclick = () => { saved = keep(); d.exact = true; recompute(); };
     if($('#cEco')) $('#cEco').onclick = () => { saved = keep(); d.exact = false; recompute(); };
     // whole main town: its border becomes the distribution area and every mailbox in it gets a flyer
     if($('#cMainAll')) $('#cMainAll').onclick = async () => {
@@ -1306,6 +1319,14 @@ function viewCreate(edit){
     if(addrSf){ addrSf.bind(); const ai = $('#cAddr'); if(ai && d.place) ai.value = d.place.name + (d.place.sub ? ', ' + d.place.sub : ''); }
     bindStudio();
     document.querySelectorAll('[data-srm]').forEach(b => b.onclick = () => { saved = keep(); d.side.splice(+b.dataset.srm, 1); recompute(); });
+    // the admin adds a suggested place: only now it becomes part of the order (a second click does nothing)
+    document.querySelectorAll('[data-sadd]').forEach(b => b.onclick = () => {
+      const sg = d.sugT && d.sugT.key === sugKey() ? d.sugT.list[+b.dataset.sadd] : null; if(!sg || b.disabled) return; b.disabled = true;
+      saved = keep(); const before = d.side.length;
+      d.side = addSuggestion(d.side, sg, sg.name || t('sugUnnamed', { km:String(sg.km).replace('.', ',') }));
+      if(d.side.length === before) return;
+      d.sugT = null; d.dirty = true; recompute();
+    });
     // "all mailboxes" of a place: it gets exactly what it has, the other places share the rest
     document.querySelectorAll('[data-all]').forEach(b => b.onclick = () => { saved = keep(); const [kind, k] = b.dataset.all.split(':'), x = (kind === 's' ? d.side : d.must)[+k]; if(!x) return; x.all = !x.all; d.dirty = true; drawMust(); recompute(); });
     if($('#cAllFit')) $('#cAllFit').onclick = () => { saved = keep(); d.flyers = Math.ceil(p.split.filter(x => x.all).reduce((a, x) => a + (x.cap || 0), 0) / 50) * 50; d.nAuto = true; recompute(); };
@@ -1324,6 +1345,10 @@ function viewCreate(edit){
     if(d.busy || !d.plan) return;   // a recalculation is running: the plan on screen is not the final one yet
     saved = keep();
     const title = (saved.title || '').trim(); if(!title){ goStep(1); toast(t('needTitle')); return; }
+    // fewer mailboxes than flyers: saving is fine, but only when the admin says so (the ordered number stays as typed)
+    { const c = coverage(d.flyers, d.plan.mailboxes);
+      const pl0 = d.plan, shown = !d.mainAll && !(pl0.eco && !d.exact) && !pl0.cores;
+      if(shown && !c.ok && !await confirmBox(t('covSaveT'), t('covSaveQ', { want:fmtN(c.want), have:fmtN(c.have), miss:fmtN(c.missing) }), t('covSaveYes'))) return; }
     $('#cSave').disabled = true; $('#cSave').classList.add('loading');
     try{
       const pl = d.plan, quota = Math.max(200, Math.round(+saved.quota || NEW_QUOTA)), date = saved.date || null, deadline = saved.deadline || null;

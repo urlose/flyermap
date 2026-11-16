@@ -923,6 +923,25 @@ h2.sec{scroll-margin-top:16px}
 .lm-pop .lm-fdone{width:calc(100% - 20px)!important;margin:8px 10px 2px;justify-content:center;min-height:44px}
 @media (min-width:900px){.lm-bar{overflow:visible}.content:has(.lm-panel:not(.hidden)) .lm-search{flex-basis:300px}}
 @media (max-width:899px){.lm-fbtn{width:100%}.lm-fb-t small{max-width:none}}
+
+/* order wizard, step Route: what the plan covers + suggested places (Phase 1, 16.11.2026) */
+.cov{border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:12px 14px;margin:12px 0;background:var(--color-surface)}
+.cov.short{border-color:color-mix(in srgb,var(--color-warning) 60%,var(--color-border));background:color-mix(in srgb,var(--color-warning) 7%,var(--color-surface))}
+.cov.ok{border-color:color-mix(in srgb,var(--color-success) 50%,var(--color-border))}
+.cov-h{display:flex;align-items:center;gap:8px;font-size:15px}.cov-h svg{width:20px;height:20px;flex:none;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.cov.ok .cov-h svg{stroke:var(--color-success)}.cov.short .cov-h svg{stroke:var(--color-warning)}
+.cov-n{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0 6px}
+.cov-n div{display:flex;flex-direction:column}.cov-n span{font-size:12px;line-height:15px;color:var(--color-text-secondary)}.cov-n b{font-size:18px;line-height:24px;font-variant-numeric:tabular-nums}
+.cov.short .cov-n div:last-child b{color:var(--color-warning)}
+.cov-side{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px}.cov-side b{font-size:13px;width:100%}
+.cov-apart{display:flex;gap:6px;align-items:flex-start;margin:8px 0 0}.cov-apart svg{width:16px;height:16px;flex:none;margin-top:2px;fill:none;stroke:var(--color-warning);stroke-width:2}
+.cov-sug{border-top:1px solid var(--color-border);margin-top:12px;padding-top:10px}
+.cov-sug h4{display:flex;align-items:center;gap:6px;margin:0 0 6px;font-size:14px}.cov-sug h4 svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2}
+.sug-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--color-border)}.sug-row:last-of-type{border-bottom:0}
+.sug-row .grow{display:flex;flex-direction:column;min-width:0}.sug-row .grow b{font-size:14.5px}
+.sug-not{color:var(--color-text-secondary);font-style:italic}
+.sug-row .btn{flex:none;width:auto;margin:0;min-height:40px}
+.rv-short b{color:var(--color-warning);display:inline-flex;gap:6px;align-items:center}.rv-short svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2}
 </style>
 </head>
 <body>
