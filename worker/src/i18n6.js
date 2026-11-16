@@ -1,6 +1,7 @@
 // UI redesign 16.11.2026: map (areas, filters, detail panel), tables for people and orders, deadlines
 import { T } from './i18n.js';
 Object.assign(T.de, {
+  budCar:'Auto für die Anfahrt verfügbar', wzTime:'Auftragsinformationen',
   budNearFirstResult:'In {h} Stunden können voraussichtlich ≈ {mb} Flyer verteilt werden. Die Zahl ergibt sich aus dem Gebiet.',
   budTravelInput:'Fahrzeit je Ortswechsel (Minuten)', budTravelInputHint:'Wird zusätzlich zur Verteilzeit vom Gesamtbudget abgezogen. Bitte realistische Anfahrt eintragen; FlyerMap erfindet keine Fahrtzeit.',
   customerGeoJSON:'Kundengebiet exportieren (GeoJSON)',
@@ -26,6 +27,7 @@ Object.assign(T.de, {
   stPeriod:'Zeitraum: letzte {n} Tage', tSearchPh:'Auftrag oder Ort suchen', stKpiAll:'Kennzahlen: alle Aufträge mit Arbeitstagen seit Beginn · kleine Kurven: letzte {n} Tage', freeN:'{n} frei', lmOrdersG:'Aufträge', lmOpenShort:'Offen', lmLayers:'Ebenen', colDays:'Arbeitstage', colPlaces:'Orte', colLastDay:'Letzter Tag', stPeriodAll:'Alle Aufträge mit Arbeitstagen in den letzten {n} Tagen',
 });
 Object.assign(T.ru, {
+  budCar:'Есть автомобиль для переездов', wzTime:'Информация о заказе',
   budNearFirstResult:'За {h} ч можно ориентировочно раздать ≈ {mb} флаеров. Количество рассчитано по территории.',
   budTravelInput:'Время переезда между городами (мин.)', budTravelInputHint:'Учитывается в общем бюджете помимо раздачи. Укажите реальную оценку, программа не придумывает время поездки.',
   customerGeoJSON:'Экспорт для клиента (GeoJSON)',
@@ -51,6 +53,7 @@ Object.assign(T.ru, {
   stPeriod:'Период: последние {n} дн.', tSearchPh:'Поиск: заказ или место', stKpiAll:'Показатели: все заказы с рабочими днями с самого начала · мини-графики: последние {n} дн.', freeN:'{n} без работника', lmOrdersG:'Заказы', lmOpenShort:'Открытые', lmLayers:'Слои', colDays:'Рабочие дни', colPlaces:'Места', colLastDay:'Последний день', stPeriodAll:'Все заказы с рабочими днями за последние {n} дн.',
 });
 Object.assign(T.en, {
+  budCar:'Car available for town transfers', wzTime:'Order information',
   budNearFirstResult:'An estimated {mb} flyers can be delivered within {h} hours. The count is calculated from the area.',
   budTravelInput:'Travel time per change of town (minutes)', budTravelInputHint:'Deducted from total hours in addition to walking. Enter a realistic estimate; FlyerMap does not invent driving times.',
   customerGeoJSON:'Export customer area (GeoJSON)',
