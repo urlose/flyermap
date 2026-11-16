@@ -1524,8 +1524,7 @@ function viewCreate(edit){
           if(dates.length >= need) Object.assign(r, { status:'accepted', work_dates:dates, accepted_at:o.accepted_at, committed_terms:o.committed_terms });
         });
       }
-      await savePlans(tk, rows, !!old);
-      createdTaskId = null; // routes were saved; later UI errors must not delete a valid order
+      await savePlans(tk, rows, !!old, () => { createdTaskId = null; }); // after route insert succeeds, never delete a real order
       await loadTasks();
       clearDraft(); viewTask(tk.id);
     }catch(e){
@@ -1548,9 +1547,11 @@ function viewCreate(edit){
   else restoreDraft();
 }
 // saves plans, links workers and sends each assigned worker a notification
-async function savePlans(tk, rows, replanned){
-  let ins = [];
-  if(rows.length){ const r = await sb.from('task_plans').insert(rows).select(); if(r.error) throw r.error; ins = r.data || []; }
+async function savePlans(tk, rows, replanned, onPersisted = () => {}){
+  if(!rows.length) throw new Error('Keine Routen zum Speichern vorhanden');
+  const r = await sb.from('task_plans').insert(rows).select(); if(r.error) throw r.error;
+  const ins = r.data || [];
+  onPersisted(); // no rollback once the routes exist, even if links/notifications later fail
   const ws = [...new Set(rows.map(r => r.worker_id).filter(Boolean))];
   if(ws.length) await sb.from('task_workers').upsert(ws.map(w => ({ task_id:tk.id, worker_id:w })), { onConflict:'task_id,worker_id', ignoreDuplicates:true });
   if(replanned){
