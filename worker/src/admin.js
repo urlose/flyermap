@@ -3,7 +3,7 @@ import Planner from '../../admin/planner.js';
 import { t, I } from './i18n.js';
 import { sb, store, $, esc, css, hav, fmtDist, fmtH, fmtHm, fmtN, fmtDay, fmtDT, ago, waLink, telLink, loopPath, deMobile, loc, reversePlace, placeArea, errText } from './core.js';
 import { groupIcon } from './ui.js';
-import { UI, ICONS, shell, setLoc, getLoc, plain, topbar, bindBack, makeMap, dot, labelIcon, fit, drawJumps, modal, confirmBox, toast, searchField, langSwitch, themeSwitch, statusPill, emptyState, avatar, every, personIcon } from './ui.js';
+import { UI, ICONS, shell, setLoc, getLoc, plain, topbar, bindBack, makeMap, dot, labelIcon, fit, drawJumps, modal, confirmBox, toast, searchField, langSwitch, themeSwitch, statusPill, emptyState, avatar, every, personIcon, secNav } from './ui.js';
 import { legalLinks, bindLegal } from './legalview.js';
 import { adminContractHtml, bindAdminContract } from './contractview.js';
 import { loadWorkerStats, okBadge, shortLine, workerStatsHtml, bindWorkerStats, isVerified, viewStats } from './stats.js';
@@ -22,6 +22,9 @@ import { viewLiveMap, dueInfo, LM } from './livemap.js';
 import { listView, viewSwitch, bindViewSwitch, tableHtml, bindTable } from './tables.js';
 import { STATS } from './stats.js';
 import { coverage, rankSuggestions, addSuggestion, startKey, placesApart } from './expand.js';
+// a save button while the database works: disabled, "Speichert …"; back to normal afterwards (also after an error)
+async function busy(btn, fn){ if(!btn || btn.disabled) return; const html = btn.innerHTML; btn.disabled = true; btn.setAttribute('aria-busy', 'true'); btn.textContent = t('saving');
+  try{ await fn(); }catch(e){ toast(errText(e)); } finally{ if(btn.isConnected){ btn.disabled = false; btn.removeAttribute('aria-busy'); btn.innerHTML = html; } } }
 const DONE_TX = () => ({ de:{ chip:'Erledigte', tag:'erledigt' }, ru:{ chip:'Выполненные', tag:'выполнен' }, en:{ chip:'Finished', tag:'finished' } }[['ru', 'en'].includes(I.lang) ? I.lang : 'de']);
 
 const GREEN_C = () => css('--color-map-route-completed') || '#16A34A';   // done parts: the theme's "completed" colour
@@ -33,12 +36,12 @@ document.addEventListener('click', e => {
     <label class="f">${esc(t('pwAgain'))}</label><input class="in" id="pw2" type="password" autocomplete="new-password">
     <button class="btn primary" id="pwOk" style="margin-top:12px">${esc(t('save'))}</button><button class="btn ghost" id="pwX">${esc(t('cancel'))}</button><div class="err" id="pwErr"></div>`);
   mo.querySelector('#pwX').onclick = () => mo.remove();
-  mo.querySelector('#pwOk').onclick = async () => {
+  mo.querySelector('#pwOk').onclick = () => busy(mo.querySelector('#pwOk'), async () => {
     const a = mo.querySelector('#pw1').value, b = mo.querySelector('#pw2').value, er = mo.querySelector('#pwErr');
     if(a.length < 8){ er.textContent = t('pwShort'); return; } if(a !== b){ er.textContent = t('pwDiff'); return; }
     const { error } = await sb.auth.updateUser({ password:a }); if(error){ er.textContent = error.message; return; }
     mo.remove(); toast(t('saved'));
-  };
+  });
 });
 document.addEventListener('click', async e => { if(!e.target.closest || !e.target.closest('#invCp')) return; const v = ($('#invLink') || {}).value; try{ await navigator.clipboard.writeText(v); toast(t('copied')); }catch{ toast(v); } });
 // until SMS login works: the admin creates a worker account and hands over its login link (the worker sets name, phone, cities)
@@ -101,7 +104,18 @@ async function loadTasks(){ const { data, error } = await sb.from('tasks').selec
   // orders where a worker picked dates after the deadline and the admin has not decided yet (badge on the card)
   try{ const { data:lp } = await sb.from('task_plans').select('task_id').eq('status', 'accepted').eq('late_dates', true).eq('late_ok', false); A.lateTasks = new Set((lp || []).map(x => x.task_id)); }catch{ A.lateTasks = new Set(); }
   // routes of every order: how many, how many done, how many without a distributor (order table)
-  try{ const { data:ps } = await sb.from('task_plans').select('task_id,status,worker_id'); A.planStat = new Map(); (ps || []).forEach(p => { const x = A.planStat.get(p.task_id) || { n:0, done:0, free:0 }; x.n++; if(p.status === 'done') x.done++; if(!p.worker_id || p.status === 'declined') x.free++; A.planStat.set(p.task_id, x); }); }catch{ A.planStat = new Map(); } }
+  try{ const { data:ps } = await sb.from('task_plans').select('task_id,status,worker_id,skipped'); A.planStat = new Map(); A.repTasks = new Map(); (ps || []).forEach(p => { const x = A.planStat.get(p.task_id) || { n:0, done:0, free:0 }; x.n++; if(p.status === 'done') x.done++; if(!p.worker_id || p.status === 'declined') x.free++; A.planStat.set(p.task_id, x);
+    // pieces a worker reported as not walkable that the admin has not decided yet
+    const r = (p.skipped || []).filter(y => y && y.rep && !y.ok && !/^Admin/.test(y.by || '')).length; if(r) A.repTasks.set(p.task_id, (A.repTasks.get(p.task_id) || 0) + r); }); }catch{ A.planStat = new Map(); A.repTasks = new Map(); }
+  // number on the "Aufträge" tab: open help requests + dates after the deadline to approve + reported pieces to decide
+  try{ const { count } = await sb.from('help_requests').select('id', { count:'exact', head:true }).eq('status', 'open'); A.helpOpen = count || 0; }catch{ A.helpOpen = 0; }
+  setBadges(); }
+function setBadges(){
+  const late = A.lateTasks ? A.lateTasks.size : 0, rep = A.repTasks ? [...A.repTasks.values()].reduce((a, v) => a + v, 0) : 0, help = A.helpOpen || 0;
+  const tip = [help ? t('bdHelp', { n:help }) : '', late ? t('bdLate', { n:late }) : '', rep ? t('bdRep', { n:rep }) : ''].filter(Boolean).join(' · ');
+  UI.badges = { tasks:{ n:help + late + rep, tip } };
+  const tab = document.querySelector('.tab[data-tab="tasks"]'); if(tab){ const old = tab.querySelector('.tab-badge'); if(old) old.remove(); if(help + late + rep) tab.insertAdjacentHTML('beforeend', `<span class="tab-badge" title="${esc(tip)}" aria-label="${esc(tip)}">${Math.min(99, help + late + rep)}</span>`); }
+}
 // open an order or a person on the map (selected, panel open)
 const showOnMap = sel => { LM.sel = sel; LM.focus = true; if(sel.kind === 'task'){ const tk = A.tasks.find(x => x.id === sel.id); if(tk) LM.f[tk.status === 'done' ? 'done' : 'open'] = true; } adminTab('map'); };
 async function loadLive(){ const { data } = await sb.from('routes').select('id,worker_id,task_id,plan_id,paused_at,last30_m,started_at,break_s').is('ended_at', null); A.live = data || []; }
@@ -359,7 +373,7 @@ async function viewPeople(){
 function viewSettings(){
   shell('settings', `${topbar(t('tabSettings'))}
     <div class="pad">
-      <nav class="set-nav" id="setNav" aria-label="${esc(t('tabSettings'))}"></nav>
+      <nav class="set-nav sec-nav" id="setNav" aria-label="${esc(t('tabSettings'))}"></nav>
       ${A.company && A.company.master ? `<button class="btn ghost small" id="tMaster" style="margin-top:8px;width:auto">${ICONS.users}${esc(t('master'))}</button>` : ''}
       ${A.company && A.company.id ? firmCardHtml(A.company) : ''}
       ${A.company && A.company.id ? adminContractHtml() : ''}
@@ -383,14 +397,12 @@ function viewSettings(){
       ${legalLinks()}
     </div>`);
   // section index on top: one chip per section, a tap scrolls there (no section is hidden)
-  { const nav = $('#setNav'), hs = [...document.querySelectorAll('.content h2.sec')];
-    if(nav && hs.length > 2){ nav.innerHTML = hs.map((h, i) => { h.id = h.id || 'set-' + i; return `<a class="mchip" href="#" data-go="${h.id}">${esc(h.textContent)}</a>`; }).join('');
-      nav.querySelectorAll('[data-go]').forEach(a => a.onclick = e => { e.preventDefault(); document.getElementById(a.dataset.go).scrollIntoView({ behavior:matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block:'start' }); }); } }
+  secNav($('#setNav'));
   store.get('theme').then(v => { A.theme = v; document.querySelectorAll('[data-theme-set]').forEach(b => { const on = b.dataset.themeSet === (v || 'system'); b.classList.toggle('on', on); b.setAttribute('aria-checked', on); }); });
   bindLegal(viewSettings);
   if($('#botCard')){
     sb.rpc('get_bot').then(({ data }) => { if(!data || !$('#botOn')) return; $('#botOn').checked = !!data.enabled; $('#botRules').value = data.rules || ''; });
-    $('#botSave').onclick = async () => { const { error } = await sb.rpc('set_bot', { p_enabled:$('#botOn').checked, p_rules:$('#botRules').value }); if(error){ toast(errText(error)); return; } A.bot = $('#botOn').checked; toast(t('saved')); };
+    $('#botSave').onclick = () => busy($('#botSave'), async () => { const { error } = await sb.rpc('set_bot', { p_enabled:$('#botOn').checked, p_rules:$('#botRules').value }); if(error){ toast(errText(error)); return; } A.bot = $('#botOn').checked; toast(t('saved')); });
   }
   if(A.company && A.company.id) bindAdminContract();
   if(A.company && A.company.id) bindFirmCard(A.company, c => { A.company = { ...c, master:A.company.master }; viewSettings(); });
@@ -415,9 +427,12 @@ async function viewWorker(id, back, focusId){
   shell('people', `${topbar(w.name, true)}
     <div class="pad">
       <div class="person-row big">${avatar(w.name, isLive(w) ? 'live' : '')}<div><b>${esc(w.name)}</b><span>${esc(w.phone)} · ${esc(t('lastActive', { a:ago(w.last_seen) }))}</span></div></div>
-      <div class="tool-row"><a class="btn primary small" href="${telLink(w.phone)}">${ICONS.phone}${esc(t('call'))}</a><a class="btn ghost small" target="_blank" rel="noopener" href="${waLink(w.phone)}">${ICONS.chat}WhatsApp</a></div>
+      <div class="tool-row"><a class="btn primary small" href="${telLink(w.phone)}">${ICONS.phone}${esc(t('call'))}</a><a class="btn ghost small" target="_blank" rel="noopener" href="${waLink(w.phone)}">${ICONS.chat}WhatsApp</a><button class="btn ghost small" id="wOnMap">${ICONS.map}${esc(t('showOnMap'))}</button></div>
       <div class="chips">${(w.cities || []).map(c => `<span class="chip">${esc(c.name)}</span>`).join('')}</div>
+      <nav class="set-nav sec-nav" id="wNav" aria-label="${esc(t('secIndex'))}"></nav>
       ${workerStatsHtml(w.id)}
+      <h2 class="sec">${esc(t('secOrders'))}</h2>
+      <div id="wOrders"><p class="muted small">${esc(t('loadingShort'))}</p></div>
       <h2 class="sec">${esc(t('workDays'))}</h2>
       <div id="wDaysSum" class="muted small" style="margin:0 0 2px"></div>
       <div id="wMap" class="wmap"></div>
@@ -436,6 +451,16 @@ ${/^\+490000/.test(w.phone || '') && !/^\+4900000000/.test(w.phone || '') ? `<di
 
     </div>`); setLoc('worker/' + id);
   bindBack(back); bindWorkerStats(w.id, () => viewWorker(id, back, focusId));
+  $('#wOnMap').onclick = () => showOnMap({ kind:'worker', id });
+  secNav($('#wNav'));
+  // the orders of this person (routes given to them): open ones first, a tap opens the order
+  sb.from('task_plans').select('id,task_id,idx,status,work_dates,color').eq('worker_id', id).then(({ data, error }) => {
+    const box = $('#wOrders'); if(!box) return; if(error){ box.innerHTML = `<p class="err small">${esc(errText(error))}</p>`; return; }
+    const rows = (data || []).map(p => ({ p, tk:A.tasks.find(x => x.id === p.task_id) })).filter(x => x.tk).sort((a, b) => (a.tk.status !== 'open') - (b.tk.status !== 'open') || String(b.tk.created_at).localeCompare(String(a.tk.created_at)));
+    box.innerHTML = rows.length ? `<div class="list-card">${rows.slice(0, 30).map(({ p, tk }) => { const [k, txt] = taskState(tk);
+      return `<button class="lc-row" data-wtask="${tk.id}"><span class="swatch" style="background:${esc(p.color || '#2563EB')}"></span><span class="grow"><b>${esc(tk.title)}</b><small class="muted">${esc([t('planRoute', { n:p.idx + 1 }), stText(p), (p.work_dates || []).map(fmtDay).join(', ')].filter(Boolean).join(' · '))}</small></span>${statusPill(k, txt)}${ICONS.chevron}</button>`; }).join('')}</div>` : `<p class="muted small">${esc(t('wOrdersNone'))}</p>`;
+    box.querySelectorAll('[data-wtask]').forEach(b => b.onclick = () => viewTask(b.dataset.wtask));
+  });
   const wm = makeMap($('#wMap'), (w.last_lat != null) ? [w.last_lat, w.last_lng] : null, 14), wl = L.layerGroup().addTo(wm);
   let curDay = null;
   const showRoute = async r => {
@@ -476,7 +501,9 @@ ${/^\+490000/.test(w.phone || '') && !/^\+4900000000/.test(w.phone || '') ? `<di
     box.innerHTML = `<label class="f" style="margin-top:0">${esc(t('loginLink'))}</label><p class="small muted">${esc(t('loginLinkHint'))}</p><div class="code-row"><input class="in small" readonly value="${esc(link)}" style="flex:1;min-width:0"><button class="btn ghost small" id="wlCopy">${esc(t('copy'))}</button><a class="btn ghost small" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(link)}">${ICONS.chat}WhatsApp</a></div>`;
     $('#wlCopy').onclick = async () => { try{ await navigator.clipboard.writeText(link); toast(t('copied')); }catch{ toast(link); } };
   });
-  $('#wsave').onclick = async () => { const { error } = await sb.from('workers').update({ zone_minutes:+$('#wzm').value, notes:$('#wnotes').value.trim() || null, ...($('#wany') ? { start_anywhere:$('#wany').checked } : {}) }).eq('id', id); if(!error){ await loadWorkers(); toast(t('saved')); } };
+  // "Gespeichert" only when the database returned the changed row (no row = not allowed / not found)
+  $('#wsave').onclick = () => busy($('#wsave'), async () => { const { data, error } = await sb.from('workers').update({ zone_minutes:+$('#wzm').value, notes:$('#wnotes').value.trim() || null, ...($('#wany') ? { start_anywhere:$('#wany').checked } : {}) }).eq('id', id).select('id');
+    if(error || !(data || []).length){ toast(error ? errText(error) : t('notSaved')); return; } await loadWorkers(); toast(t('saved')); });
   $('#wdel').onclick = async () => { if(!await confirmBox(t('del'), t('delWorkerQ', { name:w.name }), t('del'), true)) return; await sb.from('workers').delete().eq('id', id); await loadWorkers(); back(); };
 }
 
@@ -539,7 +566,7 @@ const drawSkips = (g, plans, reload) => (plans || []).forEach(p => workerSkips(p
     const save = async fn => {
       const { data:fresh, error:e1 } = await sb.from('task_plans').select('skipped').eq('id', p.id).maybeSingle(); if(e1 || !fresh){ err.textContent = errText(e1); return; }
       const { error } = await sb.from('task_plans').update({ skipped:fn(fresh.skipped || []) }).eq('id', p.id); if(error){ err.textContent = errText(error); return; }
-      ln.closePopup(); reload();
+      ln.closePopup(); loadTasks().catch(() => {}); reload();   // the number on the tab follows
     };
     const ok = el.querySelector('[data-rok]'); if(ok) ok.onclick = () => { ok.disabled = true; save(sk => sk.map(y => y && y.rep && skipKey(y) === key ? { ...y, ok:true, ok_at:new Date().toISOString() } : y)); };
     const bk = el.querySelector('[data-rback]'); bk.onclick = () => { bk.disabled = true; save(sk => sk.filter(y => !(y && y.rep && skipKey(y) === key))); };
@@ -805,6 +832,7 @@ function botDraftHtml(h){
 async function viewHelpInbox(showDone){
   if(A.bot == null){ try{ const { data } = await sb.rpc('get_bot'); A.bot = !!(data && data.enabled); }catch{ A.bot = false; } }
   const all = await loadHelp(), list = all.filter(h => showDone || h.status === 'open'), nDone = all.length - all.filter(h => h.status === 'open').length;
+  A.helpOpen = all.filter(h => h.status === 'open').length; setBadges();
   const when = d => new Date(d).toLocaleString(I.lang, { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
   const rs = r => t('hr_' + r) === 'hr_' + r ? r : t('hr_' + r);
   shell('tasks', `${topbar(t('helpInbox'), true)}
@@ -1251,19 +1279,23 @@ function viewCreate(edit){
     else if(d.step === 4) body = `<p class="small muted" style="margin:0 0 4px">${esc(t('assignHint'))}</p>${p ? (p.zones ? personRows(true) : p.routes.map((r, i) => routeRow(r, i, true)).join('')) : ''}`;
     else {
       const assigned = p ? p.routes.filter((_, i) => d.assign[i]).length : 0;
-      body = `<div class="review">
+      body = `<p class="small muted" style="margin:0 0 8px">${esc(t('rvIntro'))}</p><div class="review">
+        <div class="rv-h"><b>${esc(t('wzStart'))}</b><button class="link small" data-step="1">${ICONS.edit}${esc(t('rvChange'))}</button></div>
         <div><span>${esc(t('title'))}</span><b>${esc(saved.title || '—')}</b></div>
         <div><span>${esc(t('place'))}</span><b>${esc(d.place ? [d.place.district, d.place.city].filter(Boolean).join(', ') || d.place.name : (tkE ? [tkE.district, tkE.city_name].filter(Boolean).join(', ') : '—'))}</b></div>
-        <div><span>${esc(t('flyersCount'))}</span><b>${esc(fmtN(effFlyers))}${p ? ' · ' + esc(t('mbApprox', { n:fmtN(p.mailboxes) })) : ''}</b></div>
-        ${covShown() && !coverage(d.flyers, p.mailboxes).ok ? `<div class="rv-short"><span>${esc(t('covMissing'))}</span><b>${ICONS.alert}≈ ${esc(fmtN(coverage(d.flyers, p.mailboxes).missing))} · ${esc(t('covReviewNote'))}</b></div>` : ''}
-        <div><span>${esc(t('workersCount'))}</span><b>${p ? p.routes.length : '—'} · ${esc(t('assignedN', { a:assigned, n:p ? p.routes.length : 0 }))}</b></div>
-        <div><span>${esc(t('dist2'))}</span><b>${esc(km)} · ${esc(fmtHm(p ? p.routes.reduce((s, r) => s + r.minutes, 0) : 0))} ${esc(t('h'))}</b></div>
+        ${saved.notes ? `<div><span>${esc(t('note'))}</span><b>${esc(saved.notes)}</b></div>` : ''}
+        <div class="rv-h"><b>${esc(t('wzTime'))}</b><button class="link small" data-step="2">${ICONS.edit}${esc(t('rvChange'))}</button></div>
         <div><span>${esc(t('deadline'))}</span><b>${esc(saved.deadline ? fmtDay(saved.deadline) + ' · ' + t('daysN', { n:d.days }) : t('noDate'))} · ${esc(String(d.hours).replace('.', ','))} ${esc(t('h'))}/${esc(t('dayShort'))}</b></div>
         <div><span>${esc(t('quota'))}</span><b>${esc(fmtN(+saved.quota || NEW_QUOTA))} m / 30 ${esc(t('min'))}</b></div>
+        <div class="rv-h"><b>${esc(t('wzRoute'))}</b><button class="link small" data-step="3">${ICONS.edit}${esc(t('rvChange'))}</button></div>
+        <div><span>${esc(t('flyersCount'))}</span><b>${esc(fmtN(effFlyers))}${p ? ' · ' + esc(t('mbApprox', { n:fmtN(p.mailboxes) })) : ''}</b></div>
+        ${covShown() && !coverage(d.flyers, p.mailboxes).ok ? `<div class="rv-short"><span>${esc(t('covMissing'))}</span><b>${ICONS.alert}≈ ${esc(fmtN(coverage(d.flyers, p.mailboxes).missing))} · ${esc(t('covReviewNote'))}</b></div>` : ''}
+        <div><span>${esc(t('dist2'))}</span><b>${esc(km)} · ${esc(fmtHm(p ? p.routes.reduce((s, r) => s + r.minutes, 0) : 0))} ${esc(t('h'))}</b></div>
         ${d.side.length ? `<div><span>${esc(t('sideTitle'))}</span><b>${esc(d.side.map(x => x.name + ' (' + fmtN(x.flyers) + ')').join(', '))}</b></div>` : ''}
         <div><span>${esc(t('zoneTitle'))}</span><b>${esc(d.zone ? t('zoneOwn') : t('zoneAuto'))}</b></div>
         ${d.must.length ? `<div><span>${esc(t('mustTitle'))}</span><b>${esc((d.must.some(a => a.name) ? d.must.map((a, k) => mName(a, k)).join(', ') + ' · ' : '') + t('mustSum', { n:d.must.length, mb:fmtN((p && p.must_mb) || 0) }))}</b></div>` : ''}
-        ${saved.notes ? `<div><span>${esc(t('note'))}</span><b>${esc(saved.notes)}</b></div>` : ''}
+        <div class="rv-h"><b>${esc(t('wzTeam'))}</b><button class="link small" data-step="4">${ICONS.edit}${esc(t('rvChange'))}</button></div>
+        <div><span>${esc(t('workersCount'))}</span><b>${p ? p.routes.length : '—'} · ${esc(t('assignedN', { a:assigned, n:p ? p.routes.length : 0 }))}</b></div>
       </div>
       ${p && !cap.ok ? `<div class="warnbox">${esc(t('tooBig', { h:cap.slowest.toFixed(1).replace('.', ','), lim:cap.limit, d:d.days }))}</div>` : ''}<div class="err" id="cErr"></div>`;
     }
@@ -1271,7 +1303,9 @@ function viewCreate(edit){
     const isMini = !!($('#cSheet') && $('#cSheet').classList.contains('mini'));
     sheet(`<button class="sheet-grip" id="grip" aria-label="${esc(t('panel'))}"></button><button class="sheet-min" id="cMin" aria-expanded="${isMini ? 'false' : 'true'}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg><span>${esc(t(isMini ? 'panelShow' : 'panelHide'))}</span></button>
       <div class="wz" id="cWz">${STEPS.map((k, i) => `<button class="${i + 1 === d.step ? 'on' : i + 1 < d.step ? 'done' : ''}" data-step="${i + 1}" ${canReach(i + 1) ? '' : 'disabled'} aria-current="${i + 1 === d.step ? 'step' : 'false'}"><i></i><span>${i + 1} ${esc(t(k))}</span></button>`).join('')}</div>
+      <div class="wz-head"><small>${esc(t('wzStepOf', { n:d.step, of:STEPS.length }))} · <b>${esc(t(STEPS[d.step - 1]))}</b></small><p>${esc(t('wzDesc' + d.step))}</p></div>
       ${body}
+      ${!nextOk ? `<p class="wz-why" role="status">${ICONS.alert}<span>${esc(!d.start ? t('wzNeedStart') : d.busy || !p ? t('wzCalc') : t('wzFix'))}</span></p>` : ''}
       <div class="wz-nav">${d.step > 1 ? `<button class="btn ghost" id="cPrev">${esc(t('back'))}</button>` : ''}
         <button class="btn primary" id="${last ? 'cSave' : 'cNext'}" ${nextOk ? '' : 'disabled'}>${esc(last ? t('saveTask') : t('next'))}</button></div>`);
     restore(saved); $('#cSheet').classList.remove('calc'); $('#cSheet').scrollTop = sc;
@@ -1280,7 +1314,8 @@ function viewCreate(edit){
     document.querySelectorAll('[data-step]').forEach(b => b.onclick = () => goStep(+b.dataset.step));
     if($('#cPrev')) $('#cPrev').onclick = () => goStep(d.step - 1);
     if($('#cNext')) $('#cNext').onclick = () => {
-      if(d.step === 1){ saved = keep(); if(!(saved.title || '').trim()){ toast(t('needTitle')); $('#cTitle').focus(); return; } }
+      if(d.step === 1){ saved = keep(); if(!(saved.title || '').trim()){ const ti = $('#cTitle'); ti.setAttribute('aria-invalid', 'true'); ti.setAttribute('aria-describedby', 'cTitleErr');
+        if(!$('#cTitleErr')) ti.insertAdjacentHTML('afterend', `<p class="err small" id="cTitleErr" style="margin:4px 0 0">${esc(t('needTitle'))}</p>`); ti.oninput = () => { ti.removeAttribute('aria-invalid'); const e = $('#cTitleErr'); if(e) e.remove(); }; ti.focus(); return; } }
       goStep(d.step + 1);
     };
     if($('#cRetry')) $('#cRetry').onclick = () => setStart(d.start.lat, d.start.lng);
@@ -1491,13 +1526,29 @@ async function viewTask(id){
   const estMb = livePl.length ? livePl.reduce((s, p) => s + (p.mailboxes || 0), 0) : tk.est_mailboxes, routeM = livePl.length ? livePl.reduce((s, p) => s + (p.length_m || 0), 0) : tk.route_m;
   const invite = w => t('invite', { name:w.name, title:tk.title, date:tk.work_date ? ', ' + fmtDay(tk.work_date) : '' });
   { const zb = livePl.flatMap(p => p.boxes || []); if(zb.length) setTimeout(() => zensusCompare(zb).then(c => { const el = $('#tZen'), h = zensusHtml(c); if(el && h){ $('#tZenB').innerHTML = h; el.style.display = ''; } }).catch(() => {}), 0); }
+  // overview on top (16.11.2026 redesign): the state of the order at a glance, then the sections with an index
+  const ps0 = (plans || []).filter(p => p.status !== 'declined'), due = dueInfo(tk), nAssigned = ps0.filter(p => p.worker_id).length;
+  const reps = (plans || []).flatMap(p => workerSkips(p).filter(x => x.rep).map(x => ({ ...x, p })));
+  const repOpen = reps.filter(x => !x.ok).length, lateN = (plans || []).filter(p => p.worker_id && p.status === 'accepted' && p.late_dates && !p.late_ok).length;
+  const team = [...new Set((plans || []).filter(p => p.worker_id && p.status !== 'declined').map(p => p.worker_id))];
+  const ov = (k, v, sub, cls) => `<div class="ov-t ${cls || ''}"><span>${esc(k)}</span><b>${v}</b>${sub ? `<small>${sub}</small>` : ''}</div>`;
   shell('tasks', `${topbar(tk.title, true)}
     <div class="pad">
-      <h2 class="sec" style="margin-top:4px">${esc(t('taskInfo'))}</h2>
+      <nav class="set-nav sec-nav" id="tNav" aria-label="${esc(t('secIndex'))}"></nav>
+      <h2 class="sec" style="margin-top:4px" data-short="${esc(t('secOverview'))}">${esc(t('secOverview'))}</h2>
+      <div class="ov-grid">
+        ${ov(t('colStatus'), statusPill(...taskState(tk)), '')}
+        ${ov(t('deadline'), `<span class="due-${due.cls}">${esc(due.txt)}</span>`, '')}
+        ${ov(t('colProgress'), ps0.length ? `${ps0.filter(p => p.status === 'done').length} / ${ps0.length}` : '–', '')}
+        ${ov(t('flyers'), tk.flyers ? esc(fmtN(tk.flyers)) : '–', estMb ? esc(t('mbApprox', { n:fmtN(estMb) })) : '')}
+        ${ov(t('colTeam'), `${team.length}`, ps0.length - nAssigned > 0 ? `<span class="due-warn">${esc(t('freeN', { n:ps0.length - nAssigned }))}</span>` : esc(t('ovAllAssigned')), '')}
+        ${ov(t('secReports'), String(repOpen + lateN), repOpen + lateN ? `<span class="due-warn">${esc(t('ovToDecide'))}</span>` : esc(t('ovNothing')), repOpen + lateN ? 'warn' : '')}
+      </div>
+      <div class="tool-row ov-acts"><button class="btn ghost small" id="tOnMap">${ICONS.map}${esc(t('showOnMap'))}</button><button class="btn ghost small" id="tRMap">${ICONS.route}${esc(t('rvBig'))}</button><button class="btn ghost small" id="tEdit2">${ICONS.edit}${esc(t('editTask'))}</button></div>
+      <h2 class="sec" data-short="${esc(t('secData'))}">${esc(t('taskInfo'))}</h2>
       <div class="info">
         <div><span>${esc(t('place'))}</span><b>${esc([tk.district, tk.city_name].filter(Boolean).join(', ') || '—')}</b></div>
         <div><span>${esc(t('date'))}</span><b>${esc(fmtDay(tk.work_date))}</b></div>
-        ${tk.deadline ? `<div><span>${esc(t('deadline'))}</span><b>${esc(fmtDay(tk.deadline))}</b></div>` : ''}
         ${tk.flyers ? `<div><span>${esc(t('flyers'))}</span><b>${esc(fmtN(tk.flyers))} · ${esc(t('mbApprox', { n:fmtN(estMb || 0) }))}</b></div>` : ''}
         <div id="tZen" style="display:none"><span>${esc(t('zLabel'))}</span><b id="tZenB"></b><small class="muted">${esc(t('zHint'))}</small></div>
         ${routeM ? `<div><span>${esc(t('dist2'))}</span><b>${esc(fmtDist(routeM))}</b></div>` : ''}
@@ -1511,9 +1562,10 @@ async function viewTask(id){
         <div id="tFlRow" ${tk.flyers_done != null ? '' : 'style="display:none"'}><span>${esc(t('handedLbl'))} <button class="link" id="tFlEdit" style="font-size:12px">${esc(t('adjust'))}</button></span><b id="tFl">${tk.flyers_done != null ? '≈ ' + fmtN(tk.flyers_done) + (tk.flyers ? ' / ' + fmtN(tk.flyers) : '') : ''}</b>${tk.flyers_done != null ? `<small class="muted">${esc(t('flDoneManual', { d:fmtDT(tk.flyers_done_at) }))}${(A.live || []).some(r => r.task_id === tk.id) ? ' · ' + esc(t('stillWorking')) : ''}</small>` : ''}</div>
         ${tk.notes ? `<div><span>${esc(t('note'))}</span><b>${esc(tk.notes)}</b></div>` : ''}
       </div>
-      <div class="mapbox" id="tMap"></div>
+      <h2 class="sec" data-short="${esc(t('secMap'))}">${esc(t('secMapLong'))}</h2>
+      <div class="mapbox" id="tMap" style="margin-top:0"></div>
       <div class="rinfo-row"><span>${statusPill(...taskState(tk))}</span><button class="btn ghost small" id="tBig">${ICONS.expand}${esc(t('rvBig'))}</button></div>
-      <h2 class="sec">${esc(t('routesOf'))}</h2>
+      <h2 class="sec" data-short="${esc(t('secRoutes'))}">${esc(t('routesOf'))}</h2>
       ${(() => { // joined orders: every colour appears several times – one person for all routes of a colour
         const cols = []; (plans || []).forEach(p => { if(p.color && !cols.includes(p.color)) cols.push(p.color); });
         if(!plans || cols.length === plans.length) return '';
@@ -1537,7 +1589,20 @@ async function viewTask(id){
         ${w ? `<button class="rr-worker" data-wk="${w.id}">${avatar()}<span class="grow"><b>${esc(w.name)}</b><small>${esc(t('openWorker'))}</small></span><span class="rr-chev">›</span></button>
         <div class="rr-btns"><a class="btn ghost small" target="_blank" rel="noopener" href="${waLink(w.phone, invite(w))}">${ICONS.chat}${esc(t('write'))}</a><button class="btn ghost small" data-swap="${p.id}">${ICONS.users}${esc(t('swapWorker'))}</button></div>` : ''}
         <div class="rr-swap" id="sw${p.id}" ${w ? 'hidden' : ''}><select class="in small" data-plan="${p.id}">${workerOptions(tk.start_lat, tk.start_lng, p.worker_id)}</select><span class="small muted">${esc(t('replaceHint'))}</span></div></div></div>`; }).join('') : `<p class="muted small">${esc(t('noPlans'))}</p>`}
-      <div class="tool-row" style="margin-top:16px"><button class="btn ghost small" id="tEdit">${ICONS.edit}${esc(t('editTask'))}</button><button class="btn ghost small" id="tDone">${ICONS.check}${esc(tk.status === 'open' ? t('finish') : t('reopen'))}</button></div>
+      <h2 class="sec">${esc(t('secTeam'))}</h2>
+      ${team.length ? `<div class="list-card">${team.map(wid => { const w = wById(wid), mine = (plans || []).filter(p => p.worker_id === wid && p.status !== 'declined'), live = (A.live || []).some(r => r.worker_id === wid && r.task_id === id && !r.paused_at);
+        return `<button class="lc-row" data-wk="${wid}">${avatar(w ? w.name : '?', live ? 'live' : '')}<span class="grow"><b>${esc(w ? w.name : '?')}</b><small class="muted">${esc(mine.map(p => t('planRoute', { n:p.idx + 1 }) + ' · ' + stText(p)).join(' · '))}${live ? ' · ' + esc(t('stLive')) : ''}</small></span>${ICONS.chevron}</button>`; }).join('')}</div>` : `<p class="muted small">${esc(t('teamNone'))}</p>`}
+      <h2 class="sec">${esc(t('secDates'))}</h2>
+      <div class="list-card">
+        <div class="lc-row static"><span class="grow"><b>${esc(t('deadline'))}</b><small class="due-${due.cls}">${esc(due.txt)}</small></span></div>
+        ${ps0.map(p => { const w = wById(p.worker_id), ds = p.work_dates || [], late = p.late_dates && !p.late_ok;
+          return `<div class="lc-row static"><span class="swatch" style="background:${esc(p.color || '#2563EB')}"></span><span class="grow"><b>${esc(t('planRoute', { n:p.idx + 1 }))}${w ? ' · ' + esc(w.name) : ''}</b><small class="${late ? 'err' : 'muted'}">${esc(ds.length ? ds.map(fmtDay).join(', ') : p.worker_id ? t('datesOpen') : t('datesNoWorker'))}${late ? ' · ' + esc(t('lateBadge')) : ''}</small></span></div>`; }).join('')}
+      </div>
+      <h2 class="sec">${esc(t('secReports'))}</h2>
+      <div id="tReports">${reps.length || lateN ? `<div class="list-card">${reps.map(x => `<div class="lc-row static"><span class="rep-dot ${x.ok ? 'ok' : ''}" aria-hidden="true"></span><span class="grow"><b>${esc(t(x.ok ? 'rvRepOk' : 'rvReported'))}</b><small class="muted">${esc([t('planRoute', { n:x.p.idx + 1 }), x.why ? (t('hr_' + x.why) === 'hr_' + x.why ? x.why : t('hr_' + x.why)) : '', x.by, x.at ? fmtDT(x.at) : ''].filter(Boolean).join(' · '))}</small></span></div>`).join('')}
+        ${lateN ? `<div class="lc-row static"><span class="rep-dot" aria-hidden="true"></span><span class="grow"><b>${esc(t('lateBadge'))}</b><small class="muted">${esc(t('repLateHint', { n:lateN }))}</small></span></div>` : ''}</div>
+        ${repOpen ? `<button class="btn ghost small" id="tRepGo" style="margin-top:8px">${ICONS.route}${esc(t('repDecide'))}</button>` : ''}` : `<p class="muted small">${esc(t('repNone'))}</p>`}<div id="tHelp"></div></div>
+      <div class="tool-row" style="margin-top:20px"><button class="btn ghost small" id="tEdit">${ICONS.edit}${esc(t('editTask'))}</button><button class="btn ghost small" id="tDone">${ICONS.check}${esc(tk.status === 'open' ? t('finish') : t('reopen'))}</button></div>
       ${A.company && A.company.master ? `<button class="btn ghost small" id="tMerge" style="margin-top:8px;width:auto">${ICONS.plus}${esc(t('mergeTasks'))}</button>` : ''}
       <p class="danger-row">${tk.status === 'open' ? `<button class="link" id="tCancel">${esc(t('cancelTask'))}</button><span aria-hidden="true">·</span>` : ''}<button class="link danger-text" id="tDel">${esc(t('del'))}</button></p>
     </div>`); setLoc('task/' + id);
@@ -1577,8 +1642,8 @@ async function viewTask(id){
   // one person for all routes of a colour (orders that were joined)
   document.querySelectorAll('[data-color]').forEach(sel => sel.onchange = async () => {
     if(sel.value === '__') return; const wid = sel.value || null; sel.disabled = true;
-    for(const p of plans.filter(x => x.color === sel.dataset.color)) if((p.worker_id || null) !== wid && !await assignPlan(p, wid)) break;
-    await loadTasks(); toast(t('saved')); viewTask(id);
+    let ok = true; for(const p of plans.filter(x => x.color === sel.dataset.color)) if((p.worker_id || null) !== wid && !await assignPlan(p, wid)){ ok = false; break; }
+    await loadTasks(); if(ok) toast(t('saved')); viewTask(id);
   });
   // one worker on several routes of the order: the routes become one (days after each other, progress and sessions stay)
   // the rest of a route on N days: same line (walked parts stay walked and are passed over), new day cuts so that
@@ -1645,6 +1710,12 @@ async function viewTask(id){
     };
   });
   $('#tBig').onclick = () => viewTaskMap(id, () => viewTask(id));
+  $('#tRMap').onclick = () => viewTaskMap(id, () => viewTask(id)); if($('#tRepGo')) $('#tRepGo').onclick = () => viewTaskMap(id, () => viewTask(id));
+  $('#tOnMap').onclick = () => showOnMap({ kind:'task', id }); $('#tEdit2').onclick = () => $('#tEdit').click();
+  secNav($('#tNav'));
+  // help requests that belong to this order
+  loadHelp().then(list => { const box = $('#tHelp'), mine = list.filter(h => h.task_id === id && h.status === 'open'); if(!box || !mine.length) return;
+    box.innerHTML = `<button class="help-box" id="tHelpGo" style="margin-top:8px">${ICONS.chat}<span>${esc(t('helpInbox'))}</span><span class="cnt">${esc(t('helpInboxN', { n:mine.length }))}</span></button>`; $('#tHelpGo').onclick = () => viewHelpInbox(); });
   $('#tEdit').onclick = () => editTaskSheet(tk, plans || [], routes || []);
   if($("#tMerge")) $("#tMerge").onclick = () => mergeDialog(tk);
   // the admin enters how many flyers are really out (counted packs); empty = back to the GPS estimate
