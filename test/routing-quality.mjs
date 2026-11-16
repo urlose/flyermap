@@ -1,6 +1,7 @@
 // Offline regression graphs: no Supabase, OSM or Zensus requests.
 import assert from 'node:assert/strict';
 import Planner from '../admin/planner.js';
+import { outwardStreetOrder, streetGeometryKey } from '../worker/src/nearfirst.js';
 import { createPlanService } from '../worker/src/plancore.js';
 
 const start=[48.46,10.21], pt=(x,y)=>[start[0]+y/111320,start[1]+x/(111320*Math.cos(start[0]*Math.PI/180))];
@@ -28,6 +29,25 @@ try {
   assert.equal(p.mailboxes,12,'Distinct streets sharing an endpoint midpoint must both survive');
   assert.equal(p.routes.flatMap(r=>r.boxes).reduce((s,b)=>s+b[2],0),12,'The shared street must still be served only once');
 
+  const reverse={...main,edges:main.edges.map(e=>({...e,coords:e.coords.slice().reverse()}))};
+  assert.equal(streetGeometryKey(main,0),streetGeometryKey(reverse,0),'Reversed geometry is the same street');
+  assert.ok(streetGeometryKey(main,0)!==streetGeometryKey(main,1),'Parallel curves are different streets');
+
+  // Zero-mailbox roads remain valid connectors; short residential dead ends stay.
+  const connected={pts:[pt(0,0),pt(100,0),pt(120,0),pt(100,100),pt(500,500),pt(520,500)],
+    edges:[],adj:Array.from({length:6},()=>[])};
+  for(const [a,b,mb] of [[0,1,0],[1,2,1],[1,3,4],[4,5,9]]){
+    const coords=[connected.pts[a],connected.pts[b]],i=connected.edges.length;
+    connected.edges.push({a,b,mb,coords,len:Planner.dist(...coords),boxes:mb?[[...coords[1],mb]]:[],name:'Residential'});
+    connected.adj[a].push({e:i,to:b});connected.adj[b].push({e:i,to:a});
+  }
+  const ranked=outwardStreetOrder(connected,start);
+  assert.deepEqual(ranked.streets.map(x=>x.i),[1,2]);
+  assert.deepEqual(ranked.unreachable,[3]);
+  const connectedPlan=Planner.planFlyers(connected,start,6,2,{selectedEdgeIds:[1,2]});
+  assert.equal(connectedPlan.mailboxes,5,'Do not invent boxes on a connector');
+  assert.ok(connectedPlan.routes.every(r=>!r.path.length||r.covered),'Every selected edge is actually traversed');
+
   // Place labels are not identities. Same labels must not erase a real transfer.
   const far=graph([[80,5]]);
   const offset=.1;
@@ -44,6 +64,15 @@ try {
     assert.equal(p.routes[0].path.filter(q=>q[2]===1).length,1,'No straight walking line between places');
     assert.ok(Math.abs(p.routes[0].days.reduce((s,d)=>s+d.minutes,0)-p.routes[0].minutes)<=1,'Day and route time agree');
   }
+
+  // A worker starting in a side town still has an initial transfer, even if
+  // the main town is empty and both labels match.
+  Planner.loadForFlyers=async p=>p[0]===start[0]?graph([]):far;
+  const onlySide=await run({...args,side:[{name:'Town',lat:start[0]+offset,lng:start[1],zone:farZone}],
+    budget:{...args.budget,travelMin:30}});
+  assert.equal(onlySide.budget.travel.moves,1);
+  assert.equal(onlySide.routes[0].path[1][2],1);
+  assert.equal(onlySide.budget.actual_minutes,onlySide.budget.work_minutes+30);
 
   // An empty first map is exhausted too; it must not suppress map expansion.
   let loads=0;

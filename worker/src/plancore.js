@@ -575,7 +575,7 @@ export function createPlanService(cache){
       }
       stage('calculating');
       // Adjacent map tiles and towns overlap. Suppress streets already handed
-      // out, based on physical edge midpoints rather than tentative selections.
+      // out, based on full street geometry rather than tentative selections.
       const seen=new Set(), edgeKey=streetGeometryKey;
       const planned=[];
       // Reserve manually selected areas FIRST. The main place then grows around

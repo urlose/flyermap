@@ -11,6 +11,7 @@ on:
       - 'worker/src/i18n6.js'
       - 'test/nearfirst.mjs'
       - 'test/routing-quality.mjs'
+      - 'test/leipheim-readonly.mjs'
       - 'test/nearfirst-service.mjs'
       - 'test/customerexport.mjs'
       - 'test/budget.mjs'
@@ -65,6 +66,8 @@ jobs:
       - name: Browser test (synthetic Supabase, no production)
         working-directory: test/ui
         run: timeout 540s node e2e-timefirst.cjs out-timefirst
+      - name: Read-only Leipheim snapshot and offline replay
+        run: timeout 240s node test/leipheim-readonly.mjs --capture test/ui/out-timefirst/leipheim.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
