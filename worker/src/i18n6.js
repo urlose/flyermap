@@ -1,6 +1,7 @@
 // UI redesign 16.11.2026: map (areas, filters, detail panel), tables for people and orders, deadlines
 import { T } from './i18n.js';
 Object.assign(T.de, {
+  budTravelInput:'Fahrzeit je Ortswechsel (Minuten)', budTravelInputHint:'Wird zusätzlich zur Verteilzeit vom Gesamtbudget abgezogen. Bitte realistische Anfahrt eintragen; FlyerMap erfindet keine Fahrtzeit.',
   customerGeoJSON:'Kundengebiet exportieren (GeoJSON)',
   budStrategyLabel:'Routenprinzip', budNearFirst:'Vom Start nach außen (Nähe zuerst)', budDensity:'Bisherig: maximale Briefkästen pro Stunde',
   sideDrawTitle:'Nebenstädte manuell auswählen', sideDrawBtn:'Nebenstädte selbst einzeichnen', sideDrawDescription:'Zeichne auf der Karte die gewünschte Nachbarstadt oder das Dorf ein. Sie wird in den Auftrag übernommen und neu geplant.', sideDrawHint:'Tippe die Ecken der Nachbarstadt auf der Karte an. Schließe die Fläche mit „Fertig“.', sideDrawnName:'Nebenstadt {n}',
@@ -24,6 +25,7 @@ Object.assign(T.de, {
   stPeriod:'Zeitraum: letzte {n} Tage', tSearchPh:'Auftrag oder Ort suchen', stKpiAll:'Kennzahlen: alle Aufträge mit Arbeitstagen seit Beginn · kleine Kurven: letzte {n} Tage', freeN:'{n} frei', lmOrdersG:'Aufträge', lmOpenShort:'Offen', lmLayers:'Ebenen', colDays:'Arbeitstage', colPlaces:'Orte', colLastDay:'Letzter Tag', stPeriodAll:'Alle Aufträge mit Arbeitstagen in den letzten {n} Tagen',
 });
 Object.assign(T.ru, {
+  budTravelInput:'Время переезда между городами (мин.)', budTravelInputHint:'Учитывается в общем бюджете помимо раздачи. Укажите реальную оценку, программа не придумывает время поездки.',
   customerGeoJSON:'Экспорт для клиента (GeoJSON)',
   budStrategyLabel:'Принцип планирования', budNearFirst:'От старта наружу (ближайшие улицы сначала)', budDensity:'Прежний: максимум ящиков в час',
   sideDrawTitle:'Выбрать соседние места вручную', sideDrawBtn:'Нарисовать соседние города и деревни', sideDrawDescription:'Обведи соседний населённый пункт на карте: он добавится в заказ и маршрут пересчитается.', sideDrawHint:'Отметь углы соседнего места на карте и нажми «Готово».', sideDrawnName:'Соседнее место {n}',
@@ -47,6 +49,7 @@ Object.assign(T.ru, {
   stPeriod:'Период: последние {n} дн.', tSearchPh:'Поиск: заказ или место', stKpiAll:'Показатели: все заказы с рабочими днями с самого начала · мини-графики: последние {n} дн.', freeN:'{n} без работника', lmOrdersG:'Заказы', lmOpenShort:'Открытые', lmLayers:'Слои', colDays:'Рабочие дни', colPlaces:'Места', colLastDay:'Последний день', stPeriodAll:'Все заказы с рабочими днями за последние {n} дн.',
 });
 Object.assign(T.en, {
+  budTravelInput:'Travel time per change of town (minutes)', budTravelInputHint:'Deducted from total hours in addition to walking. Enter a realistic estimate; FlyerMap does not invent driving times.',
   customerGeoJSON:'Export customer area (GeoJSON)',
   budStrategyLabel:'Planning strategy', budNearFirst:'Outward from start (nearest streets first)', budDensity:'Previous: maximum mailboxes per hour',
   sideDrawTitle:'Choose nearby towns manually', sideDrawBtn:'Draw nearby towns yourself', sideDrawDescription:'Outline a nearby village or town on the map. It will be added to the order and replanned.', sideDrawHint:'Tap the corners of the nearby town and finish the outline.', sideDrawnName:'Nearby place {n}',
