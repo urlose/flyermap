@@ -9,6 +9,7 @@ on:
       - 'worker/src/budgetplan.js'
       - 'worker/src/i18n6.js'
       - 'test/nearfirst.mjs'
+      - 'test/nearfirst-service.mjs'
       - 'test/customerexport.mjs'
       - 'test/budget.mjs'
       - 'supabase/2026-11-16_atomic_task_plans.sql'
@@ -26,6 +27,7 @@ jobs:
       - run: npm ci
         working-directory: worker
       - run: node test/nearfirst.mjs
+      - run: node test/nearfirst-service.mjs
       - run: node test/customerexport.mjs
       - run: node test/budget.mjs
       - run: npm run build
