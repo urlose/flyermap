@@ -31,10 +31,9 @@ jobs:
       - run: node test/customerexport.mjs
       - run: npm run build
         working-directory: worker
-      # Historical budget fixtures depend on location masks that are not available on
-      # the isolated runner (the unchanged mainline suite already fails there).
-      # Keep visible diagnostic output without treating its baseline failures as a
-      # failure of the newly introduced near-first mode.
+      # The legacy budget suite fails in this isolated runner; its fixture/baseline
+      # discrepancy is still being investigated. Keep the diagnostic result visible
+      # while strictly gating the new-mode unit, integration, export and build checks.
       - name: Legacy budget diagnostics (known baseline failures)
         run: node test/budget.mjs
         continue-on-error: true
