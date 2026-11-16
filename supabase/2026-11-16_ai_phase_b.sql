@@ -7,8 +7,10 @@
 --   2. help_request_outcomes – when a report is closed: was Claude's latest draft taken, edited, rejected (or there was
 --                              no draft / an automatic answer). The admin can correct the mark.
 --   3. help_solutions        – solutions the admin saved from a report; personal data is removed on the server
---                              (help_redact) before saving and checked again before approval; only APPROVED solutions
---                              of the SAME company are ever returned for later use (help_solutions_for, server only).
+--                              (help_redact) before saving and checked again before approval. The cleaning is no
+--                              guarantee: approval needs the admin's check of the exact cleaned text. Only APPROVED and
+--                              REVIEWED solutions of the SAME company and the SAME topic are returned (help_solutions_for,
+--                              server only) – and only once use_solutions is switched on (help_settings, default OFF).
 --                              An approved solution is frozen; a change is a new version that replaces it on approval.
 -- Reports closed before this migration get no outcome (their answers were partly wiped by the old help_resolve, a mark
 -- would be a guess).
@@ -73,12 +75,25 @@ create table if not exists public.help_drafts(
 alter table public.help_drafts enable row level security;
 
 -- every bot run (bot_at changes) becomes a new version; the bot itself only overwrites the columns of help_requests
+-- Parallel writes: runs for the same report are serialised by a transaction lock per report (the row lock of the UPDATE
+-- already does this for the bot, the extra lock also covers other writers); if a version number is still taken (a row
+-- written directly by the server in another transaction), the next free number is used – never an error for the bot.
 create or replace function public._help_draft_keep() returns trigger language plpgsql security definer set search_path to 'public' as $function$
+declare tries integer := 0;
 begin
   if new.bot_at is not null and new.bot_at is distinct from old.bot_at then
-    insert into help_drafts(help_request_id, company_id, version, draft, action, note, tokens, created_at)
-    values (new.id, new.company_id, coalesce((select max(version) from help_drafts where help_request_id = new.id), 0) + 1,
-            new.bot_draft, new.bot_action, new.bot_note, new.bot_tokens, new.bot_at);
+    perform pg_advisory_xact_lock(hashtextextended('help_drafts:' || new.id::text, 0));
+    loop
+      begin
+        insert into help_drafts(help_request_id, company_id, version, draft, action, note, tokens, created_at)
+        values (new.id, new.company_id, coalesce((select max(version) from help_drafts where help_request_id = new.id), 0) + 1,
+                new.bot_draft, new.bot_action, new.bot_note, new.bot_tokens, new.bot_at);
+        exit;
+      exception when unique_violation then
+        tries := tries + 1;
+        if tries >= 10 then raise; end if;
+      end;
+    end loop;
   end if;
   return null;
 end $function$;
@@ -163,10 +178,23 @@ create table if not exists public.help_solutions(
   source_request_id uuid references public.help_requests(id) on delete set null,
   redactions jsonb not null default '[]'::jsonb,
   created_by uuid, approved_by uuid,
-  created_at timestamptz not null default now(), updated_at timestamptz not null default now(), approved_at timestamptz, archived_at timestamptz
+  reviewed_by uuid, reviewed_at timestamptz,  -- the admin confirmed the CLEANED texts (exact text seen) when approving
+  created_at timestamptz not null default now(), updated_at timestamptz not null default now(), approved_at timestamptz, archived_at timestamptz,
+  -- automatic cleaning is no guarantee: nothing is approved without the admin's check of the cleaned text
+  constraint help_solutions_reviewed check (status = 'draft' or reviewed_at is not null)
 );
 create index if not exists help_solutions_lookup on public.help_solutions (company_id, status, category);
 alter table public.help_solutions enable row level security;
+
+-- Use of solutions in answers is OFF for every company until the admin screen with the review step exists and it is
+-- explicitly allowed. There is no admin function to switch it on (only the operator, by SQL, after approval).
+create table if not exists public.help_settings(
+  company_id uuid primary key references public.companies(id) on delete cascade,
+  use_solutions boolean not null default false,
+  changed_at timestamptz not null default now(),
+  note text
+);
+alter table public.help_settings enable row level security;
 
 -- approved / archived solutions are frozen (only the status may move to archived)
 create or replace function public._help_solution_frozen() returns trigger language plpgsql set search_path to 'public' as $function$
@@ -233,9 +261,12 @@ end $function$;
 revoke all on function public.help_solution_update(uuid, text, text, text, text, text) from public, anon;
 grant execute on function public.help_solution_update(uuid, text, text, text, text, text) to authenticated, service_role;
 
--- admin: approve a draft. Checked once more for personal data (refused if anything is still found). A new version
--- replaces (archives) the version it was made from.
-create or replace function public.help_solution_approve(p_id uuid)
+-- admin: approve a draft. The automatic cleaning is NOT a guarantee, so approval needs the admin's own check: the screen
+-- shows the cleaned texts and sends back exactly what the admin saw (p_scenario_seen / p_answer_seen). Refused if they are
+-- missing or differ from the stored texts (changed in between), and if the automatic check still finds personal data.
+-- A new version replaces (archives) the version it was made from.
+drop function if exists public.help_solution_approve(uuid);
+create or replace function public.help_solution_approve(p_id uuid, p_scenario_seen text, p_answer_seen text)
  returns void language plpgsql security definer set search_path to 'public'
 as $function$
 declare co uuid := public.my_company(); x help_solutions;
@@ -244,16 +275,19 @@ begin
   select * into x from help_solutions where id = p_id and company_id = co for update;
   if not found then raise exception 'not_found'; end if;
   if x.status <> 'draft' then raise exception 'not_draft'; end if;
+  if p_scenario_seen is null or p_answer_seen is null then raise exception 'review_required'; end if;
+  if p_scenario_seen is distinct from x.scenario or p_answer_seen is distinct from x.approved_answer then raise exception 'review_outdated'; end if;
   if jsonb_array_length(public.help_redact(x.scenario, co) -> 'found') > 0 or jsonb_array_length(public.help_redact(x.approved_answer, co) -> 'found') > 0 then
     raise exception 'personal_data_found';
   end if;
-  update help_solutions set status = 'approved', approved_by = auth.uid(), approved_at = now(), updated_at = now() where id = p_id;
+  update help_solutions set status = 'approved', approved_by = auth.uid(), approved_at = now(),
+         reviewed_by = auth.uid(), reviewed_at = now(), updated_at = now() where id = p_id;
   if x.parent_id is not null then
     update help_solutions set status = 'archived', archived_at = now(), updated_at = now() where id = x.parent_id and company_id = co and status = 'approved';
   end if;
 end $function$;
-revoke all on function public.help_solution_approve(uuid) from public, anon;
-grant execute on function public.help_solution_approve(uuid) to authenticated, service_role;
+revoke all on function public.help_solution_approve(uuid, text, text) from public, anon;
+grant execute on function public.help_solution_approve(uuid, text, text) to authenticated, service_role;
 
 -- admin: start a new version of an approved solution (the approved one stays in use until the new one is approved)
 create or replace function public.help_solution_revise(p_id uuid)
@@ -287,18 +321,34 @@ end $function$;
 revoke all on function public.help_solution_archive(uuid) from public, anon;
 grant execute on function public.help_solution_archive(uuid) to authenticated, service_role;
 
--- server (help-bot, phase C): up to 3 APPROVED solutions of THIS company, same category first, then by similarity of the
--- words (built-in full text search, no extension needed)
+-- server (help-bot, phase C): up to 3 APPROVED and REVIEWED solutions of THIS company that match the TOPIC of the report.
+-- Only relevant ones – the limit is a maximum, never filled up: same category (report reason) or same rule; for the
+-- catch-all category "other" additionally at least 2 shared words (4+ letters, common words ignored). No match → empty.
+-- Returns nothing at all while use_solutions is off for the company (default; see help_settings).
+-- Order: shared words, then newest approval.
 create or replace function public.help_solutions_for(p_company uuid, p_category text, p_text text, p_limit integer default 3)
  returns table(id uuid, category text, rule_id text, scenario text, approved_answer text, mode text, version integer, score real)
  language sql stable security definer set search_path to 'public'
 as $function$
-  select s.id, s.category, s.rule_id, s.scenario, s.approved_answer, s.mode, s.version,
-         (case when s.category = p_category or s.rule_id = p_category then 1 else 0 end
-          + ts_rank(to_tsvector('simple', s.scenario || ' ' || s.approved_answer), plainto_tsquery('simple', coalesce(p_text, ''))))::real score
-    from help_solutions s
-   where s.company_id = p_company and s.status = 'approved'
-   order by score desc, s.approved_at desc
+  with q as (
+    select nullif(trim(coalesce(p_category, '')), '') cat,
+           array(select distinct w from regexp_split_to_table(lower(coalesce(p_text, '')), '[^[:alnum:]äöüßÄÖÜ]+') w
+                  where length(w) >= 4 and w <> all (array['nicht','bitte','eine','einen','einer','habe','haben','hast','sind','noch','auch',
+                    'oder','aber','wenn','dass','kann','wird','wurde','werden','mein','meine','hier','heute','jetzt','schon','sehr','mehr',
+                    'alle','dann','wieder','keine','kein','diese','dieser','über','nach','beim','sein','sich','etwas','gibt','ist','soll','muss'])) words
+  ), c as (
+    select s.*, (select count(*) from unnest(q.words) w
+                  where w = any (regexp_split_to_array(lower(s.scenario || ' ' || s.approved_answer), '[^[:alnum:]äöüßÄÖÜ]+')))::integer shared
+      from help_solutions s, q
+     where q.cat is not null
+       and s.company_id = p_company and s.status = 'approved' and s.reviewed_at is not null
+       and (s.category = q.cat or s.rule_id = q.cat)
+       and exists (select 1 from help_settings g where g.company_id = p_company and g.use_solutions)
+  )
+  select c.id, c.category, c.rule_id, c.scenario, c.approved_answer, c.mode, c.version, c.shared::real score
+    from c, q
+   where q.cat <> 'other' or c.shared >= 2
+   order by c.shared desc, c.approved_at desc
    limit greatest(0, least(coalesce(p_limit, 3), 3))
 $function$;
 revoke all on function public.help_solutions_for(uuid, text, text, integer) from public, anon, authenticated;
@@ -306,7 +356,7 @@ grant execute on function public.help_solutions_for(uuid, text, text, integer) t
 
 -- rights on the tables: no anon, admins read their own company (and the platform master everything), writes only via functions
 do $$ declare t text; begin
-  foreach t in array array['help_drafts', 'help_request_outcomes', 'help_solutions'] loop
+  foreach t in array array['help_drafts', 'help_request_outcomes', 'help_solutions', 'help_settings'] loop
     execute format('revoke all on table public.%I from anon, authenticated', t);
     execute format('grant select on table public.%I to authenticated', t);
     execute format('grant all on table public.%I to service_role', t);

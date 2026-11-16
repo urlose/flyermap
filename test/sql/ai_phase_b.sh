@@ -69,6 +69,9 @@ denied(){ case "$1" in "permission denied"*) echo 1;; esac; }
 newreq(){ api anon "" "select public.help_request('$TOKA', '$PA', '$1', '$2', null, null)" >/dev/null; val; }
 bot(){ Q authenticator -c "set role service_role; update public.help_requests set bot_draft = $2, bot_action = '${3:-answer}', bot_note = 'n', bot_at = clock_timestamp(), bot_tokens = 100 where id = '$1'" >/dev/null; }
 sq(){ Q postgres -c "$1"; }
+# approve as the admin screen will: send back exactly the cleaned texts the admin saw
+approve(){ local id=$1 who=${2:-$ADA} sc an; sc=$(sq "select scenario from help_solutions where id='$id'"); an=$(sq "select approved_answer from help_solutions where id='$id'")
+  api authenticated "$who" "select public.help_solution_approve('$id', \$s\$$sc\$s\$, \$s\$$an\$s\$)"; }
 
 # a report with a draft BEFORE the migration (backfill)
 R0=$(newreq other 'Alte Meldung'); bot "$R0" "'Alter Entwurf'"
@@ -134,16 +137,35 @@ ok "editing a draft cleans again" "$( [ "$r" = OK ] && [ "$(sq "select scenario 
 
 echo "-- 4. only approved solutions of the same company are used"
 r=$(api service_role "" "select count(*) from public.help_solutions_for('$COA', 'flyers', 'Flyer übrig', 3)"); ok "drafts are never returned (0 before approval)" "$( [ "$r" = OK ] && [ "$(val)" = 0 ] && echo 1 )"
-api authenticated "$ADA" "select public.help_solution_approve('$S1')" >/dev/null
-ok "admin approves → approved" "$( [ "$(sq "select status || (approved_by = '$ADA')::text from help_solutions where id='$S1'")" = approvedtrue ] && echo 1 )"
+r=$(api authenticated "$ADA" "select public.help_solution_approve('$S1', null, null)"); ok "approve without the admin's check of the cleaned text → review_required" "$( [ "$r" = review_required ] && echo 1 )"
+r=$(api authenticated "$ADA" "select public.help_solution_approve('$S1', 'Viele Flyer übrig, Anna fragt', 'Ins Start-Studio bringen.')"); ok "admin saw another text than the stored cleaned one → review_outdated" "$( [ "$r" = review_outdated ] && echo 1 )"
+ok "still a draft after the refused approvals" "$( [ "$(sq "select status from help_solutions where id='$S1'")" = draft ] && echo 1 )"
+approve "$S1" >/dev/null
+ok "admin approves with the cleaned texts → approved, reviewed by the admin" "$( [ "$(sq "select status || (approved_by = '$ADA')::text from help_solutions where id='$S1'")" = approvedtrue ] && [ "$(sq "select (reviewed_by = '$ADA' and reviewed_at is not null)::text from help_solutions where id='$S1'")" = true ] && echo 1 )"
+r=$( (Q postgres -c "insert into help_solutions(company_id, category, scenario, approved_answer, status, approved_at) values ('$COA', 'flyers', 'ohne Prüfung', 'x', 'approved', now())" 2>&1 || true) | grep -c help_solutions_reviewed); ok "approved without review is impossible even by direct database insert" "$( [ "$r" -ge 1 ] && echo 1 )"
 r=$(api authenticated "$ADA" "select public.help_solution_update('$S1', 'neu', 'neu', null, null, null)"); ok "approved solution cannot be edited → solution_frozen" "$( [ "$r" = solution_frozen ] && echo 1 )"
 r=$( (Q postgres -c "update help_solutions set approved_answer = 'x' where id = '$S1'" 2>&1 || true) | sed -n 's/.*ERROR: *//p'); ok "frozen even for a direct database update" "$( [ "$r" = solution_frozen ] && echo 1 )"
 SX=$(sq "insert into help_solutions(company_id, category, scenario, approved_answer) values ('$COA', 'other', 'Ruf 0171 9999999 an', 'ok') returning id")
-r=$(api authenticated "$ADA" "select public.help_solution_approve('$SX')"); ok "a draft that still contains personal data cannot be approved → personal_data_found" "$( [ "$r" = personal_data_found ] && echo 1 )"
-for k in 1 2 3; do id=$(sq "insert into help_solutions(company_id, category, scenario, approved_answer, status, approved_at) values ('$COA', 'other', 'Fall $k', 'Antwort $k', 'approved', now() - interval '$k minutes') returning id"); done
-sq "insert into help_solutions(company_id, category, scenario, approved_answer, status, approved_at) values ('$COB', 'flyers', 'Flyer übrig bei B', 'B-Antwort', 'approved', now())" >/dev/null
+r=$(approve "$SX"); ok "a draft that still contains personal data cannot be approved → personal_data_found" "$( [ "$r" = personal_data_found ] && echo 1 )"
+ins(){ sq "insert into help_solutions(company_id, category, scenario, approved_answer, status, approved_at, reviewed_at) values ('$1', '$2', '$3', '$4', 'approved', now() - interval '$5 minutes', now()) returning id"; }
+ins "$COA" other 'Hund bellt am Gartentor' 'Gartentor auslassen und Hund im Bericht melden' 1 >/dev/null
+ins "$COA" other 'Kunde fragt nach Rechnung' 'An das Büro verweisen' 2 >/dev/null
+ins "$COA" other 'Regen, Flyer nass' 'Pause machen, Flyer trocken halten' 3 >/dev/null
+ins "$COB" flyers 'Flyer übrig bei B' 'B-Antwort' 0 >/dev/null
+r=$(api service_role "" "select count(*) from public.help_solutions_for('$COA', 'flyers', 'viele Flyer übrig', 3)"); ok "use of solutions is OFF by default → nothing returned even for approved ones" "$( [ "$r" = OK ] && [ "$(val)" = 0 ] && echo 1 )"
+r=$(api authenticated "$ADA" "insert into public.help_settings(company_id, use_solutions) values ('$COA', true)"); ok "admins cannot switch the use of solutions on themselves" "$(denied "$r")"
+r=$(api authenticated "$ADA" "select count(*) from public.help_settings"); ok "admins can read the setting of their own company" "$( [ "$r" = OK ] && echo 1 )"
+sq "insert into help_settings(company_id, use_solutions, note) values ('$COA', true, 'test'), ('$COB', true, 'test')" >/dev/null
 r=$(api service_role "" "select string_agg(category, ',') from public.help_solutions_for('$COA', 'flyers', 'viele Flyer übrig', 10)")
-ok "server lookup: at most 3, same category first, only company A" "$( [ "$r" = OK ] && [ "$(val)" = "flyers,other,other" ] && echo 1 )"
+ok "server lookup: only the same topic (flyers), other categories are NOT added to fill the limit" "$( [ "$r" = OK ] && [ "$(val)" = "flyers" ] && echo 1 )"
+r=$(api service_role "" "select count(*) from public.help_solutions_for('$COA', 'gps', 'GPS zeigt falschen Ort', 3)"); ok "no solution for the topic (gps) → empty, although 4 other approved exist" "$( [ "$(val)" = 0 ] && echo 1 )"
+r=$(api service_role "" "select count(*) from public.help_solutions_for('$COA', null, 'Hund bellt am Gartentor', 3)"); ok "no topic given → empty" "$( [ "$(val)" = 0 ] && echo 1 )"
+r=$(api service_role "" "select string_agg(scenario, ',') from public.help_solutions_for('$COA', 'other', 'Ein großer Hund steht am Gartentor', 3)"); ok "category other: only the one sharing 2+ words (Hund, Gartentor)" "$( [ "$(val)" = "Hund bellt am Gartentor" ] && echo 1 )"
+r=$(api service_role "" "select count(*) from public.help_solutions_for('$COA', 'other', 'Frage zum Lohn', 3)"); ok "category other, nothing in common → empty (not the 3 newest)" "$( [ "$(val)" = 0 ] && echo 1 )"
+r=$(api service_role "" "select count(*) from public.help_solutions_for('$COA', 'other', 'bitte nicht heute, Flyer', 3)"); ok "category other: common words (bitte, nicht, heute) do not count as a match" "$( [ "$(val)" = 0 ] && echo 1 )"
+sq "update help_settings set use_solutions = false where company_id = '$COA'" >/dev/null
+r=$(api service_role "" "select count(*) from public.help_solutions_for('$COA', 'flyers', 'Flyer übrig', 3)"); ok "switched off again → nothing returned" "$( [ "$(val)" = 0 ] && echo 1 )"
+sq "update help_settings set use_solutions = true where company_id = '$COA'" >/dev/null
 r=$(api service_role "" "select count(*) from public.help_solutions_for('$COA', 'flyers', 'x', 3) where approved_answer = 'B-Antwort'"); ok "company B's solution never returned for A" "$( [ "$(val)" = 0 ] && echo 1 )"
 r=$(api service_role "" "select string_agg(approved_answer, ',') from public.help_solutions_for('$COB', 'flyers', 'Flyer', 3)"); ok "company B gets only its own" "$( [ "$(val)" = "B-Antwort" ] && echo 1 )"
 r=$(api authenticated "$ADA" "select * from public.help_solutions_for('$COA', 'flyers', 'x', 3)"); ok "admins cannot call the server lookup (not even for their own company)" "$(denied "$r")"
@@ -158,21 +180,34 @@ ok "revise → new draft version 2 of the approved one" "$( [ "$(sq "select vers
 r=$(api authenticated "$ADA" "select public.help_solution_revise('$S1')"); ok "only one open new version at a time → draft_exists" "$( [ "$r" = draft_exists ] && echo 1 )"
 r=$(api service_role "" "select string_agg(version::text, ',') from public.help_solutions_for('$COA', 'flyers', 'Flyer', 1)"); ok "until the new version is approved, version 1 is used" "$( [ "$(val)" = 1 ] && echo 1 )"
 api authenticated "$ADA" "select public.help_solution_update('$S2', 'Viele Flyer übrig', 'Ins Studio – oder Admin fragen, wenn zu weit.', 'flyers', 'AUTO', 'leftover_small')" >/dev/null
-api authenticated "$ADA" "select public.help_solution_approve('$S2')" >/dev/null
+approve "$S2" >/dev/null
 ok "approving version 2 archives version 1" "$( [ "$(sq "select string_agg(version || status, ',' order by version) from help_solutions where id in ('$S1', '$S2')")" = "1archived,2approved" ] && echo 1 )"
 r=$(api service_role "" "select string_agg(version::text, ',') from public.help_solutions_for('$COA', 'flyers', 'Flyer', 1)"); ok "now version 2 is used" "$( [ "$(val)" = 2 ] && echo 1 )"
 api authenticated "$ADA" "select public.help_solution_archive('$S2')" >/dev/null
 r=$(api service_role "" "select count(*) from public.help_solutions_for('$COA', 'flyers', 'Flyer', 3) where category = 'flyers'"); ok "archived → no longer used" "$( [ "$(val)" = 0 ] && echo 1 )"
-r=$(api authenticated "$ADA" "select public.help_solution_approve('$S2')"); ok "archived cannot be approved again" "$( [ "$r" = not_draft ] && echo 1 )"
+r=$(approve "$S2"); ok "archived cannot be approved again" "$( [ "$r" = not_draft ] && echo 1 )"
+
+echo "-- 6. parallel draft writes (_help_draft_keep)"
+RC=$(newreq other 'Parallel'); pids=()
+for k in $(seq 1 20); do ( bot "$RC" "'P$k'" 2>$DIR/perr$k ) & pids+=($!); done; e=0; for p in "${pids[@]}"; do wait $p || e=$((e+1)); done
+ok "20 parallel bot runs on ONE report: no error" "$( [ $e = 0 ] && [ -z "$(cat $DIR/perr* 2>/dev/null)" ] && echo 1 )"
+ok "20 parallel runs → versions 1..20, no gap, no duplicate, every draft kept" "$( [ "$(sq "select count(*) || ':' || min(version) || ':' || max(version) || ':' || count(distinct version) || ':' || count(distinct draft) from help_drafts where help_request_id='$RC'")" = "20:1:20:20:20" ] && echo 1 )"
+RS=(); for j in 1 2 3 4 5; do RS+=("$(newreq other "Mehrere $j")"); done; pids=(); rm -f $DIR/perr*
+for j in 0 1 2 3 4; do for k in 1 2 3 4 5; do ( bot "${RS[$j]}" "'M$j-$k'" 2>$DIR/perr$j$k ) & pids+=($!); done; done; e=0; for p in "${pids[@]}"; do wait $p || e=$((e+1)); done
+ok "5 reports × 5 parallel runs: no error, each report has exactly versions 1..5" "$( [ $e = 0 ] && [ "$(sq "select string_agg(distinct (count_v || ':' || max_v), ',') from (select count(*) count_v, max(version) max_v from help_drafts where help_request_id in ('${RS[0]}','${RS[1]}','${RS[2]}','${RS[3]}','${RS[4]}') group by help_request_id) x")" = "5:5" ] && echo 1 )"
+# another writer holds version 21 in an open transaction while the bot writes → the bot waits and takes 22, no error
+( Q postgres -c "begin; insert into help_drafts(help_request_id, company_id, version, draft) values ('$RC', '$COA', 21, 'direkt'); select pg_sleep(2); commit;" >/dev/null ) & HOLD=$!
+sleep 0.5; ce=0; bot "$RC" "'nach Konflikt'" 2>$DIR/cerr || ce=$?; wait $HOLD
+ok "version number taken by a parallel direct write → bot gets the next free one (22), no error" "$( [ $ce = 0 ] && [ ! -s $DIR/cerr ] && [ "$(sq "select string_agg(version || '=' || draft, ',' order by version) from help_drafts where help_request_id='$RC' and version > 20")" = "21=direkt,22=nach Konflikt" ] && echo 1 )"
 
 echo "-- rights"
 ok "trigger functions and help_redact not callable by anon / authenticated" "$( [ "$(sq "select bool_or(has_function_privilege(r, f, 'execute')) from unnest(array['anon','authenticated']) r, unnest(array['public._help_draft_keep()','public._help_outcome()','public._help_solution_frozen()','public.help_redact(text,uuid)']::regprocedure[]) f")" = f ] && echo 1 )"
-ok "admin functions: authenticated yes, anon no" "$( [ "$(sq "select bool_and(has_function_privilege('authenticated', f, 'execute') and not has_function_privilege('anon', f, 'execute')) from unnest(array['public.help_outcome_set(uuid,text)','public.help_solution_propose(uuid,text,text,text,text,text)','public.help_solution_update(uuid,text,text,text,text,text)','public.help_solution_approve(uuid)','public.help_solution_revise(uuid)','public.help_solution_archive(uuid)']::regprocedure[]) f")" = t ] && echo 1 )"
-ok "anon has no rights on the three new tables" "$( [ "$(sq "select bool_or(has_table_privilege('anon', t, 'select,insert,update,delete')) from unnest(array['public.help_drafts','public.help_request_outcomes','public.help_solutions']) t")" = f ] && echo 1 )"
+ok "admin functions: authenticated yes, anon no" "$( [ "$(sq "select bool_and(has_function_privilege('authenticated', f, 'execute') and not has_function_privilege('anon', f, 'execute')) from unnest(array['public.help_outcome_set(uuid,text)','public.help_solution_propose(uuid,text,text,text,text,text)','public.help_solution_update(uuid,text,text,text,text,text)','public.help_solution_approve(uuid,text,text)','public.help_solution_revise(uuid)','public.help_solution_archive(uuid)']::regprocedure[]) f")" = t ] && echo 1 )"
+ok "anon has no rights on the three new tables" "$( [ "$(sq "select bool_or(has_table_privilege('anon', t, 'select,insert,update,delete')) from unnest(array['public.help_drafts','public.help_request_outcomes','public.help_solutions','public.help_settings']) t")" = f ] && echo 1 )"
 ok "help_request / help_resolve untouched by phase B" "$( [ "$(md5s)" = "$MD5_BEFORE" ] && echo 1 )"
 ok "migration is idempotent (second run, no double backfill)" "$(Q postgres -f "$B" >/dev/null && [ "$(sq "select count(*) from help_drafts where help_request_id='$R0'")" = 1 ] && echo 1)"
 
 echo "== rollback"
 Q postgres -f "$ROOT/supabase/rollback/2026-11-16_ai_phase_b.down.sql"
-ok "tables, functions and triggers removed; reports and existing functions unchanged" "$( [ "$(sq "select to_regclass('public.help_drafts') is null and to_regclass('public.help_solutions') is null and to_regclass('public.help_request_outcomes') is null and to_regprocedure('public.help_redact(text,uuid)') is null and not exists(select 1 from pg_trigger where tgrelid='public.help_requests'::regclass and not tgisinternal) and (select count(*) from help_requests) > 0")" = t ] && [ "$(md5s)" = "$MD5_BEFORE" ] && echo 1 )"
+ok "tables, functions and triggers removed; reports and existing functions unchanged" "$( [ "$(sq "select to_regclass('public.help_drafts') is null and to_regclass('public.help_solutions') is null and to_regclass('public.help_request_outcomes') is null and to_regclass('public.help_settings') is null and to_regprocedure('public.help_solution_approve(uuid,text,text)') is null and to_regprocedure('public.help_redact(text,uuid)') is null and not exists(select 1 from pg_trigger where tgrelid='public.help_requests'::regclass and not tgisinternal) and (select count(*) from help_requests) > 0")" = t ] && [ "$(md5s)" = "$MD5_BEFORE" ] && echo 1 )"
 echo; [ $FAIL = 0 ] && echo "all $N ok (order $ORDER, $("$BIN/postgres" --version))" || { echo "$FAIL of $N FAILED (order $ORDER)"; exit 1; }
