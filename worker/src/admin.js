@@ -1338,13 +1338,11 @@ function viewCreate(edit){
         ${d.budget.on && d.budget.strategy === 'near-first' ? '' : `<div><label class="f">${esc(t(d.budget.on ? 'budMaxFly' : 'flyersCount'))}</label><div class="stepper"><button data-s="f:-500" aria-label="−500">−</button><input id="cFly" type="number" inputmode="numeric" min="100" step="100" value="${d.flyers}"><button data-s="f:500" aria-label="+500">+</button></div></div>`}
 
       </div>
-      ${d.travel === 'zones' && !d.cores && !d.zone && !d.mainAll ? `<label class="check" style="margin-top:8px"><input type="checkbox" id="cBudget" ${d.budget.on ? 'checked' : ''}><span><b>${esc(t('budTitle'))}</b><br><span class="small muted">${esc(t('budHint'))}</span></span></label>
-        ${d.budget.on ? `<label class="f" for="cBudH">${esc(t('budHours'))}</label><input class="in" type="number" id="cBudH" min="1" max="2000" step="1" value="${esc(d.budget.hours)}"><p class="small muted" style="margin:4px 0 0">${esc(t('budHoursHint', { n:d.n, each:fmtHm(Math.round(d.budget.hours * 60 / Math.max(1, d.n))) }))}</p>
-        <label class="f" for="cBudT">${esc(t('budTol'))}</label><input class="in" type="number" id="cBudT" min="0" max="25" step="1" value="${esc(d.budget.tol)}"><p class="small muted" style="margin:4px 0 0">${esc(t('budTolHint', { max:fmtHm(Math.round(d.budget.hours * 60 * (1 + d.budget.tol / 100))) }))}</p>` : ''}` : ''}
+
       ${p && d.mainAll ? `<div class="hint">${esc(t('mainAllNote', { city:mainCity(), mb:fmtN(Math.round(p.mailboxes)) }))}</div>`
         : p && p.eco && !d.exact ? `<div class="hint">${esc(t('ecoNote', { used:fmtN(Math.round(p.mailboxes)), asked:fmtN(d.flyers) }))} <button class="link" id="cExact">${esc(t('exactBtn', { f:fmtN(d.flyers) }))}</button></div>`
         : p && d.exact && !tkE ? `<p class="small muted" style="margin:6px 0 0">${esc(t('exactOn', { f:fmtN(d.flyers) }))} <button class="link" id="cEco">${esc(t('ecoBtn'))}</button></p>` : ''}
-      ${covBlock()}
+      ${d.budget.on && d.budget.strategy === 'near-first' ? '' : covBlock()}
       ${p && oneDay ? `<div class="hint">${esc(t('oneDayHint', { h:fmtHm(totMin) }))} <button class="link" id="cOneDay">${esc(t('applySug'))}</button></div>` : p && d.sug && d.sug !== d.n ? `<div class="hint">${esc(t('sugWorkers', { n:d.sug, d:d.days }))} <button class="link" id="cSug">${esc(t('applySug'))}</button></div>` : ''}
       ${p && p.cores && p.cores.length ? `<div class="hint">${esc(t('coresSum', { n:p.cores.length, mb:fmtN(p.mailboxes) }))}<br><span class="small">${esc(p.cores.map(c => c.name + ' ' + fmtN(c.mb)).join(' · '))}</span></div>` : ''}
       ${planBlock()}
@@ -1360,6 +1358,11 @@ function viewCreate(edit){
     else if(d.step === 2) body = `
       <div class="steppers"><div><label class="f" for="cDeadline">${esc(t('deadline'))}</label><input class="in" type="date" id="cDeadline" min="${plusDays(isoDay(new Date()), 1)}"></div><div><label class="f" for="cHours">${esc(t('hoursDay'))}</label><input class="in" type="number" id="cHours" min="1" max="12" step="0.5" value="${d.hours}"></div></div>
       <label class="f" for="cQuota">${esc(t('quota'))}</label><input class="in" type="number" id="cQuota" min="200" step="100" value="${esc(saved.quota)}">
+      <div class="steppers"><div><label class="f">${esc(t('workersCount'))}</label><div class="stepper"><button data-s="n:-1" aria-label="−1">−</button><b id="vN">${d.n}</b><button data-s="n:1" aria-label="+1">+</button></div></div></div>
+      ${d.travel === 'zones' && !d.cores && !d.mainAll ? `<label class="check" style="margin-top:8px"><input type="checkbox" id="cBudget" ${d.budget.on ? 'checked' : ''}><span><b>${esc(t('budTitle'))}</b></span></label>
+        ${d.budget.on ? `<label class="f" for="cBudH">${esc(t('budHours'))}</label><input class="in" type="number" id="cBudH" min="1" max="2000" step="1" value="${esc(d.budget.hours)}"><p class="small muted">${esc(t('budHoursHint', { n:d.n, each:fmtHm(Math.round(d.budget.hours * 60 / Math.max(1, d.n))) }))}</p>
+          <label class="f" for="cBudgetStrategy">${esc(t('budStrategyLabel'))}</label><select class="in" id="cBudgetStrategy"><option value="near-first" ${d.budget.strategy === 'near-first' ? 'selected' : ''}>${esc(t('budNearFirst'))}</option><option value="density" ${d.budget.strategy !== 'near-first' ? 'selected' : ''}>${esc(t('budDensity'))}</option></select>
+          <label class="f" for="cBudT">${esc(t('budTol'))}</label><input class="in" type="number" id="cBudT" min="0" max="25" step="1" value="${esc(d.budget.tol)}">` : ''}` : ''}
       <label class="f" for="cNotes">${esc(t('note'))}</label><textarea class="in" id="cNotes" placeholder="${esc(t('notesPh'))}"></textarea>
       <p class="small muted" style="margin:6px 0 0">${esc(saved.deadline ? t('deadlineDays', { d:d.days }) : t('deadlineNone'))}</p>
       ${p ? `<div class="${cap.ok ? 'hint' : 'warnbox'}">${cap.ok ? esc(needDays === 1 ? t('fitsOne') : t('fitsOk', { d:needDays })) : esc(t('tooBig', { h:cap.slowest.toFixed(1).replace('.', ','), lim:cap.limit, d:d.days }))}</div>` : ''}`;
@@ -1415,6 +1418,7 @@ function viewCreate(edit){
     if($('#cBudget')) $('#cBudget').onchange = e => { saved = keep(); d.budget.on = e.target.checked; d.assign = {}; recompute(); };
     if($('#cBudT')) $('#cBudT').onchange = e => { saved = keep(); d.budget.tol = Math.max(0, Math.min(25, Math.round(+e.target.value || 0))); d.assign = {}; recompute(); };
     if($('#cBudH')) $('#cBudH').onchange = e => { saved = keep(); d.budget.hours = Math.max(1, Math.min(2000, Math.round(+e.target.value || 32))); d.assign = {}; recompute(); };
+    if($('#cBudgetStrategy')) $('#cBudgetStrategy').onchange = e => { saved = keep(); d.budget.strategy = e.target.value; d.assign = {}; recompute(); };
     if($('#cFly')) $('#cFly').onchange = () => { saved = keep(); d.flyers = Math.max(100, Math.round(num('#cFly', d.flyers))); d.nAuto = true; recompute(); };
     if($('#cQuota')) $('#cQuota').onchange = () => { saved = keep(); recompute(); };
     document.querySelectorAll('[data-travel]').forEach(b => b.onclick = () => { if(d.travel === b.dataset.travel) return; saved = keep(); d.travel = b.dataset.travel; d.bike = d.travel !== 'bus'; recompute(); });
