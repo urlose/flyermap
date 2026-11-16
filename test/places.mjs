@@ -124,5 +124,18 @@ for(const [name, st] of Object.entries(REAL)){
   ok(`[real] ${name}: a second search centre finds the same areas under the same ids (merged to one)`, common.length > 3 && same.length >= common.length * 0.9 && mergePlaces(places, p2).length < places.length + p2.length, same.length + ' of ' + common.length + ' identical');
   report[name] = { places:places.length, suggestions:list.length, small:list.filter(x => x.small).length, first:first.map(x => `${x.households}hh ${x.km}km`), afterAdd:l2.slice(0, 6).map(x => `${x.households}hh ${x.km}km (${x.gapKm}km bis ${x.gapTo || 'Start'})`), added:`${pick.households}hh ${pick.km}km` };
 }
+
+// ---------- Nearest first ----------
+{ const l = rankSuggestions(pl, { start:START, missing:8000 }), g = l.map(x => x.gapKm);
+  ok('[synthetic] suggestions are sorted nearest first (distance to the nearest confirmed area, then to the start)', g.every((v, i) => i === 0 || v >= g[i - 1]) && l.length > 3, g.join(' <= '));
+  const b = l.find(x => near(x, 'Dorf B')), side = addSuggestion([], b, 'B'), l2 = rankSuggestions(pl, { start:START, side, missing:8000 }), g2 = l2.map(x => x.gapKm);
+  ok('[synthetic] after adding a place the list is nearest-first again, measured from the start AND the added place', g2.every((v, i) => i === 0 || v >= g2[i - 1]) && l2[0].gapKm <= 1.5, g2.join(' <= '));
+  ok('[synthetic] a small village is not pushed behind a bigger, farther town (no size preference)', l.findIndex(x => x.small) < l.findIndex(x => x.households > 3000)); }
+for(const [name, st] of Object.entries({ Weidenberg:{ lat:49.9424, lng:11.7290 }, Eisfeld:{ lat:50.4215, lng:10.9105 } })){
+  const places = await censusPlaces(st.lat, st.lng, 18000, { fetcher }), l = rankSuggestions(places, { start:st, missing:8000 }), g = l.map(x => x.gapKm);
+  ok(`[real] ${name}: all ${l.length} suggestions nearest first, first screen = the 10 nearest`, g.every((v, i) => i === 0 || v >= g[i - 1]) && g.slice(0, 10).every(v => v <= g[10]), g.slice(0, 12).join(','));
+  const side = addSuggestion([], l.find(x => x.km >= 4), 'Dorf'), l2 = rankSuggestions(places, { start:st, side, missing:8000 }), g2 = l2.map(x => x.gapKm);
+  ok(`[real] ${name}: after adding a village the list is nearest first from start and village`, g2.every((v, i) => i === 0 || v >= g2[i - 1]) && l2.every(x => x.km <= 15));
+}
 if(process.env.REPORT) console.log(JSON.stringify(report, null, 1));
 console.log(fail ? fail + ' FAILED' : 'all ok'); process.exit(fail ? 1 : 0);

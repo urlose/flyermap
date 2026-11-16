@@ -58,9 +58,9 @@ export function mergePlaces(...lists){
 // Excluded: places of the start's own area and of every confirmed place (same cell area, or – without cell data – within 1.5 km of
 // a confirmed point), places beyond maxKm straight line from the start, duplicates. Not excluded: small villages, villages next to
 // big towns, districts only 300 m beyond a confirmed area (those get `adjacent`, the plan may already contain them).
-// Order: nearness to the start or to the nearest confirmed place first (halves every ~3 km), then what the place can take of the
-// missing flyers, a little compactness. The first `page` entries reserve room for the surroundings of each confirmed place
-// and for small villages, so neither a big town nor the start's own neighbourhood pushes them off the first screen.
+// Order: NEAREST FIRST – straight-line distance to the nearest confirmed area (the start or a place the admin added; edge of the
+// area when the census cells are known), then to the start. Small villages and big towns are sorted alike; after adding a place its
+// surroundings come first. The whole list (up to `max`) is in this order, so "show more" simply goes on farther out.
 export function rankSuggestions(towns, { start, side = [], missing = 0, max = MAX_LIST, maxKm = MAX_KM, localKm = LOCAL_KM, page = PAGE } = {}){
   const all = mergePlaces(towns || []);
   const anchors = [{ pt:start, name:null }, ...side.map(x => ({ pt:x, name:x.name }))].filter(a => a.pt && a.pt.lat != null).map(a => ({ ...a, area:anchorArea(all, a.pt) }));
@@ -79,21 +79,13 @@ export function rankSuggestions(towns, { start, side = [], missing = 0, max = MA
     const take = Math.min(1, c.households / need), dense = c.dense || 0;
     const score = Math.exp(-gap / 3000) * (0.75 + 0.25 * Math.exp(-km / maxKm)) * (0.45 + 0.55 * Math.sqrt(take)) * (0.9 + 0.1 * dense / (dense + 200)) * (gap < 500 ? 0.5 : 1);   // an area right beside a confirmed one may already be in its plan: shown, but not first
     return { c, gaps, gap, gi, km, score };
-  }).sort((a, b) => b.score - a.score);
-  // the first screen: reserved room, then by score
-  const first = new Set(), take = (r, n) => { for(const x of r){ if(n <= 0 || first.size >= page) break; if(!first.has(x)){ first.add(x); n--; } } };
-  anchors.map((a, k) => k).filter(k => k > 0).reverse().slice(0, 3).forEach(k => take(list.filter(x => x.gaps[k] <= localKm * 1000), 2));   // surroundings of confirmed places, newest first
-  take(list.filter(x => x.c.households < SMALL_HH), 3);                                                                                    // small villages
-  take(list, page);
-  const ordered = [...list.filter(x => first.has(x)), ...list.filter(x => !first.has(x))].slice(0, max);
+  }).sort((a, b) => a.gap - b.gap || a.km - b.km);   // nearest first: straight-line distance to the nearest confirmed area (the start, or a place the admin added), then to the start; "show more" goes on farther out
+  const ordered = list.slice(0, max);
   const out = ordered.map(x => ({
     id:x.c.id || null, lat:x.c.lat, lng:x.c.lng, households:x.c.households, km:Math.round(x.km * 10) / 10, dense:x.c.dense || null,
     gapKm:Math.round(x.gap / 100) / 10, gapTo:anchors[x.gi].name, small:x.c.households < SMALL_HH, noRoute:x.c.households < ROUTE_HH, adjacent:x.gap < 500,
   })).map((o, i) => Object.defineProperty(o, 'cells', { value:ordered[i].c.cells, enumerable:false }));   // the census cells of the area (for the map highlight): shared, not copied, not part of the item's data
-  // within the first screen: sorted by score again (reservations only decide who is on it)
-  const n = Math.min(page, out.length), idx = new Map(ordered.map((x, i) => [i, x.score]));
-  const head = out.slice(0, n).map((o, i) => ({ o, s:idx.get(i) })).sort((a, b) => b.s - a.s).map(z => z.o);
-  return [...head, ...out.slice(n)];
+  return out;
 }
 
 // the admin adds a suggestion: it becomes a confirmed Nebenstadt (same shape as before, so the planner treats it as before).
