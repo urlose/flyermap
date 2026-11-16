@@ -492,7 +492,12 @@ export function createPlanService(cache){
       let st0 = start;
       if(mMask){ const at = s0 => Planner.selectWithMust(gm, s0, 1e9, must, null).mailboxes || 0, a = at(start);
         const c0 = Planner.denseEntry(gm, mMask.centre, null, 150) || mMask.centre; if(at(c0) > a * 1.3) st0 = c0; }
-      await planPlace(gm, st0, mainName || '', mainAll ? 1e9 : null, hasZone ? zone : null, true, mMask);
+      // When the admin manually changes a chosen village's flyer count, reserve that many
+      // from the order before planning the main town. Automatic choices keep the old distribution.
+      const reserved = (side || []).filter(c => c.cid && c.auto === false && !c.all)
+        .reduce((sum, c) => sum + Math.max(0, Math.round(+c.flyers || 0)), 0);
+      const mainAsk = !mainAll && reserved > 0 ? Math.max(0, flyers - reserved) : null;
+      await planPlace(gm, st0, mainName || '', mainAll ? 1e9 : mainAsk, hasZone ? zone : null, true, mMask);
       if(stale()) return { skipped:true };
       // the other places in the order the admin has them (suggested ones: densest first)
       for(const c of side || []){
