@@ -613,6 +613,23 @@ export function createPlanService(cache){
         planned.push({...pl,routes,mailboxes:routes.reduce((a,r)=>a+(r.mailboxes||0),0),
           minutes:routes.reduce((a,r)=>a+(r.minutes||0),0),exhausted:best?.count===eligible.length});
       }
+      // A time target must not be arbitrarily capped by the first loaded map
+      // square. If we exhausted every nearby street but still have plenty of
+      // time, load a wider region once and recalculate from scratch.
+      const mainResult=planned.find(p=>p.isMain);
+      if(!budget._expanded && mainResult?.exhausted && mainResult.minutes<mainWork*.8 &&
+         G.radius<Planner.MAX_R){
+        const oldRadius=G.radius,next=Planner.nextRadius(G,Math.max(12000,(G.usable||0)*1.5));
+        if(next>oldRadius){
+          stage('loadingMore');
+          await load(start,12000,next,[],stage,stale,'loadingMore');
+          if(stale())return {skipped:true};
+          if(G.radius>oldRadius)return this.planNearFirst({
+            start,n,days,hours,budget:{...budget,_expanded:true},
+            side:side.filter(c=>!c._areaFromShape),must:[],zone:null,mainName
+          },stage,stale);
+        }
+      }
       planned.sort((a,b)=>Number(b.isMain)-Number(a.isMain));
       const bins=Array.from({length:N},(_,w)=>({w,items:[],minutes:0}));
       planned[0].routes.forEach((r,i)=>{
