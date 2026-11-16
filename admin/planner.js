@@ -1267,7 +1267,16 @@
   function planFlyers(g, start, flyers, n, opt){
     opt = opt || {};
     g = zoneView(g, opt.zone, opt.must);
-    const sel = selectWithMust(g, start, flyers, opt.must);
+    // Time-first mode already selected the nearest reachable street prefix.
+    // Do not run selectForFlyers again: its density/cluster optimizer can drop
+    // near residential side streets in favour of distant high-mailbox blocks.
+    const sel = Array.isArray(opt.selectedEdgeIds)
+      ? (() => {
+          const ids = [...new Set(opt.selectedEdgeIds)]
+            .filter(i => Number.isInteger(i) && i >= 0 && i < g.edges.length && g.edges[i].mb > 0);
+          return { ids, mailboxes:ids.reduce((sum, i) => sum + g.edges[i].mb, 0) };
+        })()
+      : selectWithMust(g, start, flyers, opt.must);
     const total = sel.ids.reduce((s, i) => s + g.edges[i].len, 0), mbTotal = sel.mailboxes || 1;
     const w = e => 0.5 * e.len / (total || 1) + 0.5 * e.mb / mbTotal;
     const N = n || 1, build = (parts, rootNode) => parts.map((part, k) => {
