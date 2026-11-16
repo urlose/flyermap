@@ -15,6 +15,17 @@ for(let y=0;y<=6;y++)for(let x=0;x<=6;x++)for(const [xx,yy] of [[x+1,y],[x,y+1]]
 }
 const graph={pts,edges,adj,radius:1500,mailboxes:edges.reduce((a,e)=>a+e.mb,0),
   usable:edges.reduce((a,e)=>a+e.mb,0),street_m:edges.length*90};
+// Regression for Leipheim/GZ4: nearest streets must not be silently replaced
+// by a denser distant block during route construction.
+const nearIds=[0,1]; // two low-mailbox branches next to the starting junction
+const nearMb=nearIds.reduce((sum,i)=>sum+edges[i].mb,0);
+const preserved=Planner.planFlyers(graph,start,nearMb+1,1,{
+  days:1,hoursPerDay:7,selectedEdgeIds:nearIds
+});
+assert.deepEqual([...preserved.routes[0].part].sort((a,b)=>a-b),nearIds);
+assert.equal(preserved.mailboxes,nearMb,'Near-first route must retain nearby mailbox count');
+assert.equal(preserved.routes[0].mailboxes,nearMb,'Routing must serve the selected nearby streets');
+
 Planner.loadForFlyers=async()=>graph;
 const run=async (time,flyers)=>createPlanService(null).plan({
   start,flyers,n:2,days:3,hours:7,must:[],zone:null,side:[],
