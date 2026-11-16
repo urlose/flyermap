@@ -146,6 +146,9 @@ export function createPlanService(cache){
       if(!zones){ travel = travel === 'bike' || travel === 'car' ? travel : (bike ? 'bike' : 'bus'); bike = travel !== 'bus'; }
       Planner.setPace(quota);   // hours from the order's quota (metres per 30 minutes)
       side = (side || []).filter(c => c && (c.flyers > 0 || split === 'even'));   // even split: a place added without a number gets its share below
+      if(zones && budget?.strategy === 'near-first' && !mainAll){
+        return this.planNearFirst({ start, n, days, hours, budget, side, must, zone, mainName }, stage, stale);
+      }
       // a near Nebenstadt is walked only when there are mailboxes on the way; an empty road to it (> EMPTY_GAP) → bus, like a far place
       const bus = [];
       if((must || []).some(a => a && a.name && a.p && a.p.length > 2)){
@@ -166,9 +169,6 @@ export function createPlanService(cache){
       // new orders (split 'even'): the flyers of the order are shared out evenly over the main town and all Nebenstädte;
       // a place with fewer mailboxes than its share gets what it has, the rest goes to the others. Old orders: unchanged.
       let splitInfo = null;
-      if(zones && budget?.strategy === 'near-first' && !mainAll && !(zone && zone.length > 2)){
-        return this.planNearFirst({ start, n, days, hours, budget, side, mainName }, stage, stale);
-      }
       if(zones){
         // time-budget mode ("maximum flyers for the working time"): same zones, but the team's hours are the limit, one route per worker
         const res = budget && budget.hours > 0 && !mainAll && !(zone && zone.length > 2)
@@ -532,7 +532,16 @@ export function createPlanService(cache){
     // supported; side towns, drawn areas and road travel require separate budgeting.
     // Time-first, street-network expansion. Unlike planBudget this mode never
     // allocates by mailbox density and never takes the flyer limit as a target.
-    async planNearFirst({ start, n, days, hours, budget, side = [], mainName = '' }, stage, stale){
+    async planNearFirst({ start, n, days, hours, budget, side = [], must = [], zone = null, mainName = '' }, stage, stale){
+      const shapes = (must || []).filter(x => x?.p?.length > 2).map((x,i) => ({
+        name:x.name||'Zusatzgebiet '+(i+1), zone:x.p, flyers:1500,
+        lat:(x.c&&x.c[0])||x.p.reduce((a,p)=>a+p[0],0)/x.p.length,
+        lng:(x.c&&x.c[1])||x.p.reduce((a,p)=>a+p[1],0)/x.p.length
+      }));
+      if(zone?.length>2)shapes.push({name:'Gezeichnetes Gebiet',zone,flyers:1500,
+        lat:zone.reduce((a,p)=>a+p[0],0)/zone.length,
+        lng:zone.reduce((a,p)=>a+p[1],0)/zone.length});
+      side=[...side,...shapes];
       const N=Math.max(1,Math.round(n||1)), H=hours||7, maxDays=Math.max(1,Math.min(14,days||1));
       const B=Math.min(Math.max(60,+budget.hours*60),N*H*60*maxDays);
       const tol=Number.isFinite(+budget.tolerance)?Math.max(0,Math.min(.25,+budget.tolerance)):.05;
@@ -572,7 +581,9 @@ export function createPlanService(cache){
         return ((a[0]+b[0])/2).toFixed(5)+','+((a[1]+b[1])/2).toFixed(5);
       };
       const planned=[];
-      for(const pl of places){
+      // Reserve manually selected areas FIRST. The main place then grows around
+      // the start without re-using their streets, so additions shrink its radius.
+      for(const pl of [...places.slice(1),places[0]]){
         if(stale())return {skipped:true};
         const g={...pl.g,edges:pl.g.edges.map((e,i)=>e.mb&&seen.has(edgeKey(pl.g,i))?{...e,mb:0,boxes:[]}:e)};
         const eligible=outwardStreetOrder(g,pl.st).streets;
@@ -602,6 +613,7 @@ export function createPlanService(cache){
         planned.push({...pl,routes,mailboxes:routes.reduce((a,r)=>a+(r.mailboxes||0),0),
           minutes:routes.reduce((a,r)=>a+(r.minutes||0),0),exhausted:best?.count===eligible.length});
       }
+      planned.sort((a,b)=>Number(b.isMain)-Number(a.isMain));
       const bins=Array.from({length:N},(_,w)=>({w,items:[],minutes:0}));
       planned[0].routes.forEach((r,i)=>{
         const b=bins[i%N];b.items.push({r,name:planned[0].name,part:i+1});b.minutes+=r.minutes||0;
