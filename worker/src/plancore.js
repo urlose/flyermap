@@ -2,6 +2,7 @@
 // Runs inside a Web Worker (planworker.js) so the screen never freezes; the same code is the fallback on the main thread.
 // The street graph stays here between calls: changing flyers / workers / hours only re-plans, it does not reload the map.
 import Planner from '../../admin/planner.js';
+import { outwardStreetOrder } from './nearfirst.js';
 import { censusSource, placeMask } from './zensus.js';
 const census = censusSource();   // Zensus 2022 lifts the mailbox estimate where our own rules count too few (old town centres)
 
@@ -145,6 +146,9 @@ export function createPlanService(cache){
       if(!zones){ travel = travel === 'bike' || travel === 'car' ? travel : (bike ? 'bike' : 'bus'); bike = travel !== 'bus'; }
       Planner.setPace(quota);   // hours from the order's quota (metres per 30 minutes)
       side = (side || []).filter(c => c && (c.flyers > 0 || split === 'even'));   // even split: a place added without a number gets its share below
+      if(zones && budget?.strategy === 'near-first' && !mainAll){
+        return this.planNearFirst({ start, n, days, hours, budget, side, must, zone, mainName }, stage, stale);
+      }
       // a near Nebenstadt is walked only when there are mailboxes on the way; an empty road to it (> EMPTY_GAP) → bus, like a far place
       const bus = [];
       if((must || []).some(a => a && a.name && a.p && a.p.length > 2)){
@@ -521,6 +525,178 @@ export function createPlanService(cache){
       plan.capacity = Planner.capacity(perW.map((m, k) => ({ idx:k, minutes:m })), flyers, { hoursPerDay:hours, days });
       const sug = Math.min(20, Planner.suggestWorkers(perW.reduce((a, b) => a + b, 0), hours, days));
       return { plan, sug, street_m:G.street_m };
+    },
+
+    // Opt-in new time-first planner. The flyer count is calculated AFTER walking-time
+    // selection, never supplied as a target. For now only the main continuous area is
+    // supported; side towns, drawn areas and road travel require separate budgeting.
+    // Time-first, street-network expansion. Unlike planBudget this mode never
+    // allocates by mailbox density and never takes the flyer limit as a target.
+    async planNearFirst({ start, n, days, hours, budget, side = [], must = [], zone = null, mainName = '' }, stage, stale){
+      const shapes = (must || []).filter(x => x?.p?.length > 2).map((x,i) => ({
+        name:x.name||'Zusatzgebiet '+(i+1), zone:x.p, flyers:1500,
+        lat:(x.c&&x.c[0])||x.p.reduce((a,p)=>a+p[0],0)/x.p.length,
+        lng:(x.c&&x.c[1])||x.p.reduce((a,p)=>a+p[1],0)/x.p.length
+      }));
+      if(zone?.length>2)shapes.push({name:'Gezeichnetes Gebiet',zone,flyers:1500,
+        lat:zone.reduce((a,p)=>a+p[0],0)/zone.length,
+        lng:zone.reduce((a,p)=>a+p[1],0)/zone.length});
+      side=[...side,...shapes];
+      const N=Math.max(1,Math.round(n||1)), H=hours||7, maxDays=Math.max(1,Math.min(14,days||1));
+      const B=Math.min(Math.max(60,+budget.hours*60),N*H*60*maxDays);
+      const tol=Number.isFinite(+budget.tolerance)?Math.max(0,Math.min(.25,+budget.tolerance)):.05;
+      const travelMin=budget.travelMin==null?null:+budget.travelMin;
+      if(side.length && !(Number.isFinite(travelMin)&&travelMin>0))
+        throw new Error('Für Nebenstädte bitte eine realistische Anfahrtszeit pro Ortswechsel in Minuten eintragen.');
+      const reservedTravel=side.length*(travelMin||0);
+      if(reservedTravel>=B)throw new Error('Die Anfahrten brauchen das gesamte Zeitbudget. Mehr Stunden eintragen.');
+      if(!G||gKey!==keyOf(start)){
+        stage('loadingArea'); await load(start,12000,undefined,[],stage,stale,'loadingArea');
+      }
+      if(stale())return {skipped:true};
+      const Bwalk=B-reservedTravel, shareSide=side.length ? .4 : 0;
+      // A manually selected place receives a slice of the time, not a fixed
+      // number of flyers. The main start area gets the remainder (at least 60%).
+      const sideWork=Bwalk*shareSide, mainWork=Bwalk-sideWork;
+      const places=[{name:mainName||'',st:start,g:G,time:mainWork,workers:N,isMain:true}];
+      for(const c of side){
+        stage('loadingSide');
+        const g0=await sideGraph({ ...c, loadFor:Math.max(1500,Math.round(+c.flyers||1500)) },stage,stale);
+        if(stale())return {skipped:true};
+        const zone=c.zone&&c.zone.length>2?c.zone:null;
+        const mask=zone?null:await placeMask(c.lat,c.lng,{pick:c.cid?150:0}).catch(()=>null);
+        const filtered={...g0,zoned:!!(zone||mask)||g0.zoned,edges:g0.edges.map(e=>{
+          if(!e.mb)return e;
+          const mid=e.coords?.[Math.floor(e.coords.length/2)]||g0.pts[e.a];
+          if(zone&&!Planner.inPoly(mid,zone)||mask&&!mask.inside(mid[0],mid[1]))return {...e,mb:0,boxes:[]};
+          return e;
+        })};
+        places.push({name:c.name||'',st:[c.lat,c.lng],g:filtered,time:sideWork/side.length,workers:1,isMain:false});
+      }
+      stage('calculating');
+      // Adjacent map tiles and towns overlap. Suppress streets already handed
+      // out, based on physical edge midpoints rather than tentative selections.
+      const seen=new Set(), edgeKey=(g,i)=>{
+        const e=g.edges[i],a=g.pts[e.a],b=g.pts[e.b];
+        return ((a[0]+b[0])/2).toFixed(5)+','+((a[1]+b[1])/2).toFixed(5);
+      };
+      const planned=[];
+      // Reserve manually selected areas FIRST. The main place then grows around
+      // the start without re-using their streets, so additions shrink its radius.
+      for(const pl of [...places.slice(1),places[0]]){
+        if(stale())return {skipped:true};
+        const g={...pl.g,edges:pl.g.edges.map((e,i)=>e.mb&&seen.has(edgeKey(pl.g,i))?{...e,mb:0,boxes:[]}:e)};
+        const eligible=outwardStreetOrder(g,pl.st).streets;
+        const evalPrefix=count=>{
+          if(!count)return null;
+          const ids=new Set(eligible.slice(0,count).map(q=>q.i));
+          const region={...g,zoned:true,edges:g.edges.map((e,i)=>ids.has(i)?e:{...e,mb:0,boxes:[]})};
+          const max=eligible.slice(0,count).reduce((a,e)=>a+e.mailboxes,0);
+          if(max<=0)return null;
+          const p=Planner.planFlyers(region,pl.st,max+1,pl.workers,{days:maxDays,hoursPerDay:H});
+          const minutes=p.routes.reduce((a,r)=>a+(r.minutes||0),0);
+          return {p,minutes,count};
+        };
+        let lo=1,hi=eligible.length,best=null;
+        for(let iteration=0;lo<=hi&&iteration<16;iteration++){
+          const mid=(lo+hi)>>1,trial=evalPrefix(mid);
+          if(trial&&trial.minutes<=pl.time*(1+tol)+.01){
+            if(!best||trial.count>best.count)best=trial;
+            lo=mid+1;
+          }else hi=mid-1;
+        }
+        // If the first street alone exceeds budget, do not silently exceed it.
+        const routes=(best?.p.routes||[]).filter(r=>r.path?.length>1);
+        // Planner returns the actual edges used for each route; only those
+        // are excluded from later towns.
+        (best?.p.routes||[]).forEach(r=>(r.part||[]).forEach(i=>seen.add(edgeKey(g,i))));
+        planned.push({...pl,routes,mailboxes:routes.reduce((a,r)=>a+(r.mailboxes||0),0),
+          minutes:routes.reduce((a,r)=>a+(r.minutes||0),0),exhausted:best?.count===eligible.length});
+      }
+      // A time target must not be arbitrarily capped by the first loaded map
+      // square. If we exhausted every nearby street but still have plenty of
+      // time, load a wider region once and recalculate from scratch.
+      const mainResult=planned.find(p=>p.isMain);
+      if(!budget._expanded && mainResult?.exhausted && mainResult.minutes<mainWork*.8 &&
+         G.radius<Planner.MAX_R){
+        const oldRadius=G.radius,next=Planner.nextRadius(G,Math.max(12000,(G.usable||0)*1.5));
+        if(next>oldRadius){
+          stage('loadingMore');
+          await load(start,12000,next,[],stage,stale,'loadingMore');
+          if(stale())return {skipped:true};
+          if(G.radius>oldRadius)return this.planNearFirst({
+            start,n,days,hours,budget:{...budget,_expanded:true},
+            side:side.filter(c=>!c._areaFromShape),must:[],zone:null,mainName
+          },stage,stale);
+        }
+      }
+      planned.sort((a,b)=>Number(b.isMain)-Number(a.isMain));
+      const bins=Array.from({length:N},(_,w)=>({w,items:[],minutes:0}));
+      planned[0].routes.forEach((r,i)=>{
+        const b=bins[i%N];b.items.push({r,name:planned[0].name,part:i+1});b.minutes+=r.minutes||0;
+      });
+      for(const pl of planned.slice(1))for(const [i,r] of pl.routes.entries()){
+        const b=bins.reduce((a,c)=>c.minutes<a.minutes?c:a,bins[0]);
+        b.items.push({r,name:pl.name,part:i+1});b.minutes+=(r.minutes||0)+(b.items.length>1?travelMin:0);
+      }
+      const routes=[],jumpsAll=[];
+      for(const bin of bins){
+        if(!bin.items.length)continue;
+        const its=bin.items;
+        // If a worker starts in a side town without a main-town section, the
+        // journey from the order's starting point must also appear and count.
+        const origin=its[0].name!==planned[0].name ? start : undefined;
+        const hasOrigin=!!origin && segLen(start,its[0].r.path[0])>30;
+        const line=buildLine(its.map(x=>({r:x.r,name:x.name})),H,
+          () => travelMin||0,undefined,origin,false);
+        let off=hasOrigin?1:0;
+        const parts=its.map(x=>{
+          const part={place:x.name,part:x.part,i0:off,i1:off+x.r.path.length-1,
+            mailboxes:Math.round(x.r.mailboxes||0),minutes:Math.round(x.r.minutes||0)};
+          off+=x.r.path.length;return part;
+        });
+        const jumps=[];
+        if(hasOrigin){
+          const km=Math.round(segLen(start,its[0].r.path[0])/100)/10;
+          jumps.push({w:bin.w,from:planned[0].name||'Start',to:its[0].name,idx:1,
+            km,min:travelMin,known:true,far:km>3,same:false});
+        }
+        for(let i=1;i<its.length;i++){
+          if(its[i-1].name===its[i].name)continue;
+          const a=its[i-1].r.path.at(-1),b=its[i].r.path[0],km=Math.round(segLen(a,b)/100)/10;
+          jumps.push({w:bin.w,from:its[i-1].name,to:its[i].name,idx:parts[i].i0,
+            km,min:travelMin,known:travelMin!=null,far:km>3,same:false});
+        }
+        const rideMinutes=jumps.length*(travelMin||0);
+        routes.push({...line,w:bin.w,idx:routes.length,place:[...new Set(its.map(x=>x.name))].join(' + '),
+          parts,jumps,work_minutes:Math.round(line.minutes),minutes:Math.round(line.minutes+rideMinutes)});
+        jumpsAll.push(...jumps);
+      }
+      const per_worker=Array.from({length:N},(_,w)=>routes.filter(r=>r.w===w).reduce((a,r)=>a+r.minutes,0));
+      const mailboxes=Math.round(routes.reduce((a,r)=>a+(r.mailboxes||0),0));
+      const walking=routes.reduce((a,r)=>a+(r.work_minutes||0),0);
+      const travelMinutes=jumpsAll.reduce((a,j)=>a+(j.min||0),0),actual=walking+travelMinutes;
+      const plan={routes,mailboxes,zone:[],zones:true,merged:true,per_worker,
+        split:planned.map(p=>({name:p.name,flyers:Math.round(p.mailboxes),cap:null})),
+        side_failed:[],side_dropped:[],side_info:[],must_mb:0,must_info:[],
+        budget:{strategy:'near-first',hours:budget.hours,tolerance:tol,car:!!budget.car,
+          minutes:Math.round(B),effective_minutes:Math.round(B),
+          target_minutes:Math.round(B),max_minutes:Math.round(B*(1+tol)),
+          actual_minutes:Math.round(actual),work_minutes:Math.round(walking),
+          planned:mailboxes,flyers_max:mailboxes,uncovered:0,
+          over_target:actual>B+1,over:actual>B*(1+tol)+1,
+          fits_all:planned.every(p=>p.exhausted),limit:planned.every(p=>p.exhausted)?'capacity':'time',
+          estimate:true,unplanned:planned.filter(p=>!p.routes.length).map(p=>p.name),
+          main:{reserved:Math.round(planned[0].mailboxes),empty:!planned[0].routes.length,short:false},
+          length_m:Math.round(routes.reduce((a,r)=>a+(r.length_m||0),0)),
+          workers:routes.map(r=>({w:r.w,minutes:r.minutes,mailboxes:Math.round(r.mailboxes||0),
+            km:Math.round((r.length_m||0)/100)/10})),
+          travel:{known:side.length>0,moves:jumpsAll.length,minutes:travelMinutes,
+            far:jumpsAll.filter(j=>j.far).length,far_km:3,jumps:jumpsAll}}
+      };
+      plan.capacity=Planner.capacity(per_worker.map((m,i)=>({idx:i,minutes:m})),mailboxes,
+        {hoursPerDay:H,days:maxDays});
+      return {plan,sug:N,street_m:G.street_m};
     },
 
     // ---- Time-budget optimizer (Phase "Zeitbudget") --------------------------------------------------------------------------
