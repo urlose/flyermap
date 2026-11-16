@@ -45,7 +45,7 @@ export function outwardStreetOrder(g, start, { isolatedGapM = 850, sparsePerKm =
     const distance=Math.min(a,b), density=mb*1000/Math.max(1,e.len);
     // Skip only extraordinary, isolated dead ends; normal thin streets remain eligible.
     const deadEnd=(g.adj[e.a]?.length||0)<=1||(g.adj[e.b]?.length||0)<=1;
-    if(deadEnd&&distance>isolatedGapM&&e.len>isolatedGapM&&density<sparsePerKm){
+    if(deadEnd&&Math.max(a,b)>isolatedGapM&&e.len>=isolatedGapM&&density<sparsePerKm){
       skipped.push(i);return;
     }
     streets.push({ i, distance, mailboxes:mb, length_m:e.len });
