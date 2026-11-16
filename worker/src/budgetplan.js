@@ -11,7 +11,7 @@ export function budgetDays(r, pl){
   return (r.days || []).map((x, k) => {
     const rides = jumps.filter(j => j.idx > x.i0 && j.idx <= x.i1).map(j => ({ from:j.from, to:j.to, km:j.km, min:j.known ? j.min : null }));
     return { ...x, parts:r.parts.filter(z => z.i1 >= x.i0 && z.i0 <= x.i1).map(z => ({ place:z.place, part:z.part, i0:Math.max(z.i0, x.i0), i1:Math.min(z.i1, x.i1) })),
-      ...(rides.length ? { rides } : {}), ...(k === 0 ? { budget_h:pl.budget.hours, budget_tol:pl.budget.tolerance, ...(pl.budget.strategy ? { budget_strategy:pl.budget.strategy } : {}), ...(pl.budget.travel?.known ? { budget_travel_min:pl.budget.travel.moves ? pl.budget.travel.minutes / pl.budget.travel.moves : 0 } : {}) } : {}) };
+      ...(rides.length ? { rides } : {}), ...(k === 0 ? { budget_h:pl.budget.hours, budget_tol:pl.budget.tolerance, ...(pl.budget.strategy ? { budget_strategy:pl.budget.strategy, budget_car:!!pl.budget.car } : {}), ...(pl.budget.travel?.known ? { budget_travel_min:pl.budget.travel.moves ? pl.budget.travel.minutes / pl.budget.travel.moves : 0 } : {}) } : {}) };
   });
 }
 
