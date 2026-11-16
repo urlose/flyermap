@@ -6,6 +6,7 @@ import './i18n5.js';
 import './i18n_en.js';
 import './i18n6.js';
 import './i18n7.js';
+import './i18n8.js';
 import { store, NATIVE } from './core.js';
 import { UI, applyTheme, initOffline } from './ui.js';
 import { W, bootWorker, workerTab, acceptToken } from './worker.js';

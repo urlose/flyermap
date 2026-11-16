@@ -1,0 +1,511 @@
+{
+  "key": "fityes",
+  "version": 1,
+  "name": "FITYES – Grundregeln für Hilfe-Meldungen",
+  "source": "claude/flyermap-ai-assistant-spec.md, Abschnitt 2 (16.11.2026)",
+  "modes": [
+    "AUTO",
+    "NOTIFY",
+    "ESCALATE"
+  ],
+  "thresholds": {
+    "unreachable_boxes_auto_max": 50,
+    "leftover_flyers_auto_max": 200,
+    "amount_max": 100000,
+    "claude_min_confidence": 0.7
+  },
+  "texts": {
+    "deadline_call": {
+      "de": "Die Frist ist heute oder schon vorbei – ruf bitte sofort den Admin an.",
+      "ru": "Срок сегодня или уже прошёл — пожалуйста, сразу позвони админу.",
+      "en": "The deadline is today or already over – please call the admin right away."
+    },
+    "ask_amount": {
+      "de": "Wenn es viele sind: schreib bitte ungefähr, wie viele.",
+      "ru": "Если их много, напиши, пожалуйста, примерно сколько.",
+      "en": "If there are many, please write roughly how many."
+    }
+  },
+  "rules": [
+    {
+      "id": "boxes_few",
+      "row": 1,
+      "mode": "AUTO",
+      "match": {
+        "reasons": [
+          "nobox"
+        ],
+        "amount": {
+          "lte": "unreachable_boxes_auto_max"
+        }
+      },
+      "actions": [
+        "replace_reserve"
+      ],
+      "reply": {
+        "de": "Verstanden. Lass diese Briefkästen aus und geh weiter. Während der Schicht nimmt die App passende Ersatzstraßen in der Nähe dazu.",
+        "ru": "Понял. Пропусти эти ящики и иди дальше. Во время смены приложение само добавит подходящие улицы рядом.",
+        "en": "Got it. Skip these mailboxes and go on. During the shift the app adds suitable replacement streets nearby."
+      }
+    },
+    {
+      "id": "boxes_many",
+      "row": 2,
+      "mode": "NOTIFY",
+      "notify": "boxes_unreachable",
+      "match": {
+        "reasons": [
+          "nobox"
+        ],
+        "amount": {
+          "gt": "unreachable_boxes_auto_max"
+        }
+      },
+      "actions": [
+        "replace_reserve"
+      ],
+      "reply": {
+        "de": "Danke, der Admin ist informiert. Geh weiter auf der Route; die App nimmt passende Ersatzstraßen in der Nähe dazu. Schreib kurz, warum die Briefkästen nicht erreichbar sind, falls noch nicht geschehen.",
+        "ru": "Спасибо, админ в курсе. Продолжай маршрут; приложение добавит подходящие улицы рядом. Если ещё не написал, коротко напиши, почему ящики недоступны.",
+        "en": "Thanks, the admin is informed. Go on with the route; the app adds suitable replacement streets nearby. If you have not yet, write briefly why the mailboxes cannot be reached."
+      },
+      "admin": {
+        "de": "Viele Briefkästen nicht erreichbar – Umfang und Grund prüfen, ggf. Ersatzgebiet freigeben."
+      }
+    },
+    {
+      "id": "boxes_count_missing",
+      "row": null,
+      "mode": "AUTO",
+      "match": {
+        "reasons": [
+          "nobox"
+        ]
+      },
+      "actions": [
+        "replace_reserve"
+      ],
+      "reply": {
+        "de": "Verstanden. Lass diese Briefkästen aus und geh weiter. Während der Schicht nimmt die App passende Ersatzstraßen in der Nähe dazu.",
+        "ru": "Понял. Пропусти эти ящики и иди дальше. Во время смены приложение само добавит подходящие улицы рядом.",
+        "en": "Got it. Skip these mailboxes and go on. During the shift the app adds suitable replacement streets nearby."
+      },
+      "note": "Kein Wert im Feld „ungefähr wie viele“: wie heute automatische Antwort; der Text bittet um die Zahl. Geschäftsentscheidung D1 offen."
+    },
+    {
+      "id": "street_closed",
+      "row": null,
+      "mode": "AUTO",
+      "match": {
+        "reasons": [
+          "closed"
+        ]
+      },
+      "actions": [
+        "replace_reserve"
+      ],
+      "reply": {
+        "de": "Verstanden. Lass dieses Stück aus und geh auf der Route weiter. Der Admin prüft die Stelle später.",
+        "ru": "Понял. Пропусти этот участок и иди дальше по маршруту. Админ проверит место позже.",
+        "en": "Got it. Skip this piece and go on with the route. The admin checks the place later."
+      }
+    },
+    {
+      "id": "entrance_blocked",
+      "row": 4,
+      "mode": "AUTO",
+      "match": {
+        "reasons": [
+          "private"
+        ],
+        "detect": "\\bhund|\\bdog\\b|собак|haustür|hauseingang|eingang (ist )?(zu|verschlossen)|tür (ist )?(zu|verschlossen)|подъезд.{0,20}(закрыт|заперт)|дверь.{0,20}(закрыт|заперт)|door.{0,15}(locked|closed)"
+      },
+      "actions": [
+        "replace_reserve"
+      ],
+      "reply": {
+        "de": "Lass diese Adresse aus – kein Risiko eingehen. Geh einfach weiter auf der Route.",
+        "ru": "Пропусти этот адрес — не рискуй. Просто иди дальше по маршруту.",
+        "en": "Skip this address – take no risk. Just go on with the route."
+      }
+    },
+    {
+      "id": "leftover_gym_far",
+      "row": 6,
+      "mode": "ESCALATE",
+      "notify": "leftover_return",
+      "match": {
+        "reasons": [
+          "flyers"
+        ],
+        "detail": "leftover",
+        "text": "zu weit|weit weg|umständlich|nicht (mehr )?(hin|zurück)|далеко|неудобно|не могу (вернуть|отнести|занести)|too far|inconvenient|can.?t (bring|return)"
+      },
+      "reply": {
+        "de": "Okay, der Admin meldet sich und sagt dir, wohin die Flyer sollen.",
+        "ru": "Хорошо, админ свяжется с тобой и скажет, куда деть флаеры.",
+        "en": "Okay, the admin will get back to you about where the flyers should go."
+      },
+      "admin": {
+        "de": "Rückgabe ins Studio ist für den Mitarbeiter ungünstig – Rückgabeort klären."
+      }
+    },
+    {
+      "id": "leftover_small",
+      "row": 5,
+      "mode": "AUTO",
+      "match": {
+        "reasons": [
+          "flyers"
+        ],
+        "detail": "leftover",
+        "amount": {
+          "lte": "leftover_flyers_auto_max"
+        }
+      },
+      "reply": {
+        "de": "Danke! Bring die übrigen Flyer bitte ins Start-Studio zurück.",
+        "ru": "Спасибо! Верни, пожалуйста, оставшиеся флаеры в стартовый спортзал.",
+        "en": "Thanks! Please bring the remaining flyers back to the start gym."
+      }
+    },
+    {
+      "id": "leftover_large",
+      "row": 7,
+      "mode": "ESCALATE",
+      "notify": "leftover_flyers",
+      "match": {
+        "reasons": [
+          "flyers"
+        ],
+        "detail": "leftover",
+        "amount": {
+          "gt": "leftover_flyers_auto_max"
+        }
+      },
+      "reply": {
+        "de": "Danke, das sind viele. Der Admin meldet sich bei dir, was mit den Flyern passiert.",
+        "ru": "Спасибо, это много. Админ свяжется с тобой и скажет, что делать с флаерами.",
+        "en": "Thanks, that is a lot. The admin will get back to you about the flyers."
+      },
+      "admin": {
+        "de": "Mehr als 200 Flyer übrig – klären, ob weitere Straßen oder Rückgabe."
+      }
+    },
+    {
+      "id": "flyers_out",
+      "row": 8,
+      "mode": "ESCALATE",
+      "notify": "flyers_out",
+      "match": {
+        "reasons": [
+          "flyers"
+        ],
+        "detail": "short"
+      },
+      "reply": {
+        "de": "Danke. Der Admin meldet sich bei dir, wie es weitergeht. Bis dahin: offene Straßen bleiben für später markiert.",
+        "ru": "Спасибо. Админ свяжется с тобой и скажет, как быть дальше. Пока что открытые улицы останутся отмеченными на потом.",
+        "en": "Thanks. The admin will get back to you on how to continue. Until then the open streets stay marked for later."
+      },
+      "admin": {
+        "de": "Flyer vor Ende der Route ausgegangen – Nachschub oder Routenende klären."
+      }
+    },
+    {
+      "id": "flyers_unclear",
+      "row": null,
+      "mode": "ESCALATE",
+      "notify": "flyers_out",
+      "match": {
+        "reasons": [
+          "flyers"
+        ]
+      },
+      "reply": {
+        "de": "Danke. Der Admin meldet sich bei dir wegen der Flyer.",
+        "ru": "Спасибо. Админ свяжется с тобой насчёт флаеров.",
+        "en": "Thanks. The admin will get back to you about the flyers."
+      },
+      "admin": {
+        "de": "Flyer-Meldung ohne Angabe, ob zu wenig oder übrig – nachfragen."
+      }
+    },
+    {
+      "id": "tired",
+      "row": 9,
+      "mode": "AUTO",
+      "postponable": true,
+      "match": {
+        "detect": "\\bmüde|erschöpft|kaputt|keine kraft|устал|нет сил|вымотал|\\btired\\b|exhausted"
+      },
+      "actions": [
+        "feierabend"
+      ],
+      "reply": {
+        "de": "Kein Problem – du kannst heute früher aufhören. Tippe auf „Feierabend“; die offenen Straßen bleiben für den nächsten Arbeitstag. Achte nur auf die Frist des Auftrags.",
+        "ru": "Ничего страшного — можешь сегодня закончить раньше. Нажми «Закончить»; открытые улицы останутся на следующий рабочий день. Только следи за сроком заказа.",
+        "en": "No problem – you can stop earlier today. Tap “Finish”; the open streets stay for the next working day. Just keep the order's deadline in mind."
+      }
+    },
+    {
+      "id": "sick",
+      "row": 10,
+      "mode": "NOTIFY",
+      "notify": "sick",
+      "postponable": true,
+      "lock": {
+        "min_mode": "NOTIFY"
+      },
+      "match": {
+        "detect": "\\bkrank|fieber|erkält|grippe|болею|заболе|болен|больна|температур|простуд|\\bsick\\b|\\bill\\b|\\bfever"
+      },
+      "actions": [
+        "tage_aendern"
+      ],
+      "reply": {
+        "de": "Gute Besserung! Geh bitte nicht krank raus. Der Admin ist informiert; verschiebe deine Tage über „Tage ändern“ – innerhalb der Frist.",
+        "ru": "Выздоравливай! Пожалуйста, не выходи больным. Админ в курсе; перенеси дни через «Изменить дни» — в пределах срока.",
+        "en": "Get well soon! Please do not go out sick. The admin is informed; move your days with “Change days” – within the deadline."
+      },
+      "admin": {
+        "de": "Mitarbeiter krank – Ersatz oder Verschiebung innerhalb der Frist prüfen."
+      }
+    },
+    {
+      "id": "weather",
+      "row": 11,
+      "mode": "NOTIFY",
+      "notify": "weather",
+      "postponable": true,
+      "match": {
+        "detect": "regen|regnet|regnen|gewitter|unwetter|sturm|hagel|glatteis|schnee|дожд|ливень|гроза|ураган|гололёд|гололед|снег|\\brain|storm|thunder|\\bsnow|\\bice\\b"
+      },
+      "actions": [
+        "tage_aendern"
+      ],
+      "reply": {
+        "de": "Danke, der Admin ist informiert. Wenn du verschieben willst, nutze „Tage ändern“ – innerhalb der Frist.",
+        "ru": "Спасибо, админ в курсе. Если хочешь перенести, используй «Изменить дни» — в пределах срока.",
+        "en": "Thanks, the admin is informed. If you want to move the work, use “Change days” – within the deadline."
+      },
+      "admin": {
+        "de": "Wetter: Mitarbeiter möchte ggf. verschieben – Termine im Blick behalten."
+      }
+    },
+    {
+      "id": "helping_colleague",
+      "row": 12,
+      "mode": "AUTO",
+      "match": {
+        "detect": "kolleg|helfen|zusammen lauf|коллег|помочь|помогу|вместе|colleague|help .{0,20}(friend|coworker)|together"
+      },
+      "reply": {
+        "de": "Du darfst helfen. Aber: Wenn ihr länger als 5 Minuten nebeneinander lauft, zählt die Zeit nur bei der Person, deren Route gelaufen wird. Am besten läuft jeder seine eigene Route.",
+        "ru": "Помогать можно. Но если вы идёте рядом дольше 5 минут, время засчитывается только тому, чей это маршрут. Лучше, чтобы каждый шёл свой маршрут.",
+        "en": "You may help. But if you walk side by side for more than 5 minutes, the time counts only for the person whose route it is. Best: everyone walks their own route."
+      }
+    },
+    {
+      "id": "gps_hours",
+      "row": 13,
+      "mode": "ESCALATE",
+      "notify": "gps_hours",
+      "match": {
+        "reasons": [
+          "gps"
+        ],
+        "text": "(arbeits)?zeit.{0,25}(nicht gezählt|nicht gezählt|falsch|fehlt|weg)|stunden.{0,25}(nicht|falsch|fehlen)|nicht gezählt|часы.{0,25}(не|неправ)|время.{0,25}(не засчит|не посчит|неправ|пропал)|не засчит|не посчит|hours?.{0,20}(not|wrong|missing)|not counted",
+        "detect": "(arbeits)?zeit.{0,25}(nicht gezählt|nicht gezählt|falsch|fehlt|weg)|stunden.{0,25}(nicht|falsch|fehlen)|nicht gezählt|часы.{0,25}(не|неправ)|время.{0,25}(не засчит|не посчит|неправ|пропал)|не засчит|не посчит|hours?.{0,20}(not|wrong|missing)|not counted"
+      },
+      "reply": {
+        "de": "Arbeite einfach weiter. Der Admin prüft deine Zeiten und meldet sich.",
+        "ru": "Просто продолжай работать. Админ проверит твоё время и свяжется с тобой.",
+        "en": "Just keep working. The admin checks your hours and gets back to you."
+      },
+      "admin": {
+        "de": "Arbeitszeit/GPS nicht richtig gezählt – Sitzung prüfen, ggf. Zeit nachtragen."
+      }
+    },
+    {
+      "id": "gps_settings",
+      "row": null,
+      "mode": "ESCALATE",
+      "notify": "gps",
+      "match": {
+        "reasons": [
+          "gps"
+        ]
+      },
+      "reply": {
+        "de": "Bitte prüfen: Standort «Immer erlauben» und «Genauer Standort» an, Energiesparmodus aus, App offen lassen. Wird es nicht besser, meldet sich der Admin.",
+        "ru": "Проверь: геолокация «Разрешать всегда» и «Точное местоположение» включены, режим экономии батареи выключен, приложение не закрывай. Если не поможет, админ напишет тебе.",
+        "en": "Please check: location “Always allow” and “Precise location” on, battery saver off, keep the app open. If it does not get better, the admin will contact you."
+      }
+    },
+    {
+      "id": "forgot_start",
+      "row": 14,
+      "mode": "ESCALATE",
+      "notify": "forgot_start",
+      "match": {
+        "detect": "(vergessen|nicht).{0,25}(start|starten|gestartet|gedrückt)|start.{0,20}vergessen|забыл.{0,25}(нажать|начать|старт|включить)|не нажал.{0,15}(старт|начать)|forgot.{0,20}start"
+      },
+      "reply": {
+        "de": "Starte die Route jetzt mit „Route starten“. Der Admin prüft die Zeit davor und meldet sich.",
+        "ru": "Начни маршрут сейчас кнопкой «Начать маршрут». Админ проверит время до этого и свяжется с тобой.",
+        "en": "Start the route now with “Start route”. The admin checks the time before and gets back to you."
+      },
+      "admin": {
+        "de": "Start vergessen – Arbeitszeit vor dem Start prüfen und ggf. nachtragen."
+      }
+    },
+    {
+      "id": "deadline_risk",
+      "row": 15,
+      "mode": "ESCALATE",
+      "urgent": true,
+      "notify": "deadline_risk",
+      "lock": {
+        "min_mode": "ESCALATE",
+        "urgent": true
+      },
+      "match": {
+        "detect": "frist|deadline|bis .{0,20}(nicht )?(schaffe|fertig)|schaffe .{0,25}nicht|не успева|не успею|не успеем|дедлайн|срок"
+      },
+      "actions": [
+        "call_admin"
+      ],
+      "reply": {
+        "de": "Ruf bitte sofort den Admin an, damit ihr gemeinsam eine Lösung für die Frist findet.",
+        "ru": "Пожалуйста, сразу позвони админу, чтобы вместе решить, как успеть к сроку.",
+        "en": "Please call the admin right away so you can find a solution for the deadline together."
+      },
+      "admin": {
+        "de": "DRINGEND: Frist in Gefahr – Mitarbeiter anrufen, Hilfe oder Verlängerung klären."
+      }
+    },
+    {
+      "id": "gym_closed",
+      "row": 16,
+      "mode": "ESCALATE",
+      "notify": "gym_closed",
+      "match": {
+        "detect": "(studio|gym|fitness|спортзал|зал|клуб).{0,30}(zu|geschlossen|закрыт|closed)|(zu|geschlossen|закрыт|closed).{0,30}(studio|gym|fitness|спортзал|зал)"
+      },
+      "reply": {
+        "de": "Danke. Der Admin meldet sich bei dir, wie du an die Flyer kommst bzw. wohin damit.",
+        "ru": "Спасибо. Админ свяжется с тобой и скажет, как получить или куда деть флаеры.",
+        "en": "Thanks. The admin will get back to you about how to get the flyers or where to take them."
+      },
+      "admin": {
+        "de": "Studio geschlossen – Abholung/Rückgabe der Flyer klären."
+      }
+    },
+    {
+      "id": "double_flyer",
+      "row": 17,
+      "mode": "AUTO",
+      "match": {
+        "detect": "(zwei|2) flyer|doppelt|два флаера|2 флаера|дважды|два раза|two flyers|2 flyers|twice"
+      },
+      "reply": {
+        "de": "Kein Problem, das passiert. Geh weiter – nur bitte nicht absichtlich zwei Flyer einwerfen.",
+        "ru": "Ничего страшного, бывает. Иди дальше — только не клади по два флаера специально.",
+        "en": "No problem, it happens. Go on – just do not put two flyers in on purpose."
+      }
+    },
+    {
+      "id": "keine_werbung",
+      "row": 18,
+      "mode": "AUTO",
+      "legal": true,
+      "lock": {
+        "min_mode": "AUTO",
+        "fixed_reply": true
+      },
+      "match": {
+        "detect": "keine werbung|bitte keine|werbung verboten|no advertising|no junk mail|без рекламы|нет рекламы|реклам.{0,15}(не|запрещ)|не (класть|бросать) рекламу"
+      },
+      "reply": {
+        "de": "Bei „Keine Werbung“ bitte keinen Flyer einwerfen – Briefkasten einfach auslassen.",
+        "ru": "Если на ящике «Keine Werbung», флаер не клади — просто пропусти этот ящик.",
+        "en": "With “Keine Werbung” (no advertising) do not put a flyer in – just skip that mailbox."
+      }
+    },
+    {
+      "id": "tomorrow_today",
+      "row": 19,
+      "mode": "AUTO",
+      "match": {
+        "detect": "(straßen|strassen|teil|stück|route).{0,25}(von|für) morgen|morgigen? (straßen|strassen|teil|route)|завтрашн|(улиц|часть|маршрут).{0,20}на завтра|tomorrow'?s (streets|route|part)|streets? (of|for) tomorrow"
+      },
+      "reply": {
+        "de": "Ja, gern – lauf ruhig schon Straßen von morgen, solange sie zu deiner Route gehören.",
+        "ru": "Да, конечно — можешь пройти завтрашние улицы сегодня, если они из твоего маршрута.",
+        "en": "Yes, sure – walk tomorrow's streets today as long as they belong to your route."
+      }
+    },
+    {
+      "id": "part_left",
+      "row": 20,
+      "mode": "AUTO",
+      "postponable": true,
+      "match": {
+        "reasons": [
+          "toolong"
+        ],
+        "detect": "nicht fertig|rest .{0,10}morgen|nicht geschafft|не успел.{0,20}(закончить|сегодня)|осталась часть|остаток|остальное завтра|not finished|rest tomorrow"
+      },
+      "actions": [
+        "tage_aendern"
+      ],
+      "reply": {
+        "de": "Kein Problem – mach den Rest am nächsten Arbeitstag, wenn die Frist es erlaubt. Die offenen Straßen bleiben markiert.",
+        "ru": "Ничего страшного — закончи остаток в следующий рабочий день, если позволяет срок. Открытые улицы останутся отмеченными.",
+        "en": "No problem – do the rest on the next working day if the deadline allows. The open streets stay marked."
+      }
+    },
+    {
+      "id": "app_problem",
+      "row": null,
+      "mode": "ESCALATE",
+      "notify": "admin_needed",
+      "match": {
+        "reasons": [
+          "app"
+        ]
+      },
+      "reply": null
+    }
+  ],
+  "detect_order": [
+    "deadline_risk",
+    "forgot_start",
+    "gps_hours",
+    "gym_closed",
+    "sick",
+    "weather",
+    "keine_werbung",
+    "leftover_gym_far",
+    "entrance_blocked",
+    "double_flyer",
+    "helping_colleague",
+    "tomorrow_today",
+    "part_left",
+    "tired"
+  ],
+  "unknown": {
+    "id": "unknown",
+    "mode": "ESCALATE",
+    "notify": "admin_needed",
+    "reply": null
+  },
+  "match_help": {
+    "reasons": "the report's reason (form) must be one of these",
+    "text": "with reasons: the text must ALSO match (a more exact case of that reason)",
+    "detect": "free text alone is enough, whatever reason was chosen (case-insensitive)",
+    "amount": "number from the optional form field; lte/gt refer to a threshold name",
+    "detail": "flyers: short = ran out, leftover = left over"
+  }
+}

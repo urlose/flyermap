@@ -34,7 +34,14 @@ const routes = [
   { id:'r-live-w2', worker_id:'w2', task_id:'t1', plan_id:'p2', paused_at:iso(now - 5 * 60e3), last30_m:800, started_at:iso(now - 3 * 36e5), ended_at:null, break_s:600, distance_m:7400, place:'Bilk, Düsseldorf', adj_s:0, together_s:0 },
   { id:'r-old-1', worker_id:'w4', task_id:'t3', plan_id:'p7', paused_at:null, last30_m:0, started_at:iso(now - 6 * 864e5), ended_at:iso(now - 6 * 864e5 + 7 * 36e5), break_s:1800, distance_m:18000, place:'Neuss', adj_s:0, together_s:0 },
 ];
-const help_requests = [{ id:'h1', worker_id:'w1', task_id:'t1', plan_id:'p1', reason:'blocked', text:'Straße gesperrt (Baustelle)', lat:51.2050, lng:6.7700, created_at:iso(now - 40 * 60e3), resolved_at:null, company_id:CO }];
+const help_requests = [{ id:'h1', worker_id:'w1', task_id:'t1', plan_id:'p1', reason:'blocked', text:'Straße gesperrt (Baustelle)', lat:51.2050, lng:6.7700, created_at:iso(now - 40 * 60e3), resolved_at:null, company_id:CO, status:'open' },
+  // AI phase A: optional number from the form; an automatic answer kept after the admin answered with own text
+  { id:'h2', worker_id:'w2', task_id:'t1', plan_id:'p1', reason:'nobox', body:'Neubaugebiet, Briefkästen nur innen', amount:120, detail:null, created_at:iso(now - 25 * 60e3), company_id:CO, status:'open', auto:true,
+    answer:'Verstanden. Lass dieses Stück aus und geh auf der Route weiter. Der Admin prüft die Stelle später.', auto_answer:'Verstanden. Lass dieses Stück aus und geh auf der Route weiter. Der Admin prüft die Stelle später.' },
+  { id:'h3', worker_id:'w1', task_id:'t1', plan_id:'p1', reason:'flyers', body:null, amount:150, detail:'leftover', created_at:iso(now - 15 * 60e3), company_id:CO, status:'done', auto:false,
+    answer:'Danke, bring sie ins Studio zurück.' },
+  { id:'h4', worker_id:'w2', task_id:'t1', plan_id:'p1', reason:'gps', body:'Karte springt', created_at:iso(now - 10 * 60e3), company_id:CO, status:'done', auto:true,
+    answer:'Ich schaue mir deine Zeiten an.', auto_answer:'Bitte prüfen: Standort «Immer erlauben» und «Genauer Standort» an, Energiesparmodus aus, App offen lassen.' }];
 const company = { id:CO, name:'Fityes', master:false, join_code:'DEMO1234', complete:true, avv_ok:true };
 const worker_stats = workers.map((w, i) => ({ id:w.id, name:w.name, verified:i < 2, done:[3, 2, 1, 0, 0, 0][i], hours:[28.1, 14.7, 6.2, 0, 0, 0][i], days:[5, 3, 1, 0, 0, 0][i], pace:[145, 98, 79, null, null, null][i], cancels:0, late:0 }));
 const company_stats = { tasks:[{ id:'t3', title:'Neuss Innenstadt', flyers:4000, hours:11.2, km:31, people:1, first:day(-6), status:'done' }, { id:'t1', title:'Bilk · Moorenstraße 18', flyers:6000, hours:5, km:12.6, people:2, first:day(0), status:'open' }],
