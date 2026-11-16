@@ -1487,7 +1487,7 @@ function viewCreate(edit){
     const title = (saved.title || '').trim(); if(!title){ goStep(1); toast(t('needTitle')); return; }
     // fewer mailboxes than flyers: saving is fine, but only when the admin says so (the ordered number stays as typed)
     { const c = coverage(d.flyers, d.plan.mailboxes);
-      const pl0 = d.plan, shown = !d.mainAll && !(pl0.eco && !d.exact) && !pl0.cores;
+      const pl0 = d.plan, shown = !d.mainAll && !(pl0.eco && !d.exact) && !pl0.cores && !pl0.budget;   // time-budget mode: fewer mailboxes than the maximum is the point (shown in the budget panel), no extra question
       if(shown && !c.ok && !await confirmBox(t('covSaveT'), t('covSaveQ', { want:fmtN(c.want), have:fmtN(c.have), miss:fmtN(c.missing) }), t('covSaveYes'))) return; }
     $('#cSave').disabled = true; $('#cSave').classList.add('loading');
     try{
