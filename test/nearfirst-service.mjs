@@ -32,4 +32,34 @@ const b=(await run(9,1)).plan;
 assert.ok(b.mailboxes>=a.mailboxes,'More time should expand coverage');
 assert.ok(b.budget.actual_minutes<=9*60*1.05+2);
 assert.ok(b.routes.every(r=>r.path.length>1));
-console.log('Near-first planner integration: time-only budget, route shape, expansion OK');
+// A second town consumes walking time AND explicitly supplied transfer minutes.
+// A large separation also proves that maps cannot silently join the towns on foot.
+const sideStart=[start[0]+0.12,start[1]+0.14];
+const sideGraph={
+  ...graph,
+  pts:graph.pts.map(p=>[p[0]+0.12,p[1]+0.14]),
+  edges:graph.edges.map(e=>({
+    ...e,
+    coords:e.coords.map(p=>[p[0]+0.12,p[1]+0.14]),
+    boxes:e.boxes.map(b=>[b[0]+0.12,b[1]+0.14,b[2]])
+  }))
+};
+Planner.loadForFlyers=async p=>p[0]>start[0]+0.05?sideGraph:graph;
+const sideArgs={
+  start,flyers:1,n:2,days:3,hours:7,must:[],zone:null,
+  side:[{name:'Nebenort',lat:sideStart[0],lng:sideStart[1],flyers:300,auto:true}],
+  quota:2500,bike:false,travel:'zones',split:'even',exact:true,mainAll:false,
+  cores:false,together:false,near:false,mainName:'Hauptstadt',
+  budget:{hours:10,strategy:'near-first',tolerance:.05,travelMin:30}
+};
+const multi=(await createPlanService(null).plan(sideArgs,()=>{},()=>false)).plan;
+assert.ok(multi.split.some(x=>x.name==='Hauptstadt'&&x.flyers>0));
+assert.ok(multi.split.some(x=>x.name==='Nebenort'&&x.flyers>0));
+assert.ok(multi.budget.travel.moves>=1,'At least one town transfer must be counted');
+assert.ok(multi.budget.travel.minutes>=30);
+assert.ok(multi.budget.actual_minutes<=10*60*1.05+2);
+assert.equal(multi.routes.length,2,'One row per worker');
+assert.ok(multi.routes.some(r=>r.path.some(p=>p[2]===1)),'Inter-town jump markers must survive');
+await assert.rejects(createPlanService(null).plan({...sideArgs,budget:{...sideArgs.budget,travelMin:null}},()=>{},()=>false),
+  /Anfahrtszeit/);
+console.log('Near-first planner integration: time-only budget, outward growth and side-town travel OK');
