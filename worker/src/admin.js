@@ -1305,6 +1305,7 @@ function viewCreate(edit){
         ${b.workers.map(w => `<div class="route-row"><span class="swatch" style="background:${Planner.COLORS[w.w % 10]}"></span><div class="grow"><b>${esc(t('personN', { n:w.w + 1 }))}</b><span class="small muted">${esc(hh(w.minutes))} · ≈ ${fmtN(w.mailboxes)} · ${esc(f1(w.km))} km</span></div></div>`).join('')}
         <p class="small muted" style="margin:6px 0 0">${esc(t('budDist', { km:f1(Math.round(b.length_m / 100) / 10) }))}</p>
         ${b.travel.moves ? `<div class="${b.travel.known && !b.travel.far ? 'hint' : 'warnbox'}">${esc(b.travel.known ? t('budTravelKnown', { n:b.travel.moves, min:b.travel.minutes }) : t('budTravelUnknown', { n:b.travel.moves }))}${b.travel.far ? ' ' + esc(t('budTravelFar', { n:b.travel.far, km:b.travel.far_km })) : ''}</div>` : ''}
+        ${b.main && b.main.empty ? `<div class="warnbox">${esc(t('budMainEmpty'))}</div>` : b.main && b.main.short ? `<div class="warnbox">${esc(t('budMainShort'))}</div>` : ''}
         ${(b.unplanned || []).length ? `<div class="warnbox">${esc(t('budUnplanned', { list:b.unplanned.join(', ') }))}</div>` : ''}
         ${b.over_target ? `<div class="warnbox">${esc(t(b.over ? 'budOver' : 'budOverTarget', { h:b.hours, act:hh(b.actual_minutes), max:hh(b.max_minutes), pct:Math.round(b.tolerance * 100) }))}</div>` : ''}
         <p class="small muted" style="margin:6px 0 0">${esc(t('budEstimate'))}</p></div>`; };

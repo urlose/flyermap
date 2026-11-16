@@ -592,14 +592,24 @@ export function createPlanService(cache){
       // The minimums must never eat the budget (ten selected villages × 60 mailboxes can be most of a short budget): together they get at most
       // FLOOR_SHARE of the target hours, best mailboxes-per-hour first; places left without a minimum still compete by efficiency and, when they get
       // nothing, are named in budget.unplanned (the admin decides – nothing is dropped silently, nothing is added by itself).
+      // The MAIN place (Hauptstadt) is never dropped: it is reserved first – a share of the target hours (default 25 %, budget.mainShare) and at
+      // least 100 mailboxes – and only the rest of the hours is shared by efficiency. A denser neighbour is no reason to leave the main place out.
+      // If the main place really has no mailboxes, or the reserve is too short for a worthwhile piece, the plan says so (budget.main_*): no invented route.
+      const mbAtMin = (p, m) => { let mb = 0, left = m; for(const x of p.seg){ if(left <= 0) break; const t = Math.min(1, left / x.dmin); mb += x.dmb * t; left -= x.dmin; } return mb; };
+      const mainShare = budget.mainShare != null && isFinite(+budget.mainShare) ? Math.max(0, Math.min(0.9, +budget.mainShare)) : 0.25;
+      const mainP = places.find(q => q.isMain), warn = { main_empty:false, main_short:false };
+      if(mainP){
+        if(mainP.cap <= 0){ warn.main_empty = true; mainP.floor = 0; }
+        else { const mMin = Math.min(mainP.minAt(mainP.cap), mainShare * B), mb = Math.min(mainP.cap, Math.max(Math.min(mainP.cap, 100), mbAtMin(mainP, mMin))); mainP.floor = Math.round(mb); if(mainP.floor < CHOSEN_MIN) warn.main_short = true; }
+      }
       const FLOOR_SHARE = 0.35; let floorMul = 1;
-      for(const p of places) p.floor = p.isMain || p.fixed != null || !minShare ? 0 : Math.min(p.cap, Math.max(60, Math.round(p.cap * minShare)));
-      { let used = 0; for(const p of places.filter(q => q.floor > 0).sort((a, b) => (b.floor / Math.max(1, b.minAt(b.floor))) - (a.floor / Math.max(1, a.minAt(a.floor))))){ const m = p.minAt(p.floor); if(used + m <= FLOOR_SHARE * B){ used += m; } else p.floor = 0; } }
+      for(const p of places) if(!p.isMain) p.floor = p.fixed != null || !minShare ? 0 : Math.min(p.cap, Math.max(60, Math.round(p.cap * minShare)));
+      { let used = 0; for(const p of places.filter(q => q.floor > 0 && !q.isMain).sort((a, b) => (b.floor / Math.max(1, b.minAt(b.floor))) - (a.floor / Math.max(1, a.minAt(a.floor))))){ const m = p.minAt(p.floor); if(used + m <= FLOOR_SHARE * B){ used += m; } else p.floor = 0; } }
       const afterFloor = (p) => { let skip = p.floor; const out = []; for(const x of p.seg){ if(skip >= x.dmb){ skip -= x.dmb; continue; } const f = skip > 0 ? (x.dmb - skip) / x.dmb : 1; skip = 0; out.push({ dmb:x.dmb * f, dmin:x.dmin * f, slope:x.slope }); } return out; };
       const allocate = (Bm) => {
         const want = new Map(places.map(p => [p, 0])); let usedMin = 0, usedMb = 0;
-        for(const p of places){ if(p.fixed != null){ const w = Math.min(p.cap, p.fixed); want.set(p, w); usedMin += p.minAt(w); usedMb += w; } else if(p.floor && floorMul){ want.set(p, p.floor); usedMin += p.minAt(p.floor); usedMb += p.floor; } }
-        const segs = []; for(const p of places) if(p.fixed == null) (p.floor && floorMul ? afterFloor(p) : p.seg).forEach(x => segs.push({ p, ...x }));
+        for(const p of places){ if(p.fixed != null){ const w = Math.min(p.cap, p.fixed); want.set(p, w); usedMin += p.minAt(w); usedMb += w; } else if(p.floor && (floorMul || p.isMain)){ want.set(p, p.floor); usedMin += p.minAt(p.floor); usedMb += p.floor; } }
+        const segs = []; for(const p of places) if(p.fixed == null) (p.floor && (floorMul || p.isMain) ? afterFloor(p) : p.seg).forEach(x => segs.push({ p, ...x }));
         segs.sort((a, b) => b.slope - a.slope);
         let limit = 'none';
         for(const x of segs){
@@ -683,7 +693,7 @@ export function createPlanService(cache){
       const limit = mailboxes >= flyers * 0.99 ? 'none' : (alloc.limit === 'time' ? 'time' : 'capacity');
       const plan = { routes, mailboxes, zone:[], zones:true, merged:true, split, side_failed:failed, side_dropped:dropped, side_info:[], must_mb:0, must_info:[], per_worker:perW,
         budget:{ hours:budget.hours, minutes:B0, effective_minutes:Math.round(B), flyers_max:flyers, planned:mailboxes, uncovered:Math.max(0, Math.round(flyers - mailboxes)), work_minutes:Math.round(workMin),
-          limit, unplanned:real.filter(x => !x.p.isMain && x.parts.length === 0).map(x => x.p.name), fits_all:limit === 'none', target_minutes:B0, tolerance:tol, max_minutes:Math.round(B0 * (1 + tol)), actual_minutes:Math.round(workMin + knownMin),
+          main:{ reserved:mainP ? mainP.floor : 0, empty:warn.main_empty, short:warn.main_short, share:mainShare }, limit, unplanned:real.filter(x => !x.p.isMain && x.parts.length === 0).map(x => x.p.name), fits_all:limit === 'none', target_minutes:B0, tolerance:tol, max_minutes:Math.round(B0 * (1 + tol)), actual_minutes:Math.round(workMin + knownMin),
           over_target:workMin + knownMin > B0 + 1, over:workMin + knownMin > B0 * (1 + tol) + 1, estimate:true,
           workers:perW.map((m, w) => ({ w, minutes:Math.round(m), mailboxes:Math.round(routes.filter(r => r.w === w).reduce((a, r) => a + r.mailboxes, 0)), km:Math.round(routes.filter(r => r.w === w).reduce((a, r) => a + (r.length_m || 0), 0) / 100) / 10 })),
           length_m:Math.round(routes.reduce((a, r) => a + (r.length_m || 0), 0)),

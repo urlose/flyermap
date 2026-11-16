@@ -111,14 +111,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(`${name}: result shows possible flyers, hours, uncovered, one row per worker, the estimate note`, bx && bx.nums.length === 3 && bx.rows.length === 2 && /Schätzungen/.test(bx.text) && /Maximum Flyer/.test(bx.text), bx && JSON.stringify(bx.nums) + ' | ' + bx.rows.join(' // '));
     const hoursUsed = bx && bx.nums[1];
     ok(`${name}: the hours shown stay within the 6 h target + 5 % tolerance`, !!hoursUsed && (() => { const m = hoursUsed.match(/(\d+)\s*h\s*(\d+)?/i) || hoursUsed.match(/(\d+)[^\d]+(\d+)?/); return m ? (+m[1] + (+m[2] || 0) / 60) <= 6.31 : false; })(), hoursUsed);
-    // two places more (manual adds): then there are rides between places
-    for(let k = 0; k < 2; k++){
-      const row = await until(() => { const r = [...document.querySelectorAll('.sug-row')].map((el, i) => ({ i, hh:+((el.innerText.match(/≈ ([\d.]+) Haushalte/) || [])[1] || '0').replace(/\./g, '') })).find(x => x.hh >= 300); return r || null; }, 120000);
-      if(!row){ ok(`${name}: a village with ≥ 300 households to add (${k + 1})`, false); break; }
-      await pg.click(`[data-sadd="${row.i}"]`); await until(() => document.querySelectorAll('.chosen-row').length > k, 30000); await sleep(2500); for(let i = 0; i < 100; i++){ const h = await hrsOf(); if(h != null && h <= 6.31 && !(await pg.evaluate(() => /Rechne|calculat|berechn/i.test(document.querySelector('#cSheet').innerText)))) break; await sleep(800); } await stable(5000, 60000);
-    }
+    // the automatic selection (PR #13) already put several nearby villages into the order: there are rides between places
     bx = await budget(); await shot('2-budget-places');
-    ok(`${name}: after adding places: both workers have routes, rides between places are reported as UNKNOWN (no car assumed)`, bx && bx.rows.length === 2 && /Fahrzeit unbekannt/.test(bx.text) && /kein Auto/.test(bx.text), bx && bx.text.split('\n').filter(l => /Ortswechsel/.test(l)).join(' '));
+    ok(`${name}: with the automatically selected villages: both workers have routes, rides between places are reported as UNKNOWN (no car assumed)`, bx && bx.rows.length === 2 && /Fahrzeit unbekannt/.test(bx.text) && /kein Auto/.test(bx.text), bx && bx.text.split('\n').filter(l => /Ortswechsel/.test(l)).join(' '));
     // ---- assign workers (one select per person) and go to the last step ----
     await pg.evaluate(() => { const n = document.getElementById('cNext'); if(n && !n.disabled) n.click(); }); await sleep(2000);   // step 4 "Team"
     await until(() => document.querySelectorAll('select[data-wsel]').length > 0, 15000);
