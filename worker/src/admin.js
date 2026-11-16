@@ -1506,7 +1506,7 @@ function viewCreate(edit){
       const row = { title:withCity(title, cityN), city_name:cityN, district:(d.place && d.place.district) || (tkE && tkE.district) || null, start_lat:d.start.lat, start_lng:d.start.lng,
         walk_minutes:15, zone_polygon:pl.zone, must_areas:d.must.length ? d.must.map(a => ({ p:a.p, n:a.n, name:a.name || undefined, c:a.c })) : null, side_towns:d.side.length ? d.side : null, bike:d.travel !== 'bus', travel:d.travel, split:d.split, cores:!!(d.cores && (d.travel === 'car' || d.travel === 'zones')), together:!!(d.cores && d.travel === 'car' && d.together), first_place:d.cores && d.travel === 'car' && d.first && d.side.some(x => x.name === d.first) ? d.first : null, work_area:d.zone || null, work_date:date, deadline, notes:(saved.notes || '').trim() || null, street_m:d.streetM || null,
         flyers:pl && (d.mainAll || (pl.eco && !d.exact) || (pl.cores && pl.mailboxes < d.flyers) || pl.budget) ? Math.round(pl.mailboxes) : d.flyers, quota_m30:quota, no_quota:saved.noQuota != null ? !!saved.noQuota : d.travel === 'car', work_days:d.days, work_hours:d.hours, est_mailboxes:dbBoxes.total, route_m:pl.routes.reduce((s, r) => s + r.length_m, 0) };
-      let tk, old = null;
+      let tk, old = null, savedAtomically = false;
       if(tkE){
         await loadLive(); if(A.live.some(r => r.task_id === tkE.id)) throw new Error(t('replanLive'));
         // order already running: keep acceptance, days, skips and the link of walked sessions to each worker's route
@@ -1517,10 +1517,18 @@ function viewCreate(edit){
         const x1 = await sb.from('task_plans').delete().eq('task_id', tkE.id); if(x1.error) throw x1.error;
         await sb.from('task_workers').delete().eq('task_id', tkE.id);
       }else{
-        const ins = await sb.from('tasks').insert({ ...row, created_by:A.user.id }).select().single(); if(ins.error) throw ins.error; tk = ins.data;
-        createdTaskId = tk.id;
+        // RPC is one PostgreSQL transaction: a route insert failure rolls back the task.
+        const draftRows = planRows(pl, { taskId:null, assign:d.assign, counts:dbBoxes.routes, colors:Planner.COLORS });
+        const { data, error } = await sb.rpc('create_task_with_plans', { p_task:row, p_plans:draftRows });
+        if(error) throw error;
+        tk = data && data.task;
+        if(!tk || !(data.plans || []).length) throw new Error('Auftrag ohne Routen gespeichert: bitte Support kontaktieren');
+        savedAtomically = true;
+        // Notifications are best effort: a notification failure must never trigger
+        // a retry of an order that already exists.
+        for(const p of data.plans) if(p.worker_id) try{ await notifyAssigned(tk, p); }catch(err){ console.warn('notification_failed', err); }
       }
-      const rows = planRows(pl, { taskId:tk.id, assign:d.assign, counts:dbBoxes.routes, colors:Planner.COLORS });
+      const rows = savedAtomically ? [] : planRows(pl, { taskId:tk.id, assign:d.assign, counts:dbBoxes.routes, colors:Planner.COLORS });
       if(old){
         const skips = old.flatMap(p => p.skipped || []);
         rows.forEach(r => {
@@ -1530,7 +1538,7 @@ function viewCreate(edit){
           if(dates.length >= need) Object.assign(r, { status:'accepted', work_dates:dates, accepted_at:o.accepted_at, committed_terms:o.committed_terms });
         });
       }
-      await savePlans(tk, rows, !!old, () => { createdTaskId = null; }); // after route insert succeeds, never delete a real order
+      if(!savedAtomically) await savePlans(tk, rows, !!old, () => { createdTaskId = null; });
       await loadTasks();
       clearDraft(); viewTask(tk.id);
     }catch(e){
