@@ -9,6 +9,7 @@ import { openMapView } from './routeview.js';
 import { locationNote, legalLinks, bindLegal } from './legalview.js';
 import { setLegalFirm } from './legal.js';
 import { commitDialog, commitNote, cancelDialog, cancelLabel, contractGate } from './contractview.js';
+import { amountFieldHtml, bindAmount, sendHelp } from './helpform.js';
 import { introOnce, introVideo } from './introview.js';
 import { t, I } from './i18n.js';
 import { NATIVE, PRIVACY_URL, sb, store, rpc, errText, deMobile, $, esc, css, hav, fmtDist, fmtHm, fmtN, fmtTime, fmtDay, loopPath } from './core.js';
@@ -640,6 +641,7 @@ async function viewHelp(planId, back){
         <select class="in" id="hpPlan"><option value="">${esc(t('helpNoRoute'))}</option>${plans.map(p => `<option value="${p.id}" ${p.id === pre ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}</select>
         <label class="f">${esc(t('helpReason'))}</label>
         <div class="reasons" role="radiogroup">${REASONS.map(r => `<button type="button" class="chip" role="radio" aria-checked="false" data-r="${r}">${esc(t('hr_' + r))}</button>`).join('')}</div>
+        ${amountFieldHtml()}
         <label class="f" for="hpText">${esc(t('helpText'))}</label>
         <textarea class="in" id="hpText" rows="3" maxlength="1000" placeholder="${esc(t('helpTextPh'))}"></textarea>
         <button class="btn primary" id="hpSend" style="margin-top:12px">${esc(t('helpSend'))}</button><div class="err" id="hpErr" role="alert"></div>
@@ -650,7 +652,8 @@ async function viewHelp(planId, back){
   bindBack(back || (() => workerTab('tasks')));
   $('#hpVideo').onclick = () => introVideo();
   let reason = '';
-  document.querySelectorAll('.reasons .chip').forEach(b => b.onclick = () => { reason = b.dataset.r; document.querySelectorAll('.reasons .chip').forEach(x => { const on = x === b; x.classList.toggle('on', on); x.setAttribute('aria-checked', on); }); $('#hpErr').textContent = ''; });
+  const amt = bindAmount();   // optional "about how many" (only for no mailboxes / flyers)
+  document.querySelectorAll('.reasons .chip[data-r]').forEach(b => b.onclick = () => { reason = b.dataset.r; document.querySelectorAll('.reasons .chip[data-r]').forEach(x => { const on = x === b; x.classList.toggle('on', on); x.setAttribute('aria-checked', on); }); $('#hpErr').textContent = ''; amt.show(reason); });
   if(planId) setTimeout(() => { const el = $('#hpForm'); if(el) el.scrollIntoView({ block:'start' }); }, 50);
   const mine = async () => {
     const box = $('#hpMine'); if(!box) return;
@@ -666,13 +669,14 @@ async function viewHelp(planId, back){
     const text = $('#hpText').value.trim();
     if(!reason){ $('#hpErr').textContent = t('helpPickReason'); return; }
     if(reason === 'other' && text.length < 5){ $('#hpErr').textContent = t('helpWriteText'); return; }
+    const extra = amt.read(reason); if(extra.error){ $('#hpErr').textContent = extra.error; $('#hpAmt').focus(); return; }
     const me = W.route && !W.route.endedAt && W.track.length ? W.track[W.track.length - 1] : null;
     $('#hpSend').disabled = true; $('#hpErr').textContent = '';
     try{
-      await rpc('help_request', { p_token:W.token, p_plan_id:$('#hpPlan').value || null, p_reason:reason, p_text:text, p_lat:me ? me[0] : null, p_lng:me ? me[1] : null });
+      await sendHelp(rpc, { p_token:W.token, p_plan_id:$('#hpPlan').value || null, p_reason:reason, p_text:text, p_lat:me ? me[0] : null, p_lng:me ? me[1] : null }, extra, reason);
       let rep = null; if(REPLACE_REASONS.includes(reason)){ try{ rep = await replaceAfterReport($('#hpPlan').value || null, reason, me); }catch{ rep = null; } }
       if(rep && rep.n) toast(t('repOk', { n:rep.n, mb:fmtN(rep.mb) })); else if(rep) toast(t('repNone')); else
-      toast(t('helpSent')); $('#hpText').value = ''; reason = ''; document.querySelectorAll('.reasons .chip').forEach(x => { x.classList.remove('on'); x.setAttribute('aria-checked', false); }); mine();
+      toast(t('helpSent')); $('#hpText').value = ''; reason = ''; document.querySelectorAll('.reasons .chip').forEach(x => { x.classList.remove('on'); x.setAttribute('aria-checked', false); }); amt.reset(); mine();
     }catch(e){ $('#hpErr').textContent = errText(e); }
     if($('#hpSend')) $('#hpSend').disabled = false;
   };
