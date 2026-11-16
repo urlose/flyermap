@@ -593,7 +593,7 @@ export function createPlanService(cache){
           const region={...g,zoned:true,edges:g.edges.map((e,i)=>ids.has(i)?e:{...e,mb:0,boxes:[]})};
           const max=eligible.slice(0,count).reduce((a,e)=>a+e.mailboxes,0);
           if(max<=0)return null;
-          const p=Planner.planFlyers(region,pl.st,max+1,pl.workers,{days:maxDays,hoursPerDay:H});
+          const p=Planner.planFlyers(region,pl.st,max+1,pl.workers,{days:maxDays,hoursPerDay:H,selectedEdgeIds:[...ids]});
           const minutes=p.routes.reduce((a,r)=>a+(r.minutes||0),0);
           return {p,minutes,count};
         };

@@ -2,6 +2,7 @@ name: Time-first planner test
 on:
   pull_request:
     paths:
+      - 'admin/planner.js'
       - 'worker/src/nearfirst.js'
       - 'worker/src/customerexport.js'
       - 'worker/src/plancore.js'
