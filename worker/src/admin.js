@@ -1130,7 +1130,7 @@ function viewCreate(edit){
     if(tkE && !d.prefilled){ d.prefilled = true; edit.plans.forEach(p => { if(p.worker_id && p.idx < d.plan.routes.length) d.assign[p.idx] = p.worker_id; }); }
     draw(); renderSheet();
     // Phase 1 (16.11.2026): never add places by itself – too few mailboxes only leads to suggestions the admin may add
-    if(!tkE && !d.zone && !d.mainAll && !(d.plan.eco && !d.exact) && !coverage(d.flyers, d.plan.mailboxes).ok) findSuggestions();
+    if(!tkE && !d.zone && !d.mainAll) findSuggestions(); // browse nearby towns even when the flyer target is covered
   }
   // Suggestions for more places (census, Phase 2A) – shown in step "Route", added only by the admin ("Ort hinzufügen").
   // Kept apart from d.side (the confirmed places) in d.sugT. The census window around the ORIGINAL start is loaded once per
@@ -1281,7 +1281,7 @@ function viewCreate(edit){
             <span class="small muted">${esc(t('sugLine', { hh:fmtN(x.households), km:f1(x.km) }))}</span>
             <span class="small muted">${esc(t(x.adjacent ? 'sugGapAdj' : 'sugGap', { km:f1(x.gapKm), to:x.gapTo || t('sugGapStart') }))}</span>
             <span class="small sug-not">${esc(t('sugNotYet'))}${x.small ? ' · ' + esc(t('sugSmall')) : ''}</span></div><button class="btn ghost small" data-sadd="${i}">${ICONS.plus}<span>${esc(t('sugAdd'))}</span></button></div>`;
-      const sugList = !c.ok && !tkE && !d.zone ? `<div class="cov-sug"><h4>${ICONS.pin}${esc(t('sugTitle'))}</h4>
+      const sugList = !tkE && !d.zone ? `<div class="cov-sug"><h4>${ICONS.pin}${esc(t('sugTitle'))}</h4>
           <label class="small muted sug-km">${esc(t('sugMaxKm'))} <select id="sugKm" aria-label="${esc(t('sugMaxKm'))}">${[5, 10, 15, 20, 30].map(k => `<option value="${k}"${k === d.maxKm ? ' selected' : ''}>${k} km</option>`).join('')}</select></label>
           ${!sg || sg.loading ? `<p class="small muted">${esc(t('sugLoading'))}</p>` : sg.failed ? `<p class="small err">${esc(t('sugFailed'))}</p>` : !sg.list.length ? `<p class="small muted">${esc(t('sugNone', { km:d.maxKm }))}</p>`
           : sg.list.slice(0, sg.shown).map(sugRow).join('') + (sg.shown < sg.list.length ? `<button class="btn ghost small" id="sugMore">${esc(t('sugMore', { n:sg.list.length - sg.shown }))}</button>` : '')
