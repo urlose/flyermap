@@ -1491,6 +1491,7 @@ function viewCreate(edit){
       const pl0 = d.plan, shown = !d.mainAll && !(pl0.eco && !d.exact) && !pl0.cores && !pl0.budget;   // time-budget mode: fewer mailboxes than the maximum is the point (shown in the budget panel), no extra question
       if(shown && !c.ok && !await confirmBox(t('covSaveT'), t('covSaveQ', { want:fmtN(c.want), have:fmtN(c.have), miss:fmtN(c.missing) }), t('covSaveYes'))) return; }
     $('#cSave').disabled = true; $('#cSave').classList.add('loading');
+    let createdTaskId = null; // only a freshly created order may be rolled back
     try{
       const pl = d.plan, quota = Math.max(200, Math.round(+saved.quota || NEW_QUOTA)), date = saved.date || null, deadline = saved.deadline || null;
       const cityN = mainCity() || null;
@@ -1511,6 +1512,7 @@ function viewCreate(edit){
         await sb.from('task_workers').delete().eq('task_id', tkE.id);
       }else{
         const ins = await sb.from('tasks').insert({ ...row, created_by:A.user.id }).select().single(); if(ins.error) throw ins.error; tk = ins.data;
+        createdTaskId = tk.id;
       }
       const rows = planRows(pl, { taskId:tk.id, assign:d.assign, counts:dbBoxes.routes, colors:Planner.COLORS });
       if(old){
@@ -1522,19 +1524,34 @@ function viewCreate(edit){
           if(dates.length >= need) Object.assign(r, { status:'accepted', work_dates:dates, accepted_at:o.accepted_at, committed_terms:o.committed_terms });
         });
       }
-      await savePlans(tk, rows, !!old);
+      await savePlans(tk, rows, !!old, () => { createdTaskId = null; }); // after route insert succeeds, never delete a real order
       await loadTasks();
       clearDraft(); viewTask(tk.id);
-    }catch(e){ if($('#cErr')) $('#cErr').textContent = e.message; else toast(e.message); const sv = $('#cSave'); if(sv){ sv.disabled = false; sv.classList.remove('loading'); } }
+    }catch(e){
+      let message = e.message || String(e);
+      if(createdTaskId){
+        // Two independent REST inserts are not atomic. Best-effort cleanup prevents an empty new task after a failed plan insert.
+        // An actual transaction requires a server-side RPC (tracked separately).
+        const cleanup = [];
+        try{ const { error } = await sb.from('task_plans').delete().eq('task_id', createdTaskId); if(error) cleanup.push(error.message); }catch(err){ cleanup.push(err.message); }
+        try{ const { error } = await sb.from('task_workers').delete().eq('task_id', createdTaskId); if(error) cleanup.push(error.message); }catch(err){ cleanup.push(err.message); }
+        try{ const { error } = await sb.from('tasks').delete().eq('id', createdTaskId); if(error) cleanup.push(error.message); }catch(err){ cleanup.push(err.message); }
+        if(cleanup.length) message += ' — Cleanup fehlgeschlagen: ' + cleanup.join('; ');
+      }
+      if($('#cErr')) $('#cErr').textContent = message; else toast(message);
+      const sv = $('#cSave'); if(sv){ sv.disabled = false; sv.classList.remove('loading'); }
+    }
   }
   renderSheet();
   if(tkE) setStart(tkE.start_lat, tkE.start_lng);
   else restoreDraft();
 }
 // saves plans, links workers and sends each assigned worker a notification
-async function savePlans(tk, rows, replanned){
-  let ins = [];
-  if(rows.length){ const r = await sb.from('task_plans').insert(rows).select(); if(r.error) throw r.error; ins = r.data || []; }
+async function savePlans(tk, rows, replanned, onPersisted = () => {}){
+  if(!rows.length) throw new Error('Keine Routen zum Speichern vorhanden');
+  const r = await sb.from('task_plans').insert(rows).select(); if(r.error) throw r.error;
+  const ins = r.data || [];
+  onPersisted(); // no rollback once the routes exist, even if links/notifications later fail
   const ws = [...new Set(rows.map(r => r.worker_id).filter(Boolean))];
   if(ws.length) await sb.from('task_workers').upsert(ws.map(w => ({ task_id:tk.id, worker_id:w })), { onConflict:'task_id,worker_id', ignoreDuplicates:true });
   if(replanned){

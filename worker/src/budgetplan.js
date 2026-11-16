@@ -16,7 +16,13 @@ export function budgetDays(r, pl){
 }
 
 // rows for the insert: assign[i] = worker id of route i (or none), counts = savedMailboxCounts(...).routes, colors = palette
+function integerCount(value){
+  const n = Number(value);
+  if(!Number.isFinite(n) || n < 0) throw new Error('Invalid mailbox count');
+  return Math.round(n);
+}
+
 export function planRows(pl, { taskId, assign = {}, counts, colors }){
   return pl.routes.map((r, i) => ({ task_id:taskId, idx:i, worker_id:assign[i] || null, color:colors[(r.w != null ? r.w : i) % colors.length], path:r.path, length_m:r.length_m, street_m:r.street_m,
-    mailboxes:counts[i], boxes:r.boxes, minutes:r.minutes, days:budgetDays(r, pl), steps:r.steps, reserve:r.reserve || [] }));
+    mailboxes:integerCount(counts[i]), boxes:r.boxes, minutes:r.minutes, days:budgetDays(r, pl), steps:r.steps, reserve:r.reserve || [] }));
 }
