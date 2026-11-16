@@ -1,4 +1,5 @@
 import { build } from 'esbuild';
+import { stampVersion } from './scripts/stamp-version.mjs';
 import { mkdirSync, copyFileSync, cpSync, writeFileSync } from 'node:fs';
 mkdirSync('www', { recursive: true });
 // the route planner runs in a Web Worker: bundled first and embedded as a string (started from a Blob, works in every WebView)
@@ -12,6 +13,7 @@ const CHUNKS = readdirSync('www/c').filter(f => !f.startsWith('admin-')).map(f =
 { const { readFileSync, writeFileSync } = await import('fs'); const { createHash } = await import('crypto');
   const v = createHash('sha1').update(readFileSync('www/app.js')).digest('hex').slice(0, 10);
   writeFileSync('www/index.html', readFileSync('src/index.html', 'utf8').replace('src="app.js"', `src="app.js?v=${v}"`)); }
+stampVersion('www/index.html');
 copyFileSync('node_modules/leaflet/dist/leaflet.css', 'www/leaflet.css');
 cpSync('node_modules/leaflet/dist/images', 'www/images', { recursive: true });
 copyFileSync('assets/icon-only.png', 'www/icon.png'); copyFileSync('assets/favicon.png', 'www/favicon.png');
