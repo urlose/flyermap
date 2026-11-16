@@ -792,7 +792,8 @@
     const sparse = e => e.len > 100 && e.mb * 1000 / e.len < minDens;
     let skipped = 0;
     // an area the admin drew himself is walked completely: no street inside it is skipped as too empty
-    g.edges.forEach((e, i) => { if(e.mb > 0){ if(!g.zoned && sparse(e)){ skipped += e.mb; return; } items.push({ i, k:(tree.d[e.a] + tree.d[e.b]) / 2, v:tree.d[e.a] <= tree.d[e.b] ? e.b : e.a }); } });
+    // Disconnected streets cannot be delivered on this walking route, even when the flyer target exceeds reachable capacity.
+    g.edges.forEach((e, i) => { if(e.mb > 0){ if(!Number.isFinite(tree.d[e.a]) || !Number.isFinite(tree.d[e.b])){ skipped += e.mb; return; } if(!g.zoned && sparse(e)){ skipped += e.mb; return; } items.push({ i, k:(tree.d[e.a] + tree.d[e.b]) / 2, v:tree.d[e.a] <= tree.d[e.b] ? e.b : e.a }); } });
     // 2. drop poor branches: along the shortest-path tree from the start, a branch (road out to somewhere) is only worth walking
     //    if it brings enough mailboxes per km (walking out and back). Rich far villages survive, long empty spurs do not.
     const B = new Float64Array(n), Lc = new Float64Array(n), kids = Array.from({ length:n }, () => []);

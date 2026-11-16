@@ -61,7 +61,7 @@ for(const seed of [1, 2, 3, 4, 5, 6, 7, 8]) for(const n of [2, 3, 4]) for(const 
   const ham = g.edges.map((e, i) => e.name === 'hamlet' ? i : -1).filter(i => i >= 0), inPlan = new Set(plan.routes.flatMap(r => r.part));
   const hIn = ham.filter(i => inPlan.has(i)).length; if(hIn && hIn < ham.length){ half++; console.log(`  !! hamlet only half planned: ${hIn} of ${ham.length} streets`); }
   total++; if(isl.length) bad++; small += isl.filter(m => m.share < 0.3).length;
-  if(plan.routes.some(r => r.covered === false)) console.log('  !! a route misses some of its streets');
+  if(plan.routes.some(r => r.covered === false)) throw new Error('A route misses some of its selected streets');
   console.log(`seed ${seed} n=${n} flyers=${flyers}: max ${Math.max(...mins)} min, all ${Math.round(walk / 1000 * 10) / 10} km, detached pieces: ${isl.length ? isl.map(m => Math.round(m.len)).join(', ') + ' m' : '—'}`);
 }
 console.log(`\n${bad} of ${total} plans have detached pieces, ${small} of them small stray bits (< 30 % of the route)`);

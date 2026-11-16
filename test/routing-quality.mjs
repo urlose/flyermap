@@ -44,6 +44,11 @@ try {
   const ranked=outwardStreetOrder(connected,start);
   assert.deepEqual(ranked.streets.map(x=>x.i),[1,2]);
   assert.deepEqual(ranked.unreachable,[3]);
+  const legacy=Planner.selectForFlyers(connected,start,1000);
+  assert.ok(!legacy.ids.includes(3),'Legacy selector must not count an unreachable component');
+  assert.equal(legacy.mailboxes,5);
+  const legacyPlan=Planner.planFlyers(connected,start,1000,2);
+  assert.ok(legacyPlan.routes.every(r=>!r.path.length||r.covered),'Legacy routes must cover their selected streets');
   const connectedPlan=Planner.planFlyers(connected,start,6,2,{selectedEdgeIds:[1,2]});
   assert.equal(connectedPlan.mailboxes,5,'Do not invent boxes on a connector');
   assert.ok(connectedPlan.routes.every(r=>!r.path.length||r.covered),'Every selected edge is actually traversed');

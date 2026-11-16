@@ -76,3 +76,10 @@ assert.ok(multi.routes.some(r=>r.path.some(p=>p[2]===1)),'Inter-town jump marker
 await assert.rejects(createPlanService(null).plan({...sideArgs,budget:{...sideArgs.budget,travelMin:null}},()=>{},()=>false),
   /Anfahrtszeit/);
 console.log('Near-first planner integration: time-only budget, outward growth and side-town travel OK');
+
+const constrained=(await createPlanService(null).plan({...sideArgs,budget:{...sideArgs.budget,hours:4}},()=>{},()=>false)).plan;
+const baseMainMinutes=a.routes.flatMap(r=>r.parts).filter(p=>p.place==='Hauptstadt').reduce((s,p)=>s+p.minutes,0);
+const sideMainMinutes=constrained.routes.flatMap(r=>r.parts).filter(p=>p.place==='Hauptstadt').reduce((s,p)=>s+p.minutes,0);
+assert.ok(sideMainMinutes<baseMainMinutes,'Side-town work and transfer must reduce the main-town time allocation');
+assert.ok(constrained.budget.actual_minutes<=4*60*1.05+1);
+assert.equal(constrained.per_worker.reduce((s,m)=>s+m,0),constrained.budget.actual_minutes);
