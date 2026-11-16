@@ -21,47 +21,78 @@ const town = (cx, cy, nx, ny, perKm) => { const pts = [], key = new Map(), edges
   return { c:pt(cx, cy), make:() => ({ pts, edges:edges.map(e => ({ ...e })), adj, radius:6000, usable:mb, mailboxes:mb, reach:1000, street_m:Math.round(edges.reduce((s, e) => s + e.len, 0)) }), mb }; };
 const START = pt(0, 0), MAIN = town(0, 0, 22, 22, 150), B = town(8000, 0, 14, 14, 140), C = town(-8000, 3000, 10, 10, 120), D = town(3000, -9000, 7, 7, 90);
 const V = [town(5000, 6000, 3, 3, 110), town(-5000, -5000, 3, 4, 100), town(9000, 7000, 4, 3, 120), town(-9000, -3000, 3, 3, 90), town(1000, 9000, 4, 4, 105)];   // five small villages
-const WORLD = [MAIN, B, C, D, ...V], d2 = (a, b) => Math.hypot((a[0] - b[0]) / mLat, (a[1] - b[1]) / mLng);
-Planner.loadForFlyers = async start => WORLD.reduce((m, t) => d2(start, t.c) < d2(start, m.c) ? t : m).make();
+const WORLD = [MAIN, B, C, D, ...V], d2d = (a, b) => Math.hypot((a[0] - b[0]) / mLat, (a[1] - b[1]) / mLng);
+Planner.loadForFlyers = async start => WORLD.reduce((m, t) => d2d(start, t.c) < d2d(start, m.c) ? t : m).make();
 const side = (t, name, extra) => ({ name, lat:t.c[0], lng:t.c[1], flyers:t.mb, zone:null, all:false, auto:true, ...extra });
 const run = async (flyers, n, sides, extra) => (await createPlanService(null).plan({ start:START, flyers, n, days:5, hours:7, quota:2000, travel:'zones', split:'even', exact:true, must:[], zone:null, side:sides, near:true, mainName:'Hauptstadt', ...extra }, () => {}, () => false)).plan;
 const sides4 = () => [side(B, 'Bstadt'), side(C, 'Cdorf'), side(D, 'Ddorf')];
 const placesOf = p => new Set(p.routes.flatMap(r => r.parts.map(x => x.place)));
 
 { const p = await run(10000, 2, sides4(), { budget:{ hours:32 } }), b = p.budget;
-  ok('1 two workers, four towns, 32 h in total: two routes, together ≤ 32 h', p.routes.length === 2 && b.work_minutes <= 32 * 60 * 1.001, `${hrs(b.work_minutes)} h, ${p.routes.length} routes`);
+  ok('1 two workers, four towns, 32 h in total: two routes, together ≤ 32 h', p.routes.length === 2 && b.work_minutes <= 32 * 60 * 1.05, `${hrs(b.work_minutes)} h, ${p.routes.length} routes`);
   ok('1 about 16 h each (not 32 h each)', p.per_worker.every(m => Math.abs(m - 16 * 60) < 16 * 60 * 0.12), p.per_worker.map(hrs).join(' / ') + ' h');
   ok('1 every selected town is planned on its own (own part, own mailboxes)', ['Hauptstadt', 'Bstadt', 'Cdorf', 'Ddorf'].every(n => placesOf(p).has(n)) && p.split.every(x => x.flyers > 0), [...placesOf(p)].join(','));
   ok('1 the parts of a town carry their own mailboxes; they add up to the plan', Math.abs(p.routes.flatMap(r => r.parts).reduce((a, x) => a + x.mailboxes, 0) - p.mailboxes) <= 6, p.mailboxes + ' mailboxes');
   ok('1 no empty route is created to reach a number', p.routes.every(r => r.mailboxes > 0 && r.path.length > 1)); }
 { const base = await run(10000, 2, sides4()), baseH = base.per_worker.reduce((a, b) => a + b, 0) / 60, p = await run(10000, 2, sides4(), { budget:{ hours:32 } });
-  ok('2 the 10 000 flyers need more than 32 h in the old plan, the budget plan stays within 32 h', baseH > 32 && p.budget.work_minutes / 60 <= 32.04, `old ${baseH.toFixed(1)} h, budget ${hrs(p.budget.work_minutes)} h for ${p.mailboxes} flyers`);
+  ok('2 the 10 000 flyers need more than 32 h in the old plan, the budget plan stays within 32 h', baseH > 32 && p.budget.work_minutes / 60 <= 33.6, `old ${baseH.toFixed(1)} h, budget ${hrs(p.budget.work_minutes)} h for ${p.mailboxes} flyers`);
   ok('2 it is not the old plan cut proportionally: other streets/shares (towns keep their own parts, planned < 10 000)', p.mailboxes < 10000 && p.mailboxes > base.mailboxes * 0.9); }
+// tolerance: 32 h is the target, up to +5 % (33,6 h) is accepted and reported; 0 % is strict; the best plan within the tolerance is kept
+{ const strict = await run(10000, 2, sides4(), { budget:{ hours:32, tolerance:0 } }), def = await run(10000, 2, sides4(), { budget:{ hours:32 } }), wide = await run(10000, 2, sides4(), { budget:{ hours:32, tolerance:0.1 } });
+  ok('T1 tolerance 0: never above the target', strict.budget.actual_minutes <= 32 * 60 + 1 && strict.budget.over === false, hrs(strict.budget.actual_minutes) + ' h');
+  ok('T2 default tolerance +5 %: maximum 33,6 h, more flyers than the strict plan or equal, never above the maximum', def.budget.actual_minutes <= 33.6 * 60 + 1 && def.budget.max_minutes === Math.round(32 * 60 * 1.05) && def.mailboxes >= strict.mailboxes - 5, `${hrs(def.budget.actual_minutes)} h / ${def.mailboxes} vs strict ${hrs(strict.budget.actual_minutes)} h / ${strict.mailboxes}`);
+  ok('T3 the plan reports the actual time and a warning flag when the target is exceeded (not when it is not)', def.budget.over_target === (def.budget.actual_minutes > 32 * 60 + 1) && def.budget.over === false && strict.budget.over_target === false, 'over_target ' + def.budget.over_target);
+  ok('T4 a wider tolerance (10 %) may use more time for more flyers, within its maximum', wide.budget.actual_minutes <= 32 * 60 * 1.1 + 1 && wide.mailboxes >= def.mailboxes - 5, `${hrs(wide.budget.actual_minutes)} h / ${wide.mailboxes}`);
+  const forced = await run(10000, 2, sides4(), { budget:{ hours:32, tolerance:0.05, travelMin:60 } });
+  ok('T5 known ride times count against the target and the tolerance', forced.budget.actual_minutes <= 33.6 * 60 + 1, hrs(forced.budget.actual_minutes) + ' h incl. ' + forced.budget.travel.minutes + ' min rides'); }
 { const p = await run(30000, 2, sides4(), { budget:{ hours:32 } }), b = p.budget;
-  ok('3 not all flyers fit in the time: uncovered is shown, the limit is not exceeded', b.uncovered > 15000 && b.limit === 'time' && b.work_minutes <= 32 * 60 * 1.001 && !b.fits_all, `uncovered ${b.uncovered}, limit ${b.limit}`);
+  ok('3 not all flyers fit in the time: uncovered is shown, the limit is not exceeded', b.uncovered > 15000 && b.limit === 'time' && b.work_minutes <= 32 * 60 * 1.05 && !b.fits_all, `uncovered ${b.uncovered}, limit ${b.limit}`);
   const q = await run(10000, 2, sides4(), { budget:{ hours:200 } });
   ok('3 with plenty of time the full order is planned and the hours stay lower than the budget', q.budget.fits_all && q.budget.uncovered === 0 && q.budget.work_minutes < 200 * 60 * 0.5 && q.mailboxes >= 9900, `${hrs(q.budget.work_minutes)} h for ${q.mailboxes}`);
   const r = await run(100000, 2, [side(D, 'Ddorf')], { budget:{ hours:400 } });
   ok('3 when the streets run out before the time: limit is the capacity, not the time', r.budget.limit === 'capacity' && r.budget.uncovered > 0, r.budget.limit); }
 { const sv = [...V.map((t, i) => side(t, 'Dorf' + (i + 1))), side(D, 'Ddorf')], p = await run(10000, 2, sv, { budget:{ hours:32 } });
-  ok('4 several small villages: all are in the plan, still two routes, within the hours', V.every((_, i) => placesOf(p).has('Dorf' + (i + 1))) && p.routes.length === 2 && p.budget.work_minutes <= 32 * 60 * 1.001, `${placesOf(p).size} places, ${hrs(p.budget.work_minutes)} h`);
+  ok('4 several small villages: all are in the plan, still two routes, within the hours', V.every((_, i) => placesOf(p).has('Dorf' + (i + 1))) && p.routes.length === 2 && p.budget.work_minutes <= 32 * 60 * 1.05, `${placesOf(p).size} places, ${hrs(p.budget.work_minutes)} h`);
   ok('4 no street/mailbox twice', dups(p) === 0); }
 { const p1 = await run(10000, 2, sides4(), { budget:{ hours:32 } }), p2 = await run(10000, 2, sides4().filter(x => x.name !== 'Cdorf'), { budget:{ hours:32 } }), p3 = await run(10000, 2, [...sides4().filter(x => x.name !== 'Cdorf'), side(V[0], 'Neudorf')], { budget:{ hours:32 } });
-  ok('5 a removed town is gone from the plan, nothing replaces it by itself', placesOf(p1).has('Cdorf') && !placesOf(p2).has('Cdorf') && !p2.split.some(x => x.name === 'Cdorf') && p2.budget.work_minutes <= 32 * 60 * 1.001);
-  ok('5 a town added after the first calculation is planned (own part), budget kept', placesOf(p3).has('Neudorf') && p3.budget.work_minutes <= 32 * 60 * 1.001 && p3.routes.length === 2); }
+  ok('5 a removed town is gone from the plan, nothing replaces it by itself', placesOf(p1).has('Cdorf') && !placesOf(p2).has('Cdorf') && !p2.split.some(x => x.name === 'Cdorf') && p2.budget.work_minutes <= 32 * 60 * 1.05);
+  ok('5 a town added after the first calculation is planned (own part), budget kept', placesOf(p3).has('Neudorf') && p3.budget.work_minutes <= 32 * 60 * 1.05 && p3.routes.length === 2); }
 { const fixed = sides4().map(x => x.name === 'Bstadt' ? { ...x, auto:false, flyers:900 } : x), p = await run(10000, 2, fixed, { budget:{ hours:32 } }), sp = p.split.find(x => x.name === 'Bstadt');
-  ok('6 the admin sets the flyers of one town: it gets that number, the others share the rest of the hours', sp && Math.abs(sp.flyers - 900) <= 900 * 0.05 && p.budget.work_minutes <= 32 * 60 * 1.001, `Bstadt ${sp && sp.flyers}`);
+  ok('6 the admin sets the flyers of one town: it gets that number, the others share the rest of the hours', sp && Math.abs(sp.flyers - 900) <= 900 * 0.05 && p.budget.work_minutes <= 32 * 60 * 1.05, `Bstadt ${sp && sp.flyers}`);
   const more = await run(10000, 2, fixed.map(x => x.name === 'Bstadt' ? { ...x, flyers:2500 } : x), { budget:{ hours:32 } });
   ok('6 changing the number again moves the hours: Bstadt grows, the main town shrinks', more.split.find(x => x.name === 'Bstadt').flyers > 2300 && more.split.find(x => x.name === 'Hauptstadt').flyers < p.split.find(x => x.name === 'Hauptstadt').flyers); }
 { const p = await run(24000, 2, sides4(), { budget:{ hours:300 } }); const clone = await run(10000, 2, [side(MAIN, 'Hauptstadt-Kopie', { lat:MAIN.c[0] + 0.0004 })], { budget:{ hours:32 } });
   ok('7 no mailbox is walked twice (two workers, four towns)', dups(p) === 0, 'duplicate mailboxes: ' + dups(p));
   ok('7 a second place on the same streets as the main town does not double the streets', dups(clone) === 0 && clone.mailboxes <= MAIN.mb); }
+// reported: 6 h budget with ten selected villages returned 7,4 h – the minimums of the places ate the budget
+{ const many = [...V.map((t, i) => side(t, 'Dorf' + (i + 1))), side(B, 'Bstadt'), side(C, 'Cdorf'), side(D, 'Ddorf')], p = await run(10000, 2, many, { budget:{ hours:6 } }), b = p.budget;
+  ok('R1 6 h budget with 8 selected places: stays within target + tolerance (no 7,4 h), flagged only if beyond the target', b.actual_minutes <= 6 * 60 * 1.05 + 1 && b.over === false, `${hrs(b.actual_minutes)} h, flyers ${p.mailboxes}, unplanned: ${(b.unplanned || []).join(',') || '-'}`);
+  ok('R1 places that got no time are named (nothing dropped silently, nothing invented)', (b.unplanned || []).every(n => !placesOf(p).has(n)) && p.routes.every(r => r.mailboxes > 0));
+  const q = await run(10000, 2, many, { budget:{ hours:32 } }); ok('R2 with enough time every selected place is in the plan again', q.budget.unplanned.length === 0 && many.every(x => placesOf(q).has(x.name)), `${hrs(q.budget.actual_minutes)} h`); }
+// the main place never disappears (mandatory): even with much denser neighbours it keeps real streets and flyers
+{ const save = Planner.loadForFlyers, sparse = town(0, 0, 12, 12, 40), d1 = town(6000, 0, 16, 16, 230), d2 = town(-6000, 2000, 14, 14, 230), d3 = town(2000, 7000, 12, 12, 230), W2 = [sparse, d1, d2, d3];
+  Planner.loadForFlyers = async start => W2.reduce((m, t) => d2d(start, t.c) < d2d(start, m.c) ? t : m).make();
+  const sd = [side(d1, 'Dicht1'), side(d2, 'Dicht2'), side(d3, 'Dicht3')];
+  for(const h of [8, 16, 32]){ const p = await run(10000, 2, sd, { budget:{ hours:h } }), mainSplit = p.split.find(x => x.name === 'Hauptstadt'), parts = p.routes.flatMap(r => r.parts).filter(x => x.place === 'Hauptstadt');
+    ok(`M1 ${h} h, main place sparse (40/km), three much denser neighbours (230/km): Hauptstadt stays in the plan with real streets`, !!mainSplit && mainSplit.flyers > 0 && parts.length >= 1 && parts.every(x => x.mailboxes > 0) && p.budget.main.reserved > 0, `main ${mainSplit && mainSplit.flyers} of ${p.mailboxes} flyers, ${parts.length} part(s), reserve ${p.budget.main.reserved}, ${hrs(p.budget.actual_minutes)} h`); }
+  const p8 = await run(10000, 2, sd, { budget:{ hours:8 } }), mainMin = p8.routes.flatMap(r => r.parts).filter(x => x.place === 'Hauptstadt').reduce((a, x) => a + x.minutes, 0);
+  ok('M2 the reserve is a real share of the time (about a quarter), the rest goes to the efficient places', mainMin >= 8 * 60 * 0.18 && mainMin <= 8 * 60 * 0.45 && p8.split.filter(x => x.name !== 'Hauptstadt').reduce((a, x) => a + x.flyers, 0) > p8.split.find(x => x.name === 'Hauptstadt').flyers, `main ${mainMin} of ${8 * 60} min`);
+  const rows = planRows(p8, { taskId:'t', assign:{ 0:'wA', 1:'wB' }, counts:savedMailboxCounts(p8.routes).routes, colors:Planner.COLORS });
+  ok('M3 the main place is in the saved task_plans rows (days/parts, path, boxes)', rows.some(r => r.days.some(d => (d.parts || []).some(x => x.place === 'Hauptstadt') && d.place.includes('Hauptstadt'))) && rows.every(r => r.boxes.length > 0));
+  const nomain = town(0, 0, 8, 8, 0), W3 = [nomain, d1, d2];
+  Planner.loadForFlyers = async start => W3.reduce((m, t) => d2d(start, t.c) < d2d(start, m.c) ? t : m).make();
+  const pe = await run(10000, 2, [side(d1, 'Dicht1'), side(d2, 'Dicht2')], { budget:{ hours:16 } });
+  ok('M4 a main place without any mailbox: warning, no invented route, the other places are planned', pe.budget.main.empty === true && !pe.split.some(x => x.name === 'Hauptstadt' && x.flyers > 0) && !pe.routes.some(r => r.parts.some(x => x.place === 'Hauptstadt')) && pe.mailboxes > 0, 'main_empty ' + pe.budget.main.empty);
+  Planner.loadForFlyers = async start => W2.reduce((m, t) => d2d(start, t.c) < d2d(start, m.c) ? t : m).make();
+  const ps = await run(10000, 2, sd.slice(0, 1), { budget:{ hours:1.5 } });   // 1,5 h: a quarter is ~20 min
+  ok('M5 a very short budget: the main place still gets its piece, or the plan says "too short" – never a made-up route', ps.routes.flatMap(r => r.parts).some(x => x.place === 'Hauptstadt') || ps.budget.main.short === true, `reserve ${ps.budget.main.reserved}, short ${ps.budget.main.short}`);
+  Planner.loadForFlyers = save; }
 // rides between places: unknown time is reported, not counted as zero
 { const p = await run(10000, 2, sides4(), { budget:{ hours:32 } }), tr = p.budget.travel;
   ok('rides: places are joined by jump points, the time of the rides is UNKNOWN and said so', tr.known === false && tr.moves >= 2 && tr.jumps.every(j => j.known === false && j.min === null) && p.routes.every(r => r.path.filter(q => q[2] === 1).length === r.parts.length - 1), `${tr.moves} changes of place, far ${tr.far}`);
   ok('rides: no walking line between places (a jump marker starts every piece after the first)', p.routes.every(r => r.parts.slice(1).every(x => r.path[x.i0][2] === 1)) && p.routes.every(r => r.path[0][2] !== 1));
   const k = await run(10000, 2, sides4(), { budget:{ hours:32, travelMin:30 } });
-  ok('rides: when the admin knows the ride time it is counted, and the budget is checked with it', k.budget.travel.known === true && k.budget.travel.minutes === k.budget.travel.moves * 30 && k.budget.work_minutes + k.budget.travel.minutes <= 32 * 60 * 1.01, `${k.budget.travel.moves} × 30 min`);
+  ok('rides: when the admin knows the ride time it is counted, and the budget is checked with it', k.budget.travel.known === true && k.budget.travel.minutes === k.budget.travel.moves * 30 && k.budget.work_minutes + k.budget.travel.minutes <= 32 * 60 * 1.05 + 1, `${k.budget.travel.moves} × 30 min`);
   const one = await run(10000, 1, sides4(), { budget:{ hours:32 } }); ok('one worker: one route with all places', one.routes.length === 1 && one.routes[0].parts.length >= 4);
   const three = await run(10000, 3, sides4(), { budget:{ hours:48 } }); ok('three workers: three routes, none empty', three.routes.length === 3 && three.routes.every(r => r.mailboxes > 0), three.per_worker.map(hrs).join('/'));
   const few = await run(300, 3, [], { budget:{ hours:48 } }); ok('fewer jobs than workers: no empty routes just to reach 3 records', few.routes.length < 3 && few.routes.every(r => r.mailboxes > 0), few.routes.length + ' route(s)'); }
@@ -112,7 +143,7 @@ for(const [name, S] of [['Weidenberg', [49.942445, 11.729003]], ['Eisfeld', [50.
   const sides = sug.map((x, i) => { const s = addSuggestion([], x, name + '-Ort' + (i + 1))[0]; return { name:s.name, lat:s.lat, lng:s.lng, flyers:s.flyers, zone:null, all:false, auto:true, cid:s.cid }; });
   const p = await (await createPlanService(null).plan({ start:S, flyers:10000, n:2, days:5, hours:7, quota:2000, travel:'zones', split:'even', exact:true, must:[], zone:null, side:sides, near:true, mainName:name, budget:{ hours:32 } }, () => {}, () => false)).plan;
   const b = p.budget, ps = [...placesOf(p)];
-  ok(`[real] ${name}: 32 h for 2 workers → ${p.mailboxes} flyers in ${hrs(b.work_minutes)} h, 2 routes (${p.per_worker.map(hrs).join(' / ')} h), not covered ≈ ${b.uncovered}`, p.routes.length === 2 && b.work_minutes <= 32 * 60 * 1.001 && p.mailboxes > 1000 && p.mailboxes <= 10000, `limit ${b.limit}`);
+  ok(`[real] ${name}: 32 h for 2 workers → ${p.mailboxes} flyers in ${hrs(b.work_minutes)} h, 2 routes (${p.per_worker.map(hrs).join(' / ')} h), not covered ≈ ${b.uncovered}`, p.routes.length === 2 && b.work_minutes <= 32 * 60 * 1.05 && p.mailboxes > 1000 && p.mailboxes <= 10000, `limit ${b.limit}`);
   ok(`[real] ${name}: every selected place has its own part (${ps.length} places: ${ps.join(', ')})`, ps.length >= 3 && sides.every(s => ps.includes(s.name) || p.split.find(x => x.name === s.name)), p.split.map(x => x.name + ':' + x.flyers).join(' '));
   ok(`[real] ${name}: no street or mailbox twice, ride times unknown and reported (${b.travel.moves} changes of place)`, dups(p) === 0 && b.travel.known === false && b.travel.jumps.every(j => j.min === null));
   const rows = planRows(p, { taskId:'t', assign:{}, counts:savedMailboxCounts(p.routes).routes, colors:Planner.COLORS });
