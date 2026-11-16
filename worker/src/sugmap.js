@@ -51,3 +51,28 @@ export function createHighlighter({ show, hide, focus }){
     clear(){ hover = pinned = null; items.clear(); sync(); },
   };
 }
+
+// Names for the shown suggestions, one request at a time (the free geocoder refuses many at once). Bounded: every place gets at most
+// `maxTries` lookups IN TOTAL (tries is kept by the caller across calls); a geocoder that always answers nothing or always fails
+// ends the work after those tries – the place then keeps its "Ort in x km" label. Nothing is retried by itself later.
+//   st: the suggestion state { list, shown, loading, naming }   resolve(item) -> name | null (may throw)
+//   cache: Map key -> name   tries: Map key -> attempts   isCurrent(st): false when the list was replaced (stop at once)
+export async function nameShown(st, { resolve, cache, tries, isCurrent = () => true, onName = () => {}, maxTries = 2, wait = ms => new Promise(r => setTimeout(r, ms)) }){
+  if(!st || st.naming || st.loading || !st.list) return; st.naming = true;
+  try{
+    for(let i = 0; i < st.shown; i++){
+      const sg = st.list[i]; if(!sg || sg.name) continue; const k = keyOf(sg); if(k == null) continue;
+      if(cache.has(k)){ sg.name = cache.get(k); continue; }
+      let nm = null;
+      while(!nm && (tries.get(k) || 0) < maxTries){
+        tries.set(k, (tries.get(k) || 0) + 1);
+        try{ nm = await resolve(sg); }catch{ nm = null; }
+        if(!isCurrent(st)) return;
+        if(!nm && (tries.get(k) || 0) < maxTries){ await wait(800); if(!isCurrent(st)) return; }
+      }
+      if(nm){ cache.set(k, nm); sg.name = nm; onName(sg); }
+    }
+  } finally { st.naming = false; }
+  // "show more" was pressed meanwhile: only places that were never tried are left to do – this cannot go on forever
+  if(isCurrent(st) && st.list.slice(0, st.shown).some(x => !x.name && !cache.has(keyOf(x)) && !(tries.get(keyOf(x)) > 0))) return nameShown(st, { resolve, cache, tries, isCurrent, onName, maxTries, wait });
+}

@@ -21,7 +21,7 @@ import { loadStudios, studioBtnHtml, openStudioPicker } from './studios.js';
 import { viewLiveMap, dueInfo, LM } from './livemap.js';
 import { listView, viewSwitch, bindViewSwitch, tableHtml, bindTable } from './tables.js';
 import { STATS } from './stats.js';
-import { createHighlighter, keyOf } from './sugmap.js';
+import { createHighlighter, keyOf, nameShown as nameShownOf } from './sugmap.js';
 import { coverage, addSuggestion, placesApart, suggestionFlow, sugKey as sugKeyOf, MAX_KM, PAGE } from './expand.js';
 // a save button while the database works: disabled, "Speichert …"; back to normal afterwards (also after an error)
 async function busy(btn, fn){ if(!btn || btn.disabled) return; const html = btn.innerHTML; btn.disabled = true; btn.setAttribute('aria-busy', 'true'); btn.textContent = t('saving');
@@ -1144,17 +1144,9 @@ function viewCreate(edit){
   });
   // "Lehen (Weidenberg)": a district of a town is named as such; a city (≥ 5.000 households) as the city. One request at a time
   // (the free geocoder refuses many at once); the list is usable before the names arrive; stops when the list is replaced.
-  async function nameShown(st){
-    if(st.naming || st.loading || !st.list) return; st.naming = true;
-    try{
-      for(let i = 0; i < st.shown; i++){
-        const sg = st.list[i]; if(!sg || sg.name) continue; let nm = null;
-        for(let k = 0; k < 2 && !nm; k++){ try{ const r = await reversePlace(sg.lat, sg.lng); const ps = r ? r.split(', ') : []; nm = ps.length > 1 && sg.households < 5000 ? ps[0] + ' (' + ps[1] + ')' : ps[ps.length - 1] || null; }catch{ await new Promise(r => setTimeout(r, 800)); } }
-        if(!alive() || d.sugT !== st) return; if(nm){ d.sugNames.set(nameKey(sg), nm); sg.name = nm; renderSheet(); }
-      }
-    } finally { st.naming = false; }
-    if(alive() && d.sugT === st && st.list.slice(0, st.shown).some(x => !x.name && !d.sugNames.has(nameKey(x)))) nameShown(st);   // "more" was pressed meanwhile
-  }
+  d.sugTries = d.sugTries || new Map();   // lookups per place (max 2 in total, see sugmap.js nameShown): an empty geocoder answer cannot loop
+  const geoName = async sg => { const r = await reversePlace(sg.lat, sg.lng), ps = r ? r.split(', ') : []; return ps.length > 1 && sg.households < 5000 ? ps[0] + ' (' + ps[1] + ')' : ps[ps.length - 1] || null; };
+  const nameShown = st => nameShownOf(st, { resolve:geoName, cache:d.sugNames, tries:d.sugTries, isCurrent:s => alive() && d.sugT === s, onName:() => renderSheet() });
   function findSuggestions(){ if(!d.start || !d.plan) return; sugFlow.refresh(sugCtx()).catch(() => {}); }
   function draw(){
     zoneLayer.clearLayers(); planLayer.clearLayers();
