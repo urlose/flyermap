@@ -22,6 +22,9 @@ const hav = (a, b, c, d) => { const R = 6371000, r = Math.PI / 180, x = Math.sin
 // confirmed place surface. The global limit (maxKm, straight line from the ORIGINAL start) is never relaxed by a confirmed place.
 // All distances are straight lines. Nothing here changes `side`; only addSuggestion() (admin click) does.
 export const PAGE = 10, MAX_LIST = 60, MAX_KM = 15, LOCAL_KM = 4, SMALL_HH = 150;
+// the planner (plancore.js SEQ_MIN) gives a place no route of its own below 150 FLYERS; households are a little more than mailboxes, the real
+// number is only known after planning -> warn below ~200 households ("usually"), and say it for sure afterwards (admin.js noRoute)
+export const ROUTE_HH = 200;
 
 const cellDist = (cells, px, py) => { let d = Infinity; for(let i = 0; i < cells.length; i += 2){ const e = Math.hypot(cells[i] * 100 + 50 - px, cells[i + 1] * 100 + 50 - py); if(e < d) d = e; } return d; };
 const edgeDist = (a, b) => { let d = Infinity; for(let i = 0; i < a.length; i += 2) for(let j = 0; j < b.length; j += 2){ const e = Math.hypot(a[i] - b[j], a[i + 1] - b[j + 1]) * 100; if(e < d) d = e; } return d; };
@@ -85,7 +88,7 @@ export function rankSuggestions(towns, { start, side = [], missing = 0, max = MA
   const ordered = [...list.filter(x => first.has(x)), ...list.filter(x => !first.has(x))].slice(0, max);
   const out = ordered.map(x => ({
     id:x.c.id || null, lat:x.c.lat, lng:x.c.lng, households:x.c.households, km:Math.round(x.km * 10) / 10, dense:x.c.dense || null,
-    gapKm:Math.round(x.gap / 100) / 10, gapTo:anchors[x.gi].name, small:x.c.households < SMALL_HH, adjacent:x.gap < 500,
+    gapKm:Math.round(x.gap / 100) / 10, gapTo:anchors[x.gi].name, small:x.c.households < SMALL_HH, noRoute:x.c.households < ROUTE_HH, adjacent:x.gap < 500,
   })).map((o, i) => Object.defineProperty(o, 'cells', { value:ordered[i].c.cells, enumerable:false }));   // the census cells of the area (for the map highlight): shared, not copied, not part of the item's data
   // within the first screen: sorted by score again (reservations only decide who is on it)
   const n = Math.min(page, out.length), idx = new Map(ordered.map((x, i) => [i, x.score]));

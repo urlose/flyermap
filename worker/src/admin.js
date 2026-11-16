@@ -1228,13 +1228,14 @@ function viewCreate(edit){
     const covBlock = () => {
       if(!covShown()) return '';
       const c = coverage(d.flyers, p.mailboxes), apart = placesApart(d.start, d.side);
-      const sideList = d.side.length ? `<div class="cov-side"><b>${esc(t('covChosen'))}</b>${d.side.map((x, k) => `<span class="chip">${esc(x.name)} · ${esc(t('covKm', { km:String(x.km != null ? x.km : '–').replace('.', ',') }))}<button class="link" data-srm="${k}" aria-label="${esc(t('del') + ': ' + x.name)}">✕</button></span>`).join('')}</div>` : '';
+      const noRoute = x => !!(p.zones && p.split && p.split.some(sp => sp.name === x.name) && !(p.routes || []).some(r => r.place === x.name));   // the planner skips a place with < 150 flyers ("not worth the trip"): no route, no change of the numbers
+      const sideList = d.side.length ? `<div class="cov-side"><b>${esc(t('covChosen'))}</b>${d.side.map((x, k) => `<span class="chip${noRoute(x) ? ' no-route' : ''}"${noRoute(x) ? ` title="${esc(t('sideNoRoute'))}"` : ''}>${esc(x.name)} · ${esc(t('covKm', { km:String(x.km != null ? x.km : '–').replace('.', ',') }))}${noRoute(x) ? ' ⚠' : ''}<button class="link" data-srm="${k}" aria-label="${esc(t('del') + ': ' + x.name)}">✕</button></span>`).join('')}${d.side.some(noRoute) ? `<p class="small warn cov-noroute">${esc(t('sideNoRoute'))}</p>` : ''}</div>` : '';
       const sg = d.sugT && d.sugT.key === sugKey() ? d.sugT : null;
       const f1 = v => String(v).replace('.', ',');
       const sugRow = (x, i) => `<div class="sug-row" data-srow="${i}"><div class="grow"><button class="sug-name" data-sfocus="${i}" title="${esc(t('sugFocusT'))}" aria-label="${esc(t('sugFocusT') + ': ' + (x.name || t('sugUnnamed', { km:f1(x.km) })))}"><b>${esc(x.name || t('sugUnnamed', { km:f1(x.km) }))}</b></button>
             <span class="small muted">${esc(t('sugLine', { hh:fmtN(x.households), km:f1(x.km) }))}</span>
             <span class="small muted">${esc(t(x.adjacent ? 'sugGapAdj' : 'sugGap', { km:f1(x.gapKm), to:x.gapTo || t('sugGapStart') }))}</span>
-            <span class="small sug-not">${esc(t('sugNotYet'))}${x.small ? ' · ' + esc(t('sugSmall')) : ''}</span></div><button class="btn ghost small" data-sadd="${i}">${ICONS.plus}<span>${esc(t('sugAdd'))}</span></button></div>`;
+            <span class="small sug-not">${esc(t('sugNotYet'))}${x.small ? ' · ' + esc(t('sugSmall')) : ''}</span>${x.noRoute ? `<span class="small warn sug-tiny">${esc(t('sugSmallWarn'))}</span>` : ''}</div><button class="btn ghost small" data-sadd="${i}">${ICONS.plus}<span>${esc(t('sugAdd'))}</span></button></div>`;
       const sugList = !c.ok && !tkE && !d.zone ? `<div class="cov-sug"><h4>${ICONS.pin}${esc(t('sugTitle'))}</h4>
           <label class="small muted sug-km">${esc(t('sugMaxKm'))} <select id="sugKm" aria-label="${esc(t('sugMaxKm'))}">${[5, 10, 15, 20, 30].map(k => `<option value="${k}"${k === d.maxKm ? ' selected' : ''}>${k} km</option>`).join('')}</select></label>
           ${!sg || sg.loading ? `<p class="small muted">${esc(t('sugLoading'))}</p>` : sg.failed ? `<p class="small err">${esc(t('sugFailed'))}</p>` : !sg.list.length ? `<p class="small muted">${esc(t('sugNone', { km:d.maxKm }))}</p>`
