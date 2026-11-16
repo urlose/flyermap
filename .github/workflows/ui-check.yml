@@ -5,6 +5,8 @@ on:
   push:
     branches: ['phase*']
     paths: ['test/ui/ci.json']
+permissions:
+  contents: write
 jobs:
   ui:
     runs-on: ubuntu-latest
@@ -23,3 +25,8 @@ jobs:
         working-directory: test/ui
       - uses: actions/upload-artifact@v4
         with: { name: ui-shots, path: test/ui/out, retention-days: 5 }
+      # the screenshots also go to the branch ui-check-out (one commit, replaced every run) so they can be looked at
+      - run: |
+          cd test/ui/out && git init -q && git checkout -q -b ui-check-out && git add -A
+          git -c user.name=ci -c user.email=ci@example.com commit -qm "UI check ${GITHUB_SHA::7}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" ui-check-out
