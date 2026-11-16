@@ -1149,7 +1149,7 @@ function viewCreate(edit){
         d.autoPicked = true; // do not put removed places back; the admin controls the selection from here on
         const picks = chooseNearbyPlaces(st.list, coverage(d.flyers, d.plan.mailboxes).missing, { maxPlaces:8, maxKm:d.maxKm });
         for(const x of picks) d.side = addSuggestion(d.side, x, x.name || t('sugUnnamed', { km:String(x.km).replace('.', ',') }));
-        if(picks.length){ sugFlow.invalidate(); d.sugT = null; d.dirty = true; Promise.resolve().then(() => { if(alive()) recompute(); }); }
+        if(picks.length){ sugFlow.invalidate(); d.sugT = null; d.dirty = true; Promise.resolve().then(() => { if(alive()){ recompute(); renamePicked(picks); } }); }
       }
       renderSheet(); nameShown(st);
     },
@@ -1158,6 +1158,22 @@ function viewCreate(edit){
   // (the free geocoder refuses many at once); the list is usable before the names arrive; stops when the list is replaced.
   d.sugTries = d.sugTries || new Map();   // lookups per place (max 2 in total, see sugmap.js nameShown): an empty geocoder answer cannot loop
   const geoName = async sg => { const r = await reversePlace(sg.lat, sg.lng), ps = r ? r.split(', ') : []; return ps.length > 1 && sg.households < 5000 ? ps[0] + ' (' + ps[1] + ')' : ps[ps.length - 1] || null; };
+  async function renamePicked(picks){
+    // Geocoding is cosmetic; the routes keep working if the free service is offline.
+    let changed = false;
+    for(const sg of picks){
+      const x = d.side.find(z => z.cid === sg.id && z.auto); if(!x || !alive()) continue;
+      let name = d.sugNames.get(sg.id);
+      if(!name){ try{ name = await geoName(sg); }catch{} }
+      if(!alive()) return;
+      const current = d.side.find(z => z.cid === sg.id && z.auto);
+      if(current && name){ d.sugNames.set(sg.id, name); const used = new Set(d.side.filter(z => z !== current).map(z => z.name));
+        let unique = name; for(let j = 2; used.has(unique); j++) unique = name + ' (' + j + ')';
+        if(current.name !== unique){ current.name = unique; changed = true; renderSheet(); }
+      }
+    }
+    if(changed && alive()) recompute();
+  }
   const nameShown = st => nameShownOf(st, { resolve:geoName, cache:d.sugNames, tries:d.sugTries, isCurrent:s => alive() && d.sugT === s, onName:() => {
     let changed = false;
     d.side.forEach(x => { const name = x.cid && d.sugNames.get(x.cid); if(x.auto && name && x.name !== name){ x.name = name; changed = true; } });
