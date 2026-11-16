@@ -138,7 +138,7 @@ export function createPlanService(cache){
       return info();
     },
     // plans the routes; loads a larger square first when the plan reaches the edge of what is loaded
-    async plan({ start, flyers, n, days, hours, must, zone, side, quota, bike, travel, split, exact, mainAll, cores, together, first, near, mainName }, stage, stale){
+    async plan({ start, flyers, n, days, hours, must, zone, side, quota, bike, travel, split, exact, mainAll, cores, together, first, near, mainName, budget }, stage, stale){
       const eco = !exact && !mainAll;
       const zones = travel === 'zones';   // every place its own zone(s), no rides between places (orders since 15.11.2026)
       if(cores && !zones) return this.planCores({ start, flyers, n, hours, must, zone, side, travel, together, exact, first }, stage, stale);
@@ -166,7 +166,10 @@ export function createPlanService(cache){
       // a place with fewer mailboxes than its share gets what it has, the rest goes to the others. Old orders: unchanged.
       let splitInfo = null;
       if(zones){
-        const res = await this.planZones({ start, flyers, n, days, hours, must, zone, side, mainAll, cores, mainName }, stage, stale);
+        // time-budget mode ("maximum flyers for the working time"): same zones, but the team's hours are the limit, one route per worker
+        const res = budget && budget.hours > 0 && !mainAll && !(zone && zone.length > 2)
+          ? await this.planBudget({ start, flyers, n, days, hours, must, side, mainName, budget }, stage, stale)
+          : await this.planZones({ start, flyers, n, days, hours, must, zone, side, mainAll, cores, mainName }, stage, stale);
         if(res && res.plan) res.plan.bus = bus;
         return res;
       }
@@ -518,6 +521,165 @@ export function createPlanService(cache){
       plan.capacity = Planner.capacity(perW.map((m, k) => ({ idx:k, minutes:m })), flyers, { hoursPerDay:hours, days });
       const sug = Math.min(20, Planner.suggestWorkers(perW.reduce((a, b) => a + b, 0), hours, days));
       return { plan, sug, street_m:G.street_m };
+    },
+
+    // ---- Time-budget optimizer (Phase "Zeitbudget") --------------------------------------------------------------------------
+    // "The team has B hours – how many flyers can it hand out?" Every place (main town, villages) is still planned on its own, on foot,
+    // inside its own census area; nothing is walked between places. The hours are spent where they give the most mailboxes:
+    //  1. per place a curve "minutes → mailboxes" from the planner's own street selection (dense, compact streets first),
+    //     calibrated once with a real route plan of that place
+    //  2. all curve pieces of all places are taken best mailboxes-per-hour first, until the budget (or the flyers of the order) is used up
+    //     – a place with a number set by the admin (not auto) is fixed first, the rest competes for the remaining hours
+    //  3. the real routes are planned (streets taken by an earlier place are switched off: no street or mailbox twice) and the budget is
+    //     checked against the real minutes; the plan is shrunk/grown a few times until it fits
+    //  4. the pieces (zones) of the places are shared out among the workers so that everybody gets about the same hours, and each
+    //     worker's pieces become ONE route (buildLine): pieces joined by a jump marker [lat, lng, 1] – no walking line between places
+    // Ride times between places are not known (no car assumed): they are NOT counted as zero silently – plan.travel lists every change
+    // of place with the straight-line distance, and `budget.travel_known` says whether the admin entered a ride time (travelMin).
+    async planBudget({ start, flyers, n, days, hours, must, side, mainName, budget }, stage, stale){
+      const B0 = Math.max(60, Math.round(budget.hours * 60)), N = Math.max(1, Math.round(n || 1)), H = hours || 7, maxDays = Math.max(1, Math.min(14, days || 1));
+      const dayCap = N * H * 60 * maxDays, B = Math.min(B0, dayCap), share = B / N;   // the shifts (hours per day × days) can limit the budget too
+      const travelMin = budget.travelMin != null && isFinite(+budget.travelMin) && +budget.travelMin >= 0 ? +budget.travelMin : null;
+      const farKm = budget.farKm > 0 ? +budget.farKm : 3;
+      const maskOf = async (lat, lng, pick) => { try{ return await placeMask(lat, lng, pick ? { pick } : {}); }catch{ return null; } };
+      const view = (g, mask) => ({ ...g, zoned:g.zoned || !!mask, edges:g.edges.map(e => { if(!e.mb) return e; const m = e.coords && e.coords[Math.floor(e.coords.length / 2)], mid = m || g.pts[e.a];
+        if(mask && !mask.inside(mid[0], mid[1])) return { ...e, mb:0, boxes:[] };
+        if(mask && !mask.lives(mid[0], mid[1])) return { ...e, mb:e.mb * EMPTY_CELL, boxes:(e.boxes || []).map(b => [b[0], b[1], (b[2] || 1) * EMPTY_CELL]) };
+        return e; }) });
+      const keyE = (g, i) => { const e = g.edges[i]; return ((g.pts[e.a][0] + g.pts[e.b][0]) / 2).toFixed(5) + ',' + ((g.pts[e.a][1] + g.pts[e.b][1]) / 2).toFixed(5); };
+      const places = [], failed = [], dropped = [];
+      // ---- places: map, own census area, entry point, capacity ----
+      if(!G || gKey !== keyOf(start)){ stage('loadingArea'); await load(start, Math.max(flyers, 2000), undefined, must, stage, stale, 'loadingArea', null); }
+      if(stale()) return { skipped:true };
+      const addPlace = (o) => { places.push(o); return o; };
+      { const mask = await maskOf(start[0], start[1]), g = view(G, mask); let st = start;
+        if(mask){ const at = s0 => Planner.selectWithMust(g, s0, 1e9, must, null).mailboxes || 0, a = at(start), c0 = Planner.denseEntry(g, mask.centre, null, 150) || mask.centre; if(at(c0) > a * 1.3) st = c0; }
+        addPlace({ name:mainName || '', g, st, mask, isMain:true, must, fixed:null }); }
+      for(const c of side || []){
+        stage('loadingSide'); const want0 = c.all ? flyers : (+c.flyers || 0);
+        const g0 = await sideGraph({ ...c, flyers:Math.max(600, Math.round(Math.min(flyers, want0 || flyers) * 1.3)) }, stage, stale); if(stale()) return { skipped:true };
+        const chosen = !!c.cid, mask = await maskOf(c.lat, c.lng, chosen ? 150 : 0), g = view(g0, mask);
+        if(mask && places.some(q => q.mask && Math.abs(q.mask.centre[0] - mask.centre[0]) < 1e-6 && Math.abs(q.mask.centre[1] - mask.centre[1]) < 1e-6 && q.mask.households === mask.households)){ dropped.push(c.name); continue; }   // the same built-up area as an earlier place: never twice
+        let st = Planner.denseEntry(g, start, null, 150) || [c.lat, c.lng];
+        if(mask){ const at = s0 => Planner.selectWithMust(g, s0, 1e9, [], null).mailboxes || 0, c0 = Planner.denseEntry(g, mask.centre, null, 150) || mask.centre; if(at(c0) > at(st) * 1.3) st = c0; }
+        addPlace({ name:c.name, g, st, mask, isMain:false, must:[], fixed:(c.all ? 1e9 : (!c.auto && want0 > 0 ? want0 : null)), cid:c.cid || null });
+      }
+      if(stale()) return { skipped:true };
+      stage('calculating');
+      // ---- curves: minutes → mailboxes per place ----
+      const K = 8, lenOf = (g, ids) => ids.reduce((s, i) => s + g.edges[i].len, 0);
+      for(const pl of places){
+        pl.cap = Math.round(Planner.selectWithMust(pl.g, pl.st, 1e9, pl.must, null).mailboxes || 0);
+        const pts = [{ mb:0, min:0 }];
+        for(let k = 1; k <= K && pl.cap > 0; k++){ const sel = Planner.selectWithMust(pl.g, pl.st, pl.cap * k / K, pl.must, null), mb = sel.mailboxes || 0; if(mb > pts[pts.length - 1].mb) pts.push({ mb, min:Planner.routeMinutes(lenOf(pl.g, sel.ids) * 1.35, mb) }); }
+        // one real plan at the middle of the curve tells how far the estimate is from the real walk (repeated streets, dead ends)
+        pl.f = 1; const mid = pts[Math.min(pts.length - 1, Math.ceil(pts.length / 2))];
+        if(mid && mid.mb >= 20){ const rp = Planner.planFlyers(pl.g, pl.st, mid.mb, 1, { days:1, hoursPerDay:24, must:pl.must }), real = ((rp && rp.routes) || []).reduce((a, r) => a + (r.minutes || 0), 0); if(real > 0 && mid.min > 0) pl.f = Math.max(0.6, Math.min(3, real / mid.min)); }
+        pl.pts = pts.map(q => ({ mb:q.mb, min:q.min * pl.f }));
+        // concave: a street piece never gets better than the one before it (merge pieces whose slope rises)
+        const seg = []; for(let i = 1; i < pl.pts.length; i++) seg.push({ dmb:pl.pts[i].mb - pl.pts[i - 1].mb, dmin:Math.max(0.01, pl.pts[i].min - pl.pts[i - 1].min) });
+        for(let i = 0; i + 1 < seg.length;){ if(seg[i + 1].dmb / seg[i + 1].dmin > seg[i].dmb / seg[i].dmin + 1e-9){ seg[i] = { dmb:seg[i].dmb + seg[i + 1].dmb, dmin:seg[i].dmin + seg[i + 1].dmin }; seg.splice(i + 1, 1); i = Math.max(0, i - 1); } else i++; }
+        pl.seg = seg.map(x => ({ ...x, slope:x.dmb / x.dmin }));
+        pl.minAt = mb => { let m = 0, left = mb; for(const x of pl.seg){ if(left <= 0) break; const t = Math.min(1, left / x.dmb); m += x.dmin * t; left -= x.dmb; } return m; };
+      }
+      // ---- allocation: best mailboxes per hour first ----
+      // A place the admin selected is always part of the plan: it gets at least `floor` mailboxes (its best streets), the rest of the hours
+      // goes where the mailboxes per hour are highest. (budget.minShare, default 10 % of its capacity, at least 60; 0 switches it off.)
+      const minShare = budget.minShare != null ? Math.max(0, Math.min(1, +budget.minShare)) : 0.1;
+      for(const p of places) p.floor = p.isMain || p.fixed != null || !minShare ? 0 : Math.min(p.cap, Math.max(60, Math.round(p.cap * minShare)));
+      const afterFloor = (p) => { let skip = p.floor; const out = []; for(const x of p.seg){ if(skip >= x.dmb){ skip -= x.dmb; continue; } const f = skip > 0 ? (x.dmb - skip) / x.dmb : 1; skip = 0; out.push({ dmb:x.dmb * f, dmin:x.dmin * f, slope:x.slope }); } return out; };
+      const allocate = (Bm) => {
+        const want = new Map(places.map(p => [p, 0])); let usedMin = 0, usedMb = 0;
+        for(const p of places){ if(p.fixed != null){ const w = Math.min(p.cap, p.fixed); want.set(p, w); usedMin += p.minAt(w); usedMb += w; } else if(p.floor){ want.set(p, p.floor); usedMin += p.minAt(p.floor); usedMb += p.floor; } }
+        const segs = []; for(const p of places) if(p.fixed == null) (p.floor ? afterFloor(p) : p.seg).forEach(x => segs.push({ p, ...x }));
+        segs.sort((a, b) => b.slope - a.slope);
+        let limit = 'none';
+        for(const x of segs){
+          const roomMin = Bm - usedMin, roomMb = flyers - usedMb; if(roomMin <= 0){ limit = 'time'; break; } if(roomMb <= 0){ limit = 'flyers'; break; }
+          const t = Math.min(1, roomMin / x.dmin, roomMb / x.dmb);
+          want.set(x.p, want.get(x.p) + x.dmb * t); usedMin += x.dmin * t; usedMb += x.dmb * t;
+          if(t < 1){ limit = roomMin / x.dmin < roomMb / x.dmb ? 'time' : 'flyers'; break; }
+        }
+        return { want, usedMin, usedMb, limit };
+      };
+      const peopleFor = (p, w) => Math.max(1, Math.min(N, Math.ceil(p.minAt(w) / (0.75 * share))));
+      // ---- real routes (streets of an earlier place are off in the next one) ----
+      const realPass = (alloc, ko) => {
+        const seen = new Set(), out = [];
+        for(const p of places){
+          const w = Math.round(alloc.want.get(p) || 0); if(w < CHOSEN_MIN && !(p.isMain && w > 0)){ out.push({ p, want:w, parts:[], minutes:0, mailboxes:0 }); continue; }
+          const g = { ...p.g, edges:p.g.edges.map((e, i) => e.mb && seen.has(keyE(p.g, i)) ? { ...e, mb:0, boxes:[] } : e) };
+          const k = (ko && ko.get(p)) || peopleFor(p, w), pf = Planner.planFlyers(g, p.st, w, k, { days:1, hoursPerDay:24, must:p.isMain ? p.must : undefined });
+          const rs = ((pf && pf.routes) || []).filter(r => r.path && r.path.length > 1).map(({ part, ...r }) => r);
+          ((pf && pf.routes) || []).forEach(r => (r.part || []).forEach(i => seen.add(keyE(g, i))));   // the streets really walked (not only the planned selection): never again in a later place
+          out.push({ p, want:w, parts:rs, minutes:rs.reduce((a, r) => a + (r.minutes || 0), 0), mailboxes:rs.reduce((a, r) => a + (r.mailboxes || 0), 0) });
+        }
+        return out;
+      };
+      const total = r => r.reduce((a, x) => a + x.minutes, 0);
+      const solve = (Bwork) => {
+      let Bm = Bwork, alloc = allocate(Bm), real = realPass(alloc), best = null;
+      for(let it = 0; it < 5; it++){
+        const T = total(real);
+        if(T <= Bwork * 1.0001){ if(!best || total(real) > total(best.real)) best = { alloc, real }; if(T >= Bwork * 0.96 || alloc.limit !== 'time') break; }
+        const nb = Bm * (Bwork * (T <= Bwork ? 0.995 : 0.985)) / Math.max(1, T);   // estimate too high/low: rescale the budget given to the estimate
+        if(Math.abs(nb - Bm) < 1) break; Bm = nb; alloc = allocate(Bm); real = realPass(alloc);
+      }
+      if(!best) best = { alloc, real };   // (cannot happen unless even the smallest plan is over budget; shown as over budget below)
+      ({ alloc, real } = best);
+      // ---- share the pieces out among the workers, about equal hours; a big piece is cut in more parts when that evens out the load ----
+      let bins = null;
+      const assign = (rl) => {
+        const items = []; rl.forEach((x, pi) => x.parts.forEach((r, k) => items.push({ r, pi, k, min:r.minutes || 0, name:x.p.name || mainName || '·' })));
+        items.sort((a, b) => b.min - a.min);
+        const bs = Array.from({ length:N }, () => ({ min:0, items:[] }));
+        for(const it of items){ const ok = bs.filter(b => !b.items.some(z => z.pi === it.pi)), among = ok.length ? ok : bs; const b = among.reduce((m, q) => q.min < m.min ? q : m, among[0]); b.items.push(it); b.min += it.min; }   // zones of one place to different workers when possible
+        return bs;
+      };
+      bins = assign(real);
+      const ko = new Map();
+      for(let it = 0; it < 4 && N > 1; it++){   // uneven (one big piece): cut the biggest single-part place in two and plan it again
+        const mins = bins.map(b => b.min), spread = (Math.max(...mins) - Math.min(...mins)) / share; if(spread <= 0.15) break;
+        const cand = real.filter(x => x.parts.length === 1 && x.parts.length < N && x.minutes >= 90).sort((a, b) => b.minutes - a.minutes)[0]; if(!cand) break;
+        const k = Math.min(N, cand.parts.length + 1), ko2 = new Map(ko); ko2.set(cand.p, k);
+        const trial = realPass(alloc, ko2);   // all places again from the same state (streets taken by an earlier place stay taken), this one in more parts
+        if(!trial.find(x => x.p === cand.p) || trial.find(x => x.p === cand.p).parts.length < 2) break;
+        const tb = assign(trial), tmins = tb.map(b => b.min);
+        if(Math.max(...tmins) - Math.min(...tmins) < Math.max(...mins) - Math.min(...mins) && total(trial) <= Bwork * 1.0001){ real = trial; bins = tb; ko.set(cand.p, k); } else break;
+      }
+      return { alloc, real, bins };
+      };
+      // ride times between places that the admin knows are part of the budget: plan again with the hours left after the rides
+      let { alloc, real, bins } = solve(B);
+      const movesOf = bs => bs.reduce((a, bn) => { const pis = bn.items.slice().sort((x, y) => x.pi - y.pi || x.k - y.k); let m = 0; for(let i = 1; i < pis.length; i++) if(pis[i].name !== pis[i - 1].name) m++; return a + m; }, 0);
+      if(travelMin != null) for(let it = 0; it < 3; it++){ const rides = movesOf(bins) * travelMin; if(total(real) + rides <= B * 1.0001 && (it > 0 || rides === 0)) break; const r2 = solve(Math.max(60, B - rides)); alloc = r2.alloc; real = r2.real; bins = r2.bins; if(total(real) + movesOf(bins) * travelMin <= B * 1.0001) break; }
+      if(stale()) return { skipped:true };
+      // ---- one route per worker with work ----
+      const order = new Map(real.map((x, i) => [x, i])); const routes = [], jumpsAll = [];
+      bins.forEach((b, w) => {
+        if(!b.items.length) return;   // no empty routes just to reach a number
+        const its = b.items.slice().sort((a, c) => a.pi - c.pi || a.k - c.k);
+        const line = buildLine(its.map(x => ({ r:x.r, name:x.name })), H, travelMin != null ? () => travelMin : () => 0, undefined, undefined, false);
+        let off = 0; const parts = its.map(x => { const o = { place:x.name, part:x.k + 1, i0:off, i1:off + x.r.path.length - 1, mailboxes:Math.round(x.r.mailboxes || 0), minutes:Math.round(x.r.minutes || 0) }; off += x.r.path.length; return o; });
+        const jumps = []; for(let i = 1; i < its.length; i++){ const a = its[i - 1].r.path[its[i - 1].r.path.length - 1], c = its[i].r.path[0], km = Math.round(segLen(a, c) / 100) / 10;
+          jumps.push({ w, from:its[i - 1].name, to:its[i].name, idx:parts[i].i0, km, min:travelMin, known:travelMin != null, same:its[i - 1].name === its[i].name, far:km > farKm }); }
+        const rideMin = travelMin != null ? jumps.filter(j => !j.same).length * travelMin : 0, r = { ...line, w, idx:routes.length, place:[...new Set(its.map(x => x.name))].join(' + '), parts, jumps, work_minutes:Math.round(line.minutes), minutes:Math.round(line.minutes + rideMin) };
+        routes.push(r); jumpsAll.push(...jumps);
+      });
+      routes.forEach((r, i) => { r.idx = i; });
+      const perW = Array.from({ length:N }, (_, k) => routes.filter(r => r.w === k).reduce((a, r) => a + r.minutes, 0));
+      const mailboxes = Math.round(routes.reduce((a, r) => a + r.mailboxes, 0)), workMin = routes.reduce((a, r) => a + (r.work_minutes != null ? r.work_minutes : r.minutes), 0);
+      const moves = jumpsAll.filter(j => !j.same), knownMin = travelMin != null ? moves.length * travelMin : 0;
+      const split = real.map(x => ({ name:x.p.name || mainName || '', flyers:Math.round(x.mailboxes || x.want || 0), cap:x.p.cap, hh:x.p.mask ? x.p.mask.households : null, want:Math.round(alloc.want.get(x.p) || 0) }));
+      const limit = mailboxes >= flyers * 0.99 ? 'none' : (alloc.limit === 'time' ? 'time' : 'capacity');
+      const plan = { routes, mailboxes, zone:[], zones:true, merged:true, split, side_failed:failed, side_dropped:dropped, side_info:[], must_mb:0, must_info:[], per_worker:perW,
+        budget:{ hours:budget.hours, minutes:B0, effective_minutes:Math.round(B), flyers_max:flyers, planned:mailboxes, uncovered:Math.max(0, Math.round(flyers - mailboxes)), work_minutes:Math.round(workMin),
+          limit, fits_all:limit === 'none', over:workMin + knownMin > B0 + 1, estimate:true,
+          workers:perW.map((m, w) => ({ w, minutes:Math.round(m), mailboxes:Math.round(routes.filter(r => r.w === w).reduce((a, r) => a + r.mailboxes, 0)), km:Math.round(routes.filter(r => r.w === w).reduce((a, r) => a + (r.length_m || 0), 0) / 100) / 10 })),
+          length_m:Math.round(routes.reduce((a, r) => a + (r.length_m || 0), 0)),
+          travel:{ known:travelMin != null, moves:moves.length, minutes:travelMin != null ? knownMin : null, far:moves.filter(j => j.far).length, far_km:farKm, jumps:jumpsAll } } };
+      plan.capacity = Planner.capacity(perW.map((m, k) => ({ idx:k, minutes:m })), mailboxes, { hoursPerDay:H, days:maxDays });
+      return { plan, sug:Math.min(20, Planner.suggestWorkers(workMin + knownMin, H, maxDays)), street_m:G.street_m };
     },
     async planMain({ start, flyers, n, days, hours, must, zone, eco, mainAll }, stage, stale){
       if(!G || gKey !== keyOf(start)){ stage('loadingArea'); await load(start, flyers, undefined, must, stage, stale, 'loadingArea', zone); }
