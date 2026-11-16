@@ -36,7 +36,8 @@ self.addEventListener('fetch', e => {
   const r = e.request, u = new URL(r.url);
   if(r.method !== 'GET' || u.origin !== location.origin) return;
   if(r.mode === 'navigate'){
-    e.respondWith(fetch(r).then(res => { const c = res.clone(); caches.open(SHELL).then(x => x.put('./index.html', c)); return res; })
+    // no-store: the browser's own 10-minute copy of the page must not hide a new release
+    e.respondWith(fetch(r.url, { cache: 'no-store', credentials: 'same-origin' }).then(res => { const c = res.clone(); caches.open(SHELL).then(x => x.put('./index.html', c)); return res; })
       .catch(() => caches.match(r).then(m => m || caches.match('./index.html'))));
     return;
   }

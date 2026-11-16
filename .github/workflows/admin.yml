@@ -4,7 +4,7 @@ name: Admin panel + web app (GitHub Pages)
 on:
   push:
     branches: [main]
-    paths: ['admin/**', 'worker/src/**', 'worker/build.mjs', 'worker/package.json', 'worker/assets/**', 'worker/scripts/stamp-version.mjs', '.github/workflows/admin.yml']
+    paths: ['admin/**', 'worker/src/**', 'worker/build.mjs', 'worker/package.json', 'worker/assets/**', 'worker/scripts/stamp-version.mjs', 'test/version.mjs', '.github/workflows/admin.yml']
   workflow_dispatch:
 
 permissions:
@@ -40,6 +40,8 @@ jobs:
           cp -R worker/www site/app
           node worker/scripts/stamp-version.mjs site/index.html
           node worker/scripts/legal-pages.mjs site
+          # the release is not published without its build label
+          node test/version.mjs site/app/index.html site/index.html
           ls -R site | head -40
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
