@@ -88,6 +88,24 @@ export function rankSuggestions(towns, { start, side = [], missing = 0, max = MA
   return out;
 }
 
+// Initial route proposal only. Select nearby census settlements automatically when the main place
+// cannot hold the requested flyers. Subsequent choices are always controlled by the admin.
+// Never infer road connectivity or that a worker has a car: the planner verifies real usable streets.
+export function chooseNearbyPlaces(list, missing, { maxPlaces = 7, maxKm = MAX_KM } = {}){
+  const need = Math.max(0, Number(missing) || 0), picked = [];
+  if(!need) return picked;
+  let capacity = 0;
+  // rankSuggestions already orders by proximity to the confirmed area; keep that order.
+  for(const x of list || []){
+    if(picked.length >= maxPlaces || capacity >= need * 1.05) break;
+    if(!x || !Number.isFinite(x.lat) || !Number.isFinite(x.lng) || !Number.isFinite(x.households)) continue;
+    if(x.households < 50 || x.km > maxKm || x.adjacent) continue;
+    if(picked.some(p => p.id && p.id === x.id)) continue;
+    picked.push(x); capacity += x.households;  // rough census estimate; actual route boxes come from OSM
+  }
+  return picked;
+}
+
 // the admin adds a suggestion: it becomes a confirmed Nebenstadt (same shape as before, so the planner treats it as before).
 // Returns the new side list, or the old one when this place is already there (double click). Same place = same census area (cid)
 // or within 300 m – two villages 1 km apart can both be added.
