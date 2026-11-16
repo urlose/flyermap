@@ -1,0 +1,29 @@
+name: Atomic re-plan test
+on:
+  pull_request:
+    paths:
+      - 'supabase/2026-11-17_atomic_replan.sql'
+      - 'supabase/rollback/2026-11-17_atomic_replan.down.sql'
+      - 'test/sql/atomic_replan.sh'
+      - '.github/workflows/atomic-replan-check.yml'
+permissions:
+  contents: read
+jobs:
+  sql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Re-plan in one transaction (synthetic Postgres, no production)
+        run: |
+          if ! command -v psql >/dev/null; then sudo apt-get update -qq && sudo apt-get install -y postgresql-client; fi
+          bash test/sql/atomic_replan.sh
