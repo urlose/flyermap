@@ -499,8 +499,9 @@ export function createPlanService(cache){
       const mainAsk = !mainAll && reserved > 0 ? Math.max(0, flyers - reserved) : null;
       await planPlace(gm, st0, mainName || '', mainAll ? 1e9 : mainAsk, hasZone ? zone : null, true, mMask);
       if(stale()) return { skipped:true };
-      // the other places in the order the admin has them (suggested ones: densest first)
-      for(const c of side || []){
+      // Respect explicit flyer allocations before automatic places can consume the remainder.
+      const sideInPlanOrder = [...(side || [])].sort((a, b) => Number(a.auto !== false) - Number(b.auto !== false));
+      for(const c of sideInPlanOrder){
         const chosen = !!c.cid;   // confirmed by the admin from a census suggestion
         if(rest < (chosen ? CHOSEN_MIN : SEQ_MIN)){ split.push({ name:c.name, flyers:0, cap:null }); continue; }
         const zn = c.zone && c.zone.length > 2 ? c.zone : null;
