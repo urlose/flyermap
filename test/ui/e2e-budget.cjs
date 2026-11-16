@@ -143,17 +143,18 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const hasRe = await pg.evaluate(() => !!document.getElementById('eReplan')); if(hasRe) await pg.evaluate(() => document.getElementById('eReplan').click()); await sleep(2500);
     ok(`${name}: the saved order can be reopened for editing (Neu planen)`, hasRe);
     await pg.waitForSelector('#fullMap', { timeout:60000 }); await sleep(2000);
-    for(let k = 0; k < 2; k++){ await pg.evaluate(() => { const n = document.getElementById('cNext'); if(n && !n.disabled) n.click(); }); await sleep(1500); }
+    const stepOf = () => pg.evaluate(() => { const m = (document.querySelector('#cSheet') || {}).innerText && document.querySelector('#cSheet').innerText.match(/Schritt (\d) von/); return m ? +m[1] : 0; });
+    const gotoStep = async n => { for(let k = 0; k < 8; k++){ const cur = await stepOf(); if(cur === n) return true; await pg.evaluate(d => { const b = document.getElementById(d > 0 ? 'cNext' : 'cBack'); if(b && !b.disabled) b.click(); }, n - cur); await sleep(2000); } return (await stepOf()) === n; };
+    await until(() => !!document.querySelector('#cSheet'), 60000); console.log('   reopened at step', await stepOf()); await gotoStep(3);
     await until(() => !!document.getElementById('cBudget'), 60000);
     const re = await pg.evaluate(() => ({ on:document.getElementById('cBudget') && document.getElementById('cBudget').checked, hours:document.getElementById('cBudH') && document.getElementById('cBudH').value, n:(document.getElementById('vN') || {}).textContent }));
     ok(`${name}: reopened in budget mode with 6 h and the same number of workers`, re.on === true && re.hours === '6' && (re.n === '2' || re.n === '—'), JSON.stringify(re));
-    await until(() => !!document.querySelector('.budget-box'), 240000); await stable(5000, 240000);
+    // save again (replan): acceptance and the GPS session follow the worker to the new plan
+    await gotoStep(4); await until(() => document.querySelectorAll('select[data-wsel]').length > 0, 30000);
     const pre = await pg.evaluate(() => [...document.querySelectorAll('select[data-wsel]')].map(s => s.value));
     ok(`${name}: the assignment of the workers is restored`, pre.join() === pick.join(), pre.join() + ' vs ' + pick.join());
-    // save again (replan): acceptance and the GPS session follow the worker to the new plan
     const before = posts.filter(q => q.tbl === 'task_plans').length;
-    for(let k = 0; k < 3; k++){ const done = await pg.evaluate(() => !!document.getElementById('cSave')); if(done) break; await pg.evaluate(() => { const n = document.getElementById('cNext'); if(n && !n.disabled) n.click(); }); await sleep(1200); }
-    await pg.evaluate(() => document.getElementById('cSave').click()); await sleep(6000);
+    await gotoStep(5); await pg.evaluate(() => document.getElementById('cSave').click()); await sleep(6000);
     const pl2 = posts.filter(q => q.tbl === 'task_plans').slice(before).flatMap(q => Array.isArray(q.body) ? q.body : [q.body]);
     ok(`${name}: replanned: again exactly two rows, old rows of this order replaced (DELETE), nothing else touched`, pl2.length === 2 && deletes.some(d => d.tbl === 'task_plans'), pl2.length + ' rows');
     const kept = pl2.find(r => r.worker_id === pick[0]);
