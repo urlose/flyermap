@@ -784,6 +784,7 @@
   // grow the work area from the start (walking distance) until it holds `flyers` mailboxes
   function selectForFlyers(g, start, flyers){
     const root = nearestNode(g, start, g.pts.map((p, i) => i).filter(i => g.adj[i].length));
+    if(root < 0) return { ids:[], mailboxes:0, skipped_mb:0, reach_m:0 };
     const tree = sssp(g, root), n = g.pts.length, items = [];
     // 1. skip long, nearly empty roads (fields, forest tracks, a lone farm at the end of a road)
     let sm = 0, sl = 0; g.edges.forEach(e => { if(e.mb > 0){ sm += e.mb; sl += e.len; } });

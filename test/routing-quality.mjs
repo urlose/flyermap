@@ -79,6 +79,9 @@ try {
   assert.equal(onlySide.routes[0].path[1][2],1);
   assert.equal(onlySide.budget.actual_minutes,onlySide.budget.work_minutes+30);
 
+  assert.deepEqual(Planner.selectForFlyers({pts:[],edges:[],adj:[]},start,12000),
+    {ids:[],mailboxes:0,skipped_mb:0,reach_m:0},'An empty loaded road graph is a capacity result, not a Dijkstra crash');
+
   // An empty first map is exhausted too; it must not suppress map expansion.
   let loads=0;
   const empty={...graph([]),radius:1500,usable:0,mailboxes:0};
