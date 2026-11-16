@@ -6,13 +6,13 @@ import { shell, topbar, statusPill, toast } from './ui.js';
 
 const L = () => (['ru', 'en'].includes(I.lang) ? I.lang : 'de');
 const TX = {
-  de:{ tab:'Statistik', ok:'Geprüft', orders:'Aufträge', done:'erledigt', days:'Arbeitstage', hours:'Std.', km:'km', pace:'Tempo zur Quote', cancels:'Absagen', late:'zu spät', skips:'„Nicht nötig“',
+  de:{ cmpPrev:'Vorherige {n} Tage', cmpNo:'Vergleich nur für 14 und 30 Tage (es sind die letzten 60 Tage gespeichert).', cmpToday:'Gezählt werden beendete Arbeitstage; heute läuft noch.', cmpPart:'Vorzeitraum unvollständig: Daten erst ab {d}', cmpNone:'Noch keine Daten für den Vorzeitraum', tab:'Statistik', ok:'Geprüft', orders:'Aufträge', done:'erledigt', days:'Arbeitstage', hours:'Std.', km:'km', pace:'Tempo zur Quote', cancels:'Absagen', late:'zu spät', skips:'„Nicht nötig“',
     rating:'Bewertung', auto:'Automatisch', yes:'Geprüft', no:'Nicht geprüft', autoHint:'Automatisch geprüft: ≥ 3 erledigte Aufträge, Tempo ≥ 80 % der Quote, keine späte Absage in 60 Tagen.',
     month:'Top 5 diesen Monat', tasks:'Aufträge', flyers:'Flyer', per1000:'Std. / 1.000 Flyer', people:'Pers.', none:'Noch keine Daten.', total:'Gesamt', h1000Hint:'Weniger Stunden pro 1.000 Flyer = wirtschaftlicher. ● ≤ 3 gut · ▲ 3–5 mittel · ■ > 5 teuer.', perDay:'pro Tag', lastN:'letzte {n} Tage', kmh:'km pro Std.', activeDays:'Arbeitstage', peopleMax:'Max. Personen/Tag', weekdays:'Wochentage (Std.)', daysShort:'Tage', running:'läuft', status:'Status', table:'Tabelle', sum:'Summe', avgDay:'Ø pro Arbeitstag', peopleL:'Personen', noWork:'Kein Arbeitstag', perDayT:'Verlauf pro Tag' },
-  ru:{ tab:'Статистика', ok:'Проверен', orders:'Заказы', done:'выполнено', days:'Рабочие дни', hours:'ч', km:'км', pace:'Темп к квоте', cancels:'Отказы', late:'поздно', skips:'«Не нужно»',
+  ru:{ cmpPrev:'Предыдущие {n} дн.', cmpNo:'Сравнение только для 14 и 30 дней (хранятся последние 60 дней).', cmpToday:'Считаются законченные рабочие дни; сегодняшний ещё идёт.', cmpPart:'Прошлый период неполный: данные только с {d}', cmpNone:'Нет данных за прошлый период', tab:'Статистика', ok:'Проверен', orders:'Заказы', done:'выполнено', days:'Рабочие дни', hours:'ч', km:'км', pace:'Темп к квоте', cancels:'Отказы', late:'поздно', skips:'«Не нужно»',
     rating:'Оценка', auto:'Автоматически', yes:'Проверен', no:'Не проверен', autoHint:'Автоматически «проверен»: ≥ 3 выполненных заказа, темп ≥ 80 % квоты, нет поздних отказов за 60 дней.',
     month:'Топ-5 за этот месяц', tasks:'Заказы', flyers:'Флаеры', per1000:'ч / 1 000 флаеров', people:'чел.', none:'Пока нет данных.', total:'Всего', h1000Hint:'Меньше часов на 1 000 флаеров = выгоднее. ● ≤ 3 хорошо · ▲ 3–5 средне · ■ > 5 дорого.', perDay:'в день', lastN:'последние {n} дн.', kmh:'км в час', activeDays:'Рабочих дней', peopleMax:'Макс. людей в день', weekdays:'Дни недели (ч)', daysShort:'дн.', running:'идёт', status:'Статус', table:'Таблица', sum:'Сумма', avgDay:'Ø за рабочий день', peopleL:'Люди', noWork:'Не рабочий день', perDayT:'По дням' },
-  en:{ tab:'Statistics', ok:'Verified', orders:'Orders', done:'finished', days:'Working days', hours:'h', km:'km', pace:'Pace vs quota', cancels:'Cancellations', late:'late', skips:'“Not needed”',
+  en:{ cmpPrev:'Previous {n} days', cmpNo:'Comparison only for 14 and 30 days (the last 60 days are stored).', cmpToday:'Finished working days count; today is still running.', cmpPart:'Previous period incomplete: data only from {d}', cmpNone:'No data for the previous period yet', tab:'Statistics', ok:'Verified', orders:'Orders', done:'finished', days:'Working days', hours:'h', km:'km', pace:'Pace vs quota', cancels:'Cancellations', late:'late', skips:'“Not needed”',
     rating:'Rating', auto:'Automatic', yes:'Verified', no:'Not verified', autoHint:'Verified automatically: ≥ 3 finished orders, pace ≥ 80 % of quota, no late cancellation in 60 days.',
     month:'Top 5 this month', tasks:'Orders', flyers:'Flyers', per1000:'h / 1,000 flyers', people:'pers.', none:'No data yet.', total:'Total', h1000Hint:'Fewer hours per 1,000 flyers = more economical. ● ≤ 3 good · ▲ 3–5 medium · ■ > 5 costly.', perDay:'per day', lastN:'last {n} days', kmh:'km per hour', activeDays:'Working days', peopleMax:'Max. people/day', weekdays:'Weekdays (h)', daysShort:'days', running:'running', status:'Status', table:'Table', sum:'Total', avgDay:'Ø per working day', peopleL:'People', noWork:'No work', perDayT:'Per day' },
 };
@@ -76,6 +76,17 @@ function mountChart(el, daily){
     const days = []; for(let k = st.n - 1; k >= 0; k--){ const d = iso(Date.now() - k * DAY), x = by.get(d) || {}; days.push({ d, hours:+x.hours || 0, km:+x.km || 0, people:+x.people || 0, orders:+x.orders || 0 }); }
     const unit = st.m === 'hours' ? S('hours') : st.m === 'km' ? S('km') : '', vals = days.map(x => x[st.m]);
     const worked = vals.filter(v => v > 0), avg = worked.length ? worked.reduce((a, v) => a + v, 0) / worked.length : 0, sum = vals.reduce((a, v) => a + v, 0);
+    // comparison with the n days before (the data reaches back 60 days, so only for 14 and 30). Today is still running
+    // (only finished working days count); a previous period from before the first working day of the company is incomplete.
+    const cmpHtml = () => {
+      if(st.n * 2 > 60) return `<p class="small muted st-cmp">${esc(S('cmpNo'))}</p>`;
+      let prev = 0; for(let k = 2 * st.n - 1; k >= st.n; k--){ const x = by.get(iso(Date.now() - k * DAY)) || {}; prev += +x[st.m] || 0; }
+      const first = daily.length ? String(daily[0].d).slice(0, 10) : null, prevStart = iso(Date.now() - (2 * st.n - 1) * DAY);
+      const part = !first || first > prevStart, diff = prev ? (sum - prev) / prev * 100 : null;
+      const arrow = diff == null ? '' : diff > 0.5 ? '▲' : diff < -0.5 ? '▼' : '＝';
+      return `<p class="small st-cmp"><span class="muted">${esc(S('cmpPrev').replace('{n}', st.n))}:</span> <b>${n1(prev)} ${esc(unit)}</b>${diff != null ? ` <span class="st-diff">${arrow} ${diff > 0 ? '+' : ''}${n1(diff)} %</span>` : ''}
+        <br><span class="muted">${esc(S('cmpToday'))}${part ? ' · ' + esc(first ? S('cmpPart').replace('{d}', fmtD(first)) : S('cmpNone')) : ''}</span></p>`;
+    };
     const step = niceStep(Math.max(1, ...vals)), top = Math.ceil(Math.max(1, ...vals) / step) * step;
     const W = 960, H = 280, pl = 44, pr = 10, pt = 12, pb = 30, cw = (W - pl - pr) / days.length, x = i => pl + i * cw, y = v => pt + (1 - v / top) * (H - pt - pb);
     const fmtD = (d, o) => new Date(d + 'T12:00:00').toLocaleDateString(locale(), o || { day:'2-digit', month:'2-digit' });
@@ -88,6 +99,7 @@ function mountChart(el, daily){
         <div style="display:flex;gap:6px;flex-wrap:wrap">${[14, 30, 60].map(k => chip('n="' + k + '"', st.n === k, k + ' ' + S('daysShort'))).join('')}${chip('tbl', st.table, S('table'))}</div>
       </div>
       <div style="display:flex;gap:24px;margin:14px 0 4px;flex-wrap:wrap"><div><div class="small muted">${esc(S('sum'))}</div><b style="font-size:22px">${n1(sum)} ${esc(unit)}</b></div><div><div class="small muted">${esc(S('avgDay'))}</div><b style="font-size:22px">${n1(avg)} ${esc(unit)}</b></div><div><div class="small muted">${esc(S('activeDays'))}</div><b style="font-size:22px">${worked.length}</b></div></div>
+      ${cmpHtml()}
       ${st.table ? `<div style="overflow-x:auto;max-height:340px;margin-top:8px"><table style="width:100%;border-collapse:collapse;font-size:14px"><tr>${['', S('hours'), S('km'), S('peopleL'), S('tasks')].map((h, i) => `<th style="text-align:${i ? 'right' : 'left'};padding:6px 8px;color:var(--color-text-secondary);font-weight:600">${esc(h)}</th>`).join('')}</tr>
         ${days.filter(x => x.hours || x.km).reverse().map(x => `<tr style="border-top:1px solid var(--color-border)"><td style="padding:6px 8px">${esc(fmtD(x.d, { weekday:'short', day:'2-digit', month:'2-digit' }))}</td>${[n1(x.hours), n1(x.km), x.people, x.orders].map(v => `<td style="text-align:right;padding:6px 8px">${v}</td>`).join('')}</tr>`).join('')}</table></div>` : `
       <div class="fm-chart" style="position:relative;margin-top:6px">

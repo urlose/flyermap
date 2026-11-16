@@ -40,5 +40,7 @@ const worker_stats = workers.map((w, i) => ({ id:w.id, name:w.name, verified:i <
 const company_stats = { tasks:[{ id:'t3', title:'Neuss Innenstadt', flyers:4000, hours:11.2, km:31, people:1, first:day(-6), status:'done' }, { id:'t1', title:'Bilk · Moorenstraße 18', flyers:6000, hours:5, km:12.6, people:2, first:day(0), status:'open' }],
   top:[{ id:'w4', name:'Dmitri Probe', hours:11.2, days:1 }, { id:'w1', name:'Anna Beispiel', hours:3, days:1 }],
   daily:Array.from({ length:14 }, (_, i) => ({ d:day(i - 13), hours:[0, 4, 6, 0, 7, 8, 0, 3, 5, 6, 0, 7, 4, 5][i], km:[0, 9, 14, 0, 18, 20, 0, 7, 12, 15, 0, 16, 10, 12][i], orders:i % 3 ? 1 : 0, people:i % 2 + 1 })) };
+// a piece reported as not walkable (orange) on the first route, not decided yet
+task_plans[0].skipped = [{ rep:true, why:'blocked', by:'Lena', at:new Date(Date.now() - 3600e3).toISOString(), pts:[[51.2040, 6.7645], [51.2042, 6.7680]] }];
 module.exports = { CO, tables:{ workers, tasks, task_plans, task_workers, routes, help_requests, notifications:[], studios:[], companies:[{ id:CO, name:'Fityes' }], admin_phone_invites:[], route_points:[], route_together:[] },
   rpc:{ become_admin:true, my_company_info:company, worker_stats, company_stats, company_tracks:{ t1:[[51.2040, 6.7645], [51.2040, 6.7700], [51.2043, 6.7760], [51.2046, 6.7820]] }, wa_enabled:false, company_contract:{ cancel_hours:24, penalty_eur:50, version:1, text:null }, get_bot:null, master_overview:null } };

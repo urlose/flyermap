@@ -103,18 +103,40 @@ export const getLoc = () => { try{ return decodeURIComponent((location.hash || '
 export function shell(tab, html, opts = {}){
   cleanup(); UI.tab = tab; setLoc(tab);
   const peopleLabel = UI.role === 'admin' ? t('tabPeople') : t('tabProfile');
-  $('#root').innerHTML = `<div class="shell">
+  $('#root').innerHTML = `<div class="shell${UI.role === 'admin' && sbMini() ? ' sb-mini' : ''}">
     <main id="content" class="${opts.map ? 'content map-content' : 'content'}">${html}</main>
     <nav class="tabbar" role="tablist">
       <span class="sb-brand"><a href="./" id="sbHome" class="wm ${UI.wmShown ? '' : 'wm-in'}" aria-label="FlyerMap"><span aria-hidden="true"><i style="--i:0">F</i><i style="--i:1">l</i><i style="--i:2">y</i><i style="--i:3">e</i><i style="--i:4">r</i></span><span class="wm-b" aria-hidden="true"><i style="--i:5">M</i><i style="--i:6">a</i><i style="--i:7">p</i></span></a></span>
       ${[['map', 'map', t('tabMap')], ['people', UI.role === 'admin' ? 'users' : 'person', peopleLabel], ['tasks', 'clipboard', t('tabTasks')], ...(UI.role === 'admin' ? [['stats', 'chart', t('tabStats')], ['settings', 'gear', t('tabSettings')]] : [])].map(([k, ic, lb]) =>
-        `<button role="tab" class="tab ${k === tab ? 'on' : ''}" data-tab="${k}" aria-selected="${k === tab}">${ICONS[ic]}<span>${esc(lb)}</span></button>`).join('')}
+        `<button role="tab" class="tab ${k === tab ? 'on' : ''}" data-tab="${k}" aria-selected="${k === tab}" title="${esc(lb)}">${ICONS[ic]}<span>${esc(lb)}</span>${badge(k)}</button>`).join('')}
+      ${UI.role === 'admin' ? `<button class="tab sb-toggle" id="sbMini" aria-pressed="${sbMini()}" title="${esc(t(sbMini() ? 'sbOpen' : 'sbClose'))}"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="${sbMini() ? 'M13 10l2 2-2 2' : 'M15 10l-2 2 2 2'}"/></svg><span>${esc(t(sbMini() ? 'sbOpen' : 'sbClose'))}</span></button>` : ''}
       ${UI.role === 'admin' && UI.onLogout ? `<button class="tab tab-out" id="sbOut">${ICONS.logout}<span>${esc(t('logout'))}</span></button>` : ''}
     </nav>${opts.fab ? `<button class="fab" id="fab" aria-label="${esc(opts.fab)}" title="${esc(opts.fab)}">${ICONS.plus}</button>` : ''}</div>`;
   UI.wmShown = true;   // the letters rise in only on the first screen after loading
   document.querySelectorAll('.tab[data-tab]').forEach(b => b.onclick = () => UI.onTab && UI.onTab(b.dataset.tab));
   const hm = document.getElementById('sbHome'); if(hm) hm.onclick = e => { e.preventDefault(); location.href = location.pathname + location.search; };   // logo: reload, start screen
   const so = document.getElementById('sbOut'); if(so) so.onclick = () => UI.onLogout();
+  const mi = document.getElementById('sbMini'); if(mi) mi.onclick = () => {   // no re-render: the page (and an open order) stays
+    const on = !sbMini(); try{ localStorage.setItem('fm.sbMini', on ? '1' : '0'); }catch{}
+    document.querySelector('.shell').classList.toggle('sb-mini', on); mi.setAttribute('aria-pressed', on); mi.title = t(on ? 'sbOpen' : 'sbClose');
+    mi.querySelector('span').textContent = t(on ? 'sbOpen' : 'sbClose'); mi.querySelector('path:last-child').setAttribute('d', on ? 'M13 10l2 2-2 2' : 'M15 10l-2 2 2 2');
+    setTimeout(() => UI.maps.forEach(m => { try{ m.invalidateSize(); }catch{} }), 220); };
+}
+// desktop sidebar: narrow (icons only) or wide; kept in this browser
+const sbMini = () => { try{ return localStorage.getItem('fm.sbMini') === '1'; }catch{ return false; } };
+// small number on a tab: things the admin should look at (UI.badges = { tasks:{ n, tip } })
+const badge = k => { const b = UI.badges && UI.badges[k]; return b && b.n ? `<span class="tab-badge" title="${esc(b.tip || '')}" aria-label="${esc(b.tip || String(b.n))}">${b.n > 99 ? '99+' : b.n}</span>` : ''; };
+// section index for long pages: one chip per <h2 class="sec">, a tap scrolls there; the chip of the section on screen is marked
+export function secNav(nav, root){
+  const hs = [...(root || document).querySelectorAll('.content h2.sec')].filter(h => !h.closest('.no-nav'));
+  if(!nav || hs.length < 3){ if(nav) nav.remove(); return; }
+  nav.innerHTML = hs.map((h, i) => { h.id = h.id || 'sec-' + i; return `<a class="mchip" href="#" data-go="${h.id}">${esc(h.dataset.short || h.textContent)}</a>`; }).join('');
+  const smooth = () => matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+  nav.querySelectorAll('[data-go]').forEach(a => a.onclick = e => { e.preventDefault(); document.getElementById(a.dataset.go).scrollIntoView({ behavior:smooth(), block:'start' }); });
+  if(!('IntersectionObserver' in window)) return;
+  const mark = id => nav.querySelectorAll('[data-go]').forEach(a => { const on = a.dataset.go === id; a.classList.toggle('on', on); if(on) a.setAttribute('aria-current', 'true'); else a.removeAttribute('aria-current'); });
+  const io = new IntersectionObserver(es => { const v = es.filter(e => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0]; if(v) mark(v.target.id); }, { rootMargin:'-80px 0px -60% 0px' });
+  hs.forEach(h => io.observe(h)); mark(hs[0].id);
 }
 export const topbar = (title, backFn, right = '') => `<header class="topbar ${backFn ? 'sub' : ''}">${backFn ? `<button class="icon-btn" id="tbBack" aria-label="${esc(t('back'))}">${ICONS.back}</button>` : ''}<h1>${esc(title)}</h1>${right ? `<div style="margin-left:auto;display:flex;gap:8px">${right}</div>` : ''}</header>`;
 export function bindBack(fn){ const b = $('#tbBack'); if(b) b.onclick = fn; }
