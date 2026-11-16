@@ -13,13 +13,23 @@ on:
       - 'test/customerexport.mjs'
       - 'test/budget.mjs'
       - 'supabase/2026-11-16_atomic_task_plans.sql'
+      - 'test/sql/atomic_task_plans.sh'
       - '.github/workflows/time-first-check.yml'
 permissions:
   contents: read
 jobs:
   node:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -29,6 +39,10 @@ jobs:
       - run: node test/nearfirst.mjs
       - run: node test/nearfirst-service.mjs
       - run: node test/customerexport.mjs
+      - name: Check atomic save on synthetic Postgres
+        run: |
+          if ! command -v psql >/dev/null; then sudo apt-get update -qq && sudo apt-get install -y postgresql-client; fi
+          bash test/sql/atomic_task_plans.sh
       - run: npm run build
         working-directory: worker
       # The legacy budget suite fails in this isolated runner; its fixture/baseline
