@@ -14,6 +14,7 @@ on:
       - 'test/budget.mjs'
       - 'supabase/2026-11-16_atomic_task_plans.sql'
       - 'test/sql/atomic_task_plans.sh'
+      - 'test/ui/e2e-timefirst.cjs'
       - '.github/workflows/time-first-check.yml'
 permissions:
   contents: read
@@ -48,6 +49,20 @@ jobs:
       # The legacy budget suite fails in this isolated runner; its fixture/baseline
       # discrepancy is still being investigated. Keep the diagnostic result visible
       # while strictly gating the new-mode unit, integration, export and build checks.
+      - name: Install Chromium E2E
+        working-directory: test/ui
+        run: |
+          npm install --no-save playwright@1.48.2
+          npx playwright install --with-deps chromium
+      - name: Browser test (synthetic Supabase, no production)
+        working-directory: test/ui
+        run: timeout 540s node e2e-timefirst.cjs out-timefirst
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: time-first-e2e
+          path: test/ui/out-timefirst
+          retention-days: 4
       - name: Legacy budget diagnostics (known baseline failures)
         run: node test/budget.mjs
         continue-on-error: true
