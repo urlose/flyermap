@@ -24,6 +24,7 @@ import { listView, viewSwitch, bindViewSwitch, tableHtml, bindTable } from './ta
 import { STATS } from './stats.js';
 import { createHighlighter, keyOf, nameShown as nameShownOf } from './sugmap.js';
 import { planRows } from './budgetplan.js';
+import { customerGeoJSON } from './customerexport.js';
 import { coverage, addSuggestion, chooseNearbyPlaces, placesApart, suggestionFlow, sugKey as sugKeyOf, MAX_KM, PAGE } from './expand.js';
 // a save button while the database works: disabled, "Speichert …"; back to normal afterwards (also after an error)
 async function busy(btn, fn){ if(!btn || btn.disabled) return; const html = btn.innerHTML; btn.disabled = true; btn.setAttribute('aria-busy', 'true'); btn.textContent = t('saving');
@@ -1673,7 +1674,7 @@ async function viewTask(id){
         ${ov(t('colTeam'), `${team.length}`, ps0.length - nAssigned > 0 ? `<span class="due-warn">${esc(t('freeN', { n:ps0.length - nAssigned }))}</span>` : esc(t('ovAllAssigned')), '')}
         ${ov(t('secReports'), String(repOpen + lateN), repOpen + lateN ? `<span class="due-warn">${esc(t('ovToDecide'))}</span>` : esc(t('ovNothing')), repOpen + lateN ? 'warn' : '')}
       </div>
-      <div class="tool-row ov-acts"><button class="btn ghost small" id="tOnMap">${ICONS.map}${esc(t('showOnMap'))}</button><button class="btn ghost small" id="tRMap">${ICONS.route}${esc(t('rvBig'))}</button><button class="btn ghost small" id="tEdit2">${ICONS.edit}${esc(t('editTask'))}</button></div>
+      <div class="tool-row ov-acts"><button class="btn ghost small" id="tOnMap">${ICONS.map}${esc(t('showOnMap'))}</button><button class="btn ghost small" id="tRMap">${ICONS.route}${esc(t('rvBig'))}</button><button class="btn ghost small" id="tEdit2">${ICONS.edit}${esc(t('editTask'))}</button><button class="btn ghost small" id="tCustomerExport">${ICONS.map}${esc(t('customerGeoJSON'))}</button></div>
       <h2 class="sec" data-short="${esc(t('secData'))}">${esc(t('taskInfo'))}</h2>
       <div class="info">
         <div><span>${esc(t('place'))}</span><b>${esc([tk.district, tk.city_name].filter(Boolean).join(', ') || '—')}</b></div>
@@ -1736,6 +1737,13 @@ async function viewTask(id){
       <p class="danger-row">${tk.status === 'open' ? `<button class="link" id="tCancel">${esc(t('cancelTask'))}</button><span aria-hidden="true">·</span>` : ''}<button class="link danger-text" id="tDel">${esc(t('del'))}</button></p>
     </div>`); setLoc('task/' + id);
   bindBack(viewTasks);
+  $('#tCustomerExport').onclick = () => {
+    const geo = customerGeoJSON(tk, livePl);
+    const blob = new Blob([JSON.stringify(geo, null, 2)], { type:'application/geo+json' });
+    const url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = 'FlyerMap-Kundengebiet.geojson'; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
   const m = makeMap($('#tMap'), [tk.start_lat, tk.start_lng], 14);
   let b = L.latLngBounds([[tk.start_lat, tk.start_lng]]);
   if(tk.zone_polygon){ const z = L.polygon(tk.zone_polygon, { color:css('--brand'), weight:2, fillOpacity:.06, interactive:false }).addTo(m); b = z.getBounds(); }
