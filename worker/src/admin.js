@@ -925,14 +925,14 @@ const readDraft = () => { try{ const x = JSON.parse(localStorage.getItem(DRAFT_K
 const clearDraft = () => { try{ localStorage.removeItem(DRAFT_KEY); }catch{} };
 function viewCreate(edit){
   const tkE = edit && edit.tk;   // editing an existing task: same screen, prefilled, saves over the old routes
-  const d = { start:null, place:null, flyers:10000, n:2, nAuto:false, hours:7, quota:2000, days:2, g:null, plan:null, assign:{}, err:null, token:0, must:[], zone:null, drawing:null, drawFor:'must' };
+  const d = { start:null, place:null, flyers:10000, n:2, nAuto:false, hours:7, quota:2500, days:2, g:null, plan:null, assign:{}, err:null, token:0, must:[], zone:null, drawing:null, drawFor:'must' };
   if(tkE && Array.isArray(tkE.must_areas)) d.must = tkE.must_areas.map(mArea).filter(a => a.p.length > 2);
   if(tkE && Array.isArray(tkE.work_area) && tkE.work_area.length > 2) d.zone = tkE.work_area;
   if(tkE) Object.assign(d, { flyers:tkE.flyers || 5000, hours:+tkE.work_hours || 7, quota:tkE.quota_m30 || 2000, days:tkE.work_days || 2, n:Math.max(1, edit.plans.length), nAuto:false });
   d.side = tkE && Array.isArray(tkE.side_towns) ? tkE.side_towns : [];
   d.autoPicked = !!tkE; // one automatic initial proposal; never override subsequent admin edits
   // time-budget mode ("Maximum Flyer für die Arbeitszeit"): the order remembers it in days[0].budget_h of its plans (no database column)
-  { const bh = tkE && (edit.plans || []).map(p => p.days && p.days[0] && +p.days[0].budget_h).find(x => x > 0); const bt = tkE && (edit.plans || []).map(p => p.days && p.days[0] && p.days[0].budget_tol).find(x => x != null); d.budget = { on:!!bh, hours:bh || 32, tol:bt != null ? Math.round(+bt * 100) : 5 }; }
+  { const bh = tkE && (edit.plans || []).map(p => p.days && p.days[0] && +p.days[0].budget_h).find(x => x > 0); const bt = tkE && (edit.plans || []).map(p => p.days && p.days[0] && p.days[0].budget_tol).find(x => x != null); const strategy = tkE && (edit.plans || []).map(p => p.days && p.days[0] && p.days[0].budget_strategy).find(Boolean); d.budget = { on:tkE ? !!bh : true, hours:bh || 32, tol:bt != null ? Math.round(+bt * 100) : 5, strategy:strategy || (tkE ? 'density' : 'near-first') }; }
   d.split = tkE ? (tkE.split || null) : 'even';
   d.exact = true; d.mainAll = false; d.cores = !!(tkE && tkE.cores); d.together = !!(tkE && tkE.together); d.first = (tkE && tkE.first_place) || null;   // the number of flyers the admin typed is what gets planned; the economical amount is only offered ("Effizienter planen"); whole main town on request   // new orders: total flyers shared evenly over all places; old orders keep their numbers
   d.travel = tkE ? (tkE.travel || (tkE.bike ? 'bike' : 'bus')) : 'zones'; d.bike = d.travel !== 'bus';   // new orders: every place its own zone, no rides between places   // how the places of the order are reached   // far places of this order (own start, own day, reached by bus / train)
@@ -1124,7 +1124,7 @@ function viewCreate(edit){
     if(!d.loaded){ renderSheet(); return; }
     const tok = ++d.token, pr = progress(tok, false);
     let res = null;
-    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, quota:Math.max(200, Math.round(+saved.quota || NEW_QUOTA)), bike:d.bike, travel:d.travel, split:d.split, exact:d.exact, mainAll:d.mainAll, cores:d.cores && (d.travel === 'car' || d.travel === 'zones'), mainName:mainCity() || '', together:d.cores && d.travel === 'car' && d.together, first:d.cores && d.travel === 'car' ? d.first : null, near:d.side.length > 0 && d.side.every(x => x.auto), budget:d.budget && d.budget.on && d.travel === 'zones' ? { hours:+d.budget.hours || 32, tolerance:(+d.budget.tol >= 0 ? +d.budget.tol : 5) / 100 } : null, must:d.must, zone:d.zone, side:d.side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers, zone:x.p && x.p.length > 2 ? x.p : null, all:!!x.all, ...(x.cid ? { cid:x.cid } : {}), auto:!!x.auto })) }, pr.stage); }
+    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, quota:Math.max(200, Math.round(+saved.quota || NEW_QUOTA)), bike:d.bike, travel:d.travel, split:d.split, exact:d.exact, mainAll:d.mainAll, cores:d.cores && (d.travel === 'car' || d.travel === 'zones'), mainName:mainCity() || '', together:d.cores && d.travel === 'car' && d.together, first:d.cores && d.travel === 'car' ? d.first : null, near:d.side.length > 0 && d.side.every(x => x.auto), budget:d.budget && d.budget.on && d.travel === 'zones' ? { hours:+d.budget.hours || 32, tolerance:(+d.budget.tol >= 0 ? +d.budget.tol : 5) / 100, strategy:d.budget.strategy } : null, must:d.must, zone:d.zone, side:d.side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers, zone:x.p && x.p.length > 2 ? x.p : null, all:!!x.all, ...(x.cid ? { cid:x.cid } : {}), auto:!!x.auto })) }, pr.stage); }
     catch(e){ pr.stop(); if(tok !== d.token || !alive()) return; d.err = errText2(e); d.busy = false; toast(t('streetsFail', { e:d.err })); renderSheet(); return; }
     pr.stop();
     if(tok !== d.token || !alive() || !res || res.skipped) return;
@@ -1220,7 +1220,7 @@ function viewCreate(edit){
     return k;
   }
   function restore(k){ if($('#cTitle')) $('#cTitle').value = k.title || ''; if($('#cDate')) $('#cDate').value = k.date || ''; if($('#cDeadline')) $('#cDeadline').value = k.deadline || ''; if($('#cNotes')) $('#cNotes').value = k.notes || ''; if($('#cQuota')) $('#cQuota').value = k.quota; }
-  let saved = tkE ? { title:tkE.title, date:tkE.work_date ? String(tkE.work_date).slice(0, 10) : '', deadline:tkE.deadline ? String(tkE.deadline).slice(0, 10) : '', notes:tkE.notes || '', quota:tkE.quota_m30 || 2000, noQuota:!!tkE.no_quota } : { title:'', date:'', deadline:plusDays(isoDay(new Date()), 3), notes:'', quota:NEW_QUOTA };
+  let saved = tkE ? { title:tkE.title, date:tkE.work_date ? String(tkE.work_date).slice(0, 10) : '', deadline:tkE.deadline ? String(tkE.deadline).slice(0, 10) : '', notes:tkE.notes || '', quota:tkE.quota_m30 || 2000, noQuota:!!tkE.no_quota } : { title:'', date:'', deadline:plusDays(isoDay(new Date()), 3), notes:'', quota:2500 };
   // five steps on top of the live map: 1 start · 2 route · 3 time · 4 workers · 5 review. Planning keeps running underneath.
   const STEPS = ['wzStart', 'wzTime', 'wzRoute', 'wzTeam', 'wzReview'];   // the time comes before the route: the deadline decides how many days the plan has
   d.step = tkE ? 3 : 1;
@@ -1242,7 +1242,7 @@ function viewCreate(edit){
     const allBtn = (name, on, kind, k) => { const x = spOf(name); if(d.cores && d.travel === 'car') return ''; if(!on && x && x.cap && x.flyers >= x.cap) return '';   // already gets all of them: no button
       return `<button class="all-btn${on ? ' on' : ''}" data-all="${kind}:${k}" title="${esc(t(on ? 'allMbOffHint' : 'allMbHint'))}">${on ? '✓ ' + esc(t('allMbOn')) : esc(x && x.cap ? t('allMbBtn', { n:fmtN(x.cap) }) : t('allMbPlain'))}</button>`; };
     // flyers this plan really hands out: whole town or economical amount = the mailboxes of the plan, otherwise the number typed
-    const effFlyers = p && (d.mainAll || (p.eco && !d.exact) || (p.cores && p.mailboxes < d.flyers)) ? Math.round(p.mailboxes) : d.flyers;
+    const effFlyers = p && (p.budget || d.mainAll || (p.eco && !d.exact) || (p.cores && p.mailboxes < d.flyers)) ? Math.round(p.mailboxes) : d.flyers;
     if(!saved.title && title) saved.title = title;
     const cap = p ? Planner.capacity(p.zones ? (p.per_worker || []).map((m, k) => ({ idx:k, minutes:m })) : p.routes, effFlyers, { hoursPerDay:d.hours, days:d.days }) : null;   // suggestion from what is really handed out (not 8 450 of an area with 3 348)
     const totMin = p ? p.routes.reduce((s, r) => s + (r.minutes || 0), 0) : 0, oneDay = p && totMin / 60 <= d.hours && (d.n > 1 || d.days > 1);   // all of it fits into one working day of one person
@@ -1333,9 +1333,10 @@ function viewCreate(edit){
       ${d.travel === 'car' ? `<label class="check" style="margin-top:10px"><input type="checkbox" id="cCores" ${d.cores ? 'checked' : ''}><span><b>${esc(t('coresLbl'))}</b><br><span class="small muted">${esc(t('coresHint'))}</span></span></label>
         ${d.cores ? `<label class="check" style="margin-top:6px"><input type="checkbox" id="cTogether" ${d.together ? 'checked' : ''}><span><b>${esc(t('togetherLbl'))}</b><br><span class="small muted">${esc(t('togetherHint'))}</span></span></label>` : ''}` : ''}`;
     else if(d.step === 3) body = `
+      ${d.budget.on && d.budget.strategy === 'near-first' ? `<div class="hint">Zeit zuerst: Die Flyerzahl wird aus dem geplanten Gebiet berechnet. Nächste Straßen zuerst, nicht die höchste Briefkastendichte.</div>` : ''}
       <div class="steppers">
-        <div><label class="f">${esc(t(d.budget.on ? 'budMaxFly' : 'flyersCount'))}</label><div class="stepper"><button data-s="f:-500" aria-label="−500">−</button><input id="cFly" type="number" inputmode="numeric" min="100" step="100" value="${d.flyers}"><button data-s="f:500" aria-label="+500">+</button></div></div>
-        <div><label class="f">${esc(t('workersCount'))}</label><div class="stepper"><button data-s="n:-1" ${p ? '' : 'disabled'} aria-label="−1">−</button><b id="vN">${p ? d.n : '—'}</b><button data-s="n:1" ${p ? '' : 'disabled'} aria-label="+1">+</button></div></div>
+        ${d.budget.on && d.budget.strategy === 'near-first' ? '' : `<div><label class="f">${esc(t(d.budget.on ? 'budMaxFly' : 'flyersCount'))}</label><div class="stepper"><button data-s="f:-500" aria-label="−500">−</button><input id="cFly" type="number" inputmode="numeric" min="100" step="100" value="${d.flyers}"><button data-s="f:500" aria-label="+500">+</button></div></div>`}
+
       </div>
       ${d.travel === 'zones' && !d.cores && !d.zone && !d.mainAll ? `<label class="check" style="margin-top:8px"><input type="checkbox" id="cBudget" ${d.budget.on ? 'checked' : ''}><span><b>${esc(t('budTitle'))}</b><br><span class="small muted">${esc(t('budHint'))}</span></span></label>
         ${d.budget.on ? `<label class="f" for="cBudH">${esc(t('budHours'))}</label><input class="in" type="number" id="cBudH" min="1" max="2000" step="1" value="${esc(d.budget.hours)}"><p class="small muted" style="margin:4px 0 0">${esc(t('budHoursHint', { n:d.n, each:fmtHm(Math.round(d.budget.hours * 60 / Math.max(1, d.n))) }))}</p>
