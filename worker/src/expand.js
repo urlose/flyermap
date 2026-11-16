@@ -86,7 +86,7 @@ export function rankSuggestions(towns, { start, side = [], missing = 0, max = MA
   const out = ordered.map(x => ({
     id:x.c.id || null, lat:x.c.lat, lng:x.c.lng, households:x.c.households, km:Math.round(x.km * 10) / 10, dense:x.c.dense || null,
     gapKm:Math.round(x.gap / 100) / 10, gapTo:anchors[x.gi].name, small:x.c.households < SMALL_HH, adjacent:x.gap < 500,
-  }));
+  })).map((o, i) => Object.defineProperty(o, 'cells', { value:ordered[i].c.cells, enumerable:false }));   // the census cells of the area (for the map highlight): shared, not copied, not part of the item's data
   // within the first screen: sorted by score again (reservations only decide who is on it)
   const n = Math.min(page, out.length), idx = new Map(ordered.map((x, i) => [i, x.score]));
   const head = out.slice(0, n).map((o, i) => ({ o, s:idx.get(i) })).sort((a, b) => b.s - a.s).map(z => z.o);

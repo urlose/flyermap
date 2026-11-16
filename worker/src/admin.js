@@ -21,6 +21,7 @@ import { loadStudios, studioBtnHtml, openStudioPicker } from './studios.js';
 import { viewLiveMap, dueInfo, LM } from './livemap.js';
 import { listView, viewSwitch, bindViewSwitch, tableHtml, bindTable } from './tables.js';
 import { STATS } from './stats.js';
+import { createHighlighter, keyOf } from './sugmap.js';
 import { coverage, addSuggestion, placesApart, suggestionFlow, sugKey as sugKeyOf, MAX_KM, PAGE } from './expand.js';
 // a save button while the database works: disabled, "Speichert …"; back to normal afterwards (also after an error)
 async function busy(btn, fn){ if(!btn || btn.disabled) return; const html = btn.innerHTML; btn.disabled = true; btn.setAttribute('aria-busy', 'true'); btn.textContent = t('saving');
@@ -950,6 +951,18 @@ function viewCreate(edit){
   $('#cBack').onclick = () => { d.token++; viewTasks(); };
   const m = makeMap($('#fullMap'), null, 13);
   const zoneLayer = L.layerGroup().addTo(m), planLayer = L.layerGroup().addTo(m), mustLayer = L.layerGroup().addTo(m);
+  // highlight of a suggested place (list <-> map): own pane BELOW the routes (zIndex 395 < overlayPane 400), no pointer events, so it
+  // neither covers a route nor takes a click/drag from the map. It is only a picture; d.side is never touched by it.
+  m.createPane('sugPane'); m.getPane('sugPane').style.zIndex = 395; m.getPane('sugPane').style.pointerEvents = 'none';
+  const sugLayer = L.layerGroup().addTo(m), sugRender = L.canvas({ pane:'sugPane' }), HL = { color:'#D946EF', weight:2.5, fillColor:'#D946EF', fillOpacity:.3, interactive:false, pane:'sugPane', renderer:sugRender };
+  const mapPad = () => { const wide = innerWidth >= 900; return { paddingTopLeft:[wide ? 480 : 24, 80], paddingBottomRight:[24, wide ? 24 : Math.round(innerHeight * .5)] }; };
+  const sugHl = createHighlighter({
+    show:(sh, it) => { sugLayer.clearLayers();
+      if(sh.kind === 'cells') sh.rects.forEach(r => L.polygon(r, HL).addTo(sugLayer));   // census cells of the area: approximate, not an administrative border
+      else L.circleMarker([sh.lat, sh.lng], { ...HL, radius:12, fillOpacity:.45 }).addTo(sugLayer); },
+    hide:() => sugLayer.clearLayers(),
+    focus:(sh, it) => { try{ if(sh.kind === 'cells'){ const b = L.latLngBounds(sh.rects.flat()); m.flyToBounds(b.pad(.5), { ...mapPad(), maxZoom:15, duration:.8 }); } else m.flyTo([sh.lat, sh.lng], Math.max(m.getZoom(), 14), { duration:.8 }); }catch{} },
+  });
   // mandatory areas: dashed orange outlines; while drawing, the corners tapped so far
   const MUST_COLOR = '#EA580C', ZONE_COLOR = '#7C3AED';
   const tip = (pg, txt, cls) => L.marker(pg.getBounds().getCenter(), { icon:L.divIcon({ className:'', html:`<span class="must-tip${cls ? ' ' + cls : ''}">${esc(txt)}</span>`, iconSize:null }), interactive:false, keyboard:false }).addTo(mustLayer);
@@ -1077,7 +1090,7 @@ function viewCreate(edit){
   const startArr = () => [d.start.lat, d.start.lng];
   const errText2 = e => /abort|overpass|fetch/i.test((e && e.message) || '') ? t('mapSlow') : ((e && e.message) || 'net');
   async function setStart(lat, lng, fromClick){
-    const tok = ++d.token; d.start = { lat, lng }; d.sugT = null; sugFlow.reset(); d.keepView = !!fromClick;   // a tap on the map keeps the zoom the admin chose
+    const tok = ++d.token; d.start = { lat, lng }; d.sugT = null; sugFlow.reset(); sugHl.clear(); d.keepView = !!fromClick;   // a tap on the map keeps the zoom the admin chose
     d.pick = false; updPick();
     d.loaded = false; d.plan = null; d.err = null; d.assign = {};
     zoneLayer.clearLayers(); planLayer.clearLayers();
@@ -1226,7 +1239,7 @@ function viewCreate(edit){
       const sideList = d.side.length ? `<div class="cov-side"><b>${esc(t('covChosen'))}</b>${d.side.map((x, k) => `<span class="chip">${esc(x.name)} · ${esc(t('covKm', { km:String(x.km != null ? x.km : '–').replace('.', ',') }))}<button class="link" data-srm="${k}" aria-label="${esc(t('del') + ': ' + x.name)}">✕</button></span>`).join('')}</div>` : '';
       const sg = d.sugT && d.sugT.key === sugKey() ? d.sugT : null;
       const f1 = v => String(v).replace('.', ',');
-      const sugRow = (x, i) => `<div class="sug-row"><div class="grow"><b>${esc(x.name || t('sugUnnamed', { km:f1(x.km) }))}</b>
+      const sugRow = (x, i) => `<div class="sug-row" data-srow="${i}"><div class="grow"><button class="sug-name" data-sfocus="${i}" title="${esc(t('sugFocusT'))}" aria-label="${esc(t('sugFocusT') + ': ' + (x.name || t('sugUnnamed', { km:f1(x.km) })))}"><b>${esc(x.name || t('sugUnnamed', { km:f1(x.km) }))}</b></button>
             <span class="small muted">${esc(t('sugLine', { hh:fmtN(x.households), km:f1(x.km) }))}</span>
             <span class="small muted">${esc(t(x.adjacent ? 'sugGapAdj' : 'sugGap', { km:f1(x.gapKm), to:x.gapTo || t('sugGapStart') }))}</span>
             <span class="small sug-not">${esc(t('sugNotYet'))}${x.small ? ' · ' + esc(t('sugSmall')) : ''}</span></div><button class="btn ghost small" data-sadd="${i}">${ICONS.plus}<span>${esc(t('sugAdd'))}</span></button></div>`;
@@ -1235,7 +1248,7 @@ function viewCreate(edit){
           ${!sg || sg.loading ? `<p class="small muted">${esc(t('sugLoading'))}</p>` : sg.failed ? `<p class="small err">${esc(t('sugFailed'))}</p>` : !sg.list.length ? `<p class="small muted">${esc(t('sugNone', { km:d.maxKm }))}</p>`
           : sg.list.slice(0, sg.shown).map(sugRow).join('') + (sg.shown < sg.list.length ? `<button class="btn ghost small" id="sugMore">${esc(t('sugMore', { n:sg.list.length - sg.shown }))}</button>` : '')
             + (sg.hh < c.missing ? `<p class="small warn">${esc(t('sugShort', { n:sg.list.length, km:d.maxKm, hh:fmtN(sg.hh), miss:fmtN(c.missing) }))}</p>` : '')}
-          <p class="small muted" style="margin:6px 0 0">${esc(t('sugHint'))}</p><p class="small muted" style="margin:4px 0 0">${esc(t('sugHh'))}</p></div>` : '';
+          <p class="small muted" style="margin:6px 0 0">${esc(t('sugHint'))}</p><p class="small muted" style="margin:4px 0 0">${esc(t('sugHh'))} ${esc(t('sugHlNote'))}</p></div>` : '';
       return `<div class="cov ${c.ok ? 'ok' : 'short'}" role="status">
         <div class="cov-h">${c.ok ? ICONS.circleCheck : ICONS.alert}<b>${esc(c.ok ? t('covOk') : t('covShort'))}</b></div>
         <div class="cov-n"><div><span>${esc(t('covWant'))}</span><b>${fmtN(c.want)}</b></div><div><span>${esc(t('covHave'))}</span><b>≈ ${fmtN(c.have)}</b></div><div><span>${esc(t('covMissing'))}</span><b>${c.missing ? '≈ ' + fmtN(c.missing) : '0'}</b></div></div>
@@ -1375,9 +1388,15 @@ function viewCreate(edit){
       saved = keep(); const before = d.side.length;
       d.side = addSuggestion(d.side, sg, sg.name || t('sugUnnamed', { km:String(sg.km).replace('.', ',') }));
       d.adding = false; if(d.side.length === before) return;
-      sugFlow.invalidate(); d.sugT = null; d.dirty = true; recompute();
+      sugHl.clear(); sugFlow.invalidate(); d.sugT = null; d.dirty = true; recompute();
     });
     if($('#sugMore')) $('#sugMore').onclick = () => sugFlow.more();
+    // list <-> map: hover (or keyboard focus) lights the area up, leaving removes it, a tap/click on the NAME moves the map there and keeps it lit.
+    // None of this adds the place; only the "Ort hinzufügen" button does. After each redraw the highlight is checked against the rows that exist.
+    { const vis = d.sugT && d.sugT.key === sugKey() && d.sugT.list ? d.sugT.list.slice(0, d.sugT.shown) : [], at = el => vis[+el.dataset.srow];
+      document.querySelectorAll('.sug-row[data-srow]').forEach(r => { r.onmouseenter = () => sugHl.enter(at(r)); r.onmouseleave = () => sugHl.leave(at(r)); });
+      document.querySelectorAll('[data-sfocus]').forEach(b => { b.onfocus = () => sugHl.enter(vis[+b.dataset.sfocus]); b.onblur = () => sugHl.leave(vis[+b.dataset.sfocus]); b.onclick = () => sugHl.pin(vis[+b.dataset.sfocus]); });
+      sugHl.refresh(vis); }
     // max distance from the ORIGINAL start (straight line); a new value is a new search (the loaded census squares are reused)
     if($('#sugKm')) $('#sugKm').onchange = e => { const km = +e.target.value; if(!km || km === d.maxKm) return; d.maxKm = km; sugFlow.invalidate(); d.sugT = null; findSuggestions(); renderSheet(); };
     // "all mailboxes" of a place: it gets exactly what it has, the other places share the rest
