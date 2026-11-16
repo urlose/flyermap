@@ -541,6 +541,9 @@ export function createPlanService(cache){
       const dayCap = N * H * 60 * maxDays, B = Math.min(B0, dayCap), share = B / N;   // the shifts (hours per day × days) can limit the budget too
       const travelMin = budget.travelMin != null && isFinite(+budget.travelMin) && +budget.travelMin >= 0 ? +budget.travelMin : null;
       const farKm = budget.farKm > 0 ? +budget.farKm : 3;
+      // the hours are a TARGET: a good route that needs a little more is kept. Real minutes up to target × (1 + tolerance) are accepted (default +5 %,
+      // 32 h → 33,6 h); beyond the target the plan says so (budget.over_target), beyond the tolerance it is shown as over (budget.over).
+      const tol = budget.tolerance != null && isFinite(+budget.tolerance) ? Math.max(0, Math.min(0.25, +budget.tolerance)) : 0.05;
       const maskOf = async (lat, lng, pick) => { try{ return await placeMask(lat, lng, pick ? { pick } : {}); }catch{ return null; } };
       const view = (g, mask) => ({ ...g, zoned:g.zoned || !!mask, edges:g.edges.map(e => { if(!e.mb) return e; const m = e.coords && e.coords[Math.floor(e.coords.length / 2)], mid = m || g.pts[e.a];
         if(mask && !mask.inside(mid[0], mid[1])) return { ...e, mb:0, boxes:[] };
@@ -586,12 +589,17 @@ export function createPlanService(cache){
       // A place the admin selected is always part of the plan: it gets at least `floor` mailboxes (its best streets), the rest of the hours
       // goes where the mailboxes per hour are highest. (budget.minShare, default 10 % of its capacity, at least 60; 0 switches it off.)
       const minShare = budget.minShare != null ? Math.max(0, Math.min(1, +budget.minShare)) : 0.1;
+      // The minimums must never eat the budget (ten selected villages × 60 mailboxes can be most of a short budget): together they get at most
+      // FLOOR_SHARE of the target hours, best mailboxes-per-hour first; places left without a minimum still compete by efficiency and, when they get
+      // nothing, are named in budget.unplanned (the admin decides – nothing is dropped silently, nothing is added by itself).
+      const FLOOR_SHARE = 0.35; let floorMul = 1;
       for(const p of places) p.floor = p.isMain || p.fixed != null || !minShare ? 0 : Math.min(p.cap, Math.max(60, Math.round(p.cap * minShare)));
+      { let used = 0; for(const p of places.filter(q => q.floor > 0).sort((a, b) => (b.floor / Math.max(1, b.minAt(b.floor))) - (a.floor / Math.max(1, a.minAt(a.floor))))){ const m = p.minAt(p.floor); if(used + m <= FLOOR_SHARE * B){ used += m; } else p.floor = 0; } }
       const afterFloor = (p) => { let skip = p.floor; const out = []; for(const x of p.seg){ if(skip >= x.dmb){ skip -= x.dmb; continue; } const f = skip > 0 ? (x.dmb - skip) / x.dmb : 1; skip = 0; out.push({ dmb:x.dmb * f, dmin:x.dmin * f, slope:x.slope }); } return out; };
       const allocate = (Bm) => {
         const want = new Map(places.map(p => [p, 0])); let usedMin = 0, usedMb = 0;
-        for(const p of places){ if(p.fixed != null){ const w = Math.min(p.cap, p.fixed); want.set(p, w); usedMin += p.minAt(w); usedMb += w; } else if(p.floor){ want.set(p, p.floor); usedMin += p.minAt(p.floor); usedMb += p.floor; } }
-        const segs = []; for(const p of places) if(p.fixed == null) (p.floor ? afterFloor(p) : p.seg).forEach(x => segs.push({ p, ...x }));
+        for(const p of places){ if(p.fixed != null){ const w = Math.min(p.cap, p.fixed); want.set(p, w); usedMin += p.minAt(w); usedMb += w; } else if(p.floor && floorMul){ want.set(p, p.floor); usedMin += p.minAt(p.floor); usedMb += p.floor; } }
+        const segs = []; for(const p of places) if(p.fixed == null) (p.floor && floorMul ? afterFloor(p) : p.seg).forEach(x => segs.push({ p, ...x }));
         segs.sort((a, b) => b.slope - a.slope);
         let limit = 'none';
         for(const x of segs){
@@ -621,11 +629,12 @@ export function createPlanService(cache){
       let Bm = Bwork, alloc = allocate(Bm), real = realPass(alloc), best = null;
       for(let it = 0; it < 5; it++){
         const T = total(real);
-        if(T <= Bwork * 1.0001){ if(!best || total(real) > total(best.real)) best = { alloc, real }; if(T >= Bwork * 0.96 || alloc.limit !== 'time') break; }
+        if(T <= Bwork * (1 + tol) + 0.01){ if(!best || total(real) > total(best.real)) best = { alloc, real }; if(T >= Bwork * 0.96 || alloc.limit !== 'time') break; }
         const nb = Bm * (Bwork * (T <= Bwork ? 0.995 : 0.985)) / Math.max(1, T);   // estimate too high/low: rescale the budget given to the estimate
         if(Math.abs(nb - Bm) < 1) break; Bm = nb; alloc = allocate(Bm); real = realPass(alloc);
       }
-      if(!best) best = { alloc, real };   // (cannot happen unless even the smallest plan is over budget; shown as over budget below)
+      if(!best && floorMul){ floorMul = 0; return solve(Bwork); }   // still over: without the minimums of the selected places (they are then named in budget.unplanned)
+      if(!best) best = { alloc, real };   // even the smallest plan is over: shown as over budget below
       ({ alloc, real } = best);
       // ---- share the pieces out among the workers, about equal hours; a big piece is cut in more parts when that evens out the load ----
       let bins = null;
@@ -645,14 +654,14 @@ export function createPlanService(cache){
         const trial = realPass(alloc, ko2);   // all places again from the same state (streets taken by an earlier place stay taken), this one in more parts
         if(!trial.find(x => x.p === cand.p) || trial.find(x => x.p === cand.p).parts.length < 2) break;
         const tb = assign(trial), tmins = tb.map(b => b.min);
-        if(Math.max(...tmins) - Math.min(...tmins) < Math.max(...mins) - Math.min(...mins) && total(trial) <= Bwork * 1.0001){ real = trial; bins = tb; ko.set(cand.p, k); } else break;
+        if(Math.max(...tmins) - Math.min(...tmins) < Math.max(...mins) - Math.min(...mins) && total(trial) <= Bwork * (1 + tol) + 0.01){ real = trial; bins = tb; ko.set(cand.p, k); } else break;
       }
       return { alloc, real, bins };
       };
       // ride times between places that the admin knows are part of the budget: plan again with the hours left after the rides
       let { alloc, real, bins } = solve(B);
       const movesOf = bs => bs.reduce((a, bn) => { const pis = bn.items.slice().sort((x, y) => x.pi - y.pi || x.k - y.k); let m = 0; for(let i = 1; i < pis.length; i++) if(pis[i].name !== pis[i - 1].name) m++; return a + m; }, 0);
-      if(travelMin != null) for(let it = 0; it < 3; it++){ const rides = movesOf(bins) * travelMin; if(total(real) + rides <= B * 1.0001 && (it > 0 || rides === 0)) break; const r2 = solve(Math.max(60, B - rides)); alloc = r2.alloc; real = r2.real; bins = r2.bins; if(total(real) + movesOf(bins) * travelMin <= B * 1.0001) break; }
+      if(travelMin != null) for(let it = 0; it < 3; it++){ const rides = movesOf(bins) * travelMin; if(total(real) + rides <= B * (1 + tol) + 0.01 && (it > 0 || rides === 0)) break; const r2 = solve(Math.max(60, B - rides)); alloc = r2.alloc; real = r2.real; bins = r2.bins; if(total(real) + movesOf(bins) * travelMin <= B * (1 + tol) + 0.01) break; }
       if(stale()) return { skipped:true };
       // ---- one route per worker with work ----
       const order = new Map(real.map((x, i) => [x, i])); const routes = [], jumpsAll = [];
@@ -674,7 +683,8 @@ export function createPlanService(cache){
       const limit = mailboxes >= flyers * 0.99 ? 'none' : (alloc.limit === 'time' ? 'time' : 'capacity');
       const plan = { routes, mailboxes, zone:[], zones:true, merged:true, split, side_failed:failed, side_dropped:dropped, side_info:[], must_mb:0, must_info:[], per_worker:perW,
         budget:{ hours:budget.hours, minutes:B0, effective_minutes:Math.round(B), flyers_max:flyers, planned:mailboxes, uncovered:Math.max(0, Math.round(flyers - mailboxes)), work_minutes:Math.round(workMin),
-          limit, fits_all:limit === 'none', over:workMin + knownMin > B0 + 1, estimate:true,
+          limit, unplanned:real.filter(x => !x.p.isMain && x.parts.length === 0).map(x => x.p.name), fits_all:limit === 'none', target_minutes:B0, tolerance:tol, max_minutes:Math.round(B0 * (1 + tol)), actual_minutes:Math.round(workMin + knownMin),
+          over_target:workMin + knownMin > B0 + 1, over:workMin + knownMin > B0 * (1 + tol) + 1, estimate:true,
           workers:perW.map((m, w) => ({ w, minutes:Math.round(m), mailboxes:Math.round(routes.filter(r => r.w === w).reduce((a, r) => a + r.mailboxes, 0)), km:Math.round(routes.filter(r => r.w === w).reduce((a, r) => a + (r.length_m || 0), 0) / 100) / 10 })),
           length_m:Math.round(routes.reduce((a, r) => a + (r.length_m || 0), 0)),
           travel:{ known:travelMin != null, moves:moves.length, minutes:travelMin != null ? knownMin : null, far:moves.filter(j => j.far).length, far_km:farKm, jumps:jumpsAll } } };
