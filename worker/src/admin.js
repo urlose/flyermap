@@ -1092,6 +1092,7 @@ function viewCreate(edit){
   // Suggestions for more places (census, townsAround) – shown in step "Route", added only by the admin ("Ort hinzufügen").
   // Kept apart from d.side (the confirmed places) in d.sugT; results for another start or another set of places are dropped.
   const sugKey = () => startKey(d.start) + '|' + d.side.map(x => x.name).join(',');
+  // names: "Lehen (Weidenberg)" for a district of a town; a city (≥ 5.000 households) is named as the city
   async function findSuggestions(){
     const key = sugKey(); if(d.sugT && d.sugT.key === key) return;
     d.sugT = { key, loading:true, list:[] }; renderSheet();
@@ -1103,7 +1104,7 @@ function viewCreate(edit){
     const list = rankSuggestions(towns, { start:st, side:d.side, missing });
     d.sugT = { key, list, loading:false }; renderSheet();
     // names one after another (the free geocoder refuses many requests at once); the list is usable before they arrive
-    for(const sg of list){ let nm = null; for(let k = 0; k < 2 && !nm; k++){ try{ const r = await reversePlace(sg.lat, sg.lng); const ps = r ? r.split(', ') : []; nm = ps.length > 1 && sg.households < 5000 ? ps[0] + ' (' + ps[1] + ')' : ps[ps.length - 1] || null;   // a city is named as the city, not by the district its centre lies in }catch{ await new Promise(r => setTimeout(r, 800)); } }   // "Lehen (Weidenberg)": a district of the main town is named as such
+    for(const sg of list){ let nm = null; for(let k = 0; k < 2 && !nm; k++){ try{ const r = await reversePlace(sg.lat, sg.lng); const ps = r ? r.split(', ') : []; nm = ps.length > 1 && sg.households < 5000 ? ps[0] + ' (' + ps[1] + ')' : ps[ps.length - 1] || null; }catch{ await new Promise(r => setTimeout(r, 800)); } }   // "Lehen (Weidenberg)": a district of the main town is named as such
       if(!alive() || !d.sugT || d.sugT.key !== key) return; sg.name = nm; renderSheet(); }
   }
   function draw(){
