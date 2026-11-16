@@ -189,7 +189,15 @@ SNAP="select string_agg(o || '=' || coalesce((select string_agg(a::text, ',' ord
 echo "== state as in production"
 BEFORE=$(Q postgres -c "$SNAP")
 r=$(api anon "" "select public.company_stats()"); ok "before: anon reaches company_stats (stopped only inside: $r)" "$( [ "$r" = not_admin ] && echo 1 )"
-r=$(api anon "" "select count(*) from public.task_merges"); ok "before: anon may query task_merges (RLS returns 0 rows: $r)" "$( [ "$r" = OK ] && echo 1 )"
+# before: anon HAS the SQL privilege SELECT on task_merges, but RLS (enabled, no policies) returns no rows -> no data leak,
+# only a missing second layer. A synthetic row is put in first so "0" means "hidden", not "empty".
+Q postgres -c "insert into task_merges(target, source) values ('$T1', '$T2')" >/dev/null
+ok "before: anon has SELECT privilege on task_merges (catalog)" "$( [ "$(Q postgres -c "select has_table_privilege('anon','public.task_merges','select')")" = t ] && echo 1 )"
+r=$(api anon "" "select count(*) from public.task_merges"); n=$(tail -1 $DIR/out)
+ok "before: anon query is allowed but RLS returns 0 of 1 rows (no data visible) -> $r, rows $n" "$( [ "$r" = OK ] && [ "$n" = 0 ] && echo 1 )"
+r=$(api authenticated "$ADMIN" "select count(*) from public.task_merges"); n=$(tail -1 $DIR/out)
+ok "before: signed-in admin also gets 0 rows (no policy) -> rows $n" "$( [ "$r" = OK ] && [ "$n" = 0 ] && echo 1 )"
+Q postgres -c "delete from task_merges" >/dev/null
 
 echo "== apply migration"
 Q postgres -f "$ROOT/supabase/2026-11-16_security2_grants.sql"
@@ -224,7 +232,7 @@ r=$(api anon "" "select public._plan_late()"); ok "trigger function can no longe
 echo "-- 3. service tables"
 for t in "${TABLES[@]}"; do
   r1=$(api anon "" "select count(*) from public.$t"); r2=$(api authenticated "$ADMIN" "select count(*) from public.$t"); r3=$(api authenticated "$ADMIN" "delete from public.$t")
-  ok "$t: anon select / admin select / admin delete denied" "$( [ -n "$(denied "$r1")" ] && [ -n "$(denied "$r2")" ] && [ -n "$(denied "$r3")" ] && echo 1 )"; done
+  ok "$t: anon select / admin select / admin delete now fail with 'permission denied' (privilege gone, RLS stays)" "$( [ -n "$(denied "$r1")" ] && [ -n "$(denied "$r2")" ] && [ -n "$(denied "$r3")" ] && [ "$(Q postgres -c "select relrowsecurity from pg_class where oid='public.$t'::regclass")" = t ] && echo 1 )"; done
 for s in "${SEQS[@]}"; do r=$(api anon "" "select nextval('public.$s')"); ok "sequence $s: anon nextval denied" "$(denied "$r")"; done
 r=$(api service_role "" "select count(*) from public.task_merges"); ok "service_role still reads service tables (edge functions)" "$( [ "$r" = OK ] && echo 1 )"
 
