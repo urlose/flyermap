@@ -1,0 +1,25 @@
+# UI check of a feature branch with real map data (tiles, census, geocoder) and a FAKE database (test/ui/fixtures.cjs):
+# nothing is deployed and no real order is read or written. Runs on pushes to phase*-branches only.
+name: UI check (feature branch)
+on:
+  push:
+    branches: ['phase*']
+    paths: ['test/ui/ci.json']
+jobs:
+  ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm ci
+        working-directory: worker
+      - run: node build.mjs
+        working-directory: worker
+      - run: npm i --no-save playwright@1.48.2 && npx playwright install --with-deps chromium
+        working-directory: test/ui
+      - run: mkdir -p out && REAL_NET=1 node preview.cjs out "$(cat ci.json)" | tee out/log.txt
+        working-directory: test/ui
+      - uses: actions/upload-artifact@v4
+        with: { name: ui-shots, path: test/ui/out, retention-days: 5 }
