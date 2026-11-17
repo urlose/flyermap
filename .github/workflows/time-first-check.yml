@@ -23,6 +23,8 @@ on:
       - 'supabase/2026-11-16_atomic_task_plans.sql'
       - 'test/sql/atomic_task_plans.sh'
       - 'test/ui/e2e-timefirst.cjs'
+      - 'worker/src/coord.js'
+      - 'test/ui/e2e-coord.cjs'
       - '.github/workflows/time-first-check.yml'
 permissions:
   contents: read
@@ -73,6 +75,9 @@ jobs:
       - name: Browser test (synthetic Supabase, no production)
         working-directory: test/ui
         run: timeout 540s node e2e-timefirst.cjs out-timefirst
+      - name: Browser test coordinator role (synthetic Supabase, no production)
+        working-directory: test/ui
+        run: timeout 300s node e2e-coord.cjs out-timefirst/coord
       - name: Read-only Leipheim snapshot and offline replay
         run: timeout 240s node test/leipheim-readonly.mjs --capture test/ui/out-timefirst/leipheim.json
       - uses: actions/upload-artifact@v4

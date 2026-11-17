@@ -1,6 +1,7 @@
 import L from 'leaflet';
 import Planner from '../../admin/planner.js';
 import { DEFAULT_RADIUS_KM, MIN_RADIUS_KM, MAX_RADIUS_KM, radiusFromPlans, manualOutsideCircle } from './circlearea.js';
+import { applyRole, isCoord, loadAdmins, adminName, selectWorkers, refLinkCardHtml, bindRefLink, inviteRoleHtml, bindInviteRole, inviteRoleValues, adminsCardHtml, bindAdminsCard } from './coord.js';
 import { savedMailboxCounts } from './savecounts.js';
 import { t, I } from './i18n.js';
 import { sb, store, $, esc, css, hav, fmtDist, fmtH, fmtHm, fmtN, fmtDay, fmtDT, ago, waLink, telLink, loopPath, deMobile, loc, reversePlace, placeArea, errText } from './core.js';
@@ -105,7 +106,7 @@ const planEngine = () => engine || (setStampClient(sb), tileStamp(), engine = ma
 export const A = { user:null, workers:[], tasks:[], live:[], demo:null, hooks:{}, filter:{ status:'open', from:'', to:'', city:'', district:'' } };
 
 /* ---------- data ---------- */
-async function loadWorkers(){ const { data, error } = await sb.from('workers').select('id,name,phone,cities,zone_minutes,notes,start_anywhere,last_lat,last_lng,last_seen,nav_lat,nav_lng,nav_at,active_route_id,created_at,company_id').order('name'); if(error) throw error; A.workers = data; }
+async function loadWorkers(){ const { data, error } = await selectWorkers('id,name,phone,cities,zone_minutes,notes,start_anywhere,last_lat,last_lng,last_seen,nav_lat,nav_lng,nav_at,active_route_id,created_at,company_id'); if(error) throw error; A.workers = data; }
 async function loadTasks(){ const { data, error } = await sb.from('tasks').select('*,task_workers(worker_id)').is('merged_into', null).order('created_at', { ascending:false }); if(error) throw error; A.tasks = data;
   // orders where a worker picked dates after the deadline and the admin has not decided yet (badge on the card)
   try{ const { data:lp } = await sb.from('task_plans').select('task_id').eq('status', 'accepted').eq('late_dates', true).eq('late_ok', false); A.lateTasks = new Set((lp || []).map(x => x.task_id)); }catch{ A.lateTasks = new Set(); }
@@ -126,7 +127,8 @@ function setBadges(){
 const showOnMap = sel => { LM.sel = sel; LM.focus = true; if(sel.kind === 'task'){ const tk = A.tasks.find(x => x.id === sel.id); if(tk) LM.f[tk.status === 'done' ? 'done' : 'open'] = true; } adminTab('map'); };
 async function loadLive(){ const { data } = await sb.from('routes').select('id,worker_id,task_id,plan_id,paused_at,last30_m,started_at,break_s').is('ended_at', null); A.live = data || []; }
 async function loadAll(){
-  await Promise.all([loadWorkers(), loadTasks(), loadFirm().then(c => { A.company = c; }).catch(() => {})]);
+  await Promise.all([loadWorkers(), loadTasks(), loadFirm().then(c => { A.company = c; }).catch(() => {}), loadAdmins().then(a => { A.admins = a; })]);
+  applyRole(A.company && A.company.role);   // coordinator: read-only panel (the database enforces it)
   // master admins see every company: names for the lists
   A.companies = A.company && A.company.master ? ((await sb.from('companies').select('id,name')).data || []) : [];
 }
@@ -298,6 +300,7 @@ async function viewPeople(){
         <div id="dFilter"></div>
       </div>
       <details class="filters" id="invBox" style="margin-top:16px"><summary>${ICONS.plus}${esc(t('invSection'))}</summary><div class="f-body">
+      ${isCoord() ? refLinkCardHtml() : ''}
       ${A.company && A.company.join_code ? `<div class="card" style="display:block;margin:0 0 4px"><b>${esc(t('inviteTitle'))}</b><p class="small muted" style="margin:4px 0 8px">${esc(t('inviteHint'))}</p>
         <div class="code-row"><input class="in small" readonly id="invLink" value="${esc(APP_LINK + '?neu=' + A.company.join_code)}" style="flex:1;min-width:0"><button class="btn ghost small" id="invCp">${esc(t('copy'))}</button></div>
         <a class="btn ghost small" style="margin-top:8px" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(t('inviteMsg', { link:APP_LINK + '?neu=' + A.company.join_code }))}">${ICONS.chat}WhatsApp</a></div>` : ''}
@@ -371,6 +374,7 @@ async function viewPeople(){
   };
   $('#wQ').oninput = render; render();
   bindViewSwitch('people', () => render());
+  if(isCoord()) bindRefLink(APP_LINK, toast);
   sb.from('routes').select('id,worker_id,task_id,plan_id,started_at,ended_at,distance_m,break_s,adj_s,together_s,place,task_title').order('started_at', { ascending:false }).limit(2000)
     .then(({ data }) => { if(!document.getElementById('dFilter')) return; days = mergeDays(data || []); render(); fillPlaces(days, () => { if(document.getElementById('dFilter')) render(); }); });
 }
@@ -391,6 +395,7 @@ function viewSettings(){
         <textarea class="in" id="botRules" rows="5" maxlength="4000" placeholder="${esc(t('botRulesPh'))}"></textarea>
         <button class="btn primary small" id="botSave" style="margin-top:10px;width:auto">${esc(t('save'))}</button>
       </div>` : ''}
+      ${adminsCardHtml(A.admins, A.user && A.user.id)}
       <h2 class="sec">${esc(t('accountSettings'))}</h2>
       <div class="card" style="display:block">
         <div class="person-row" style="padding-top:0">${avatar()}<div><b>${esc(A.user?.phone ? '+' + A.user.phone.replace(/^\+/, '') : (A.user?.email || ''))}</b><span>${esc(t('admin'))}</span></div></div>
@@ -404,6 +409,7 @@ function viewSettings(){
     </div>`);
   // section index on top: one chip per section, a tap scrolls there (no section is hidden)
   secNav($('#setNav'));
+  bindAdminsCard(async () => { A.admins = await loadAdmins(); viewSettings(); }, toast, errText);
   store.get('theme').then(v => { A.theme = v; document.querySelectorAll('[data-theme-set]').forEach(b => { const on = b.dataset.themeSet === (v || 'system'); b.classList.toggle('on', on); b.setAttribute('aria-checked', on); }); });
   bindLegal(viewSettings);
   if($('#botCard')){
@@ -417,8 +423,9 @@ function viewSettings(){
   $('#tOut').onclick = adminLogout;
   $('#tWork').onclick = openAsWorker;
   $('#tInv').onclick = () => {
-    const mo = modal(`<h2>${esc(t('inviteAdmin'))}</h2><label class="f">${esc(t('invitePhone'))}</label><input class="in" id="invE" type="tel" placeholder="+49 170 1234567"><button class="btn primary" id="invB" style="margin-top:12px">${esc(t('inviteAdmin'))}</button><div class="err" id="invErr"></div>`);
-    mo.querySelector('#invB').onclick = async () => { const ph = deMobile(mo.querySelector('#invE').value); if(!ph){ mo.querySelector('#invErr').textContent = t('badPhone'); return; } const { error } = await sb.from('admin_phone_invites').upsert({ phone:ph }); if(error) mo.querySelector('#invErr').textContent = error.message; else { mo.remove(); toast(t('invitePhoneSent')); } };
+    const mo = modal(`<h2>${esc(t('inviteAdmin'))}</h2><label class="f">${esc(t('invitePhone'))}</label><input class="in" id="invE" type="tel" placeholder="+49 170 1234567">${inviteRoleHtml()}<button class="btn primary" id="invB" style="margin-top:12px">${esc(t('inviteAdmin'))}</button><div class="err" id="invErr"></div>`);
+    bindInviteRole(mo);
+    mo.querySelector('#invB').onclick = async () => { const ph = deMobile(mo.querySelector('#invE').value); if(!ph){ mo.querySelector('#invErr').textContent = t('badPhone'); return; } const rv = inviteRoleValues(mo); const { error } = await sb.from('admin_phone_invites').upsert(rv.role === 'admin' && !rv.display_name ? { phone:ph } : { phone:ph, ...rv }); if(error) mo.querySelector('#invErr').textContent = error.message; else { mo.remove(); toast(t('invitePhoneSent')); } };
   };
   $('#tDemo').onclick = demoSheet;
 }
@@ -435,6 +442,7 @@ async function viewWorker(id, back, focusId){
       <div class="person-row big">${avatar(w.name, isLive(w) ? 'live' : '')}<div><b>${esc(w.name)}</b><span>${esc(w.phone)} · ${esc(t('lastActive', { a:ago(w.last_seen) }))}</span></div></div>
       <div class="tool-row"><a class="btn primary small" href="${telLink(w.phone)}">${ICONS.phone}${esc(t('call'))}</a><a class="btn ghost small" target="_blank" rel="noopener" href="${waLink(w.phone)}">${ICONS.chat}WhatsApp</a><button class="btn ghost small" id="wOnMap">${ICONS.map}${esc(t('showOnMap'))}</button></div>
       <div class="chips">${(w.cities || []).map(c => `<span class="chip">${esc(c.name)}</span>`).join('')}</div>
+      ${w.referred_by ? `<p class="small muted" style="margin:2px 0 8px">${esc(t('referredBy', { n:adminName(A.admins, w.referred_by) }))}</p>` : ''}
       <nav class="set-nav sec-nav" id="wNav" aria-label="${esc(t('secIndex'))}"></nav>
       ${workerStatsHtml(w.id)}
       <h2 class="sec">${esc(t('secOrders'))}</h2>
@@ -634,7 +642,7 @@ async function viewDayMap(routeId, back, keep){
     const who = [...new Set(tg.map(x => nameOf(((orr || []).find(o => o.id === x.other_route_id) || {}).worker_id)).filter(Boolean))].join(', ');
     const undone = tg.every(x => x.undone), sec = tg.reduce((a, x) => a + x.seconds, 0);
     tgNote = t(undone ? 'togetherNoteUndone' : 'togetherNote', { n:who, m:Math.round(sec / 60), t:tg.map(x => hhmm(x.from_t) + '–' + hhmm(x.to_t)).join(', ') });
-    tgAction = { label:t(undone ? 'togetherRedo' : 'togetherUndo'), run:async () => {
+    if(!isCoord()) tgAction = { label:t(undone ? 'togetherRedo' : 'togetherUndo'), run:async () => {
       for(const id of ids){ const { error } = await sb.rpc('together_undo', { p_route:id, p_undo:!undone }); if(error){ toast(errText(error)); return; } }
       const nv = undone ? sec : 0, delta = nv - (r.together_s || 0);
       r.together_s = nv; (r._routes || []).forEach(x => { x.together_s = tg.filter(y => y.route_id === x.id).reduce((a, y) => a + (undone ? y.seconds : 0), 0); });
@@ -1759,7 +1767,7 @@ async function viewTask(id){
         ${p.worker_id && p.status === 'accepted' && p.late_dates && !p.late_ok ? `<div class="warnbox" style="margin:6px 0 0">${esc(t('lateAsk', { dl:fmtDay(tk.deadline), dates:(p.work_dates || []).map(fmtDay).join(', ') }))}<div class="tool-row" style="margin-top:6px"><button class="btn primary small" data-lateok="${p.id}">${esc(t('lateOk'))}</button><button class="btn ghost small" data-lateno="${p.id}">${esc(t('lateNo'))}</button></div></div>` : ''}
         ${w ? `<button class="rr-worker" data-wk="${w.id}">${avatar()}<span class="grow"><b>${esc(w.name)}</b><small>${esc(t('openWorker'))}</small></span><span class="rr-chev">›</span></button>
         <div class="rr-btns"><a class="btn ghost small" target="_blank" rel="noopener" href="${waLink(w.phone, invite(w))}">${ICONS.chat}${esc(t('write'))}</a><button class="btn ghost small" data-swap="${p.id}">${ICONS.users}${esc(t('swapWorker'))}</button></div>` : ''}
-        <div class="rr-swap" id="sw${p.id}" ${w ? 'hidden' : ''}><select class="in small" data-plan="${p.id}">${workerOptions(tk.start_lat, tk.start_lng, p.worker_id)}</select><span class="small muted">${esc(t('replaceHint'))}</span></div></div></div>`; }).join('') : `<p class="muted small">${esc(t('noPlans'))}</p>`}
+        <div class="rr-swap" id="sw${p.id}" ${w && !(isCoord() && p.status === 'declined') ? 'hidden' : ''}><select class="in small" data-plan="${p.id}">${workerOptions(tk.start_lat, tk.start_lng, p.worker_id)}</select><span class="small muted">${esc(t('replaceHint'))}</span></div></div></div>`; }).join('') : `<p class="muted small">${esc(t('noPlans'))}</p>`}
       <h2 class="sec">${esc(t('secTeam'))}</h2>
       ${team.length ? `<div class="list-card">${team.map(wid => { const w = wById(wid), mine = (plans || []).filter(p => p.worker_id === wid && p.status !== 'declined'), live = (A.live || []).some(r => r.worker_id === wid && r.task_id === id && !r.paused_at);
         return `<button class="lc-row" data-wk="${wid}">${avatar(w ? w.name : '?', live ? 'live' : '')}<span class="grow"><b>${esc(w ? w.name : '?')}</b><small class="muted">${esc(mine.map(p => t('planRoute', { n:p.idx + 1 }) + ' · ' + stText(p)).join(' · '))}${live ? ' · ' + esc(t('stLive')) : ''}</small></span>${ICONS.chevron}</button>`; }).join('')}</div>` : `<p class="muted small">${esc(t('teamNone'))}</p>`}
@@ -1799,6 +1807,15 @@ async function viewTask(id){
   liveWorkers(L.layerGroup().addTo(m), tk, plans, () => true);
   fit(m, b, 16);
   const assignPlan = async (p, wid) => {
+    if(isCoord()){
+      if(!wid || (p.worker_id && p.status !== 'declined')){ toast(t('coordFreeOnly')); return false; }
+      let left = null; const tr = PLAN_TR[p.id];
+      if(tr && p.days && p.days.length > 1){ try{ left = Math.max(1, dayProgress(p, tr).filter(x => x < 95).length); }catch{} }
+      const { error } = await sb.rpc('coord_assign_plan', { p_plan:p.id, p_worker:wid, p_days_left:left, p_title:t('newTaskTitle', { title:tk.title }),
+        p_body:t('newTaskBody', { date:tk.work_date ? fmtDay(tk.work_date) + ' · ' : '', mb:fmtN(p.mailboxes || 0), km:fmtDist(p.length_m || 0) }) });
+      if(error){ toast(/plan_not_free/.test(error.message || '') ? t('coordFreeOnly') : errText(error)); return false; }
+      p.worker_id = wid; p.status = 'offered'; return true;
+    }
     // a new worker takes over the rest of the route: progress stays with the plan
     // the successor only picks dates for the days that are not done yet
     let left = null; const tr = PLAN_TR[p.id];
