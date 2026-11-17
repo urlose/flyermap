@@ -82,3 +82,7 @@ Object.assign(T.en, {
 Object.assign(T.de, { budCappedDays:'Bis zur Frist passen nur {days} Arbeitstag(e) × {hpd} Std. × {n} Person(en) = {eff} Std. – weniger als die eingetragenen {h} Std. Für mehr Flyer die Frist verschieben oder mehr Personen einplanen.' });
 Object.assign(T.ru, { budCappedDays:'До срока помещается только {days} раб. дн. × {hpd} ч × {n} чел. = {eff} ч — меньше указанных {h} ч. Чтобы раздать больше, перенесите срок или добавьте людей.' });
 Object.assign(T.en, { budCappedDays:'Until the deadline only {days} working day(s) × {hpd} h × {n} person(s) = {eff} h fit – less than the {h} h entered. For more flyers move the deadline or plan more people.' });
+// 17.11.2026: ride markers show the ride time stored with the plan
+Object.assign(T.de, { rideTipPlan:'Ortswechsel · Fahrt ≈ {min} Min. (im Plan) · ≈ {km} km Luftlinie', tripsPlan:'Ortswechsel (Fahrt ≈ {min} Min.)' });
+Object.assign(T.ru, { rideTipPlan:'Смена места · переезд ≈ {min} мин (в плане) · ≈ {km} км по прямой', tripsPlan:'Смена места (переезд ≈ {min} мин)' });
+Object.assign(T.en, { rideTipPlan:'Change of place · ride ≈ {min} min (in the plan) · ≈ {km} km straight line', tripsPlan:'Changes of place (ride ≈ {min} min)' });
