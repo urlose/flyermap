@@ -5,6 +5,8 @@
 // Run: node test/neartowns.mjs
 import Planner from '../admin/planner.js';
 import { createPlanService } from '../worker/src/plancore.js';
+// Synthetic roads must not be clipped by live census settlements at these coordinates.
+globalThis.fetch = async () => { throw new Error('Network disabled for synthetic planner fixtures'); };
 const LAT0 = 48.46, LNG0 = 10.21, mLat = 1 / 111320, mLng = 1 / (111320 * Math.cos(LAT0 * Math.PI / 180));
 const pt = (x, y) => [LAT0 + y * mLat, LNG0 + x * mLng];
 // a town: street grid around (cx, cy) metres from the start, `perKm` mailboxes per km of street

@@ -10,6 +10,11 @@ on:
       - 'worker/src/budgetplan.js'
       - 'worker/src/i18n6.js'
       - 'test/nearfirst.mjs'
+      - 'test/nearfirst-overlap.mjs'
+      - 'test/nearfirst-zone-boundary.mjs'
+      - 'test/routing-quality.mjs'
+      - 'test/leipheim-readonly.mjs'
+      - 'test/fixtures/leipheim-2026-11-16.json.gz'
       - 'test/nearfirst-service.mjs'
       - 'test/customerexport.mjs'
       - 'test/budget.mjs'
@@ -38,6 +43,16 @@ jobs:
         with: { node-version: '22' }
       - run: npm ci
         working-directory: worker
+      - run: node test/routing-quality.mjs
+      - run: node test/nearfirst-overlap.mjs
+      - run: node test/nearfirst-zone-boundary.mjs
+      - name: Replay pinned Leipheim snapshot without network
+        run: node test/leipheim-readonly.mjs test/fixtures/leipheim-2026-11-16.json.gz
+      - name: Offline routing regressions
+        run: |
+          for suite in drive islands skip must zones census zensus real; do
+            node test/$suite.mjs || exit 1
+          done
       - run: node test/nearfirst.mjs
       - run: node test/nearfirst-service.mjs
       - run: node test/customerexport.mjs
@@ -47,9 +62,6 @@ jobs:
           bash test/sql/atomic_task_plans.sh
       - run: npm run build
         working-directory: worker
-      # The legacy budget suite fails in this isolated runner; its fixture/baseline
-      # discrepancy is still being investigated. Keep the diagnostic result visible
-      # while strictly gating the new-mode unit, integration, export and build checks.
       - name: Install Chromium E2E
         working-directory: test/ui
         run: |
@@ -58,12 +70,13 @@ jobs:
       - name: Browser test (synthetic Supabase, no production)
         working-directory: test/ui
         run: timeout 540s node e2e-timefirst.cjs out-timefirst
+      - name: Read-only Leipheim snapshot and offline replay
+        run: timeout 240s node test/leipheim-readonly.mjs --capture test/ui/out-timefirst/leipheim.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: time-first-e2e
           path: test/ui/out-timefirst
           retention-days: 4
-      - name: Legacy budget diagnostics (known baseline failures)
+      - name: Legacy budget regression (offline fixtures)
         run: node test/budget.mjs
-        continue-on-error: true

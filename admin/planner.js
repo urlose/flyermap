@@ -759,7 +759,15 @@
     });
     let used = 0, dropped = 0;
     for(const b of buildings){
-      const x = b.lng * kx, y = b.lat * ky, cand = grid.get(key(x, y));
+      const x = b.lng * kx, y = b.lat * ky;
+      // The index covers one 80 m cell around each sampled road point.
+      // Census points may snap up to 110 m: query adjacent cells too, then
+      // retain the exact per-building distance check below.
+      const extra = Math.max(0, Math.ceil(((b.snap || maxSnap) + 15) / cell) - 1), cand = [];
+      for(let dx = -extra; dx <= extra; dx++) for(let dy = -extra; dy <= extra; dy++){
+        const entries = grid.get(key(x + dx * cell, y + dy * cell));
+        if(entries) cand.push(...entries);
+      }
       let best = -1, bd = Infinity;
       if(cand) for(const [ei, ax, ay, bx, by] of cand){
         const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
@@ -776,6 +784,7 @@
   // grow the work area from the start (walking distance) until it holds `flyers` mailboxes
   function selectForFlyers(g, start, flyers){
     const root = nearestNode(g, start, g.pts.map((p, i) => i).filter(i => g.adj[i].length));
+    if(root < 0) return { ids:[], mailboxes:0, skipped_mb:0, reach_m:0 };
     const tree = sssp(g, root), n = g.pts.length, items = [];
     // 1. skip long, nearly empty roads (fields, forest tracks, a lone farm at the end of a road)
     let sm = 0, sl = 0; g.edges.forEach(e => { if(e.mb > 0){ sm += e.mb; sl += e.len; } });
@@ -784,7 +793,8 @@
     const sparse = e => e.len > 100 && e.mb * 1000 / e.len < minDens;
     let skipped = 0;
     // an area the admin drew himself is walked completely: no street inside it is skipped as too empty
-    g.edges.forEach((e, i) => { if(e.mb > 0){ if(!g.zoned && sparse(e)){ skipped += e.mb; return; } items.push({ i, k:(tree.d[e.a] + tree.d[e.b]) / 2, v:tree.d[e.a] <= tree.d[e.b] ? e.b : e.a }); } });
+    // Disconnected streets cannot be delivered on this walking route, even when the flyer target exceeds reachable capacity.
+    g.edges.forEach((e, i) => { if(e.mb > 0){ if(!Number.isFinite(tree.d[e.a]) || !Number.isFinite(tree.d[e.b])){ skipped += e.mb; return; } if(!g.zoned && sparse(e)){ skipped += e.mb; return; } items.push({ i, k:(tree.d[e.a] + tree.d[e.b]) / 2, v:tree.d[e.a] <= tree.d[e.b] ? e.b : e.a }); } });
     // 2. drop poor branches: along the shortest-path tree from the start, a branch (road out to somewhere) is only worth walking
     //    if it brings enough mailboxes per km (walking out and back). Rich far villages survive, long empty spurs do not.
     const B = new Float64Array(n), Lc = new Float64Array(n), kids = Array.from({ length:n }, () => []);

@@ -8,6 +8,8 @@ import { savedMailboxCounts } from '../worker/src/savecounts.js';
 import { planRows, budgetDays } from '../worker/src/budgetplan.js';
 import { censusSource, censusPlaces, laea, unlaea } from '../worker/src/zensus.js';
 import { rankSuggestions, addSuggestion } from '../worker/src/expand.js';
+// Synthetic roads must not be clipped by live census settlements at these coordinates.
+globalThis.fetch = async () => { throw new Error('Network disabled for synthetic planner fixtures'); };
 let fail = 0; const ok = (name, c, info) => { console.log((c ? 'ok   ' : 'FAIL ') + name + (info != null ? '  ' + info : '')); if(!c) fail++; };
 const hrs = m => (m / 60).toFixed(1);
 const dups = p => { const seen = new Map(); let d = 0; p.routes.forEach(r => (r.boxes || []).forEach(b => { const k = b[0].toFixed(5) + ',' + b[1].toFixed(5); if(seen.has(k) && seen.get(k) !== r) d += b[2]; seen.set(k, r); })); return d; };

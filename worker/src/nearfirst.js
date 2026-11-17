@@ -53,3 +53,12 @@ export function outwardStreetOrder(g, start, { isolatedGapM = 850, sparsePerKm =
   streets.sort((a,b)=>a.distance-b.distance||a.i-b.i);
   return { root, streets, unreachable, skipped };
 }
+
+// Full geometry distinguishes parallel curves and loops with the same endpoints.
+// Reversing an edge does not make it a new delivery street.
+export function streetGeometryKey(g, i){
+  const e=g.edges[i], coords=e.coords?.length?e.coords:[g.pts[e.a],g.pts[e.b]];
+  const points=coords.map(p=>p[0].toFixed(6)+','+p[1].toFixed(6));
+  const forward=points.join(';'), reverse=points.slice().reverse().join(';');
+  return forward<reverse?forward:reverse;
+}
