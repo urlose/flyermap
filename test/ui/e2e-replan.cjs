@@ -180,6 +180,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const plans0 = JSON.parse(fromDb(PG.q(`select jsonb_agg(to_jsonb(p) order by idx) from task_plans p where task_id='${TID}'`)));
     DB.task_plans = DB.task_plans.filter(p => p.task_id !== TID).concat(plans0);
     DB.routes.push({ id:'30000000-0000-4000-8000-0000000000e1', worker_id:W1, task_id:TID, plan_id:plans0[0].id, paused_at:null, last30_m:0, started_at:new Date(Date.now() - 5 * 36e5).toISOString(), ended_at:new Date(Date.now() - 36e5).toISOString(), break_s:0, distance_m:9000, place:name, adj_s:0, together_s:0 });
+    // like orders saved before 17.11: an automatically picked place the routes never reached, without a ride time
+    const legacySide = [{ name:'Altdorf (auto)', lat:lat + 0.03, lng:lng + 0.03, p:null, flyers:300, km:4, auto:true, confirmed:true }];
+    PG.q(`update tasks set side_towns = '${JSON.stringify(legacySide)}' where id = '${TID}'`);
+    DB.tasks.find(t => t.id === TID).side_towns = legacySide;
     const before = PG.snap(TID), ids0 = plans0.map(p => p.id);
 
     // ---- 3. open the order, re-plan ----
@@ -215,7 +219,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const clearErr = () => pg.evaluate(() => { const e = document.getElementById('cErr'); if(e) e.textContent = ''; document.querySelectorAll('.toast').forEach(x => x.remove()); });
 
     ok(name + ': re-plan wizard opens on the existing order and reaches "save"', await openReplan());
-    if(rideAsked) console.log('  note: re-plan asked for a ride time (nearby places saved at creation without one) – entered 30 min');
+    ok(name + ': re-plan did not ask for a ride time (an unused automatic place of an older order is dropped)', !rideAsked);
     let r = await saveAndWaitDialog();
     ok(name + ': save starts with a dry run (no real call yet)', r.calls.length === 1 && r.calls[0].fn === 'replan_task_with_plans' && r.calls[0].dry && r.calls[0].ok, JSON.stringify(r.calls));
     ok(name + ': warning shown before saving: distributor 1 by name, reason "more days"', !!r.dl && r.dl.text.includes(name1) && /mehr Tage/.test(r.dl.text), r.dl && r.dl.text);
