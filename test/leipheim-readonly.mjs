@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import {readFileSync,writeFileSync,mkdirSync,existsSync} from 'node:fs';
 import {dirname} from 'node:path';
 import {createHash} from 'node:crypto';
+import {gunzipSync} from 'node:zlib';
 import Planner from '../admin/planner.js';
 import {censusSource} from '../worker/src/zensus.js';
 import {createPlanService} from '../worker/src/plancore.js';
@@ -44,7 +45,8 @@ if(capture){
   writeFileSync(file,JSON.stringify({start,radius,captured_at:new Date().toISOString(),tiles:keys,
     source:Planner.TILES_URL,graph:g}));
 }
-const bytes=readFileSync(file),snapshot=JSON.parse(bytes),g=snapshot.graph;
+const raw=readFileSync(file),bytes=raw[0]===0x1f&&raw[1]===0x8b?gunzipSync(raw):raw;
+const snapshot=JSON.parse(bytes),g=snapshot.graph;
 assert.ok(g.edges.length>0&&g.mailboxes>0,'Snapshot contains real streets and mailbox estimates');
 const originalLoad=Planner.loadForFlyers,originalFetch=globalThis.fetch;
 globalThis.fetch=async()=>{throw new Error('Network forbidden during replay');};

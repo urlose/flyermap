@@ -14,6 +14,7 @@ on:
       - 'test/nearfirst-zone-boundary.mjs'
       - 'test/routing-quality.mjs'
       - 'test/leipheim-readonly.mjs'
+      - 'test/fixtures/leipheim-2026-11-16.json.gz'
       - 'test/nearfirst-service.mjs'
       - 'test/customerexport.mjs'
       - 'test/budget.mjs'
@@ -45,6 +46,8 @@ jobs:
       - run: node test/routing-quality.mjs
       - run: node test/nearfirst-overlap.mjs
       - run: node test/nearfirst-zone-boundary.mjs
+      - name: Replay pinned Leipheim snapshot without network
+        run: node test/leipheim-readonly.mjs test/fixtures/leipheim-2026-11-16.json.gz
       - name: Offline routing regressions
         run: |
           for suite in drive islands skip must zones census zensus real; do
