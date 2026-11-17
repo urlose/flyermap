@@ -1,6 +1,7 @@
 // UI redesign 16.11.2026: map (areas, filters, detail panel), tables for people and orders, deadlines
 import { T } from './i18n.js';
 Object.assign(T.de, {
+  circleArea:'Kreisförmiges Gebiet', circleRadius:'Radius (km)', circleHint:'Automatische Gebiete bleiben im Kreis. Manuell hinzugefügte Orte und Flächen werden nicht am Kreis abgeschnitten.', circleManualOutside:'Ein manuell gewählter Ort oder eine Fläche reicht über den Kreis hinaus und bleibt ohne Beschneidung im Plan. Das Zeitbudget gilt weiterhin.',
   budCar:'Auto für die Anfahrt verfügbar', wzTime:'Auftragsinformationen',
   budNearFirstResult:'In {h} Stunden können voraussichtlich ≈ {mb} Flyer verteilt werden. Die Zahl ergibt sich aus dem Gebiet.',
   budTravelInput:'Fahrzeit je Ortswechsel (Minuten)', budTravelInputHint:'Wird zusätzlich zur Verteilzeit vom Gesamtbudget abgezogen. Bitte realistische Anfahrt eintragen; FlyerMap erfindet keine Fahrtzeit.',
@@ -27,6 +28,7 @@ Object.assign(T.de, {
   stPeriod:'Zeitraum: letzte {n} Tage', tSearchPh:'Auftrag oder Ort suchen', stKpiAll:'Kennzahlen: alle Aufträge mit Arbeitstagen seit Beginn · kleine Kurven: letzte {n} Tage', freeN:'{n} frei', lmOrdersG:'Aufträge', lmOpenShort:'Offen', lmLayers:'Ebenen', colDays:'Arbeitstage', colPlaces:'Orte', colLastDay:'Letzter Tag', stPeriodAll:'Alle Aufträge mit Arbeitstagen in den letzten {n} Tagen',
 });
 Object.assign(T.ru, {
+  circleArea:'Круговая территория', circleRadius:'Радиус (км)', circleHint:'Автоматические участки ограничены кругом. Добавленные вручную места и зоны не обрезаются по кругу.', circleManualOutside:'Выбранное вручную место или зона выходит за круг и остаётся в плане без обрезки. Общий бюджет времени продолжает действовать.',
   budCar:'Есть автомобиль для переездов', wzTime:'Информация о заказе',
   budNearFirstResult:'За {h} ч можно ориентировочно раздать ≈ {mb} флаеров. Количество рассчитано по территории.',
   budTravelInput:'Время переезда между городами (мин.)', budTravelInputHint:'Учитывается в общем бюджете помимо раздачи. Укажите реальную оценку, программа не придумывает время поездки.',
@@ -53,6 +55,7 @@ Object.assign(T.ru, {
   stPeriod:'Период: последние {n} дн.', tSearchPh:'Поиск: заказ или место', stKpiAll:'Показатели: все заказы с рабочими днями с самого начала · мини-графики: последние {n} дн.', freeN:'{n} без работника', lmOrdersG:'Заказы', lmOpenShort:'Открытые', lmLayers:'Слои', colDays:'Рабочие дни', colPlaces:'Места', colLastDay:'Последний день', stPeriodAll:'Все заказы с рабочими днями за последние {n} дн.',
 });
 Object.assign(T.en, {
+  circleArea:'Circular area', circleRadius:'Radius (km)', circleHint:'Automatic areas stay inside the circle. Manually added places and areas are not clipped to it.', circleManualOutside:'A manually selected place or area extends beyond the circle and remains eligible without clipping. The time budget still applies.',
   budCar:'Car available for town transfers', wzTime:'Order information',
   budNearFirstResult:'An estimated {mb} flyers can be delivered within {h} hours. The count is calculated from the area.',
   budTravelInput:'Travel time per change of town (minutes)', budTravelInputHint:'Deducted from total hours in addition to walking. Enter a realistic estimate; FlyerMap does not invent driving times.',
@@ -86,3 +89,4 @@ Object.assign(T.en, { budCappedDays:'Until the deadline only {days} working day(
 Object.assign(T.de, { rideTipPlan:'Ortswechsel · Fahrt ≈ {min} Min. (im Plan) · ≈ {km} km Luftlinie', tripsPlan:'Ortswechsel (Fahrt ≈ {min} Min.)' });
 Object.assign(T.ru, { rideTipPlan:'Смена места · переезд ≈ {min} мин (в плане) · ≈ {km} км по прямой', tripsPlan:'Смена места (переезд ≈ {min} мин)' });
 Object.assign(T.en, { rideTipPlan:'Change of place · ride ≈ {min} min (in the plan) · ≈ {km} km straight line', tripsPlan:'Changes of place (ride ≈ {min} min)' });
+

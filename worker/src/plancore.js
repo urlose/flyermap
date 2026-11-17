@@ -3,6 +3,7 @@
 // The street graph stays here between calls: changing flyers / workers / hours only re-plans, it does not reload the map.
 import Planner from '../../admin/planner.js';
 import { outwardStreetOrder, streetGeometryKey } from './nearfirst.js';
+import { radiusKm, insideCircle, circlePolygon, clipDeliveryGraph } from './circlearea.js';
 import { censusSource, placeMask } from './zensus.js';
 const census = censusSource();   // Zensus 2022 lifts the mailbox estimate where our own rules count too few (old town centres)
 
@@ -533,6 +534,10 @@ export function createPlanService(cache){
     // Time-first, street-network expansion. Unlike planBudget this mode never
     // allocates by mailbox density and never takes the flyer limit as a target.
     async planNearFirst({ start, n, days, hours, budget, side = [], must = [], zone = null, mainName = '' }, stage, stale){
+      const circleKm = radiusKm(budget.radiusKm);
+      const circle = circleKm == null ? [] : circlePolygon(start, circleKm);
+      // Only automatic places are constrained; manual selections are exceptions.
+      side = side.filter(c => !c.auto || circleKm == null || insideCircle([c.lat, c.lng], start, circleKm));
       const shapes = (must || []).filter(x => x?.p?.length > 2).map((x,i) => ({
         name:x.name||'Zusatzgebiet '+(i+1), zone:x.p, flyers:1500,
         lat:(x.c&&x.c[0])||x.p.reduce((a,p)=>a+p[0],0)/x.p.length,
@@ -569,7 +574,7 @@ export function createPlanService(cache){
       // A manually selected place receives a slice of the time, not a fixed
       // number of flyers. The main start area gets the remainder (at least 60%).
       const sideWork=Bwalk*shareSide, mainWork=Bwalk-sideWork;
-      const places=[{name:mainName||'',st:start,g:G,time:mainWork,workers:N,isMain:true}];
+      const places=[{name:mainName||'',st:start,g:clipDeliveryGraph(G,start,circleKm),time:mainWork,workers:N,isMain:true}];
       for(const c of side){
         stage('loadingSide');
         const g0=await sideGraph({ ...c, loadFor:Math.max(1500,Math.round(+c.flyers||1500)) },stage,stale);
@@ -582,7 +587,7 @@ export function createPlanService(cache){
           const mid=e.coords?.[Math.floor(e.coords.length/2)]||g0.pts[e.a];
           return retainBoxes(e,inside,()=>inside(mid));
         })};
-        places.push({name:c.name||'',st:[c.lat,c.lng],g:filtered,time:sideWork/side.length,workers:1,isMain:false});
+        places.push({name:c.name||'',st:[c.lat,c.lng],g:c.auto?clipDeliveryGraph(filtered,start,circleKm):filtered,time:sideWork/side.length,workers:1,isMain:false,manual:!c.auto});
       }
       stage('calculating');
       // Adjacent maps can split a street differently or snap the same building
@@ -633,11 +638,11 @@ export function createPlanService(cache){
       // time, load a wider region once and recalculate from scratch.
       const mainResult=planned.find(p=>p.isMain);
       if(!budget._expanded && mainResult?.exhausted && mainResult.minutes<mainWork*.8 &&
-         G.radius<Planner.MAX_R){
-        const oldRadius=G.radius,next=Planner.nextRadius(G,Math.max(12000,(G.usable||0)*1.5));
+         G.radius<(circleKm == null ? Planner.MAX_R : circleKm*1000)){
+        const oldRadius=G.radius,next=circleKm == null ? Planner.nextRadius(G,Math.max(12000,(G.usable||0)*1.5)) : circleKm*1000;
         if(next>oldRadius){
           stage('loadingMore');
-          await load(start,12000,next,[],stage,stale,'loadingMore');
+          await load(start,12000,next,[],stage,stale,'loadingMore',circle.length?circle:undefined);
           if(stale())return {skipped:true};
           if(G.radius>oldRadius)return this.planNearFirst({
             start,n,days,hours,budget:{...budget,_expanded:true},
@@ -690,10 +695,12 @@ export function createPlanService(cache){
       const mailboxes=Math.round(routes.reduce((a,r)=>a+(r.mailboxes||0),0));
       const walking=routes.reduce((a,r)=>a+(r.work_minutes||0),0);
       const travelMinutes=jumpsAll.reduce((a,j)=>a+(j.min||0),0),actual=walking+travelMinutes;
-      const plan={routes,mailboxes,zone:[],zones:true,merged:true,per_worker,
+      const manualOutside = circleKm != null && places.some(p=>p.manual && p.g.edges.some(e=>e.mb>0 && (e.boxes?.length ? e.boxes : (e.coords||[])).some(b=>!insideCircle(b,start,circleKm))));
+      const plan={routes,mailboxes,zone:circle,zones:true,merged:true,per_worker,
         split:planned.map(p=>({name:p.name,flyers:Math.round(p.mailboxes),cap:null})),
         side_failed:[],side_dropped:[],side_info:[],must_mb:0,must_info:[],
         budget:{strategy:'near-first',hours:budget.hours,tolerance:tol,car:!!budget.car,
+          ...(circleKm != null ? { radiusKm:circleKm,manualOutside } : {}),
           minutes:Math.round(B),effective_minutes:Math.round(B),
           target_minutes:Math.round(B),max_minutes:Math.round(B*(1+tol)),
           actual_minutes:Math.round(actual),work_minutes:Math.round(walking),
@@ -919,3 +926,4 @@ export function createPlanService(cache){
     },
   };
 }
+
