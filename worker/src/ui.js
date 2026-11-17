@@ -197,15 +197,25 @@ export const dot = (cls, size = 22) => L.divIcon({ className:'', html:`<div clas
 export const labelIcon = (cls, text) => L.divIcon({ className:'', html:`<div class="pin-wrap"><div class="${cls}"></div><span class="pin-label">${esc(text)}</span></div>`, iconSize:[24, 24], iconAnchor:[12, 12] });
 // the trips between the places of an order (jump points [lat,lng,1] in a route): drawn along the roads (car, bike or bus –
 // it does not matter which). Car/bike trips use the drive colour, never the green of finished streets; the exact connection for the worker comes from Google / Apple Maps
-export function drawJumps(g, path, bike){
+// ride time per change of place stored with a time-budget plan (days[].budget_travel_min or days[].rides[].min); null = not known
+export function rideMinOf(plans){
+  for(const p of plans || []) for(const d of (p && p.days) || []){
+    if(+d.budget_travel_min > 0) return +d.budget_travel_min;
+    for(const r of d.rides || []) if(+r.min > 0) return +r.min;
+  }
+  return null;
+}
+export function drawJumps(g, path, bike, rideMin = null){
   const mode = typeof bike === 'string' ? bike : (bike ? 'bike' : 'bus'); bike = mode !== 'bus';   // 'car' | 'bike' | 'bus' (old callers: true = bike)
   (path || []).forEach((q, i) => {
     if(!i || q[2] !== 1 || q[3] === 'r') return;   // 'r': short walk over to a replacement street – no bus / car trip
     const a = [path[i - 1][0], path[i - 1][1]], b = [q[0], q[1]];
     if(mode === 'zones'){   // time-budget / zone orders: how the people get from one place to the next is NOT known - no car, bike or bus is assumed, no route is requested
-      L.polyline([a, b], { color:css('--color-map-route-pending') || '#64748B', weight:2, opacity:.55, dashArray:'2 8', lineCap:'round', interactive:false }).addTo(g);
+      // light halo under a dark dash: visible on the light and on the dark map
+      L.polyline([a, b], { color:'#FFFFFF', weight:6, opacity:.45, lineCap:'round', interactive:false }).addTo(g);
+      L.polyline([a, b], { color:'#334155', weight:2.5, opacity:.95, dashArray:'4 7', lineCap:'round', interactive:false }).addTo(g);
       const km = Math.round(Math.hypot(b[0] - a[0], (b[1] - a[1]) * Math.cos(a[0] * Math.PI / 180)) * 111.32 * 10) / 10;
-      L.marker([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], { icon:L.divIcon({ className:'', html:'<span class="jump-ic">↔</span>', iconSize:[26, 26], iconAnchor:[13, 13] }), keyboard:false }).addTo(g).bindTooltip(t('rideTipUnknown', { km:km.toLocaleString('de-DE') }), { direction:'top', offset:[0, -12] });
+      L.marker([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], { icon:L.divIcon({ className:'', html:'<span class="jump-ic">↔</span>', iconSize:[26, 26], iconAnchor:[13, 13] }), keyboard:false }).addTo(g).bindTooltip(t(+rideMin > 0 ? 'rideTipPlan' : 'rideTipUnknown', { km:km.toLocaleString('de-DE'), min:Math.round(+rideMin || 0) }), { direction:'top', offset:[0, -12] });
       return;
     }
     const ln = L.polyline([a, b], { color:bike ? (css('--color-drive') || '#8B5CF6') : (css('--color-map-route-pending') || '#64748B'), weight:4, opacity:.9, dashArray:bike ? '6 6' : '2 9', lineCap:'round', interactive:false }).addTo(g);
