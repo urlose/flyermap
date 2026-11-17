@@ -1,0 +1,13 @@
+do $$ begin create role anon nologin; exception when duplicate_object then null; end $$;
+do $$ begin create role authenticated nologin; exception when duplicate_object then null; end $$;
+do $$ begin create role service_role nologin bypassrls; exception when duplicate_object then null; end $$;
+create schema if not exists extensions; create extension if not exists pgcrypto schema extensions;
+create schema if not exists auth;
+create table if not exists auth.users(id uuid primary key, phone text, email text, created_at timestamptz default now());
+create or replace function auth.uid() returns uuid language sql stable as $f$ select nullif(coalesce(current_setting('request.jwt.claim.sub', true), current_setting('request.jwt.claims', true)::jsonb->>'sub'), '')::uuid $f$;
+create or replace function auth.role() returns text language sql stable as $f$ select current_setting('request.jwt.claim.role', true) $f$;
+create schema if not exists net;
+create or replace function net.http_post(url text, body jsonb default '{}', params jsonb default '{}', headers jsonb default '{}', timeout_milliseconds int default 2000) returns bigint language sql as $f$ select 1::bigint $f$;
+grant usage on schema auth, extensions, net to anon, authenticated, service_role;
+grant usage on schema public to anon, authenticated, service_role;
+grant execute on function auth.uid() to anon, authenticated, service_role;
