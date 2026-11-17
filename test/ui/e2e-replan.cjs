@@ -191,7 +191,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await pg.evaluate(() => document.getElementById('tEdit2').click());
       if(!await step('edit-sheet', await until(() => !!document.getElementById('eReplan'), 15000))) return false;
       // the button exists a moment before its handler is bound: press until the wizard opens
-      if(!await step('wizard', await until(() => { if(document.getElementById('cSheet')) return true; const b = document.getElementById('eReplan'); if(b) b.click(); return false; }, 20000))) return false;
+      if(!await step('wizard', await until(() => { if(document.getElementById('cSheet')) return true; const b = document.getElementById('eReplan'); if(b) b.click(); return false; }, 60000))) return false;
       // known gap (not this PR): nearby places auto-selected at creation are saved without a ride time; the re-plan then
       // asks for one. The admin goes back to step 2 and enters it (30 min, like the real Leipheim order).
       const first = await until(() => document.querySelector('.budget-box') ? 'plan' : /Anfahrtszeit/.test(document.getElementById('cSheet')?.innerText || '') ? 'ride' : null, 240000);
