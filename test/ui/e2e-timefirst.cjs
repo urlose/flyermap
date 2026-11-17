@@ -193,8 +193,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     // Known legacy issue owned by Claude: unused auto towns may be saved without
     // travel time. Enter it explicitly, as the atomic-replan browser test does.
     await pg.evaluate(()=>{ const r=document.getElementById('cBudTravel'); if(r){ r.value=30; r.dispatchEvent(new Event('change')); } });
-    await stable(5000,240000);
-    ok(name+': reopened circle order recalculates successfully', await pg.evaluate(()=>!document.getElementById('cNext').disabled));
+    await pg.evaluate(()=>document.querySelector('[data-step="3"]').click());
+    ok(name+': reopened circle order recalculates successfully',
+      !!await until(()=>!!document.querySelector('.budget-box') && !document.getElementById('cNext').disabled,240000) && await stable(3000,30000));
+    await pg.evaluate(()=>document.querySelector('[data-step="2"]').click());
     await pg.setViewportSize({width:375,height:812});
     await pg.locator('#cRadiusKm').scrollIntoViewIfNeeded();
     await shot('circle-settings-mobile');
