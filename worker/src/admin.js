@@ -937,6 +937,12 @@ function viewCreate(edit){
   // time-budget mode ("Maximum Flyer für die Arbeitszeit"): the order remembers it in days[0].budget_h of its plans (no database column)
   { const bh = tkE && (edit.plans || []).map(p => p.days && p.days[0] && +p.days[0].budget_h).find(x => x > 0); const bt = tkE && (edit.plans || []).map(p => p.days && p.days[0] && p.days[0].budget_tol).find(x => x != null); const strategy = tkE && (edit.plans || []).map(p => p.days && p.days[0] && p.days[0].budget_strategy).find(Boolean); const travelMin = tkE && (edit.plans || []).map(p => p.days && p.days[0] && +p.days[0].budget_travel_min).find(x => x > 0); const car=!!(tkE && (edit.plans || []).some(p => p.days && p.days[0] && p.days[0].budget_car)); d.budget = { on:tkE ? !!bh : true, hours:bh || 32, tol:bt != null ? Math.round(+bt * 100) : 5, travelMin:travelMin || null, car, strategy:strategy || (tkE ? 'density' : 'near-first') }; }
   d.budget.radiusKm = tkE ? radiusFromPlans(edit.plans) : DEFAULT_RADIUS_KM;
+  // time-first: places picked automatically by an older version but never reached by the saved routes are not part of the
+  // order (they were saved without a ride time and blocked re-planning); manual places and places with routes stay
+  if(tkE && d.budget.on && d.budget.strategy === 'near-first'){
+    const used = new Set((edit.plans || []).flatMap(p => (p.days || []).flatMap(x => (x.parts || []).map(z => z.place))));
+    d.side = d.side.filter(c => !c.auto || used.has(c.name));
+  }
   d.split = tkE ? (tkE.split || null) : 'even';
   d.exact = true; d.mainAll = false; d.cores = !!(tkE && tkE.cores); d.together = !!(tkE && tkE.together); d.first = (tkE && tkE.first_place) || null;   // the number of flyers the admin typed is what gets planned; the economical amount is only offered ("Effizienter planen"); whole main town on request   // new orders: total flyers shared evenly over all places; old orders keep their numbers
   d.travel = tkE ? (tkE.travel || (tkE.bike ? 'bike' : 'bus')) : 'zones'; d.bike = d.travel !== 'bus';   // new orders: every place its own zone, no rides between places   // how the places of the order are reached   // far places of this order (own start, own day, reached by bus / train)
@@ -1156,7 +1162,8 @@ function viewCreate(edit){
       if(!alive()) return;
       d.sugT = st;
       if(st.list) st.list.forEach(x => { if(!x.name && d.sugNames.has(nameKey(x))) x.name = d.sugNames.get(nameKey(x)); });
-      if(!st.loading && !st.failed && !d.autoPicked && !tkE && !d.side.length && !d.zone && d.plan){
+      // time-first plans by hours, not by a flyer target: nothing to top up with nearby places (the admin adds them himself)
+      if(!st.loading && !st.failed && !d.autoPicked && !tkE && !d.side.length && !d.zone && d.plan && !(d.budget.on && d.budget.strategy === 'near-first')){
         d.autoPicked = true; // do not put removed places back; the admin controls the selection from here on
         const picks = chooseNearbyPlaces(st.list, coverage(d.flyers, d.plan.mailboxes).missing, { maxPlaces:8, maxKm:sugCtx().maxKm });
         for(const x of picks) d.side = addSuggestion(d.side, x, x.name || t('sugUnnamed', { km:String(x.km).replace('.', ',') }));

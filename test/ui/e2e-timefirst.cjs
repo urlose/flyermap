@@ -186,12 +186,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await pg.waitForSelector('#eReplan');
     await pg.evaluate(()=>document.getElementById('eReplan').click());
     await pg.waitForSelector('#cWz');
+    // the reopened order is recalculated first; the step buttons are usable once that is done
+    await until(()=>!!document.querySelector('.budget-box') && !document.getElementById('cNext').disabled,240000);
     await pg.evaluate(()=>document.querySelector('[data-step="2"]').click());
     await pg.waitForSelector('#cRadiusKm');
     ok(name+': reopening restores the selected radius rather than the default',
       await pg.evaluate(()=>document.getElementById('cCircle').checked && +document.getElementById('cRadiusKm').value===8));
-    // Known legacy issue owned by Claude: unused auto towns may be saved without
-    // travel time. Enter it explicitly, as the atomic-replan browser test does.
+    // time-first orders no longer get automatic nearby places; a ride time is only asked for manual places
+    ok(name+': no automatic nearby places in a time-first order (no ride time needed)', await pg.evaluate(()=>!document.getElementById('cBudTravel')));
     await pg.evaluate(()=>{ const r=document.getElementById('cBudTravel'); if(r){ r.value=30; r.dispatchEvent(new Event('change')); } });
     await pg.evaluate(()=>document.querySelector('[data-step="3"]').click());
     ok(name+': reopened circle order recalculates successfully',
