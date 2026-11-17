@@ -7,6 +7,9 @@ on:
       - 'test/sql/atomic_replan.sh'
       - 'worker/src/replan.js'
       - 'test/replan.mjs'
+      - 'test/ui/e2e-replan.cjs'
+      - 'test/sql/fixtures/replan_schema.sql'
+      - 'worker/src/admin.js'
       - '.github/workflows/atomic-replan-check.yml'
 permissions:
   contents: read
@@ -37,3 +40,18 @@ jobs:
         run: node test/replan.mjs
       - run: npm run build
         working-directory: worker
+      - name: Install Chromium
+        working-directory: test/ui
+        run: |
+          npm install --no-save playwright@1.48.2
+          npx playwright install --with-deps chromium
+      - name: Browser re-plan against a real Postgres (synthetic data, no production)
+        working-directory: test/ui
+        env: { PGHOST: 127.0.0.1, PGPORT: '5432', PGUSER: postgres, PGPASSWORD: postgres }
+        run: timeout 560s node e2e-replan.cjs out-replan
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-replan
+          path: test/ui/out-replan
+          retention-days: 4
