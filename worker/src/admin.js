@@ -1102,11 +1102,11 @@ function viewCreate(edit){
   const outsideManual = () => d.start && (manualOutsideCircle(startArr(), circleKm(), d.side, d.must, d.zone) || !!d.plan?.budget?.manualOutside);
   const errText2 = e => /abort|overpass|fetch/i.test((e && e.message) || '') ? t('mapSlow') : ((e && e.message) || 'net');
   async function setStart(lat, lng, fromClick){
-    const tok = ++d.token; d.start = { lat, lng }; d.sugT = null; sugFlow.reset(); sugHl.clear(); d.keepView = !!fromClick;   // a tap on the map keeps the zoom the admin chose
+    const tok = ++d.token; d.start = { lat, lng }; d.sugT = null; sugFlow.reset(); sugHl.clear(); d.keepView = !!fromClick && circleKm() == null;   // circular mode initially frames its whole boundary
     d.pick = false; updPick();
     d.loaded = false; d.plan = null; d.err = null; d.assign = {};
     zoneLayer.clearLayers(); planLayer.clearLayers();
-    L.marker([lat, lng], { icon:dot('pin-start', 26) }).addTo(zoneLayer); const boundary = drawCircle(); if(!fromClick){ if(boundary) m.fitBounds(boundary.getBounds(), { ...mapPad(), animate:false }); else m.setView([lat, lng], 15, { animate:false }); }
+    L.marker([lat, lng], { icon:dot('pin-start', 26) }).addTo(zoneLayer); const boundary = drawCircle(); if(!d.keepView){ if(boundary) m.fitBounds(boundary.getBounds(), { ...mapPad(), animate:false }); else m.setView([lat, lng], 15, { animate:false }); }
     d.loading = false;
     if(d.step < 2){ renderSheet(); return; }   // nothing is planned until the first step (towns, areas …) is filled in
     return loadArea(tok);

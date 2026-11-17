@@ -145,6 +145,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       const m=document.getElementById('fullMap')._map; let found=false;
       m.eachLayer(l=>{ if(l.getRadius?.()===8000 && !l.getTooltip?.() && !l.getPopup?.()) found=true; }); return found;
     }));
+    ok(name+': circle bounds are visible in the initial map view', await pg.evaluate(()=>{
+      const m=document.getElementById('fullMap')._map; let bounds=null;
+      m.eachLayer(l=>{ if(l.getRadius?.()===8000) bounds=l.getBounds(); }); return bounds && m.getBounds().contains(bounds);
+    }));
     await shot('timefirst-plan');
     await pg.evaluate(()=>{const b=document.getElementById('cNext');if(b&&!b.disabled)b.click();});
     await until(()=>document.querySelectorAll('select[data-wsel]').length>=2,30000);
@@ -186,7 +190,13 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await pg.waitForSelector('#cRadiusKm');
     ok(name+': reopening restores the selected radius rather than the default',
       await pg.evaluate(()=>document.getElementById('cCircle').checked && +document.getElementById('cRadiusKm').value===8));
+    // Known legacy issue owned by Claude: unused auto towns may be saved without
+    // travel time. Enter it explicitly, as the atomic-replan browser test does.
+    await pg.evaluate(()=>{ const r=document.getElementById('cBudTravel'); if(r){ r.value=30; r.dispatchEvent(new Event('change')); } });
+    await stable(5000,240000);
+    ok(name+': reopened circle order recalculates successfully', await pg.evaluate(()=>!document.getElementById('cNext').disabled));
     await pg.setViewportSize({width:375,height:812});
+    await pg.locator('#cRadiusKm').scrollIntoViewIfNeeded();
     await shot('circle-settings-mobile');
     ok(name+': no browser JavaScript errors',errors.length===0,errors.slice(0,3).join(' | '));
     ok(name+': no request left the test environment',blocked.length===0,[...new Set(blocked)].join(','));
