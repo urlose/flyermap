@@ -60,6 +60,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         if(u.pathname.startsWith('/auth/')) return route.fulfill({ json:{ id:'u1', email:'admin@example.com', aud:'authenticated', role:'authenticated' } });
         if(u.pathname.startsWith('/functions/')) return route.fulfill({ json:{ ok:true } });
         const m = u.pathname.match(/^\/rest\/v1\/(rpc\/)?([a-z_0-9]+)/); if(!m) return route.fulfill({ json:null });
+        if(m[1] && m[2] === 'replan_task_with_plans') return route.fulfill({ status:404, json:{ code:'PGRST202', message:'Could not find the function public.replan_task_with_plans in the schema cache' } });   // migration not applied yet
         if(m[1]) return route.fulfill({ json:m[2] in F.rpc ? F.rpc[m[2]] : null });
         const tbl = m[2], method = rq.method(), body = rq.postData() ? JSON.parse(rq.postData()) : null;
         if(method === 'POST'){

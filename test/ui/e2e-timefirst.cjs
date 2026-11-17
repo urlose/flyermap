@@ -72,6 +72,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
             for(const p of rows)if(p.worker_id)DB.task_workers.push({task_id:'tnew',worker_id:p.worker_id});
             return route.fulfill({status:200,json:{task,plans:rows}});
           }
+          if(m[2] === 'replan_task_with_plans') return route.fulfill({ status:404, json:{ code:'PGRST202', message:'Could not find the function public.replan_task_with_plans in the schema cache' } });   // migration not applied yet (as in production today): the admin panel must use the previous way
           return route.fulfill({ json:m[2] in F.rpc ? F.rpc[m[2]] : null });
         }
         const tbl = m[2], method = rq.method(), body = rq.postData() ? JSON.parse(rq.postData()) : null;

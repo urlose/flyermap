@@ -1,0 +1,57 @@
+name: Atomic re-plan test
+on:
+  pull_request:
+    paths:
+      - 'supabase/2026-11-17_atomic_replan.sql'
+      - 'supabase/rollback/2026-11-17_atomic_replan.down.sql'
+      - 'test/sql/atomic_replan.sh'
+      - 'worker/src/replan.js'
+      - 'test/replan.mjs'
+      - 'test/ui/e2e-replan.cjs'
+      - 'test/sql/fixtures/replan_schema.sql'
+      - 'worker/src/admin.js'
+      - '.github/workflows/atomic-replan-check.yml'
+permissions:
+  contents: read
+jobs:
+  sql:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Re-plan in one transaction (synthetic Postgres, no production)
+        run: |
+          if ! command -v psql >/dev/null; then sudo apt-get update -qq && sudo apt-get install -y postgresql-client; fi
+          bash test/sql/atomic_replan.sh
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm ci
+        working-directory: worker
+      - name: Admin panel side (fake Supabase client)
+        run: node test/replan.mjs
+      - run: npm run build
+        working-directory: worker
+      - name: Install Chromium
+        working-directory: test/ui
+        run: |
+          npm install --no-save playwright@1.48.2
+          npx playwright install --with-deps chromium
+      - name: Browser re-plan against a real Postgres (synthetic data, no production)
+        working-directory: test/ui
+        env: { PGHOST: 127.0.0.1, PGPORT: '5432', PGUSER: postgres, PGPASSWORD: postgres }
+        run: timeout 560s node e2e-replan.cjs out-replan
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-replan
+          path: test/ui/out-replan
+          retention-days: 4

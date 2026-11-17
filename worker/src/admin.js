@@ -24,6 +24,7 @@ import { listView, viewSwitch, bindViewSwitch, tableHtml, bindTable } from './ta
 import { STATS } from './stats.js';
 import { createHighlighter, keyOf, nameShown as nameShownOf } from './sugmap.js';
 import { planRows } from './budgetplan.js';
+import { atomicReplan } from './replan.js';
 import { customerGeoJSON } from './customerexport.js';
 import { coverage, addSuggestion, chooseNearbyPlaces, placesApart, suggestionFlow, sugKey as sugKeyOf, MAX_KM, PAGE } from './expand.js';
 // a save button while the database works: disabled, "Speichert …"; back to normal afterwards (also after an error)
@@ -1515,13 +1516,23 @@ ${d.budget.on && d.budget.strategy === 'near-first' ? '' : `      <label class="
       let tk, old = null, savedAtomically = false;
       if(tkE){
         await loadLive(); if(A.live.some(r => r.task_id === tkE.id)) throw new Error(t('replanLive'));
-        // order already running: keep acceptance, days, skips and the link of walked sessions to each worker's route
-        const { data:oldP } = await sb.from('task_plans').select('id,worker_id,status,work_dates,accepted_at,committed_terms,skipped').eq('task_id', tkE.id);
-        const { data:oldR } = await sb.from('routes').select('id,worker_id').eq('task_id', tkE.id).limit(1);
-        old = oldR && oldR.length ? (oldP || []) : null;
-        const u = await sb.from('tasks').update(row).eq('id', tkE.id).select().single(); if(u.error) throw u.error; tk = u.data;
-        const x1 = await sb.from('task_plans').delete().eq('task_id', tkE.id); if(x1.error) throw x1.error;
-        await sb.from('task_workers').delete().eq('task_id', tkE.id);
+        // one server transaction (replan_task_with_plans): the server checks open shifts again, keeps acceptance,
+        // days, skips and links; a dry run first shows the admin anything that would be lost
+        const res = await atomicReplan(sb, { taskId:tkE.id, task:row, plans:planRows(pl, { taskId:null, assign:d.assign, counts:dbBoxes.routes, colors:Planner.COLORS }), confirm:confirmBox, t });
+        if(res.status === 'cancelled'){ const sv = $('#cSave'); if(sv){ sv.disabled = false; sv.classList.remove('loading'); } return; }
+        if(res.status === 'ok'){
+          tk = res.task; savedAtomically = true;
+          for(const p of res.plans) if(p.worker_id) try{ await notifyReplanned(tk, p); }catch(err){ console.warn('notification_failed', err); }
+        }else{
+          // server function not installed yet: previous way (separate requests)
+          // order already running: keep acceptance, days, skips and the link of walked sessions to each worker's route
+          const { data:oldP } = await sb.from('task_plans').select('id,worker_id,status,work_dates,accepted_at,committed_terms,skipped').eq('task_id', tkE.id);
+          const { data:oldR } = await sb.from('routes').select('id,worker_id').eq('task_id', tkE.id).limit(1);
+          old = oldR && oldR.length ? (oldP || []) : null;
+          const u = await sb.from('tasks').update(row).eq('id', tkE.id).select().single(); if(u.error) throw u.error; tk = u.data;
+          const x1 = await sb.from('task_plans').delete().eq('task_id', tkE.id); if(x1.error) throw x1.error;
+          const x2 = await sb.from('task_workers').delete().eq('task_id', tkE.id); if(x2.error) throw x2.error;
+        }
       }else{
         // RPC is one PostgreSQL transaction: a route insert failure rolls back the task.
         const draftRows = planRows(pl, { taskId:null, assign:d.assign, counts:dbBoxes.routes, colors:Planner.COLORS });
@@ -1536,7 +1547,7 @@ ${d.budget.on && d.budget.strategy === 'near-first' ? '' : `      <label class="
       }
       const rows = savedAtomically ? [] : planRows(pl, { taskId:tk.id, assign:d.assign, counts:dbBoxes.routes, colors:Planner.COLORS });
       if(old){
-        const skips = old.flatMap(p => p.skipped || []);
+        const skips = [...new Map(old.flatMap(p => p.skipped || []).map(x => [JSON.stringify(x), x])).values()];   // without duplicates: repeated re-plans must not multiply skips
         rows.forEach(r => {
           if(skips.length) r.skipped = skips;
           const o = old.find(p => p.worker_id && p.worker_id === r.worker_id && p.status === 'accepted'); if(!o) return;
