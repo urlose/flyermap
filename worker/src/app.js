@@ -39,7 +39,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener && matchMedia('(pref
 
 (async function boot(){
   // web app: works without signal after the first visit (the phone app has its files on board)
-  if(!NATIVE && 'serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if(!NATIVE && 'serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js', { updateViaCache:'none' }).catch(() => {});
   applyTheme(await store.get('theme'));
   initOffline();
   I.lang = await store.get('lang') || 'de';          // German by default
