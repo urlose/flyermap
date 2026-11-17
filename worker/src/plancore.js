@@ -542,6 +542,17 @@ export function createPlanService(cache){
         lat:zone.reduce((a,p)=>a+p[0],0)/zone.length,
         lng:zone.reduce((a,p)=>a+p[1],0)/zone.length});
       side=[...side,...shapes];
+      // Preserve the existing estimate proportionally when only some delivery
+      // points remain. No new mailboxes or road connections are introduced.
+      const retainBoxes=(e,keep,fallback)=>{
+        if(!(e.mb>0))return e;
+        const boxes=e.boxes||[],total=boxes.reduce((s,b)=>s+(b[2]||1),0);
+        if(!(total>0))return fallback()?e:{...e,mb:0,boxes:[]};
+        const remaining=boxes.filter(keep);
+        if(remaining.length===boxes.length)return e;
+        const kept=remaining.reduce((s,b)=>s+(b[2]||1),0);
+        return {...e,mb:e.mb*kept/total,boxes:remaining};
+      };
       const N=Math.max(1,Math.round(n||1)), H=hours||7, maxDays=Math.max(1,Math.min(14,days||1));
       const B=Math.min(Math.max(60,+budget.hours*60),N*H*60*maxDays);
       const tol=Number.isFinite(+budget.tolerance)?Math.max(0,Math.min(.25,+budget.tolerance)):.05;
@@ -566,23 +577,27 @@ export function createPlanService(cache){
         const zone=c.zone&&c.zone.length>2?c.zone:null;
         const mask=zone?null:await placeMask(c.lat,c.lng,{pick:c.cid?150:0}).catch(()=>null);
         const filtered={...g0,zoned:!!(zone||mask)||g0.zoned,edges:g0.edges.map(e=>{
-          if(!e.mb)return e;
+          if(!zone&&!mask)return e;
+          const inside=p=>(!zone||Planner.inPoly(p,zone))&&(!mask||mask.inside(p[0],p[1]));
           const mid=e.coords?.[Math.floor(e.coords.length/2)]||g0.pts[e.a];
-          if(zone&&!Planner.inPoly(mid,zone)||mask&&!mask.inside(mid[0],mid[1]))return {...e,mb:0,boxes:[]};
-          return e;
+          return retainBoxes(e,inside,()=>inside(mid));
         })};
         places.push({name:c.name||'',st:[c.lat,c.lng],g:filtered,time:sideWork/side.length,workers:1,isMain:false});
       }
       stage('calculating');
-      // Adjacent map tiles and towns overlap. Suppress streets already handed
-      // out, based on full street geometry rather than tentative selections.
-      const seen=new Set(), edgeKey=streetGeometryKey;
+      // Adjacent maps can split a street differently or snap the same building
+      // to different edges. Deduplicate actual delivery points, preserving any
+      // unserved buildings on an overlapping street. Geometry is the fallback
+      // for older graphs without per-building delivery points.
+      const seen=new Set(), seenBoxes=new Set(), edgeKey=streetGeometryKey;
+      const boxKey=b=>b[0].toFixed(6)+','+b[1].toFixed(6);
       const planned=[];
       // Reserve manually selected areas FIRST. The main place then grows around
       // the start without re-using their streets, so additions shrink its radius.
       for(const pl of [...places.slice(1),places[0]]){
         if(stale())return {skipped:true};
-        const g={...pl.g,edges:pl.g.edges.map((e,i)=>e.mb&&seen.has(edgeKey(pl.g,i))?{...e,mb:0,boxes:[]}:e)};
+        const g={...pl.g,edges:pl.g.edges.map((e,i)=>retainBoxes(e,
+          b=>!seenBoxes.has(boxKey(b)),()=>!seen.has(edgeKey(pl.g,i))))};
         const eligible=outwardStreetOrder(g,pl.st).streets;
         const evalPrefix=count=>{
           if(!count)return null;
@@ -606,7 +621,10 @@ export function createPlanService(cache){
         const routes=(best?.p.routes||[]).filter(r=>r.path?.length>1);
         // Planner returns the actual edges used for each route; only those
         // are excluded from later towns.
-        (best?.p.routes||[]).forEach(r=>(r.part||[]).forEach(i=>seen.add(edgeKey(g,i))));
+        routes.forEach(r=>{
+          (r.part||[]).forEach(i=>seen.add(edgeKey(g,i)));
+          (r.boxes||[]).forEach(b=>seenBoxes.add(boxKey(b)));
+        });
         planned.push({...pl,routes,mailboxes:routes.reduce((a,r)=>a+(r.mailboxes||0),0),
           minutes:routes.reduce((a,r)=>a+(r.minutes||0),0),exhausted:eligible.length===0||best?.count===eligible.length});
       }

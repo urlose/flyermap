@@ -10,6 +10,8 @@ on:
       - 'worker/src/budgetplan.js'
       - 'worker/src/i18n6.js'
       - 'test/nearfirst.mjs'
+      - 'test/nearfirst-overlap.mjs'
+      - 'test/nearfirst-zone-boundary.mjs'
       - 'test/routing-quality.mjs'
       - 'test/leipheim-readonly.mjs'
       - 'test/nearfirst-service.mjs'
@@ -41,6 +43,8 @@ jobs:
       - run: npm ci
         working-directory: worker
       - run: node test/routing-quality.mjs
+      - run: node test/nearfirst-overlap.mjs
+      - run: node test/nearfirst-zone-boundary.mjs
       - name: Offline routing regressions
         run: |
           for suite in drive islands skip must zones census zensus real; do
