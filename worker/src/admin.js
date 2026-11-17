@@ -769,7 +769,7 @@ async function viewTaskMap(id, back, keep){
     get legend(){ if(manFl) return byWorker.map((x, i) => ({ color:x.color || WCOLS[i % WCOLS.length], label:nameOf(x.id), anonLabel:t('planRoute', { n:i + 1 }), sub:fmtDist(x.m) + ' · ≈ ' + fmtN(x.fl) + ' ' + t('flyers') }));
       return res.map(({ p, pct, fl }) => ({ color:p.color || '#2563EB', label:(p.worker_id ? nameOf(p.worker_id) : t('planRoute', { n:p.idx + 1 })), anonLabel:t('planRoute', { n:p.idx + 1 }), sub:pct + ' %' + (fl != null ? ' · ≈ ' + fmtN(fl) + ' ' + t('flyers') : '') })); },
     layers:[
-      { key:'zone', on:false, add:g => { if(tk.zone_polygon) L.polygon(tk.zone_polygon, { color:css('--brand'), weight:2, fillOpacity:.05, interactive:false }).addTo(g); } },
+      { key:'zone', on:radiusFromPlans(plans) != null, add:g => { if(tk.zone_polygon) L.polygon(tk.zone_polygon, { color:css('--brand'), weight:2, fillOpacity:.05, interactive:false }).addTo(g); } },
       ...((tk.must_areas || []).length || (tk.side_towns || []).length ? [{ key:'must', label:t('sideTownsShort'), on:false, add:g => drawTowns(g, tk, 3) }] : []),
       ...(tk.work_area ? [{ key:'own', label:t('zoneTitle'), add:g => L.polygon(tk.work_area, { color:'#7C3AED', weight:3, dashArray:'10 6', fillOpacity:.04, interactive:false }).addTo(g) }] : []),
       // the planned routes; with several working days every day is its own layer (day 1 solid, day 2 dashed, …)
