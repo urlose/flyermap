@@ -147,6 +147,12 @@ SQL
 }
 snap(){ Q -c "select md5(coalesce((select string_agg(to_jsonb(t)::text,'' order by id) from tasks t),'') || coalesce((select string_agg(to_jsonb(p)::text,'' order by id) from task_plans p),'') || coalesce((select string_agg(to_jsonb(w)::text,'' order by task_id,worker_id) from task_workers w),'') || coalesce((select string_agg(to_jsonb(r)::text,'' order by id) from routes r),'') || (select count(*) from task_plans_trash) || (select count(*) from tasks_history) || (select count(*) from notifications))"; }
 # replan <user-or-empty> <task> <task-json> <plans-json>  -> output or error text
+# dry <user> <task> <task-json> <plans-json> -> report json or error text
+dry(){ local u=$1; psql -v ON_ERROR_STOP=1 -qAtX 2>&1 <<SQL
+set role authenticated; set request.jwt.claim.sub = '$u';
+select public.replan_task_with_plans('$2', '$3'::jsonb, '$4'::jsonb, true);
+SQL
+}
 replan(){ local u=$1; psql -v ON_ERROR_STOP=1 -qAtX 2>&1 <<SQL
 set role authenticated; set request.jwt.claim.sub = '$u';
 select public.replan_task_with_plans('$2', '$3'::jsonb, '$4'::jsonb) is not null;
@@ -161,8 +167,8 @@ GOOD="[$(plan 0 $W1 2 100),$(plan 1 $W3 1 100),$(plan 2 null 1 100)]"
 seed || { echo "seed failed"; exit 2; }
 
 # ---------- who may call ----------
-ok "anon has no execute right"        "$(Q -c "select not has_function_privilege('anon','public.replan_task_with_plans(uuid,jsonb,jsonb)','execute')")"
-ok "authenticated may execute"        "$(Q -c "select has_function_privilege('authenticated','public.replan_task_with_plans(uuid,jsonb,jsonb)','execute')")"
+ok "anon has no execute right"        "$(Q -c "select not has_function_privilege('anon','public.replan_task_with_plans(uuid,jsonb,jsonb,boolean)','execute')")"
+ok "authenticated may execute"        "$(Q -c "select has_function_privilege('authenticated','public.replan_task_with_plans(uuid,jsonb,jsonb,boolean)','execute')")"
 ok "archive trigger function is not callable" "$(Q -c "select not has_function_privilege('authenticated','public._keep_plan_replan()','execute') and not has_function_privilege('anon','public._keep_plan_replan()','execute')")"
 ok "function is SECURITY INVOKER"     "$(Q -c "select not prosecdef from pg_proc where proname='replan_task_with_plans'")"
 B=$(snap)
@@ -193,8 +199,29 @@ ok "order with a done route: refused" "$(has replan_done_route "$(replan $UA $T4
 ok "done route kept its status"       "$(Q -c "select status='done' from task_plans where task_id='$T4'")"
 ok "closed order: refused"            "$(has task_not_open "$(replan $UA $T5 "$TASKJ" "[$(plan 0 $W1 1 10)]")")"
 
+# ---------- dry run: full report, nothing changed ----------
+B3=$(snap)
+D=$(dry $UA $T1 "$TASKJ" "$GOOD")
+ok "dry run returns a report"        "$(echo "$D" | Q -c "select (\$\$$D\$\$::jsonb->>'dry_run')::boolean" 2>&1)"
+ok "dry run changed nothing"         "$([ "$(snap)" = "$B3" ] && echo 1 || echo changed)"
+ok "dry run: w2 route removed; cancellations not readable for admins -> null" "$(Q -c "select (r->>'routes_removed')::int=1 and r ? 'cancellations_unlinked' and r->'cancellations_unlinked' = 'null'::jsonb and (r->>'help_reports_unlinked')::int=0 and (r->>'notifications_removed')::int=1 from (select \$\$$D\$\$::jsonb->'report' r) x")"
+ok "dry run: no acceptance reset, declined w2 not offered (w2 dropped)" "$(Q -c "select jsonb_array_length(r->'acceptances_reset')=0 and (r->>'declined_offered_again')::int=0 and (r->>'sessions_without_route')::int=1 from (select \$\$$D\$\$::jsonb->'report' r) x")"
+D2=$(dry $UA $T1 "$TASKJ" "[$(plan 0 $W1 3 100)]")
+ok "dry run: acceptance reset is reported with name and reason" "$(Q -c "select r->'acceptances_reset' @> '[{\"worker_id\":\"$W1\",\"name\":\"w1\",\"reason\":\"more_days\"}]' from (select \$\$$D2\$\$::jsonb->'report' r) x")"
+D3=$(dry $UA $T1 "$TASKJ" "[$(plan 0 $W3 1 100)]")
+ok "dry run: removed accepted route reported" "$(Q -c "select r->'acceptances_reset' @> '[{\"worker_id\":\"$W1\",\"reason\":\"route_removed\"}]' from (select \$\$$D3\$\$::jsonb->'report' r) x")"
+ok "dry run is refused like a real run while a shift is open" "$(Q -c "insert into routes(id,worker_id,task_id,company_id) values ('30000000-0000-4000-8000-000000000009','$W3','$T1','$CA')"; has replan_live "$(dry $UA $T1 "$TASKJ" "$GOOD")")"
+Q -c "delete from routes where id='30000000-0000-4000-8000-000000000009'"
+ok "dry run leaves no archive flag set" "$(Q -c "select coalesce(current_setting('flyermap.replan', true),'') = ''")"
+
 # ---------- successful re-plan of an order somebody walked on ----------
 ok "re-plan succeeds"                 "$(yes "$(replan $UA $T1 "$TASKJ" "$GOOD")")"
+R=$(psql -qAtX <<SQL
+set role authenticated; set request.jwt.claim.sub = '$UA';
+select (public.replan_task_with_plans('$T1', '$TASKJ'::jsonb, '$GOOD'::jsonb))->'report';
+SQL
+)
+ok "real run returns the same report shape (second run: nothing removed)" "$(Q -c "select (\$\$$R\$\$::jsonb->>'routes_removed')::int=0 and \$\$$R\$\$::jsonb ? 'acceptances_reset'")"
 ok "three routes, numbers 0,1,2"      "$(Q -c "select array_agg(idx order by idx)::text = '{0,1,2}' from task_plans where task_id='$T1'")"
 ok "order fields updated"             "$(Q -c "select title='Walked order v2' and flyers=1500 and work_days=3 and start_lat=48.5 from tasks where id='$T1'")"
 ok "order keeps company, creator, status" "$(Q -c "select company_id='$CA' and created_by='$UA' and status='open' from tasks where id='$T1'")"
