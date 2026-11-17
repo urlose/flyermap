@@ -126,6 +126,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(name+': time-first strategy default, 2 employees, 2500 m/30 min',
       cfg.strategy==='near-first'&&cfg.n==='2'&&cfg.quota==='2500'&&cfg.on===true,
       JSON.stringify(cfg));
+    ok(name+': new orders default to a configurable 10 km circle',
+      await pg.evaluate(()=>document.getElementById('cCircle')?.checked && +document.getElementById('cRadiusKm')?.value===10));
+    await pg.evaluate(()=>{ const r=document.getElementById('cRadiusKm'); r.value=8; r.dispatchEvent(new Event('change')); });
     await pg.evaluate(()=>{
       const h=document.getElementById('cBudH');h.value=6;h.dispatchEvent(new Event('change'));
     });
@@ -138,6 +141,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(name+': estimated flyers and work hours visible as output',
       !!bx && bx.nums.length===2 && bx.rows.length===2 &&
       /Flyer/.test(bx.text),bx&&bx.text.slice(0,500));
+    ok(name+': unlabelled geographic circle drawn at the selected radius', await pg.evaluate(()=>{
+      const m=document.getElementById('fullMap')._map; let found=false;
+      m.eachLayer(l=>{ if(l.getRadius?.()===8000 && !l.getTooltip?.() && !l.getPopup?.()) found=true; }); return found;
+    }));
+    ok(name+': circle bounds are visible in the initial map view', await pg.evaluate(()=>{
+      const m=document.getElementById('fullMap')._map; let bounds=null;
+      m.eachLayer(l=>{ if(l.getRadius?.()===8000) bounds=l.getBounds(); }); return bounds && m.getBounds().contains(bounds);
+    }));
     await shot('timefirst-plan');
     await pg.evaluate(()=>{const b=document.getElementById('cNext');if(b&&!b.disabled)b.click();});
     await until(()=>document.querySelectorAll('select[data-wsel]').length>=2,30000);
@@ -164,12 +175,31 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       rows.every(r=>Number.isInteger(r.mailboxes)) &&
       tk.flyers===rows.reduce((a,r)=>a+r.mailboxes,0));
     ok(name+': new mode and target hours survive in saved days JSON',
-      rows.every(r=>r.days?.[0]?.budget_h===6&&r.days[0].budget_strategy==='near-first'));
+      rows.every(r=>r.days?.[0]?.budget_h===6&&r.days[0].budget_strategy==='near-first'&&r.days[0].delivery_radius_km===8));
     const dl=pg.waitForEvent('download',{timeout:10000});
     await pg.evaluate(()=>document.getElementById('tCustomerExport').click());
     const download=await dl;
     ok(name+': customer area export offered without staff hours',
       download.suggestedFilename().endsWith('.geojson'));
+    ok(name+': saved boundary is a circle centred on the order start', tk.zone_polygon.length===128);
+    await pg.evaluate(()=>document.getElementById('tEdit').click());
+    await pg.waitForSelector('#eReplan');
+    await pg.evaluate(()=>document.getElementById('eReplan').click());
+    await pg.waitForSelector('#cWz');
+    await pg.evaluate(()=>document.querySelector('[data-step="2"]').click());
+    await pg.waitForSelector('#cRadiusKm');
+    ok(name+': reopening restores the selected radius rather than the default',
+      await pg.evaluate(()=>document.getElementById('cCircle').checked && +document.getElementById('cRadiusKm').value===8));
+    // Known legacy issue owned by Claude: unused auto towns may be saved without
+    // travel time. Enter it explicitly, as the atomic-replan browser test does.
+    await pg.evaluate(()=>{ const r=document.getElementById('cBudTravel'); if(r){ r.value=30; r.dispatchEvent(new Event('change')); } });
+    await pg.evaluate(()=>document.querySelector('[data-step="3"]').click());
+    ok(name+': reopened circle order recalculates successfully',
+      !!await until(()=>!!document.querySelector('.budget-box') && !document.getElementById('cNext').disabled,240000) && await stable(3000,30000));
+    await pg.evaluate(()=>document.querySelector('[data-step="2"]').click());
+    await pg.setViewportSize({width:375,height:812});
+    await pg.locator('#cRadiusKm').scrollIntoViewIfNeeded();
+    await shot('circle-settings-mobile');
     ok(name+': no browser JavaScript errors',errors.length===0,errors.slice(0,3).join(' | '));
     ok(name+': no request left the test environment',blocked.length===0,[...new Set(blocked)].join(','));
     await ctx.close();
@@ -181,3 +211,4 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   console.log('\n' + (fail ? fail + ' FAILED' : 'all ok'));
   await b.close(); srv.close(); process.exit(fail ? 1 : 0);
 })();
+

@@ -11,7 +11,7 @@ export function budgetDays(r, pl){
   return (r.days || []).map((x, k) => {
     const rides = jumps.filter(j => j.idx > x.i0 && j.idx <= x.i1).map(j => ({ from:j.from, to:j.to, km:j.km, min:j.known ? j.min : null }));
     return { ...x, parts:r.parts.filter(z => z.i1 >= x.i0 && z.i0 <= x.i1).map(z => ({ place:z.place, part:z.part, i0:Math.max(z.i0, x.i0), i1:Math.min(z.i1, x.i1) })),
-      ...(rides.length ? { rides } : {}), ...(k === 0 ? { budget_h:pl.budget.hours, budget_tol:pl.budget.tolerance, ...(pl.budget.strategy ? { budget_strategy:pl.budget.strategy, budget_car:!!pl.budget.car } : {}), ...(pl.budget.travel?.known ? { budget_travel_min:pl.budget.travel.moves ? pl.budget.travel.minutes / pl.budget.travel.moves : 0 } : {}) } : {}) };
+      ...(rides.length ? { rides } : {}), ...(k === 0 ? { budget_h:pl.budget.hours, budget_tol:pl.budget.tolerance, ...(pl.budget.radiusKm != null ? { delivery_radius_km:pl.budget.radiusKm } : {}), ...(pl.budget.strategy ? { budget_strategy:pl.budget.strategy, budget_car:!!pl.budget.car } : {}), ...(pl.budget.travel?.known ? { budget_travel_min:pl.budget.travel.moves ? pl.budget.travel.minutes / pl.budget.travel.moves : 0 } : {}) } : {}) };
   });
 }
 
@@ -26,3 +26,4 @@ export function planRows(pl, { taskId, assign = {}, counts, colors }){
   return pl.routes.map((r, i) => ({ task_id:taskId, idx:i, worker_id:assign[i] || null, color:colors[(r.w != null ? r.w : i) % colors.length], path:r.path, length_m:r.length_m, street_m:r.street_m,
     mailboxes:integerCount(counts[i]), boxes:r.boxes, minutes:r.minutes, days:budgetDays(r, pl), steps:r.steps, reserve:r.reserve || [] }));
 }
+
