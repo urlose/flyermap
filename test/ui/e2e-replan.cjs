@@ -185,7 +185,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     // ---- 3. open the order, re-plan ----
     let rideAsked = false;
     const openReplan = async () => {
-      const step = async (label, v) => { if(!v){ await shot('stuck-' + label); console.log('  stuck at: ' + label); } return v; };
+      const step = async (label, v) => { if(!v){ await shot('stuck-' + label); console.log('  stuck at: ' + label); console.log('  page errors: ' + JSON.stringify(errors.slice(0, 5))); console.log('  page: ' + JSON.stringify(await pg.evaluate(() => ({ hash:location.hash, modal:!!document.querySelector('.modal'), replan:!!document.getElementById('eReplan'), text:document.body.innerText.slice(0, 400) })).catch(e => e.message))); } return v; };
       await pg.goto('http://localhost:4521/#task/' + TID, { waitUntil:'load' });
       if(!await step('order-view', await until(() => !!document.getElementById('tEdit2'), 30000))) return false;
       await pg.evaluate(() => document.getElementById('tEdit2').click());
