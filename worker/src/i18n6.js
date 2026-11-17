@@ -78,3 +78,7 @@ Object.assign(T.en, {
   colOrder:'Order', colPlace:'Place', colDeadline:'Deadline', colFlyers:'Flyers', colTeam:'Distributors', colProgress:'Routes done', sortBy:'Sort by {c}', yes:'Yes', no:'No', showOnMap:'On the map',
   stPeriod:'Period: last {n} days', tSearchPh:'Search an order or place', stKpiAll:'Figures: all orders with working days since the start · small curves: last {n} days', freeN:'{n} free', lmOrdersG:'Orders', lmOpenShort:'Open', lmLayers:'Layers', colDays:'Working days', colPlaces:'Places', colLastDay:'Last day', stPeriodAll:'All orders with working days in the last {n} days',
 });
+// 17.11.2026: the time budget can be capped by the shifts left until the deadline
+Object.assign(T.de, { budCappedDays:'Bis zur Frist passen nur {days} Arbeitstag(e) × {hpd} Std. × {n} Person(en) = {eff} Std. – weniger als die eingetragenen {h} Std. Für mehr Flyer die Frist verschieben oder mehr Personen einplanen.' });
+Object.assign(T.ru, { budCappedDays:'До срока помещается только {days} раб. дн. × {hpd} ч × {n} чел. = {eff} ч — меньше указанных {h} ч. Чтобы раздать больше, перенесите срок или добавьте людей.' });
+Object.assign(T.en, { budCappedDays:'Until the deadline only {days} working day(s) × {hpd} h × {n} person(s) = {eff} h fit – less than the {h} h entered. For more flyers move the deadline or plan more people.' });
