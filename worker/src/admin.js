@@ -1,6 +1,8 @@
 import L from 'leaflet';
 import Planner from '../../admin/planner.js';
 import { DEFAULT_RADIUS_KM, MIN_RADIUS_KM, MAX_RADIUS_KM, radiusFromPlans, manualOutsideCircle } from './circlearea.js';
+import { driveZone, zoneFromPlans, gridRects, minutesTo, searchKm, DEFAULT_DRIVE_MIN, MIN_DRIVE_MIN, MAX_DRIVE_MIN } from './drivezone.js';
+import { splitPlaces, zoneListHtml } from './zonelist.js';
 import { applyRole, isCoord, loadAdmins, adminName, selectWorkers, refLinkCardHtml, bindRefLink, inviteRoleHtml, bindInviteRole, inviteRoleValues, adminsCardHtml, bindAdminsCard } from './coord.js';
 import { savedMailboxCounts } from './savecounts.js';
 import { t, I } from './i18n.js';
@@ -944,7 +946,12 @@ function viewCreate(edit){
   d.autoPicked = !!tkE; // one automatic initial proposal; never override subsequent admin edits
   // time-budget mode ("Maximum Flyer für die Arbeitszeit"): the order remembers it in days[0].budget_h of its plans (no database column)
   { const bh = tkE && (edit.plans || []).map(p => p.days && p.days[0] && +p.days[0].budget_h).find(x => x > 0); const bt = tkE && (edit.plans || []).map(p => p.days && p.days[0] && p.days[0].budget_tol).find(x => x != null); const strategy = tkE && (edit.plans || []).map(p => p.days && p.days[0] && p.days[0].budget_strategy).find(Boolean); const travelMin = tkE && (edit.plans || []).map(p => p.days && p.days[0] && +p.days[0].budget_travel_min).find(x => x > 0); const car=!!(tkE && (edit.plans || []).some(p => p.days && p.days[0] && p.days[0].budget_car)); d.budget = { on:tkE ? !!bh : true, hours:bh || 32, tol:bt != null ? Math.round(+bt * 100) : 5, travelMin:travelMin || null, car, strategy:strategy || (tkE ? 'density' : 'near-first') }; }
-  d.budget.radiusKm = tkE ? radiusFromPlans(edit.plans) : DEFAULT_RADIUS_KM;
+  d.budget.radiusKm = tkE ? radiusFromPlans(edit.plans) : null;
+  // drive-time zone (17.11.2026): new orders 15 min by car; a reopened order keeps its saved zone (same area on re-plan)
+  { const z = tkE ? zoneFromPlans(edit.plans) : null;
+    d.budget.driveMin = z ? z.min : tkE ? null : DEFAULT_DRIVE_MIN; d.budget.driveZone = z; d.budget.zoneFor = z ? 'saved' : null;
+    d.budget.exclude = tkE ? ((edit.plans || []).map(p => p.days && p.days[0] && p.days[0].excluded_places).find(x => Array.isArray(x)) || []) : [];
+    d.budget.travelAuto = !(d.budget.travelMin > 0); }
   // time-first: places picked automatically by an older version but never reached by the saved routes are not part of the
   // order (they were saved without a ride time and blocked re-planning); manual places and places with routes stay
   if(tkE && d.budget.on && d.budget.strategy === 'near-first'){
@@ -1111,12 +1118,46 @@ function viewCreate(edit){
     return { stage:k => { const [key, a, b] = String(k).split('|'); txt = t(key) + (b ? ' ' + a + '/' + b : ''); full = full && key !== 'calculating'; show(); }, stop:() => clearInterval(id) };
   };
   const startArr = () => [d.start.lat, d.start.lng];
-  const circleKm = () => d.budget.on && d.budget.strategy === 'near-first' && d.travel === 'zones' && !d.mainAll ? d.budget.radiusKm : null;
-  const drawCircle = () => circleKm() != null && d.start ? L.circle(startArr(), { radius:circleKm()*1000, color:css('--brand'), weight:2, fillOpacity:.04, interactive:false }).addTo(zoneLayer) : null;
+  const timeFirst = () => d.budget.on && d.budget.strategy === 'near-first' && d.travel === 'zones' && !d.mainAll;
+  const driveOn = () => timeFirst() && d.budget.driveMin != null;
+  const circleKm = () => timeFirst() && !driveOn() ? d.budget.radiusKm : null;
+  const zoneKey = () => d.start ? d.start.lat.toFixed(5) + ',' + d.start.lng.toFixed(5) + ':' + d.budget.driveMin : '';
+  const zoneReady = () => driveOn() && !!d.budget.driveZone && d.budget.zoneFor === zoneKey();
+  // computes the zone once per start and minutes (drivezone.js caches it); then the nearby places and a new plan
+  function ensureZone(){
+    if(!driveOn() || !d.start || zoneReady() || d.zoneJob === zoneKey()) return;
+    const key = zoneKey(); d.zoneJob = key; d.zPlaces = null; renderSheet();
+    driveZone(startArr(), d.budget.driveMin).then(g => {
+      if(!alive() || key !== zoneKey()) return;
+      d.zoneJob = null; d.budget.driveZone = g; d.budget.zoneFor = key; zoneRedraw(); loadZonePlaces(); recompute();
+    });
+  }
+  function loadZonePlaces(){
+    if(!zoneReady()) return; const key = zoneKey(), g = d.budget.driveZone;
+    censusPlaces(d.start.lat, d.start.lng, searchKm(d.budget.driveMin) * 1000, { minH:MIN_HH }).then(list => {
+      if(!alive() || key !== zoneKey()) return;
+      d.zPlaces = splitPlaces(list, g, startArr()); renderSheet(); nameZonePlaces(key);
+    }).catch(() => { if(alive() && key === zoneKey()){ d.zPlaces = { inside:[], outside:[] }; renderSheet(); } });
+  }
+  async function nameZonePlaces(key){   // one name at a time (free geocoder); the list works before the names arrive
+    for(const x of [...(d.zPlaces?.inside || []), ...(d.zPlaces?.outside || [])]){
+      if(!alive() || key !== zoneKey()) return;
+      if(d.sugNames.has(x.id)){ x.name = d.sugNames.get(x.id); continue; }
+      try{ const n = await geoName(x); if(n){ d.sugNames.set(x.id, n); x.name = n; renderSheet(); } }catch{}
+    }
+    renderSheet();
+  }
+  const zoneName = x => x.name || t('sugUnnamed', { km:String(x.km).replace('.', ',') });
+  const zoneRedraw = () => { if(d.plan) draw(); else if(d.start){ zoneLayer.clearLayers(); L.marker(startArr(), { icon:dot('pin-start', 26) }).addTo(zoneLayer); const z = drawCircle(); if(z && !d.keepView) m.fitBounds(z.getBounds(), { ...mapPad(), animate:false }); } };
+  const drawCircle = () => {
+    if(zoneReady()) return L.polygon(gridRects(d.budget.driveZone), { stroke:false, fillColor:css('--brand'), fillOpacity:.09, interactive:false }).addTo(zoneLayer);
+    return circleKm() != null && d.start ? L.circle(startArr(), { radius:circleKm()*1000, color:css('--brand'), weight:2, fillOpacity:.04, interactive:false }).addTo(zoneLayer) : null;
+  };
   const outsideManual = () => d.start && (manualOutsideCircle(startArr(), circleKm(), d.side, d.must, d.zone) || !!d.plan?.budget?.manualOutside);
   const errText2 = e => /abort|overpass|fetch/i.test((e && e.message) || '') ? t('mapSlow') : ((e && e.message) || 'net');
   async function setStart(lat, lng, fromClick){
-    const tok = ++d.token; d.start = { lat, lng }; d.sugT = null; sugFlow.reset(); sugHl.clear(); d.keepView = !!fromClick && circleKm() == null;   // circular mode initially frames its whole boundary
+    const tok = ++d.token; d.start = { lat, lng }; d.sugT = null; sugFlow.reset(); sugHl.clear(); d.keepView = !!fromClick && circleKm() == null && !driveOn();
+    if(d.budget.zoneFor === 'saved') d.budget.zoneFor = zoneKey(); d.zPlaces = null;   // reopened order: the saved zone belongs to its start   // circular mode initially frames its whole boundary
     d.pick = false; updPick();
     d.loaded = false; d.plan = null; d.err = null; d.assign = {};
     zoneLayer.clearLayers(); planLayer.clearLayers();
@@ -1141,11 +1182,13 @@ function viewCreate(edit){
   async function recompute(){
     if(!d.start || !alive()) return;
     if(d.step < 2){ d.dirty = true; renderSheet(); return; }   // still entering the data: plan later
+    if(driveOn() && !zoneReady()){ d.dirty = true; ensureZone(); return; }   // the zone first, then the plan
+    if(driveOn() && !d.zPlaces) loadZonePlaces();
     d.dirty = false;
     if(!d.loaded){ renderSheet(); return; }
     const tok = ++d.token, pr = progress(tok, false);
     let res = null;
-    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, quota:Math.max(200, Math.round(+saved.quota || NEW_QUOTA)), bike:d.bike, travel:d.travel, split:d.split, exact:d.exact, mainAll:d.mainAll, cores:d.cores && (d.travel === 'car' || d.travel === 'zones'), mainName:mainCity() || '', together:d.cores && d.travel === 'car' && d.together, first:d.cores && d.travel === 'car' ? d.first : null, near:d.side.length > 0 && d.side.every(x => x.auto), budget:d.budget && d.budget.on && d.travel === 'zones' ? { hours:+d.budget.hours || 32, tolerance:(+d.budget.tol >= 0 ? +d.budget.tol : 5) / 100, strategy:d.budget.strategy, travelMin:d.budget.travelMin, car:d.budget.car, radiusKm:circleKm() } : null, must:d.must, zone:d.zone, side:d.side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers, zone:x.p && x.p.length > 2 ? x.p : null, all:!!x.all, ...(x.cid ? { cid:x.cid } : {}), auto:!!x.auto })) }, pr.stage); }
+    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, quota:Math.max(200, Math.round(+saved.quota || NEW_QUOTA)), bike:d.bike, travel:d.travel, split:d.split, exact:d.exact, mainAll:d.mainAll, cores:d.cores && (d.travel === 'car' || d.travel === 'zones'), mainName:mainCity() || '', together:d.cores && d.travel === 'car' && d.together, first:d.cores && d.travel === 'car' ? d.first : null, near:d.side.length > 0 && d.side.every(x => x.auto), budget:d.budget && d.budget.on && d.travel === 'zones' ? { hours:+d.budget.hours || 32, tolerance:(+d.budget.tol >= 0 ? +d.budget.tol : 5) / 100, strategy:d.budget.strategy, travelMin:d.budget.travelMin, car:d.budget.car, radiusKm:circleKm(), ...(driveOn() ? { driveZone:d.budget.driveZone, exclude:d.budget.exclude, places:[...(d.zPlaces?.inside || [])].map(x => ({ id:x.id, cells:x.cells })) } : {}) } : null, must:d.must, zone:d.zone, side:d.side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers, zone:x.p && x.p.length > 2 ? x.p : null, all:!!x.all, ...(x.cid ? { cid:x.cid } : {}), auto:!!x.auto })) }, pr.stage); }
     catch(e){ pr.stop(); if(tok !== d.token || !alive()) return; d.err = errText2(e); d.busy = false; toast(t('streetsFail', { e:d.err })); renderSheet(); return; }
     pr.stop();
     if(tok !== d.token || !alive() || !res || res.skipped) return;
@@ -1362,7 +1405,7 @@ ${d.budget.on && d.budget.strategy === 'near-first' ? '' : `      <label class="
       ${p && d.mainAll ? `<div class="hint">${esc(t('mainAllNote', { city:mainCity(), mb:fmtN(Math.round(p.mailboxes)) }))}</div>`
         : p && p.eco && !d.exact ? `<div class="hint">${esc(t('ecoNote', { used:fmtN(Math.round(p.mailboxes)), asked:fmtN(d.flyers) }))} <button class="link" id="cExact">${esc(t('exactBtn', { f:fmtN(d.flyers) }))}</button></div>`
         : p && d.exact && !tkE && !p.budget ? `<p class="small muted" style="margin:6px 0 0">${esc(t('exactOn', { f:fmtN(d.flyers) }))} <button class="link" id="cEco">${esc(t('ecoBtn'))}</button></p>` : ''}
-      ${d.budget.on && d.budget.strategy === 'near-first' ? '' : covBlock()}
+      ${d.budget.on && d.budget.strategy === 'near-first' ? (driveOn() && d.plan ? zoneListHtml(d.zPlaces, { stats:d.plan.budget?.placeStats || [], exclude:d.budget.exclude, side:d.side, minLimit:d.budget.driveMin, name:zoneName }) : '') : covBlock()}
       ${p && oneDay ? `<div class="hint">${esc(t('oneDayHint', { h:fmtHm(totMin) }))} <button class="link" id="cOneDay">${esc(t('applySug'))}</button></div>` : p && d.sug && d.sug !== d.n ? `<div class="hint">${esc(t('sugWorkers', { n:d.sug, d:d.days }))} <button class="link" id="cSug">${esc(t('applySug'))}</button></div>` : ''}
       ${p && p.cores && p.cores.length ? `<div class="hint">${esc(t('coresSum', { n:p.cores.length, mb:fmtN(p.mailboxes) }))}<br><span class="small">${esc(p.cores.map(c => c.name + ' ' + fmtN(c.mb)).join(' · '))}</span></div>` : ''}
       ${planBlock()}
@@ -1387,10 +1430,10 @@ ${d.budget.on && d.budget.strategy === 'near-first' ? '' : `      <label class="
       ${d.travel === 'zones' && !d.cores && !d.mainAll ? `<label class="check" style="margin-top:8px"><input type="checkbox" id="cBudget" ${d.budget.on ? 'checked' : ''}><span><b>${esc(t('budTitle'))}</b></span></label>
         ${d.budget.on ? `<label class="f" for="cBudH">${esc(t('budHours'))}</label><input class="in" type="number" id="cBudH" min="1" max="2000" step="1" value="${esc(d.budget.hours)}"><p class="small muted">${esc(t('budHoursHint', { n:d.n, each:fmtHm(Math.round(d.budget.hours * 60 / Math.max(1, d.n))) }))}</p>
           <label class="f" for="cBudgetStrategy">${esc(t('budStrategyLabel'))}</label><select class="in" id="cBudgetStrategy"><option value="near-first" ${d.budget.strategy === 'near-first' ? 'selected' : ''}>${esc(t('budNearFirst'))}</option><option value="density" ${d.budget.strategy !== 'near-first' ? 'selected' : ''}>${esc(t('budDensity'))}</option></select>
-          ${d.budget.strategy === 'near-first' ? `<label class="check"><input id="cCircle" type="checkbox" ${d.budget.radiusKm != null ? 'checked' : ''}><span>${esc(t('circleArea'))}</span></label>${d.budget.radiusKm != null ? `<label class="f" for="cRadiusKm">${esc(t('circleRadius'))}</label><input class="in" type="number" id="cRadiusKm" min="${MIN_RADIUS_KM}" max="${MAX_RADIUS_KM}" step="0.5" value="${esc(d.budget.radiusKm)}"><p class="small muted">${esc(t('circleHint'))}</p>` : ''}` : ''}
+          ${d.budget.strategy === 'near-first' ? `<label class="check"><input id="cDrive" type="checkbox" ${d.budget.driveMin != null || d.budget.radiusKm != null ? 'checked' : ''}><span>${esc(t('driveArea'))}</span></label>${d.budget.driveMin != null ? `<label class="f" for="cDriveMin">${esc(t('driveMin'))}</label><input class="in" type="number" id="cDriveMin" min="${MIN_DRIVE_MIN}" max="${MAX_DRIVE_MIN}" step="1" value="${esc(d.budget.driveMin)}"><p class="small muted">${esc(t('driveHint'))}</p>${d.zoneJob ? `<p class="small muted" id="cDriveBusy">${esc(t('driveLoading'))}</p>` : zoneReady() && d.budget.driveZone.real === false ? `<div class="warnbox" id="cDriveFb">${esc(t('driveFallback', { km:String(d.budget.driveZone.km).replace('.', ',') }))} <button class="btn ghost small" id="cDriveRetry">${esc(t('driveRetry'))}</button></div>` : ''}` : d.budget.radiusKm != null ? `<p class="small muted">${esc(t('legacyCircle', { km:String(d.budget.radiusKm).replace('.', ',') }))}</p>` : ''}` : ''}
           <label class="check" style="margin-top:8px"><input id="cBudgetCar" type="checkbox" ${d.budget.car ? 'checked' : ''}><span>${esc(t('budCar'))}</span></label>
           <label class="f" for="cBudT">${esc(t('budTol'))}</label><input class="in" type="number" id="cBudT" min="0" max="25" step="1" value="${esc(d.budget.tol)}">
-          ${(d.side.length || d.must.some(a => a.p?.length > 2) || d.zone?.length > 2) && d.budget.strategy === 'near-first' ? `<label class="f" for="cBudTravel">${esc(t('budTravelInput'))}</label><input class="in" type="number" id="cBudTravel" min="1" max="480" step="1" value="${esc(d.budget.travelMin || '')}" placeholder="z. B. 20"><p class="small muted">${esc(t('budTravelInputHint'))}</p>` : ''}` : ''}` : ''}
+          ${(d.side.length || d.must.some(a => a.p?.length > 2) || d.zone?.length > 2) && d.budget.strategy === 'near-first' ? `<label class="f" for="cBudTravel">${esc(t('budTravelInput'))}</label><input class="in" type="number" id="cBudTravel" min="1" max="480" step="1" value="${esc(d.budget.travelMin || '')}" placeholder="z. B. 20"><p class="small muted">${esc(driveOn() && d.budget.travelAuto && d.budget.travelMin ? t('travelAuto') : t('budTravelInputHint'))}</p>` : ''}` : ''}` : ''}
       <label class="f" for="cNotes">${esc(t('note'))}</label><textarea class="in" id="cNotes" placeholder="${esc(t('notesPh'))}"></textarea>
       <p class="small muted" style="margin:6px 0 0">${esc(saved.deadline ? t('deadlineDays', { d:d.days }) : t('deadlineNone'))}</p>
       ${p ? `<div class="${cap.ok ? 'hint' : 'warnbox'}">${cap.ok ? esc(needDays === 1 ? t('fitsOne') : t('fitsOk', { d:needDays })) : esc(t('tooBig', { h:cap.slowest.toFixed(1).replace('.', ','), lim:cap.limit, d:d.days }))}</div>` : ''}`;
@@ -1422,7 +1465,7 @@ ${d.budget.on && d.budget.strategy === 'near-first' ? '' : `      <label class="
     sheet(`<button class="sheet-grip" id="grip" aria-label="${esc(t('panel'))}"></button><button class="sheet-min" id="cMin" aria-expanded="${isMini ? 'false' : 'true'}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg><span>${esc(t(isMini ? 'panelShow' : 'panelHide'))}</span></button>
       <div class="wz" id="cWz">${STEPS.map((k, i) => `<button class="${i + 1 === d.step ? 'on' : i + 1 < d.step ? 'done' : ''}" data-step="${i + 1}" ${canReach(i + 1) ? '' : 'disabled'} aria-current="${i + 1 === d.step ? 'step' : 'false'}"><i></i><span>${i + 1} ${esc(t(k))}</span></button>`).join('')}</div>
       <div class="wz-head"><small>${esc(t('wzStepOf', { n:d.step, of:STEPS.length }))} · <b>${esc(t(STEPS[d.step - 1]))}</b></small><p>${esc(t('wzDesc' + d.step))}</p></div>
-      ${outsideManual() ? `<div class="warnbox" id="cCircleWarning">${esc(t('circleManualOutside'))}</div>` : ''}
+      ${outsideManual() ? (driveOn() ? `<div class="hint" id="cCircleWarning">${esc(t('zoneManualOutside'))}</div>` : `<div class="warnbox" id="cCircleWarning">${esc(t('circleManualOutside'))}</div>`) : ''}
       ${body}
       ${!nextOk ? `<p class="wz-why" role="status">${ICONS.alert}<span>${esc(!d.start ? t('wzNeedStart') : d.busy || !p ? t('wzCalc') : t('wzFix'))}</span></p>` : ''}
       <div class="wz-nav">${d.step > 1 ? `<button class="btn ghost" id="cPrev">${esc(t('back'))}</button>` : ''}
@@ -1447,10 +1490,20 @@ ${d.budget.on && d.budget.strategy === 'near-first' ? '' : `      <label class="
     if($('#cBudget')) $('#cBudget').onchange = e => { saved = keep(); d.budget.on = e.target.checked; d.assign = {}; recompute(); };
     if($('#cBudT')) $('#cBudT').onchange = e => { saved = keep(); d.budget.tol = Math.max(0, Math.min(25, Math.round(+e.target.value || 0))); d.assign = {}; recompute(); };
     if($('#cBudH')) $('#cBudH').onchange = e => { saved = keep(); d.budget.hours = Math.max(1, Math.min(2000, Math.round(+e.target.value || 32))); d.assign = {}; recompute(); };
-    if($('#cCircle')) $('#cCircle').onchange = e => { saved = keep(); d.budget.radiusKm = e.target.checked ? DEFAULT_RADIUS_KM : null; d.assign = {}; sugFlow.reset(); d.sugT = null; if(d.plan) draw(); recompute(); };
+    if($('#cDrive')) $('#cDrive').onchange = e => { saved = keep(); d.budget.radiusKm = null; d.budget.driveMin = e.target.checked ? DEFAULT_DRIVE_MIN : null; d.zPlaces = null; d.assign = {}; if(d.plan) draw(); renderSheet(); recompute(); };
+    if($('#cDriveMin')) $('#cDriveMin').onchange = e => { saved = keep(); const v = Math.round(Number(e.target.value)); if(!(v >= MIN_DRIVE_MIN && v <= MAX_DRIVE_MIN)){ e.target.reportValidity(); e.target.value = d.budget.driveMin; return; } if(v === d.budget.driveMin) return; d.budget.driveMin = v; d.zPlaces = null; d.assign = {}; renderSheet(); recompute(); };
+    if($('#cDriveRetry')) $('#cDriveRetry').onclick = () => { d.budget.driveZone = null; d.budget.zoneFor = null; d.zPlaces = null; recompute(); };
+    document.querySelectorAll('[data-zout]').forEach(b => b.onclick = () => { const x = d.zPlaces?.inside.find(z => z.id === b.dataset.zout); if(!x) return; saved = keep();
+      d.budget.exclude = [...d.budget.exclude.filter(z => z.id !== x.id), { id:x.id, name:zoneName(x), lat:x.lat, lng:x.lng, cells:x.cells }]; d.assign = {}; recompute(); });
+    document.querySelectorAll('[data-zin]').forEach(b => b.onclick = () => { saved = keep(); d.budget.exclude = d.budget.exclude.filter(z => z.id !== b.dataset.zin); d.assign = {}; recompute(); });
+    // a place outside the zone, added by hand: own slice of time; the ride time comes from the zone grid (or 40 km/h)
+    document.querySelectorAll('[data-zadd]').forEach(b => b.onclick = () => { const x = d.zPlaces?.outside[+b.dataset.zadd]; if(!x || b.disabled) return; b.disabled = true; saved = keep();
+      d.side = addSuggestion(d.side, x, zoneName(x)); const added = d.side[d.side.length - 1]; if(added && added.cid === x.id){ added.auto = false; added.flyers = Math.max(30, Math.round(x.households)); }
+      if(d.budget.travelAuto){ const mins = d.side.filter(z => !z.auto && z.lat != null).map(z => minutesTo(d.budget.driveZone, [z.lat, z.lng]) ?? (z.km != null ? z.km / 40 * 60 + 5 : 20)); d.budget.travelMin = Math.max(5, Math.ceil(Math.max(...mins, x.min ?? x.km / 40 * 60 + 5))); }
+      d.dirty = true; d.assign = {}; recompute(); });
     if($('#cRadiusKm')) $('#cRadiusKm').onchange = e => { saved = keep(); const value = Number(e.target.value); if(!Number.isFinite(value) || value < MIN_RADIUS_KM || value > MAX_RADIUS_KM){ e.target.reportValidity(); e.target.value = d.budget.radiusKm; return; } d.budget.radiusKm = value; d.assign = {}; sugFlow.reset(); d.sugT = null; if(d.plan) draw(); recompute(); };
     if($('#cBudgetStrategy')) $('#cBudgetStrategy').onchange = e => { saved = keep(); d.budget.strategy = e.target.value; d.assign = {}; recompute(); };
-    if($('#cBudTravel')) $('#cBudTravel').onchange = e => { saved = keep(); d.budget.travelMin = Math.max(0, Math.min(480, Math.round(+e.target.value || 0))) || null; d.assign = {}; recompute(); };
+    if($('#cBudTravel')) $('#cBudTravel').onchange = e => { saved = keep(); d.budget.travelAuto = false; d.budget.travelMin = Math.max(0, Math.min(480, Math.round(+e.target.value || 0))) || null; d.assign = {}; recompute(); };
     if($('#cBudgetCar')) $('#cBudgetCar').onchange = e => { saved = keep(); d.budget.car = e.target.checked; recompute(); };
     if($('#cFly')) $('#cFly').onchange = () => { saved = keep(); d.flyers = Math.max(100, Math.round(num('#cFly', d.flyers))); d.nAuto = true; recompute(); };
     if($('#cQuota')) $('#cQuota').onchange = () => { saved = keep(); recompute(); };

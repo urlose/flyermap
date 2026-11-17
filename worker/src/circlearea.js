@@ -22,6 +22,7 @@ export function distanceM(a, b){
   return 2 * EARTH_M * Math.asin(Math.min(1, Math.sqrt(Math.sin(lat / 2) ** 2 +
     Math.cos(a[0] * RAD) * Math.cos(b[0] * RAD) * Math.sin(lng / 2) ** 2)));
 }
+const insideCircleKm = (point, start, km) => distanceM(point, start) <= km * 1000 + 0.001;
 export const insideCircle = (point, start, km) => distanceM(point, start) <= km * 1000 + 0.001;
 
 // Polygon only for saving/drawing the boundary. Delivery uses exact distance.
@@ -38,9 +39,10 @@ export function circlePolygon(start, km, segments = 128){
 
 // Keep connecting roads intact: a walking detour may leave the circle, but no
 // automatic delivery point may do so. Do not mutate the cached source graph.
-export function clipDeliveryGraph(g, start, km){
+export function clipDeliveryGraph(g, start, km, inside = null){
   if(km == null) return g;
-  radiusKm(km);
+  if(!inside) radiusKm(km);
+  const insideCircle = inside ? p => inside(p) : (p, st, k) => insideCircleKm(p, st, k);
   return { ...g, edges:g.edges.map(e => {
     if(!(e.mb > 0)) return e;
     const boxes = e.boxes || [], total = boxes.reduce((s, b) => s + (b[2] || 1), 0);

@@ -39,6 +39,15 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const H = await src.households(cx0 - WR, cy0 - WR, cx0 + WR, cy0 + WR), id = (cx, cy) => cx * 100000 + cy, cache = new Map();
     const ll = (cx, cy) => { const k = cx + ',' + cy; if(!cache.has(k)) cache.set(k, Z.unlaea(cx * 100 + 50, cy * 100 + 50)); return cache.get(k); };
     const rnd = (a, c, i) => { const v = Math.sin(a * 12.9898 + c * 78.233 + i * 37.719) * 43758.5453; return v - Math.floor(v); };
+    // car roads for the drive-time zone (drivezone.js asks with around:R,lat,lng): a 1 km grid of country roads around the start
+    function carAnswer(R, la0, lo0){
+      const els = [], dLat = 1000 / 111320, dLng = 1000 / (111320 * Math.cos(la0 * Math.PI / 180)), n = Math.ceil(R / 1000);
+      for(let i = -n; i <= n; i++){
+        els.push({ type:'way', tags:{ highway:i % 4 ? 'unclassified' : 'secondary' }, geometry:Array.from({ length:2 * n + 1 }, (_, k) => ({ lat:la0 + i * dLat, lon:lo0 + (k - n) * dLng })) });
+        els.push({ type:'way', tags:{ highway:i % 4 ? 'unclassified' : 'secondary' }, geometry:Array.from({ length:2 * n + 1 }, (_, k) => ({ lat:la0 + (k - n) * dLat, lon:lo0 + i * dLng })) });
+      }
+      return { elements:els };
+    }
     function overpassAnswer(S, W, N, E){
       const els = [], nodes = new Set(), addNode = (cx, cy) => { const k = id(cx, cy); if(nodes.has(k)) return k; nodes.add(k); const [la, lo] = ll(cx, cy); els.push({ type:'node', id:k, lat:la, lon:lo }); return k; };
       const inb = (la, lo) => la >= S && la <= N && lo >= W && lo <= E; let wid = 1;
@@ -49,7 +58,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     }
     // the synthetic database lives in memory of this run only: a copy of the fixtures, new rows are added to it
     const DB = { tasks:F.tables.tasks.map(t => ({ ...t })), task_plans:F.tables.task_plans.map(p => ({ ...p })), routes:F.tables.routes.map(r => ({ ...r })), task_workers:F.tables.task_workers.map(r => ({ ...r })) };
-    const posts = [], patches = [], deletes = [], errors = [], blocked = [];
+    const posts = [], patches = [], deletes = [], errors = [], blocked = []; let carQueries = 0;
     const ctx = await b.newContext({ viewport:{ width:1440, height:900 } });
     await ctx.route(/.*/, async route => {
       const rq = route.request(), u = new URL(rq.url());
@@ -88,6 +97,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         if(tbl === 'tasks') rows = rows.map(t => ({ ...t, task_workers:DB.task_workers.filter(z => z.task_id === t.id) }));
         return route.fulfill({ status:200, headers:{ 'content-range':`0-${Math.max(0, rows.length - 1)}/${rows.length}`, 'content-type':'application/json' }, body:JSON.stringify(single ? (rows[0] || null) : rows) });
       }
+      if(/overpass|maps\.mail\.ru/.test(u.hostname) && /around:/.test(decodeURIComponent((rq.postData() || u.search).replace(/\+/g, ' ')))){ const q = decodeURIComponent((rq.postData() || u.search).replace(/\+/g, ' ')), a = q.match(/around:(\d+),([\d.]+),([\d.]+)/); carQueries++;
+        return route.fulfill({ status:200, json:carAnswer(+a[1], +a[2], +a[3]), headers:{ 'access-control-allow-origin':'*' } }); }
       if(/overpass|maps\.mail\.ru/.test(u.hostname)){ const q = decodeURIComponent((rq.postData() || u.search).replace(/\+/g, ' ')), m = q.match(/\(([\d.]+),([\d.]+),([\d.]+),([\d.]+)\)/);
         return route.fulfill({ status:200, json:m ? overpassAnswer(+m[1], +m[2], +m[3], +m[4]) : { elements:[] }, headers:{ 'access-control-allow-origin':'*' } }); }
       if(/urlose\.github\.io$/.test(u.hostname) && u.pathname.includes('/zensus/')){ const f = ZEN + u.pathname.split('/').pop(); return fs.existsSync(f) ? route.fulfill({ status:200, body:fs.readFileSync(f), headers:{ 'access-control-allow-origin':'*' } }) : route.fulfill({ status:404, body:'', headers:{ 'access-control-allow-origin':'*' } }); }
@@ -126,9 +137,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(name+': time-first strategy default, 2 employees, 2500 m/30 min',
       cfg.strategy==='near-first'&&cfg.n==='2'&&cfg.quota==='2500'&&cfg.on===true,
       JSON.stringify(cfg));
-    ok(name+': new orders default to a configurable 10 km circle',
-      await pg.evaluate(()=>document.getElementById('cCircle')?.checked && +document.getElementById('cRadiusKm')?.value===10));
-    await pg.evaluate(()=>{ const r=document.getElementById('cRadiusKm'); r.value=8; r.dispatchEvent(new Event('change')); });
+    ok(name+': new orders default to a 15 min drive-time zone',
+      await pg.evaluate(()=>document.getElementById('cDrive')?.checked && +document.getElementById('cDriveMin')?.value===15));
+    await pg.evaluate(()=>{ const r=document.getElementById('cDriveMin'); r.value=12; r.dispatchEvent(new Event('change')); });
     await pg.evaluate(()=>{
       const h=document.getElementById('cBudH');h.value=6;h.dispatchEvent(new Event('change'));
     });
@@ -141,14 +152,32 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(name+': estimated flyers and work hours visible as output',
       !!bx && bx.nums.length===2 && bx.rows.length===2 &&
       /Flyer/.test(bx.text),bx&&bx.text.slice(0,500));
-    ok(name+': unlabelled geographic circle drawn at the selected radius', await pg.evaluate(()=>{
-      const m=document.getElementById('fullMap')._map; let found=false;
-      m.eachLayer(l=>{ if(l.getRadius?.()===8000 && !l.getTooltip?.() && !l.getPopup?.()) found=true; }); return found;
-    }));
-    ok(name+': circle bounds are visible in the initial map view', await pg.evaluate(()=>{
-      const m=document.getElementById('fullMap')._map; let bounds=null;
-      m.eachLayer(l=>{ if(l.getRadius?.()===8000) bounds=l.getBounds(); }); return bounds && m.getBounds().contains(bounds);
-    }));
+    ok(name+': drive-time zone computed from the car roads (no routing service)', carQueries>=1 && !await pg.evaluate(()=>!!document.getElementById('cDriveFb')), 'car queries '+carQueries);
+    const zoneLayer=()=>pg.evaluate(()=>{ const m=document.getElementById('fullMap')._map; let z=null;
+      m.eachLayer(l=>{ if(l.getLatLngs && l.options && l.options.stroke===false && l.options.fillOpacity>0.05) z=l; });
+      if(!z) return null; const b=z.getBounds(); return { rects:z.getLatLngs().length, visible:m.getBounds().intersects(b), h:b.getNorth()-b.getSouth() }; });
+    const zl=await zoneLayer();
+    ok(name+': zone drawn on the map instead of a circle', !!zl && zl.rects>10 && zl.visible, JSON.stringify(zl));
+    ok(name+': no circle any more', await pg.evaluate(()=>{ let c=false; document.getElementById('fullMap')._map.eachLayer(l=>{ if(l.getRadius?.()>1000) c=true; }); return !c; }));
+    // places in the zone: listed with drive time; taking one out and adding one from outside
+    await until(()=>document.querySelectorAll('#zoneList .zl-row').length>0,60000);
+    const zrows=await pg.evaluate(()=>[...document.querySelectorAll('#zoneList .zl-row')].map(r=>({ id:r.dataset.zrow, t:r.innerText, out:!!r.querySelector('[data-zout]'), add:!!r.querySelector('[data-zadd]') })));
+    ok(name+': nearby places in the zone are listed with minutes by car', zrows.some(r=>r.out) && zrows.filter(r=>r.out).every(r=>/Min\. mit dem Auto/.test(r.t)), JSON.stringify(zrows.slice(0,3)));
+    ok(name+': places reached by the plan say so', zrows.some(r=>/Im Plan: ≈/.test(r.t)) || zrows.some(r=>/Noch nicht erreicht/.test(r.t)));
+    await pg.setViewportSize({width:375,height:812}); await pg.evaluate(()=>document.getElementById('zoneList').scrollIntoView({block:'start'})); await sleep(600); await shot('zone-list-phone');
+    ok(name+': zone list fits a phone', await pg.evaluate(()=>[...document.querySelectorAll('#zoneList .zl-row')].every(r=>{ const b=r.getBoundingClientRect(); return b.left>=0 && b.right<=innerWidth+1; })));
+    await pg.setViewportSize({width:1440,height:900});
+    const outId=zrows.find(r=>r.out).id;
+    await pg.evaluate(id=>document.querySelector('[data-zout="'+id+'"]').click(),outId);
+    await until(id=>!!document.querySelector('[data-zin="'+id+'"]'),120000,outId); await stable(3000,120000);
+    ok(name+': a place can be taken out (and back in)', await pg.evaluate(id=>!!document.querySelector('.zl-gone[data-zrow="'+id+'"]') && /Herausgenommen/.test(document.querySelector('[data-zrow="'+id+'"]').innerText),outId));
+    const added=zrows.find(r=>r.add);
+    if(added){
+      await pg.evaluate(()=>document.querySelector('[data-zadd]').click());
+      await until(()=>document.querySelectorAll('.chosen-row, .side-row').length>0 || !document.querySelector('[data-zadd="0"]'),60000); await stable(3000,240000);
+      ok(name+': a place outside the zone can be added; the ride time is filled in automatically', await pg.evaluate(()=>{ document.querySelector('[data-step="2"]').click(); return true; }) && !!await until(()=>!!document.getElementById('cBudTravel'),20000) && await pg.evaluate(()=>+document.getElementById('cBudTravel').value>=5 && /automatisch/.test(document.getElementById('cBudTravel').nextElementSibling.innerText)));
+      await pg.evaluate(()=>document.querySelector('[data-step="3"]').click()); await until(()=>!!document.querySelector('.budget-box') && !document.getElementById('cNext').disabled,240000); await stable(3000,240000);
+    } else ok(name+': (no place outside the zone in this area to add)', true);
     await shot('timefirst-plan');
     await pg.evaluate(()=>{const b=document.getElementById('cNext');if(b&&!b.disabled)b.click();});
     await until(()=>document.querySelectorAll('select[data-wsel]').length>=2,30000);
@@ -175,13 +204,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       rows.every(r=>Number.isInteger(r.mailboxes)) &&
       tk.flyers===rows.reduce((a,r)=>a+r.mailboxes,0));
     ok(name+': new mode and target hours survive in saved days JSON',
-      rows.every(r=>r.days?.[0]?.budget_h===6&&r.days[0].budget_strategy==='near-first'&&r.days[0].delivery_radius_km===8));
+      rows.every(r=>r.days?.[0]?.budget_h===6&&r.days[0].budget_strategy==='near-first'&&r.days[0].delivery_drive_min===12&&r.days[0].delivery_zone?.real===true&&r.days[0].delivery_radius_km==null));
+    ok(name+': the taken-out place is saved with the order', rows[0].days[0].excluded_places?.some(x=>x.id===outId));
     const dl=pg.waitForEvent('download',{timeout:10000});
     await pg.evaluate(()=>document.getElementById('tCustomerExport').click());
     const download=await dl;
     ok(name+': customer area export offered without staff hours',
       download.suggestedFilename().endsWith('.geojson'));
-    ok(name+': saved boundary is a circle centred on the order start', tk.zone_polygon.length===128);
+
     await pg.evaluate(()=>document.getElementById('tEdit').click());
     await pg.waitForSelector('#eReplan');
     await pg.evaluate(()=>document.getElementById('eReplan').click());
@@ -189,19 +219,18 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     // the reopened order is recalculated first; the step buttons are usable once that is done
     await until(()=>!!document.querySelector('.budget-box') && !document.getElementById('cNext').disabled,240000);
     await pg.evaluate(()=>document.querySelector('[data-step="2"]').click());
-    await pg.waitForSelector('#cRadiusKm');
-    ok(name+': reopening restores the selected radius rather than the default',
-      await pg.evaluate(()=>document.getElementById('cCircle').checked && +document.getElementById('cRadiusKm').value===8));
-    // time-first orders no longer get automatic nearby places; a ride time is only asked for manual places
-    ok(name+': no automatic nearby places in a time-first order (no ride time needed)', await pg.evaluate(()=>!document.getElementById('cBudTravel')));
-    await pg.evaluate(()=>{ const r=document.getElementById('cBudTravel'); if(r){ r.value=30; r.dispatchEvent(new Event('change')); } });
+    await pg.waitForSelector('#cDriveMin');
+    const q0=carQueries;
+    ok(name+': reopening restores the drive time and the saved zone (no new road download)',
+      await pg.evaluate(()=>document.getElementById('cDrive').checked && +document.getElementById('cDriveMin').value===12) && carQueries===q0);
     await pg.evaluate(()=>document.querySelector('[data-step="3"]').click());
-    ok(name+': reopened circle order recalculates successfully',
+    ok(name+': reopened zone order recalculates successfully',
       !!await until(()=>!!document.querySelector('.budget-box') && !document.getElementById('cNext').disabled,240000) && await stable(3000,30000));
     await pg.evaluate(()=>document.querySelector('[data-step="2"]').click());
     await pg.setViewportSize({width:375,height:812});
-    await pg.locator('#cRadiusKm').scrollIntoViewIfNeeded();
-    await shot('circle-settings-mobile');
+    await pg.locator('#cDriveMin').scrollIntoViewIfNeeded();
+    await shot('zone-settings-mobile');
+    ok(name+': drive time settings fit a phone', await pg.evaluate(()=>{ const b=document.getElementById('cDriveMin').getBoundingClientRect(); return b.left>=0 && b.right<=innerWidth+1; }));
     ok(name+': no browser JavaScript errors',errors.length===0,errors.slice(0,3).join(' | '));
     ok(name+': no request left the test environment',blocked.length===0,[...new Set(blocked)].join(','));
     await ctx.close();

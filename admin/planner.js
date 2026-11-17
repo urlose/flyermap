@@ -969,7 +969,7 @@
     for(let i = 0; i < E; i++) if(cur.inSet[i]){ ids.push(i); sum += g.edges[i].mb; const k = (tree.d[g.edges[i].a] + tree.d[g.edges[i].b]) / 2; if(k > reach) reach = k; }
     return { ids, mailboxes:sum, skipped_mb:skipped, reach_m:Math.round(reach) };
   }
-  const MAX_R = 6000, MUST_MAX_R = 10000;   // a mandatory area may make the loaded square larger than usual
+  const MAX_R = 6000, MUST_MAX_R = 25000;   // a mandatory area or a drive-time zone (17.11.2026: up to 30 min by car) may make the loaded square larger
   // radius for the next map-data round. The loaded square must be clearly larger than the area we actually use,
   // otherwise villages near the edge are cut off and look poorer than they are.
   function nextRadius(g, flyers){

@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import Planner from '../admin/planner.js';
 import { createPlanService } from '../worker/src/plancore.js';
 import { budgetDays } from '../worker/src/budgetplan.js';
+import { fallbackGrid, zoneFromPlans, minutesTo } from '../worker/src/drivezone.js';
+import { cellOf } from '../worker/src/zensus.js';
 import { radiusKm, radiusFromPlans, circlePolygon, distanceM, insideCircle, clipDeliveryGraph, manualOutsideCircle } from '../worker/src/circlearea.js';
 globalThis.fetch = async () => { throw new Error('No network in synthetic tests'); };
 const start = [48.460716, 10.212487];
@@ -86,3 +88,31 @@ assert.equal(options[1].zone.length,128);
 assert.equal(wider.budget.radiusKm,10);
 assert.equal(wider.mailboxes,10);
 console.log('Circle regressions: boundary, manual exceptions, auto towns, budget, persistence and legacy compatibility OK');
+
+// Drive-time zone (17.11.2026): the grid replaces the circle; same clipping, saved with the order, re-plan uses the saved grid.
+Planner.loadForFlyers=async()=>graph;
+const dz=fallbackGrid(start,5);   // 3 km "circle" on the grid – reaches both buildings
+const zoneRun=async (zone, extra={})=>(await createPlanService(null).plan({...args,budget:{...args.budget,radiusKm:null,driveZone:zone,...extra}},()=>{},()=>false)).plan;
+const zAll=await zoneRun(dz);
+assert.equal(zAll.mailboxes,10,'Both buildings lie in the drive zone');
+assert.equal(zAll.budget.radiusKm,undefined);
+assert.ok(zAll.budget.driveZone);
+const zSaved=zAll.routes.map(r=>({days:budgetDays(r,zAll)}));
+const back=zoneFromPlans(JSON.parse(JSON.stringify(zSaved)));
+assert.ok(back && back.min===5 && zSaved[0].days[0].delivery_drive_min===5,'Zone survives the saved rows');
+assert.equal((await zoneRun(back)).mailboxes,10,'Re-plan with the saved zone');
+// a zone that ends before the buildings (200 m cells: both lie in the same cell, ~500 m north)
+const cut=Math.floor((point(499)[0]-dz.o[0])/dz.s[0]);
+const runs=[],mins=[];let at=0;for(let k=0;k<dz.runs.length;k+=3){const n=dz.runs[k+2]-dz.runs[k+1]+1;if(dz.runs[k]<cut){runs.push(dz.runs[k],dz.runs[k+1],dz.runs[k+2]);mins.push(...dz.mins.slice(at,at+n));}at+=n;}
+const zHalf=await zoneRun({...dz,runs,mins});
+assert.equal(zHalf.mailboxes,0,'Buildings outside the drive zone are not planned');
+// a place taken out by the admin (its census cells): no automatic delivery there; stats show what the plan reaches
+const c=cellOf(...edge.boxes[1].slice(0,2));
+const ex=await zoneRun(dz,{exclude:[{id:'x',name:'Weg',lat:0,lng:0,cells:[c[0],c[1]]}],places:[{id:'x',cells:[c[0],c[1]]}]});
+assert.equal(ex.mailboxes,0,'Excluded place gets no flyers (both buildings are in its cells)');
+assert.deepEqual(ex.budget.placeStats,[{id:'x',mailboxes:0}]);
+const st=await zoneRun(dz,{places:[{id:'x',cells:[c[0],c[1]]}]});
+assert.deepEqual(st.budget.placeStats,[{id:'x',mailboxes:10}],'Reached place counted');
+assert.equal((await zoneRun(dz,{exclude:[{id:'y',cells:[c[0]+5,c[1]+5]}]})).mailboxes,10,'A place elsewhere changes nothing');
+assert.ok(budgetDays(st.routes[0],{...st,budget:{...st.budget,exclude:[{id:'x',name:'Weg',lat:0,lng:0,cells:[1,2]}]}})[0].excluded_places.length===1,'Exclusions are saved with the order');
+console.log('Drive-time zone: clipping, persistence, exclusions and place statistics OK');

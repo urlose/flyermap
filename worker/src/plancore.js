@@ -4,6 +4,8 @@
 import Planner from '../../admin/planner.js';
 import { outwardStreetOrder, streetGeometryKey } from './nearfirst.js';
 import { radiusKm, insideCircle, circlePolygon, clipDeliveryGraph } from './circlearea.js';
+import { insideZone, zoneLoadM, ringPolygon } from './drivezone.js';
+import { cellOf } from './zensus.js';
 import { censusSource, placeMask } from './zensus.js';
 const census = censusSource();   // Zensus 2022 lifts the mailbox estimate where our own rules count too few (old town centres)
 
@@ -534,10 +536,19 @@ export function createPlanService(cache){
     // Time-first, street-network expansion. Unlike planBudget this mode never
     // allocates by mailbox density and never takes the flyer limit as a target.
     async planNearFirst({ start, n, days, hours, budget, side = [], must = [], zone = null, mainName = '' }, stage, stale){
-      const circleKm = radiusKm(budget.radiusKm);
-      const circle = circleKm == null ? [] : circlePolygon(start, circleKm);
+      // delivery boundary: the drive-time zone (17.11.2026, drivezone.js) or – older orders – a circle; manual places are exceptions
+      const dz = budget.driveZone && Array.isArray(budget.driveZone.runs) ? budget.driveZone : null;
+      const circleKm = dz ? null : radiusKm(budget.radiusKm);
+      const loadM = dz ? zoneLoadM(dz, start) : circleKm != null ? circleKm * 1000 : null;
+      const circle = loadM == null ? [] : dz ? ringPolygon(start, loadM / 1000) : circlePolygon(start, loadM / 1000);   // the street map is loaded inside this circle
+      // places the admin took out of the zone: their census cells (+ one cell around) get no automatic delivery
+      const outCells = new Set();
+      for(const x of budget.exclude || []) for(let k = 0; k + 1 < (x.cells || []).length; k += 2) for(let a = -1; a <= 1; a++) for(let b = -1; b <= 1; b++) outCells.add((x.cells[k] + a) + ',' + (x.cells[k + 1] + b));
+      const excluded = p => { if(!outCells.size) return false; const [a, b] = cellOf(p[0], p[1]); return outCells.has(a + ',' + b); };
+      const inBound = p => (dz ? insideZone(dz, start, p) : circleKm == null || insideCircle(p, start, circleKm)) && !excluded(p);
+      const bounded = dz || circleKm != null || outCells.size > 0;
       // Only automatic places are constrained; manual selections are exceptions.
-      side = side.filter(c => !c.auto || circleKm == null || insideCircle([c.lat, c.lng], start, circleKm));
+      side = side.filter(c => !c.auto || !bounded || inBound([c.lat, c.lng]));
       const shapes = (must || []).filter(x => x?.p?.length > 2).map((x,i) => ({
         name:x.name||'Zusatzgebiet '+(i+1), zone:x.p, flyers:1500,
         lat:(x.c&&x.c[0])||x.p.reduce((a,p)=>a+p[0],0)/x.p.length,
@@ -574,7 +585,7 @@ export function createPlanService(cache){
       // A manually selected place receives a slice of the time, not a fixed
       // number of flyers. The main start area gets the remainder (at least 60%).
       const sideWork=Bwalk*shareSide, mainWork=Bwalk-sideWork;
-      const places=[{name:mainName||'',st:start,g:clipDeliveryGraph(G,start,circleKm),time:mainWork,workers:N,isMain:true}];
+      const places=[{name:mainName||'',st:start,g:bounded?clipDeliveryGraph(G,start,1,inBound):G,time:mainWork,workers:N,isMain:true}];
       for(const c of side){
         stage('loadingSide');
         const g0=await sideGraph({ ...c, loadFor:Math.max(1500,Math.round(+c.flyers||1500)) },stage,stale);
@@ -587,7 +598,7 @@ export function createPlanService(cache){
           const mid=e.coords?.[Math.floor(e.coords.length/2)]||g0.pts[e.a];
           return retainBoxes(e,inside,()=>inside(mid));
         })};
-        places.push({name:c.name||'',st:[c.lat,c.lng],g:c.auto?clipDeliveryGraph(filtered,start,circleKm):filtered,time:sideWork/side.length,workers:1,isMain:false,manual:!c.auto});
+        places.push({name:c.name||'',st:[c.lat,c.lng],g:c.auto&&bounded?clipDeliveryGraph(filtered,start,1,inBound):filtered,time:sideWork/side.length,workers:1,isMain:false,manual:!c.auto});
       }
       stage('calculating');
       // Adjacent maps can split a street differently or snap the same building
@@ -637,15 +648,15 @@ export function createPlanService(cache){
       // square. If we exhausted every nearby street but still have plenty of
       // time, load a wider region once and recalculate from scratch.
       const mainResult=planned.find(p=>p.isMain);
-      if(!budget._expanded && mainResult?.exhausted && mainResult.minutes<mainWork*.8 &&
-         G.radius<(circleKm == null ? Planner.MAX_R : circleKm*1000)){
-        const oldRadius=G.radius,next=circleKm == null ? Planner.nextRadius(G,Math.max(12000,(G.usable||0)*1.5)) : circleKm*1000;
+      if((dz ? (budget._expanded||0)<3 : !budget._expanded) && mainResult?.exhausted && mainResult.minutes<mainWork*.8 &&
+         G.radius<(loadM == null ? Planner.MAX_R : loadM)){
+        const oldRadius=G.radius,next=loadM == null ? Planner.nextRadius(G,Math.max(12000,(G.usable||0)*1.5)) : dz ? Math.min(loadM,Math.max(Math.round(G.radius*2),Planner.nextRadius(G,Math.max(12000,(G.usable||0)*1.5)))) : loadM;   // a drive zone grows step by step (x2)
         if(next>oldRadius){
           stage('loadingMore');
-          await load(start,12000,next,[],stage,stale,'loadingMore',circle.length?circle:undefined);
+          await load(start,12000,next,[],stage,stale,'loadingMore',dz?ringPolygon(start,next/1000):circle.length?circle:undefined);
           if(stale())return {skipped:true};
           if(G.radius>oldRadius)return this.planNearFirst({
-            start,n,days,hours,budget:{...budget,_expanded:true},
+            start,n,days,hours,budget:{...budget,_expanded:dz?(budget._expanded||0)+1:true},
             side:side.filter(c=>!c._areaFromShape),must:[],zone:null,mainName
           },stage,stale);
         }
@@ -695,12 +706,19 @@ export function createPlanService(cache){
       const mailboxes=Math.round(routes.reduce((a,r)=>a+(r.mailboxes||0),0));
       const walking=routes.reduce((a,r)=>a+(r.work_minutes||0),0);
       const travelMinutes=jumpsAll.reduce((a,j)=>a+(j.min||0),0),actual=walking+travelMinutes;
-      const manualOutside = circleKm != null && places.some(p=>p.manual && p.g.edges.some(e=>e.mb>0 && (e.boxes?.length ? e.boxes : (e.coords||[])).some(b=>!insideCircle(b,start,circleKm))));
+      const manualOutside = (dz || circleKm != null) && places.some(p=>p.manual && p.g.edges.some(e=>e.mb>0 && (e.boxes?.length ? e.boxes : (e.coords||[])).some(b=>!(dz ? insideZone(dz,start,b) : insideCircle(b,start,circleKm)))));
+      // which listed nearby places the plan reaches (mailboxes on the routes inside their census cells)
+      const placeStats = (budget.places || []).map(x => {
+        const own = new Set(); for(let k = 0; k + 1 < (x.cells || []).length; k += 2) for(let a = -1; a <= 1; a++) for(let b = -1; b <= 1; b++) own.add((x.cells[k] + a) + ',' + (x.cells[k + 1] + b));
+        let mb = 0; for(const r of routes) for(const bx of r.boxes || []){ const [a, b] = cellOf(bx[0], bx[1]); if(own.has(a + ',' + b)) mb += bx[2] || 1; }
+        return { id:x.id, mailboxes:Math.round(mb) };
+      });
       const plan={routes,mailboxes,zone:circle,zones:true,merged:true,per_worker,
         split:planned.map(p=>({name:p.name,flyers:Math.round(p.mailboxes),cap:null})),
         side_failed:[],side_dropped:[],side_info:[],must_mb:0,must_info:[],
         budget:{strategy:'near-first',hours:budget.hours,tolerance:tol,car:!!budget.car,
           ...(circleKm != null ? { radiusKm:circleKm,manualOutside } : {}),
+          ...(dz ? { driveZone:dz,manualOutside } : {}), placeStats, ...(budget.exclude?.length ? { exclude:budget.exclude } : {}),
           minutes:Math.round(B),effective_minutes:Math.round(B),
           target_minutes:Math.round(B),max_minutes:Math.round(B*(1+tol)),
           actual_minutes:Math.round(actual),work_minutes:Math.round(walking),

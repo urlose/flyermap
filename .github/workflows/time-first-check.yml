@@ -5,6 +5,9 @@ on:
       - 'admin/planner.js'
       - 'worker/src/nearfirst.js'
       - 'worker/src/circlearea.js'
+      - 'worker/src/drivezone.js'
+      - 'worker/src/zonelist.js'
+      - 'test/drivezone.mjs'
       - 'test/circlearea.mjs'
       - 'worker/src/customerexport.js'
       - 'worker/src/plancore.js'
@@ -60,6 +63,7 @@ jobs:
       - run: node test/nearfirst.mjs
       - run: node test/nearfirst-service.mjs
       - run: node test/circlearea.mjs
+      - run: node test/drivezone.mjs
       - run: node test/customerexport.mjs
       - name: Check atomic save on synthetic Postgres
         run: |
