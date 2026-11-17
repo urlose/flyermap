@@ -1349,7 +1349,7 @@ ${d.budget.on && d.budget.strategy === 'near-first' ? '' : `      <label class="
       ${d.must.length ? `<div class="chips" style="margin:0 0 8px">${d.must.map((a, k) => `<span class="chip">${d.split ? `<span>${esc(mName(a, k))}${spText(a.name)}</span>${allBtn(a.name, a.all, 'm', k)}` : `<button class="link" data-med="${k}">${esc(mName(a, k))} · ${esc(a.n ? fmtN(a.n) : t('mustAllShort'))}</button>`}${a.p && a.p.length > 2 ? `<button class="link" data-mpt="${k}" aria-label="${esc(t('shapeEdit'))}" title="${esc(t('shapeEdit'))}">✎</button>` : ''}<button class="link" data-mrm="${k}" aria-label="${esc(t('del'))}">✕</button></span>`).join('')}</div>` : ''}
       ${d.side.length ? `<label class="f">${esc(t('covChosen'))}</label>${chosenRows()}<p class="small muted">${esc(t('sideOwnHint'))}</p>` : ''}
       ${!(d.budget.on && d.budget.strategy === 'near-first') && fixedMb > d.flyers ? `<div class="warnbox" style="margin:0 0 8px">${esc(t('allMbTooMany', { mb:fmtN(fixedMb), f:fmtN(d.flyers) }))} <button class="link" id="cAllFit">${esc(t('allMbRaise', { f:fmtN(Math.ceil(fixedMb / 50) * 50) }))}</button></div>` : ''}
-      ${d.start ? sfTown('cTown1').html + `<button class="btn ghost small" id="cMustAdd" style="margin-top:8px">${ICONS.edit}${esc(t('sideDrawBtn'))}</button>` : `<p class="small muted">${esc(t('sideNeedStart'))}</p>`}
+      ${d.start ? sfTown('cTown1').html : `<p class="small muted">${esc(t('sideNeedStart'))}</p>`}
       <div class="must-box zone-box">
         <b>${esc(t('sideDrawTitle'))}</b>
         <p class="small muted" style="margin:4px 0 8px">${esc(t('sideDrawDescription'))}</p>
@@ -1451,7 +1451,6 @@ ${d.budget.on && d.budget.strategy === 'near-first' ? '' : `      <label class="
     document.querySelectorAll('[data-r]').forEach(s => s.onchange = () => { d.assign[+s.dataset.r] = s.value || null; });
     document.querySelectorAll('[data-wsel]').forEach(s => s.onchange = () => { const w = +s.dataset.wsel; p.routes.forEach((r, i) => { if(r.w === w) d.assign[i] = s.value || null; }); });
     if($('#cSave')) $('#cSave').onclick = save;
-    if($('#cMustAdd')) $('#cMustAdd').onclick = () => drawMode(true, 'side');
     if($('#cSideDraw')) $('#cSideDraw').onclick = () => { saved = keep(); drawMode(true, 'side'); };
     Object.values(towns).forEach(x => x.bind());
     if(addrSf){ addrSf.bind(); const ai = $('#cAddr'); if(ai && d.place) ai.value = d.place.name + (d.place.sub ? ', ' + d.place.sub : ''); }
