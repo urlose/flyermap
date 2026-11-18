@@ -34,7 +34,7 @@ assert.ok([...r.keep].length && rep.M.keep + rep.A.keep <= 230, 'planned total w
 // inside a place the farthest go first
 const keptA = routes[1].boxes.filter(b => r.keep.has((+b[0]).toFixed(6) + ',' + (+b[1]).toFixed(6)));
 assert.ok(keptA.every(b => b[0] <= routes[1].boxes[keptA.length][0]), 'the nearest streets of the village stay');
-// a big building that does not fit ends the place (no holes)
+// a big building that does not fit is skipped; a smaller one farther on still fits
 const keep = chooseKeep([{ k:'1', p:at(10), w:5, place:'X' }, { k:'2', p:at(20), w:50, place:'X' }, { k:'3', p:at(30), w:5, place:'X' }], { X:20 }, start);
-assert.deepEqual([...keep], ['1']);
+assert.deepEqual([...keep], ['1', '3']);
 console.log('all ok');

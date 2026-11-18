@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import Planner from '../admin/planner.js';
 import { createPlanService } from '../worker/src/plancore.js';
 import { budgetDays } from '../worker/src/budgetplan.js';
+import { cellOf } from '../worker/src/zensus.js';
 import { radiusKm, radiusFromPlans, circlePolygon, distanceM, insideCircle, clipDeliveryGraph, manualOutsideCircle } from '../worker/src/circlearea.js';
 globalThis.fetch = async () => { throw new Error('No network in synthetic tests'); };
 const start = [48.460716, 10.212487];
@@ -98,3 +99,40 @@ assert.ok(capped.budget.actual_minutes<=capped.budget.cap.full_minutes,'less wor
 const notCut=await run({budget:{...args.budget,radiusKm:10,cap:{target:50,places:[]}}});
 assert.equal(notCut.mailboxes,10); assert.equal(notCut.budget.cap.cut,false);
 console.log('Print run below the full plan OK');
+
+// Connected street (18.11.2026): main town 50 at the start, village 1 km on: houses with 25 and 4. Print run 54 ->
+// 50 + 4: the 25 house is skipped, the route still walks past it to the 4 house.
+{
+  const P=[start,point(100),point(1000),point(1100)];
+  const E=[{a:0,b:1,len:100,coords:[P[0],P[1]],mb:50,boxes:[point(50).concat(50)]},
+           {a:1,b:2,len:900,coords:[P[1],P[2]],mb:0,boxes:[]},
+           {a:2,b:3,len:100,coords:[P[2],P[3]],mb:29,boxes:[point(1020).concat(25),point(1080).concat(4)]}];
+  const g2={pts:P,edges:E,adj:[[{e:0,to:1}],[{e:0,to:0},{e:1,to:2}],[{e:1,to:1},{e:2,to:3}],[{e:2,to:2}]],radius:2000,usable:79,mailboxes:79,street_m:1100};
+  Planner.loadForFlyers=async()=>g2;
+  const cellsAt=m=>{ const [a,b]=cellOf(...point(m)); return [a,b]; };
+  const places=[{id:'M',lat:point(50)[0],lng:start[1],cells:cellsAt(50)},{id:'V',lat:point(1050)[0],lng:start[1],cells:[...cellsAt(1020),...cellsAt(1080)]}];
+  const fullC=await run({budget:{...args.budget,radiusKm:5}});
+  assert.equal(fullC.mailboxes,79,'full plan: 50 + 25 + 4');
+  const c54=await run({budget:{...args.budget,radiusKm:5,cap:{target:54,places}}});
+  const by=Object.fromEntries(c54.budget.cap.places.map(x=>[x.id,x.planned]));
+  assert.equal(c54.mailboxes,54,'50 + 4: '+c54.mailboxes);
+  assert.deepEqual(by,{M:50,V:4});
+  const far=Math.max(...c54.routes.flatMap(r=>r.path.map(p=>distanceM(start,p))));
+  assert.ok(far>=1079,'the route reaches the second house: '+far);
+  assert.ok(c54.routes.flatMap(r=>r.boxes).every(b=>b[2]!==25),'the 25 house is not delivered');
+  console.log('Connected street: 50 + 4 with the route past the skipped house OK');
+}
+// Same, but the village street is a long sparse dead end (1,5 km, after the cut 4 mailboxes = 2,7 per km): the normal
+// near-first filter skips such streets as isolated; in the print-run re-plan the kept house must still be delivered.
+{
+  const P=[start,point(100),point(1000),point(2500)];
+  const E=[{a:0,b:1,len:100,coords:[P[0],P[1]],mb:50,boxes:[point(50).concat(50)]},
+           {a:1,b:2,len:900,coords:[P[1],P[2]],mb:0,boxes:[]},
+           {a:2,b:3,len:1500,coords:[P[2],P[3]],mb:29,boxes:[point(1020).concat(25),point(2480).concat(4)]}];
+  Planner.loadForFlyers=async()=>({pts:P,edges:E,adj:[[{e:0,to:1}],[{e:0,to:0},{e:1,to:2}],[{e:1,to:1},{e:2,to:3}],[{e:2,to:2}]],radius:3000,usable:79,mailboxes:79,street_m:2500});
+  const cellsAt=m=>{ const [a,b]=cellOf(...point(m)); return [a,b]; };
+  const places=[{id:'M',lat:point(50)[0],lng:start[1],cells:cellsAt(50)},{id:'V',lat:point(1050)[0],lng:start[1],cells:[...cellsAt(1020),...cellsAt(2480)]}];
+  const c=await run({budget:{...args.budget,radiusKm:5,cap:{target:54,places}}});
+  assert.deepEqual(Object.fromEntries(c.budget.cap.places.map(x=>[x.id,x.planned])),{M:50,V:4},'kept house on a sparse dead end delivered');
+  console.log('Sparse dead end in the print-run re-plan OK');
+}

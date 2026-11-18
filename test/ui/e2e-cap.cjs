@@ -153,7 +153,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const rows = await table();
     const res = await pg.evaluate(() => { const c = window.__lastCap || null; return c; });
     const sum = await pg.evaluate(() => +document.getElementById('capSum').innerText.replace(/\D/g, ''));
-    console.log('TARGET', target, 'FULL', fullN, 'PLANNED', sum); rows.forEach(r => console.log('ROW', r.join(' | ')));
+    console.log('TARGET', target, 'FULL', fullN, 'PLANNED', sum); rows.forEach(r => console.log('ROW', r.join(' | '))); console.log('KEEP', JSON.stringify(await pg.evaluate(() => [...document.querySelectorAll('#capTable tbody tr')].map(r => r.dataset.cap + '=' + r.dataset.keep))));
     console.log('TIME', JSON.stringify(await pg.evaluate(() => [...document.querySelectorAll('#capTable tfoot tr')].map(r => r.innerText.replace(/\s+/g, ' ')))));
     ok(name+': planned total within the print run', sum > 0 && sum <= target, sum + ' > ' + target);
     ok(name+': several places in the table, main town first', rows.length >= 3 && /Hauptort|Weidenberg/.test(rows[0][0]), JSON.stringify(rows.slice(0, 2)));

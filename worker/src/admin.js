@@ -1349,7 +1349,7 @@ function viewCreate(edit){
         <p class="small muted" style="margin:4px 0 0">${esc(t('capHint'))}</p>
         ${c && !c.cut ? `<div class="hint">${esc(t('capNoCut', { f:fmtN(c.target), max:fmtN(max) }))}</div>` : ''}
         ${c && c.cut ? `<table class="cap-table" id="capTable"><thead><tr><th>${esc(t('capPlace'))}</th><th>${esc(t('capFull'))}</th><th>${esc(t('capPlanned'))}</th></tr></thead><tbody>
-          ${rows.map(x => `<tr data-cap="${esc(x.id)}"><td>${esc(nameOf(x))}</td><td>${fmtN(x.full)}</td><td><b>${fmtN(x.planned)}</b>${x.planned < x.full ? ` <span class="small muted">(−${fmtN(x.full - x.planned)})</span>` : ''}</td></tr>`).join('')}
+          ${rows.map(x => `<tr data-cap="${esc(x.id)}" data-keep="${x.keep ?? ''}"><td>${esc(nameOf(x))}</td><td>${fmtN(x.full)}</td><td><b>${fmtN(x.planned)}</b>${x.planned < x.full ? ` <span class="small muted">(−${fmtN(x.full - x.planned)})</span>` : ''}</td></tr>`).join('')}
           </tbody><tfoot><tr><td>${esc(t('capTotal'))}</td><td>${fmtN(c.full_planned)}</td><td><b id="capSum">${fmtN(c.planned)}</b></td></tr><tr><td>${esc(t('capTime'))}</td><td>${hh(c.full_minutes)}</td><td><b>${hh(b.actual_minutes)}</b></td></tr></tfoot></table>
           <p class="small muted" style="margin:4px 0 0">${esc(t('capDropped'))}</p>` : ''}</div>`;
     };

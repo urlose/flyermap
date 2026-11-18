@@ -550,7 +550,7 @@ export function createPlanService(cache){
       const ap = again.plan, kept = new Map();
       for(const b of plannedBoxes(ap.routes)){ const id = res.place.get(b.k) ?? '_main'; kept.set(id, (kept.get(id) || 0) + b.w); }
       ap.budget.cap = { ...info, cut:true, planned:ap.mailboxes,
-        places:res.report.map(x => ({ id:x.id, main:x.main, full:x.full, planned:Math.round(kept.get(x.id) || 0) })) };
+        places:res.report.map(x => ({ id:x.id, main:x.main, full:x.full, keep:x.keep, planned:Math.round(kept.get(x.id) || 0) })) };
       ap.dropped = droppedStreets(G, res.keep, new Set(plannedBoxes(fp.routes).map(b => b.k)));
       return again;
     },
@@ -625,7 +625,7 @@ export function createPlanService(cache){
         if(stale())return {skipped:true};
         const g={...pl.g,edges:pl.g.edges.map((e,i)=>retainBoxes(e,
           b=>!seenBoxes.has(boxKey(b)),()=>!seen.has(edgeKey(pl.g,i))))};
-        const eligible=outwardStreetOrder(g,pl.st).streets;
+        const eligible=outwardStreetOrder(g,pl.st,budget._capKeep?{isolatedGapM:Infinity}:undefined).streets;   // smaller print run: the kept houses were chosen on purpose, no 'isolated dead end' filter
         const evalPrefix=count=>{
           if(!count)return null;
           const ids=new Set(eligible.slice(0,count).map(q=>q.i));

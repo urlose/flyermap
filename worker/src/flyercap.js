@@ -66,7 +66,7 @@ export function allocate(counts, target){
   return quota;
 }
 
-// which mailboxes stay: per place the ones nearest to the start, until the place's quota is used
+// which mailboxes stay: per place nearest to the start first; a house too big for the rest is skipped and the search goes on
 export function chooseKeep(attributed, quota, start){
   const keep = new Set(), by = new Map();
   for(const b of attributed){ if(!by.has(b.place)) by.set(b.place, []); by.get(b.place).push(b); }
@@ -74,7 +74,7 @@ export function chooseKeep(attributed, quota, start){
     list.sort((a, b) => d2(a.p, start) - d2(b.p, start));
     const all = list.reduce((s, b) => s + b.w, 0); let left = quota[id] ?? 0;
     if(left >= all - 0.5){ list.forEach(b => keep.add(b.k)); continue; }   // the place keeps everything (weights are not whole numbers)
-    for(const b of list){ if(b.w <= left + 0.25){ keep.add(b.k); left -= b.w; } else left = -1; }   // stop at the first that does not fit: no holes
+    for(const b of list){ if(b.w <= left + 0.25){ keep.add(b.k); left -= b.w; } }   // a house that does not fit is skipped; a smaller one farther on may still fit
   }
   return keep;
 }
