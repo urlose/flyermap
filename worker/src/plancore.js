@@ -4,6 +4,7 @@
 import Planner from '../../admin/planner.js';
 import { outwardStreetOrder, streetGeometryKey } from './nearfirst.js';
 import { radiusKm, insideCircle, circlePolygon, clipDeliveryGraph } from './circlearea.js';
+import { capPlan, clipToKeep, droppedStreets, plannedBoxes, boxKey } from './flyercap.js';
 import { censusSource, placeMask } from './zensus.js';
 const census = censusSource();   // Zensus 2022 lifts the mailbox estimate where our own rules count too few (old town centres)
 
@@ -533,7 +534,27 @@ export function createPlanService(cache){
     // supported; side towns, drawn areas and road travel require separate budgeting.
     // Time-first, street-network expansion. Unlike planBudget this mode never
     // allocates by mailbox density and never takes the flyer limit as a target.
-    async planNearFirst({ start, n, days, hours, budget, side = [], must = [], zone = null, mainName = '' }, stage, stale){
+    // Smaller print run (18.11.2026, flyercap.js): full plan first; when the admin wants fewer flyers, the mailboxes to keep
+    // are chosen place by place and the routes are planned again for them only (same circle, no wider map).
+    async planNearFirst(args, stage, stale){
+      const cap = args.budget && args.budget.cap, target = cap && Math.round(+cap.target);
+      if(!(target > 0) || args.budget._capKeep) return this.nearFirstCore(args, stage, stale);
+      const full = await this.nearFirstCore({ ...args, budget:{ ...args.budget, cap:null } }, stage, stale);
+      if(!full || full.skipped || !full.plan) return full;
+      const fp = full.plan, fb = fp.budget || {};
+      const info = { target, full_planned:fp.mailboxes, full_minutes:fb.actual_minutes };
+      if(fp.mailboxes <= target){ fb.cap = { ...info, cut:false, planned:fp.mailboxes, places:[] }; return full; }
+      const res = capPlan(fp.routes, cap.places || [], args.start, target);
+      const again = await this.nearFirstCore({ ...args, budget:{ ...args.budget, cap:null, _capKeep:res.keep, _expanded:true } }, stage, stale);
+      if(!again || again.skipped || !again.plan) return again;
+      const ap = again.plan, kept = new Map();
+      for(const b of plannedBoxes(ap.routes)){ const id = res.place.get(b.k) ?? '_main'; kept.set(id, (kept.get(id) || 0) + b.w); }
+      ap.budget.cap = { ...info, cut:true, planned:ap.mailboxes,
+        places:res.report.map(x => ({ id:x.id, main:x.main, full:x.full, planned:Math.round(kept.get(x.id) || 0) })) };
+      ap.dropped = droppedStreets(G, res.keep, new Set(plannedBoxes(fp.routes).map(b => b.k)));
+      return again;
+    },
+    async nearFirstCore({ start, n, days, hours, budget, side = [], must = [], zone = null, mainName = '' }, stage, stale){
       const circleKm = radiusKm(budget.radiusKm);
       const circle = circleKm == null ? [] : circlePolygon(start, circleKm);
       // Only automatic places are constrained; manual selections are exceptions.
@@ -589,6 +610,7 @@ export function createPlanService(cache){
         })};
         places.push({name:c.name||'',st:[c.lat,c.lng],g:c.auto?clipDeliveryGraph(filtered,start,circleKm):filtered,time:sideWork/side.length,workers:1,isMain:false,manual:!c.auto});
       }
+      if(budget._capKeep) places.forEach(p => { p.g = clipToKeep(p.g, budget._capKeep); });   // smaller print run: only the kept mailboxes
       stage('calculating');
       // Adjacent maps can split a street differently or snap the same building
       // to different edges. Deduplicate actual delivery points, preserving any

@@ -86,3 +86,15 @@ assert.equal(options[1].zone.length,128);
 assert.equal(wider.budget.radiusKm,10);
 assert.equal(wider.mailboxes,10);
 console.log('Circle regressions: boundary, manual exceptions, auto towns, budget, persistence and legacy compatibility OK');
+
+// Smaller print run (18.11.2026): full plan 10 inside the circle, target 4 -> at most 4 planned, circle unchanged, report per place
+const capped=await run({budget:{...args.budget,radiusKm:10,cap:{target:4,places:[]}}});
+assert.ok(capped.mailboxes<=4 && capped.mailboxes>0,'planned total within the print run: '+capped.mailboxes);
+assert.equal(capped.budget.radiusKm,10);
+assert.equal(capped.budget.cap.full_planned,10);
+assert.equal(capped.budget.cap.cut,true);
+assert.equal(capped.budget.cap.places.reduce((a,x)=>a+x.planned,0),capped.mailboxes);
+assert.ok(capped.budget.actual_minutes<=capped.budget.cap.full_minutes,'less working time');
+const notCut=await run({budget:{...args.budget,radiusKm:10,cap:{target:50,places:[]}}});
+assert.equal(notCut.mailboxes,10); assert.equal(notCut.budget.cap.cut,false);
+console.log('Print run below the full plan OK');
