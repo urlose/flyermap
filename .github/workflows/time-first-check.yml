@@ -23,6 +23,8 @@ on:
       - 'supabase/2026-11-16_atomic_task_plans.sql'
       - 'test/sql/atomic_task_plans.sh'
       - 'test/ui/e2e-timefirst.cjs'
+      - 'worker/src/flyercap.js'
+      - 'test/ui/e2e-cap.cjs'
       - 'worker/src/coord.js'
       - 'test/ui/e2e-coord.cjs'
       - '.github/workflows/time-first-check.yml'
@@ -60,6 +62,7 @@ jobs:
       - run: node test/nearfirst.mjs
       - run: node test/nearfirst-service.mjs
       - run: node test/circlearea.mjs
+      - run: node test/flyercap.mjs
       - run: node test/customerexport.mjs
       - name: Check atomic save on synthetic Postgres
         run: |
@@ -75,6 +78,11 @@ jobs:
       - name: Browser test (synthetic Supabase, no production)
         working-directory: test/ui
         run: timeout 540s node e2e-timefirst.cjs out-timefirst
+      - name: Browser test smaller print run (synthetic, no production)
+        working-directory: test/ui
+        env:
+          CAP_PCT: '0.85'
+        run: timeout 900s node e2e-cap.cjs out-timefirst/cap
       - name: Browser test coordinator role (synthetic Supabase, no production)
         working-directory: test/ui
         run: timeout 300s node e2e-coord.cjs out-timefirst/coord
