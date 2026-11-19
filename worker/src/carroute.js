@@ -7,7 +7,7 @@ import { distanceM } from './circlearea.js';
 
 const OVERPASS = ['https://overpass.openstreetmap.fr/api/interpreter', 'https://overpass-api.de/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
 const MAIN = 'motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified';
-const LOCAL = 'residential|living_street|service';
+const LOCAL = 'residential|living_street';   // no service roads: lighter query, the busy public servers answer more often
 const SPEED = { motorway:115, motorway_link:60, trunk:90, trunk_link:50, primary:70, primary_link:45, secondary:65, secondary_link:40,
   tertiary:55, tertiary_link:35, unclassified:45, residential:30, living_street:10, service:15 };
 const FACTOR = 0.8, SNAP_M = 900, LAST_KMH = 20;   // houses → nearest car road at 20 km/h (village streets, parking)

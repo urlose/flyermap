@@ -763,7 +763,7 @@ export function createPlanService(cache){
       for(const bin of bins)for(const it of bin.items){it.a=P(it.r.path[0]);it.b=P(it.r.path.at(-1));}
       const needRides=bins.some(b=>b.items.length>1||(b.items[0]&&segLen(start,b.items[0].r.path[0])>150));
       if(needRides)stage('rides');
-      const M=needRides?await carRides(start,Math.max(3,Math.max(...ends.map(p=>segLen(start,p)))/1000+3),ends):null;
+      const M=needRides?await carRides(start,Math.max(3,Math.max(...ends.map(p=>segLen(start,p)))/1000+2),ends):null;
       if(stale())return {skipped:true};
       if(budget._diag)budget._diag.car_error=M&&M.length>1&&!M[0][1]?.known?carroute.lastError:null;
       const rideOf=(i,j)=>{
