@@ -42,7 +42,9 @@ export function carGraph(json){
 
 // minutes from the start to every road node (Dijkstra, binary heap); the start joins the nearest node at town speed
 export async function overpass(q, fetchImpl, timeoutMs){
-  try{ return await overpass1(q, fetchImpl, timeoutMs); }catch(e){ await new Promise(r => setTimeout(r, 4000)); return overpass1(q, fetchImpl, timeoutMs); }   // busy servers: one more round
+  let last;
+  for(const wait of [0, 5000, 15000]){ if(wait) await new Promise(r => setTimeout(r, wait)); try{ return await overpass1(q, fetchImpl, timeoutMs); }catch(e){ last = e; } }   // busy public servers: three rounds over all mirrors
+  throw last;
 }
 async function overpass1(q, fetchImpl, timeoutMs){
   let last;

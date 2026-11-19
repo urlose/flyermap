@@ -16,7 +16,7 @@ export function driveMin(value){
   if(!Number.isFinite(n) || n < MIN_DRIVE_MIN || n > MAX_DRIVE_MIN) throw new Error('Fahrzeit muss zwischen 5 und 30 Minuten liegen');
   return n;
 }
-export const searchKm = min => Math.min(30, 3 + min * 1.4);   // fast roads: 15 min ≈ 24 km at most
+export const searchKm = min => Math.min(25, 2 + min * 1.1);   // fast roads: 15 min ≈ 18 km at most (a smaller box: the public road servers answer more often)
 
 // minutes from the start to every road node (Dijkstra, binary heap); the start joins the nearest node at town speed
 export function driveTimes(g, start, limit){
