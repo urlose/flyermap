@@ -13,7 +13,7 @@ import { introOnce, introVideo } from './introview.js';
 import { t, I } from './i18n.js';
 import { NATIVE, PRIVACY_URL, sb, store, rpc, errText, deMobile, $, esc, css, hav, fmtDist, fmtHm, fmtN, fmtTime, fmtDay, loopPath } from './core.js';
 import { waVerify } from './auth.js';
-import { UI, ICONS, shell, setLoc, getLoc, prefetchRoute, plain, topbar, bindBack, makeMap, dot, fit, drawJumps, rideMinOf, modal, confirmBox, reasonBox, toast, cityPicker, langSwitch, themeSwitch, statusPill, emptyState, avatar, every } from './ui.js';
+import { UI, ICONS, shell, setLoc, getLoc, prefetchRoute, plain, topbar, bindBack, makeMap, dot, fit, drawJumps, rideMinOf, ridesOf, modal, confirmBox, reasonBox, toast, cityPicker, langSwitch, themeSwitch, statusPill, emptyState, avatar, every } from './ui.js';
 
 const BackgroundGeolocation = registerPlugin('BackgroundGeolocation');
 const GREEN_C = () => css('--color-map-route-completed') || '#16A34A';   // done parts: the theme's "completed" colour
@@ -488,7 +488,7 @@ function drawTaskBase(m, task, dayIdx, dim){
       // pieces reported as not walkable: orange, dashed (they count as handled, the admin decides)
       for(const x of pl.skipped || []) if(x && x.rep && Array.isArray(x.pts) && x.pts.length > 1) L.polyline(x.pts, { color:'#F97316', weight:6, opacity:.95, dashArray:'10 6', lineCap:'round', interactive:false }).addTo(planLine);
       return r; };
-    redraw(null); b = L.latLngBounds(pl.path.map(q => [q[0], q[1]])); drawJumps(m, pl.path, task.travel || (task.bike ? 'bike' : 'bus'), rideMinOf([pl]));
+    redraw(null); b = L.latLngBounds(pl.path.map(q => [q[0], q[1]])); drawJumps(m, pl.path, task.travel || (task.bike ? 'bike' : 'bus'), rideMinOf([pl]), ridesOf([pl]));
   }
   L.marker([task.start_lat, task.start_lng], { icon:dot('pin-start', 24) }).addTo(m);
   return { b, planLine, redraw };

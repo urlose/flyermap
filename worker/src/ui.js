@@ -205,11 +205,22 @@ export function rideMinOf(plans){
   }
   return null;
 }
-export function drawJumps(g, path, bike, rideMin = null){
+// rides of saved plans (days[].rides with idx + geom) or of a fresh plan (route.jumps)
+export const ridesOf = plans => (plans || []).flatMap(p => [...(p.jumps || []), ...((p.days || []).flatMap(d => d.rides || []))]).filter(r => r && r.idx != null && Array.isArray(r.geom));
+export function drawJumps(g, path, bike, rideMin = null, rides = null){
   const mode = typeof bike === 'string' ? bike : (bike ? 'bike' : 'bus'); bike = mode !== 'bus';   // 'car' | 'bike' | 'bus' (old callers: true = bike)
   (path || []).forEach((q, i) => {
     if(!i || q[2] !== 1 || q[3] === 'r') return;   // 'r': short walk over to a replacement street – no bus / car trip
     const a = [path[i - 1][0], path[i - 1][1]], b = [q[0], q[1]];
+    const rd = mode === 'zones' && rides ? rides.find(x => x.idx === i && !x.walk && x.geom && x.geom.length > 1) : null;
+    if(mode === 'zones' && rides && rides.some(x => x.idx === i && x.walk)) return;   // a few streets on foot: no ride drawn
+    if(rd){   // 19.11.2026: the car ride on the road, km and minutes on the map; an estimate is dashed and says so
+      L.polyline(rd.geom, { color:'#FFFFFF', weight:7, opacity:.55, lineCap:'round', interactive:false }).addTo(g);
+      L.polyline(rd.geom, { color:css('--color-drive') || '#7C3AED', weight:4, opacity:.95, dashArray:rd.known ? null : '6 7', lineCap:'round', interactive:false, className:'ride-road' }).addTo(g);
+      const mid = rd.geom[Math.floor(rd.geom.length / 2)], lab = t(rd.known ? 'rideRoadLabel' : 'rideRoadEst', { km:(+rd.km).toLocaleString('de-DE'), min:Math.round(+rd.min || 0) });
+      L.marker(mid, { icon:L.divIcon({ className:'', html:`<span class="ride-lab${rd.known ? '' : ' est'}">🚗 ${lab}</span>`, iconSize:null, iconAnchor:[0, 10] }), keyboard:false, interactive:false }).addTo(g);
+      return;
+    }
     if(mode === 'zones'){   // time-budget / zone orders: how the people get from one place to the next is NOT known - no car, bike or bus is assumed, no route is requested
       // light halo under a dark dash: visible on the light and on the dark map
       L.polyline([a, b], { color:'#FFFFFF', weight:6, opacity:.45, lineCap:'round', interactive:false }).addTo(g);

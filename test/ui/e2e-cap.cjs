@@ -127,9 +127,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(name+': time-first strategy default, 2 employees, 2500 m/30 min',
       cfg.strategy==='near-first'&&cfg.n==='2'&&cfg.quota==='2500'&&cfg.on===true,
       JSON.stringify(cfg));
-    ok(name+': new orders default to a configurable 10 km circle',
-      await pg.evaluate(()=>document.getElementById('cCircle')?.checked && +document.getElementById('cRadiusKm')?.value===10));
-    await pg.evaluate(()=>{ const r=document.getElementById('cRadiusKm'); r.value=8; r.dispatchEvent(new Event('change')); });
+    ok(name+': new orders: three optional maxima – drive time (15 min), hours, flyers; no km circle',
+      await pg.evaluate(()=>+document.getElementById('cDriveMin')?.value===15 && document.getElementById('cMaxFly')?.value==='' && !document.getElementById('cCircle')));
+    await pg.evaluate(()=>{ const r=document.getElementById('cDriveMin'); r.value=12; r.dispatchEvent(new Event('change')); });
     await pg.evaluate(H=>{
       const h=document.getElementById('cBudH');h.value=H;h.dispatchEvent(new Event('change'));
     }, +process.env.CAP_H||24);
@@ -165,7 +165,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(name+': presence kept in every selected place (where possible)', vill.every(v => v.keep > 0) || sum >= target - 50, JSON.stringify(vill));
     ok(name+': streets taken out are drawn grey on the map', await pg.evaluate(() => document.querySelectorAll('path.dropped-street').length > 0));
     const radii = await pg.evaluate(() => { const r = []; document.getElementById('fullMap')._map.eachLayer(l => { if(l.getRadius) r.push(Math.round(l.getRadius())); }); return r; });
-    ok(name+': circle unchanged (centre and radius)', radii.length === 1 && radii[0] === 8000, JSON.stringify(radii));   // the test set 8 km before planning
+    ok(name+': no circle, the reached area stays drawn', radii.length === 0 && await pg.evaluate(() => document.querySelectorAll('path.drive-full').length === 1), JSON.stringify(radii));
     await shot('2-cut');
     await pg.setViewportSize({ width:375, height:812 }); await pg.evaluate(() => document.getElementById('capBox').scrollIntoView({ block:'start' })); await sleep(700); await shot('3-cut-phone');
     ok(name+': input and table fit a phone', await pg.evaluate(() => ['cCap', 'capTable'].every(id => { const r = document.getElementById(id).getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth + 1; })));
