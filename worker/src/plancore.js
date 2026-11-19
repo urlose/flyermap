@@ -796,6 +796,13 @@ export function createPlanService(cache){
           parts,jumps,work_minutes:Math.round(line.minutes),ride_minutes:Math.round(rideMinutes),minutes:Math.round(line.minutes+rideMinutes)});
         jumpsAll.push(...jumps);
       }
+      // villages still without a name (map server busy before): one more try, then rename everywhere
+      if(villages.some(v=>/^Ort \d/.test(v.name))){
+        const nm=await placeNames(start,(circleKm||10)+1), ren=new Map();
+        for(const v of villages){ if(!/^Ort \d/.test(v.name))continue; const n=nm([v.lat,v.lng])||await villageName(v.lat,v.lng,undefined,1); if(n&&!planned.some(p=>p.name===n)){ ren.set(v.name,n); v.name=n; } }
+        if(ren.size){ const R=x=>ren.get(x)??x;
+          planned.forEach(p=>p.name=R(p.name)); routes.forEach(r=>{ r.parts.forEach(z=>z.place=R(z.place)); r.jumps.forEach(j=>{j.from=R(j.from);j.to=R(j.to);}); r.place=r.place.split(' + ').map(R).join(' + '); }); }
+      }
       const per_worker=Array.from({length:N},(_,w)=>routes.filter(r=>r.w===w).reduce((a,r)=>a+r.minutes,0));
       const mailboxes=Math.round(routes.reduce((a,r)=>a+(r.mailboxes||0),0));
       const walking=routes.reduce((a,r)=>a+(r.work_minutes||0),0);
