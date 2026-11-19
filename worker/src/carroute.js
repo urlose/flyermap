@@ -62,8 +62,12 @@ async function overpass1(q, fetchImpl, timeoutMs){
 
 // main roads in a ring around the start, residential streets around every point (to get from a work area to a main road)
 export function carQuery(start, km, points){
-  const R = Math.round(km * 1000), near = points.slice(0, 30).map(p => `way["highway"~"^(${LOCAL})$"]${FILT}(around:1500,${(+p[0]).toFixed(5)},${(+p[1]).toFixed(5)});`).join('');
-  return `[out:json][timeout:120];(way["highway"~"^(${MAIN})$"]${FILT}(around:${R},${start[0]},${start[1]});${near});out tags geom qt;`;
+  // main roads in the box around the studio and all points (+ 2 km), residential streets only near the points – a box is much
+  // cheaper for the public servers than a big "around"
+  const all = [start, ...points], m = 2000 / 111320, k = m / Math.cos(start[0] * Math.PI / 180);
+  const S = Math.min(...all.map(p => +p[0])) - m, N = Math.max(...all.map(p => +p[0])) + m, W = Math.min(...all.map(p => +p[1])) - k, E = Math.max(...all.map(p => +p[1])) + k;
+  const near = points.slice(0, 30).map(p => `way["highway"~"^(${LOCAL})$"]${FILT}(around:1200,${(+p[0]).toFixed(5)},${(+p[1]).toFixed(5)});`).join('');
+  return `[out:json][timeout:90];(way["highway"~"^(${MAIN})$"]${FILT}(${S.toFixed(5)},${W.toFixed(5)},${N.toFixed(5)},${E.toFixed(5)});${near});out tags geom qt;`;
 }
 
 // from one point: minutes/metres to every node (Dijkstra) and the node it came from; entry: the 5 nearest nodes at 20 km/h
