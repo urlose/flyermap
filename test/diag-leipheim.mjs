@@ -21,7 +21,7 @@ for(const sc of scen){
       mailboxes:plan.mailboxes, walk_h:h(b.work_minutes), ride_h:h(b.travel.minutes), total_h:h(b.actual_minutes), rides_known:b.travel.known,
       workers:plan.routes.map(r => ({ w:r.w + 1, walk_h:h(r.work_minutes), ride_h:h(r.ride_minutes), total_h:h(r.minutes), mailboxes:Math.round(r.mailboxes), order:r.parts.map(p => p.place + ' ' + p.part).join(' → ') })),
       places:plan.split, villages:b.villages.map(v => v.name), failed_villages:b.failed_villages,
-      rides:b.travel.jumps.map(j => ({ w:j.w + 1, from:j.from, to:j.to, km:j.km, min:j.min, known:j.known, points:j.geom.length })), shortfall:b.shortfall, team_cap_h:h(diag.team_cap_min), main_exhausted:(diag.results || []).find(r => r.main)?.exhausted };
+      rides:b.travel.jumps.map(j => ({ w:j.w + 1, from:j.from, to:j.to, km:j.km, min:j.min, known:j.known, points:j.geom.length })), shortfall:b.shortfall, car_error:diag.car_error, team_cap_h:h(diag.team_cap_min), main_exhausted:(diag.results || []).find(r => r.main)?.exhausted };
     console.log(JSON.stringify(out, null, 1));
     const r5 = p => [+(+p[0]).toFixed(5), +(+p[1]).toFixed(5), ...(p[2] === 1 ? [1] : [])];
     const geo = { start, km:sc.km, routes:plan.routes.map(r => ({ w:r.w, path:r.path.map(r5), parts:r.parts, jumps:r.jumps.map(j => ({ ...j, geom:(j.geom || []).map(r5) })) })) };

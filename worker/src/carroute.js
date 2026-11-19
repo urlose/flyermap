@@ -42,6 +42,9 @@ export function carGraph(json){
 
 // minutes from the start to every road node (Dijkstra, binary heap); the start joins the nearest node at town speed
 async function overpass(q, fetchImpl, timeoutMs){
+  try{ return await overpass1(q, fetchImpl, timeoutMs); }catch(e){ await new Promise(r => setTimeout(r, 4000)); return overpass1(q, fetchImpl, timeoutMs); }   // busy servers: one more round
+}
+async function overpass1(q, fetchImpl, timeoutMs){
   let last;
   for(const url of OVERPASS){
     const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null, tm = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
@@ -108,12 +111,13 @@ export function estimate(a, b){
 }
 
 const graphs = new Map();
+export let lastError = null;
 // loads the car roads once per order area and returns the ride matrix; any failure -> estimates (known:false)
 export async function carRides(start, km, points, { fetchImpl = (...a) => fetch(...a), timeoutMs = 90000 } = {}){
   const key = start.map(v => (+v).toFixed(3)).join(',') + ':' + Math.round(km) + ':' + points.map(p => (+p[0]).toFixed(3) + ',' + (+p[1]).toFixed(3)).sort().join(';');
   let g = graphs.get(key);
   if(g === undefined){
-    try{ g = carGraph(await overpass(carQuery(start, km, points), fetchImpl, timeoutMs)); if(g.pts.length < 10) g = null; }catch{ g = null; }
+    try{ g = carGraph(await overpass(carQuery(start, km, points), fetchImpl, timeoutMs)); if(g.pts.length < 10){ g = null; lastError = 'no roads'; } }catch(e){ g = null; lastError = String(e && e.message || e).slice(0, 160); }
     if(g){ graphs.set(key, g); if(graphs.size > 4) graphs.delete(graphs.keys().next().value); }
   }
   return g ? rideMatrix(g, points) : points.map(a => points.map(b => a === b ? { min:0, km:0, geom:[a, b], known:true } : estimate(a, b)));
@@ -151,4 +155,13 @@ async function villageName1(lat, lng, fetchImpl){
     const p = f.properties || {}, town = p.city || p.town || p.village || (p.osm_key === 'place' ? p.name : '') || '', part = p.district || p.locality || p.suburb || '';
     return part && part !== town ? part + (town ? ' (' + town + ')' : '') : town || null;
   }catch{ return null; }
+}
+
+// names of the villages from OSM place nodes (one light query); nearest place within 2 km
+export async function placeNames(start, km, fetchImpl = (...a) => fetch(...a)){
+  try{
+    const j = await overpass(`[out:json][timeout:60];node["place"~"^(city|town|village|hamlet|suburb|quarter)$"]["name"](around:${Math.round(km * 1000)},${start[0]},${start[1]});out qt;`, fetchImpl, 60000);
+    const nodes = ((j && j.elements) || []).filter(n => n.lat && n.tags && n.tags.name).map(n => ({ p:[n.lat, n.lon], name:n.tags.name, rank:{ city:0, town:1, village:2, suburb:3, quarter:4, hamlet:5 }[n.tags.place] ?? 6 }));
+    return p => { let best = null; for(const n of nodes){ const d = distanceM(n.p, p) + n.rank * 250; if(d < 2000 + n.rank * 250 && (!best || d < best.d)) best = { d, name:n.name }; } return best ? best.name : null; };
+  }catch{ return () => null; }
 }

@@ -6,7 +6,8 @@ import { outwardStreetOrder, streetGeometryKey } from './nearfirst.js';
 import { radiusKm, insideCircle, circlePolygon, clipDeliveryGraph } from './circlearea.js';
 import { capPlan, clipToKeep, droppedStreets, plannedBoxes, boxKey } from './flyercap.js';
 import { censusSource, placeMask, censusPlaces, cellOf } from './zensus.js';
-import { carRides, estimate, bestOrder, villageName } from './carroute.js';
+import { carRides, estimate, bestOrder, villageName, placeNames } from './carroute.js';
+import * as carroute from './carroute.js';
 const census = censusSource();   // Zensus 2022 lifts the mailbox estimate where our own rules count too few (old town centres)
 
 export function createPlanService(cache){
@@ -706,6 +707,7 @@ export function createPlanService(cache){
           cands=list.filter(x=>insideCircle([x.lat,x.lng],start,circleKm)&&!covered(x))
             .map(x=>({lat:x.lat,lng:x.lng,cid:x.id,households:x.households,d:segLen(start,[x.lat,x.lng])})).sort((a,b)=>a.d-b.d).slice(0,25);
         }
+        const osmName=cands.length&&!budget._villages?await placeNames(start,circleKm+1):()=>null;
         for(const [ci,c] of cands.entries()){
           if(stale())return {skipped:true};
           const est=manualRide??estimate(start,[c.lat,c.lng]).min, left=B-walkUsed()-reservedTravel-rideRes;
@@ -717,7 +719,7 @@ export function createPlanService(cache){
             const inside=p=>!mask||mask.inside(p[0],p[1]);
             let g1=clipDeliveryGraph({...g0,zoned:true,edges:g0.edges.map(e=>retainBoxes(e,inside,()=>inside(e.coords?.[Math.floor(e.coords.length/2)]||g0.pts[e.a])))},start,circleKm);
             if(budget._capKeep)g1=clipToKeep(g1,budget._capKeep);
-            const name=c.name||await villageName(c.lat,c.lng)||('Ort '+(Math.round(segLen(start,[c.lat,c.lng])/100)/10).toString().replace('.',',')+' km');
+            const name=c.name||osmName([c.lat,c.lng])||await villageName(c.lat,c.lng)||('Ort '+(Math.round(segLen(start,[c.lat,c.lng])/100)/10).toString().replace('.',',')+' km');
             const time=budget._villages?Math.max(30,B):left-est;
             const res=planPlace({name,st:[c.lat,c.lng],g:g1,time,workers:Math.max(1,Math.min(N,Math.ceil(time/(H*60*.75)))),isMain:false,village:true});   // a big village is shared by several people
             if(res.mailboxes>0){rideRes+=est;villages.push({name,lat:c.lat,lng:c.lng,cid:c.cid,households:c.households});}
@@ -743,6 +745,7 @@ export function createPlanService(cache){
       if(needRides)stage('rides');
       const M=needRides?await carRides(start,Math.max(3,Math.max(...ends.map(p=>segLen(start,p)))/1000+3),ends):null;
       if(stale())return {skipped:true};
+      if(budget._diag)budget._diag.car_error=M&&M.length>1&&!M[0][1]?.known?carroute.lastError:null;
       const rideOf=(i,j)=>{
         if(i===j)return {min:0,km:0,known:true,geom:[]};
         const dw=segLen(ends[i],ends[j]);
