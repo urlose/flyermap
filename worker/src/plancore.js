@@ -721,7 +721,14 @@ export function createPlanService(cache){
             if(budget._capKeep)g1=clipToKeep(g1,budget._capKeep);
             const name=c.name||osmName([c.lat,c.lng])||await villageName(c.lat,c.lng)||('Ort '+(Math.round(segLen(start,[c.lat,c.lng])/100)/10).toString().replace('.',',')+' km');
             const time=budget._villages?Math.max(30,B):left-est;
-            const res=planPlace({name,st:[c.lat,c.lng],g:g1,time,workers:Math.max(1,Math.min(N,Math.ceil(time/(H*60*.75)))),isMain:false,village:true});   // a big village is shared by several people
+            let res=planPlace({name,st:[c.lat,c.lng],g:g1,time,workers:1,isMain:false,village:true});
+            // one village = one person (one ride); only a village bigger than one person's shifts is shared
+            const one=H*60*maxDays*.9;
+            if(N>1&&res.minutes>one){
+              planned.splice(planned.indexOf(res),1);
+              for(const r of res.routes){ (r.part||[]).forEach(i=>seen.delete(edgeKey(g1,i))); (r.boxes||[]).forEach(b=>seenBoxes.delete(boxKey(b))); }
+              res=planPlace({name,st:[c.lat,c.lng],g:g1,time,workers:Math.min(N,Math.ceil(res.minutes/one)),isMain:false,village:true});
+            }
             if(res.mailboxes>0){rideRes+=est;villages.push({name,lat:c.lat,lng:c.lng,cid:c.cid,households:c.households});}
             else planned.splice(planned.indexOf(res),1);
           }catch(e){failedVillages.push({lat:c.lat,lng:c.lng,error:String(e&&e.message||e).slice(0,120)});}
