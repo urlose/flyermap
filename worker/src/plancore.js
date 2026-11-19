@@ -668,8 +668,12 @@ export function createPlanService(cache){
       else for(let it=0;it<18&&lo<hi;it++){ const mid=Math.ceil((lo+hi)/2), e=evalPrefix(mid); if(fits(e)){best=e;lo=mid;}else hi=mid-1; }
       // the rest of the budget by nearness: later streets that still fit are added one by one (Cem: fill until it is really used up)
       const firstOut=best.c;
-      if(best.c<maxC){ let tries=0;
-        for(let k=best.c;k<maxC&&tries<80;k++){ tries++; const e=evalPrefix(best.c,[...best.extra,k]); if(fits(e))best=e; }
+      if(best.c<maxC){ let tries=0; const perMb=best.mb>0?best.walk/best.mb:3, used=new Set(best.res.map(r=>r.ai));
+        for(let k=best.c;k<maxC&&tries<25;k++){
+          const it=items[k], est=it.mb*perMb+(used.has(it.ai)?0:rideTo(areas[it.ai]));   // rough cost first: only plausible streets are planned
+          if(best.mb+it.mb>limF||best.total+est*.8>limH)continue;
+          tries++; const e=evalPrefix(best.c,[...best.extra,k]); if(fits(e)){best=e;used.add(it.ai);}
+        }
       }
       const inPlan=new Set([...Array(best.c).keys(),...best.extra]);
       // stop reason: what the next street would break
