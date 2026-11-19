@@ -555,6 +555,7 @@ export function createPlanService(cache){
       return again;
     },
     async nearFirstCore({ start, n, days, hours, budget, side = [], must = [], zone = null, mainName = '' }, stage, stale){
+      if(budget && budget._diag){ budget._diag.runs=(budget._diag.runs||0)+1; budget._diag.places=[]; }
       const circleKm = radiusKm(budget.radiusKm);
       const circle = circleKm == null ? [] : circlePolygon(start, circleKm);
       // Only automatic places are constrained; manual selections are exceptions.
@@ -625,7 +626,11 @@ export function createPlanService(cache){
         if(stale())return {skipped:true};
         const g={...pl.g,edges:pl.g.edges.map((e,i)=>retainBoxes(e,
           b=>!seenBoxes.has(boxKey(b)),()=>!seen.has(edgeKey(pl.g,i))))};
-        const eligible=outwardStreetOrder(g,pl.st,budget._capKeep?{isolatedGapM:Infinity}:undefined).streets;   // smaller print run: the kept houses were chosen on purpose, no 'isolated dead end' filter
+        const order=outwardStreetOrder(g,pl.st,budget._capKeep?{isolatedGapM:Infinity}:undefined), eligible=order.streets;
+        if(budget._diag){ const mbOf=ids=>Math.round(ids.reduce((a,i)=>a+(+g.edges[i].mb||0),0));
+          budget._diag.places=(budget._diag.places||[]).concat([{ name:pl.name, main:!!pl.isMain, time_min:Math.round(pl.time), workers:pl.workers,
+            graph_radius_m:pl.g.radius??null, graph_mb:Math.round(g.edges.reduce((a,e)=>a+(+e.mb||0),0)), eligible:eligible.length, eligible_mb:Math.round(eligible.reduce((a,e)=>a+e.mailboxes,0)),
+            skipped_mb:mbOf(order.skipped), unreachable_mb:mbOf(order.unreachable) }]); }   // smaller print run: the kept houses were chosen on purpose, no 'isolated dead end' filter
         const evalPrefix=count=>{
           if(!count)return null;
           const ids=new Set(eligible.slice(0,count).map(q=>q.i));
@@ -659,6 +664,9 @@ export function createPlanService(cache){
       // square. If we exhausted every nearby street but still have plenty of
       // time, load a wider region once and recalculate from scratch.
       const mainResult=planned.find(p=>p.isMain);
+      if(budget._diag){ const D=budget._diag; D.B_min=Math.round(B); D.team_cap_min=N*H*60*maxDays; D.asked_min=Math.round(+budget.hours*60); D.N=N; D.H=H; D.days=maxDays;
+        D.reserved_travel_min=reservedTravel; D.main_work_min=Math.round(mainWork); D.side_work_min=Math.round(sideWork); D.circle_km=circleKm; D.G_radius_m=G.radius; D.expanded=!!budget._expanded;
+        D.results=planned.map(p=>({ name:p.name, main:!!p.isMain, time_min:Math.round(p.time||0), used_min:Math.round(p.minutes||0), exhausted:!!p.exhausted, mailboxes:Math.round((p.routes||[]).reduce((a,r)=>a+(r.mailboxes||0),0)) })); }
       if(!budget._expanded && mainResult?.exhausted && mainResult.minutes<mainWork*.8 &&
          G.radius<(circleKm == null ? Planner.MAX_R : circleKm*1000)){
         const oldRadius=G.radius,next=circleKm == null ? Planner.nextRadius(G,Math.max(12000,(G.usable||0)*1.5)) : circleKm*1000;
