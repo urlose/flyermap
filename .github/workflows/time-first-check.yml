@@ -24,6 +24,9 @@ on:
       - 'test/sql/atomic_task_plans.sh'
       - 'test/ui/e2e-timefirst.cjs'
       - 'worker/src/flyercap.js'
+      - 'worker/src/budgetplan.js'
+      - 'worker/src/savecounts.js'
+      - 'test/save-integers.mjs'
       - 'test/ui/e2e-cap.cjs'
       - 'worker/src/coord.js'
       - 'test/ui/e2e-coord.cjs'
@@ -63,6 +66,7 @@ jobs:
       - run: node test/nearfirst-service.mjs
       - run: node test/circlearea.mjs
       - run: node test/flyercap.mjs
+      - run: node test/save-integers.mjs
       - run: node test/customerexport.mjs
       - name: Check atomic save on synthetic Postgres
         run: |

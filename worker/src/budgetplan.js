@@ -23,7 +23,9 @@ function integerCount(value){
 }
 
 export function planRows(pl, { taskId, assign = {}, counts, colors }){
-  return pl.routes.map((r, i) => ({ task_id:taskId, idx:i, worker_id:assign[i] || null, color:colors[(r.w != null ? r.w : i) % colors.length], path:r.path, length_m:r.length_m, street_m:r.street_m,
-    mailboxes:integerCount(counts[i]), boxes:r.boxes, minutes:r.minutes, days:budgetDays(r, pl), steps:r.steps, reserve:r.reserve || [] }));
+  // every integer column of task_plans gets a whole number (a fraction is refused by the database: 'invalid input syntax for type integer')
+  const whole = v => v == null ? v : integerCount(v);
+  return pl.routes.map((r, i) => ({ task_id:taskId, idx:i, worker_id:assign[i] || null, color:colors[(r.w != null ? r.w : i) % colors.length], path:r.path, length_m:integerCount(r.length_m || 0), street_m:integerCount(r.street_m || 0),
+    mailboxes:integerCount(counts[i]), boxes:r.boxes, minutes:whole(r.minutes), days:budgetDays(r, pl), steps:r.steps, reserve:r.reserve || [] }));
 }
 
