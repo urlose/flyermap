@@ -73,8 +73,11 @@ assert.ok(multi.budget.travel.minutes>=30);
 assert.ok(multi.budget.actual_minutes<=10*60*1.05+2);
 assert.equal(multi.routes.length,2,'One row per worker');
 assert.ok(multi.routes.some(r=>r.path.some(p=>p[2]===1)),'Inter-town jump markers must survive');
-await assert.rejects(createPlanService(null).plan({...sideArgs,budget:{...sideArgs.budget,travelMin:null}},()=>{},()=>false),
-  /Anfahrtszeit/);
+// 19.11.2026: no typed-in ride time needed any more – rides are computed by car (offline here: estimate, marked)
+const auto=(await createPlanService(null).plan({...sideArgs,budget:{...sideArgs.budget,travelMin:null}},()=>{},()=>false)).plan;
+assert.ok(auto.budget.travel.moves>=1 && auto.budget.travel.minutes>0 && auto.budget.travel.known===false,'automatic ride, marked as estimate offline');
+assert.ok(auto.budget.travel.jumps.every(j=>j.geom.length>=2 && j.km>0),'every ride has a line and km');
+assert.equal(auto.budget.actual_minutes,auto.budget.work_minutes+auto.budget.travel.minutes,'every ride counted once');
 console.log('Near-first planner integration: time-only budget, outward growth and side-town travel OK');
 
 const constrained=(await createPlanService(null).plan({...sideArgs,budget:{...sideArgs.budget,hours:4}},()=>{},()=>false)).plan;

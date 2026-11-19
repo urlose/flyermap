@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: [feature/timefirst-hours]
-    paths: ['test/diag-leipheim.mjs', 'worker/src/plancore.js', 'admin/planner.js', '.github/workflows/diag-leipheim.yml']
+    paths: ['test/diag-leipheim.mjs', 'worker/src/plancore.js', 'worker/src/carroute.js', 'admin/planner.js', '.github/workflows/diag-leipheim.yml']
 permissions:
   contents: read
 jobs:
@@ -14,6 +14,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
-      - run: node test/diag-leipheim.mjs | tee diag.json
+      - run: node test/diag-leipheim.mjs | tee diag-out.txt
       - uses: actions/upload-artifact@v4
-        with: { name: diag-leipheim, path: diag.json }
+        with: { name: diag-leipheim, path: "diag-out*" }

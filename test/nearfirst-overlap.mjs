@@ -32,7 +32,7 @@ try{
     assert.equal(boxes.length,2,label+': two unique delivery points');
     assert.equal(boxes.reduce((s,b)=>s+b[2],0),7);
     assert.equal(plan.split.find(p=>p.name==='Main').flyers,4,'Main keeps the unserved building');
-    assert.equal(plan.budget.actual_minutes,plan.budget.work_minutes+30);
+    assert.equal(plan.budget.actual_minutes,plan.budget.work_minutes+plan.budget.travel.minutes,'rides counted once (areas next to each other: no ride)');
     assert.ok(plan.budget.actual_minutes<=32*60);
   }
 }finally{Planner.loadForFlyers=originalLoad;globalThis.fetch=originalFetch;Planner.setPace(0);}

@@ -5,7 +5,8 @@ import Planner from '../../admin/planner.js';
 import { outwardStreetOrder, streetGeometryKey } from './nearfirst.js';
 import { radiusKm, insideCircle, circlePolygon, clipDeliveryGraph } from './circlearea.js';
 import { capPlan, clipToKeep, droppedStreets, plannedBoxes, boxKey } from './flyercap.js';
-import { censusSource, placeMask } from './zensus.js';
+import { censusSource, placeMask, censusPlaces, cellOf } from './zensus.js';
+import { carRides, estimate, bestOrder, villageName } from './carroute.js';
 const census = censusSource();   // Zensus 2022 lifts the mailbox estimate where our own rules count too few (old town centres)
 
 export function createPlanService(cache){
@@ -545,7 +546,7 @@ export function createPlanService(cache){
       const info = { target, full_planned:fp.mailboxes, full_minutes:fb.actual_minutes };
       if(fp.mailboxes <= target){ fb.cap = { ...info, cut:false, planned:fp.mailboxes, places:[] }; return full; }
       const res = capPlan(fp.routes, cap.places || [], args.start, target);
-      const again = await this.nearFirstCore({ ...args, budget:{ ...args.budget, cap:null, _capKeep:res.keep, _expanded:true } }, stage, stale);
+      const again = await this.nearFirstCore({ ...args, budget:{ ...args.budget, cap:null, _capKeep:res.keep, _expanded:true, _villages:(fb.villages || []).length ? fb.villages : undefined } }, stage, stale);
       if(!again || again.skipped || !again.plan) return again;
       const ap = again.plan, kept = new Map();
       for(const b of plannedBoxes(ap.routes)){ const id = res.place.get(b.k) ?? '_main'; kept.set(id, (kept.get(id) || 0) + b.w); }
@@ -584,9 +585,9 @@ export function createPlanService(cache){
       const B=Math.min(Math.max(60,+budget.hours*60),N*H*60*maxDays);
       const tol=Number.isFinite(+budget.tolerance)?Math.max(0,Math.min(.25,+budget.tolerance)):.05;
       const travelMin=budget.travelMin==null?null:+budget.travelMin;
-      if(side.length && !(Number.isFinite(travelMin)&&travelMin>0))
-        throw new Error('Für Nebenstädte bitte eine realistische Anfahrtszeit pro Ortswechsel in Minuten eintragen.');
-      const reservedTravel=side.length*(travelMin||0);
+      // rides are computed by car on real roads (carroute.js); a typed-in ride time overrides every ride
+      const manualRide=Number.isFinite(travelMin)&&travelMin>0?travelMin:null;
+      const reservedTravel=side.reduce((a,c)=>a+(manualRide??estimate(start,[c.lat,c.lng]).min),0);
       if(reservedTravel>=B)throw new Error('Die Anfahrten brauchen das gesamte Zeitbudget. Mehr Stunden eintragen.');
       if(!G||gKey!==keyOf(start)){
         stage('loadingArea'); await load(start,12000,undefined,[],stage,stale,'loadingArea');
@@ -622,8 +623,9 @@ export function createPlanService(cache){
       const planned=[];
       // Reserve manually selected areas FIRST. The main place then grows around
       // the start without re-using their streets, so additions shrink its radius.
-      for(const pl of [...places.slice(1),places[0]]){
-        if(stale())return {skipped:true};
+      // 19.11.2026: the main town gets ALL the time the manual places leave (not a fixed 60 %), and when its streets run
+      // out, the villages inside the circle are added (own street maps, nearest first) until the asked hours are reached.
+      const planPlace=pl=>{
         const g={...pl.g,edges:pl.g.edges.map((e,i)=>retainBoxes(e,
           b=>!seenBoxes.has(boxKey(b)),()=>!seen.has(edgeKey(pl.g,i))))};
         const order=outwardStreetOrder(g,pl.st,budget._capKeep?{isolatedGapM:Infinity}:undefined), eligible=order.streets;
@@ -657,9 +659,16 @@ export function createPlanService(cache){
           (r.part||[]).forEach(i=>seen.add(edgeKey(g,i)));
           (r.boxes||[]).forEach(b=>seenBoxes.add(boxKey(b)));
         });
-        planned.push({...pl,routes,mailboxes:routes.reduce((a,r)=>a+(r.mailboxes||0),0),
-          minutes:routes.reduce((a,r)=>a+(r.minutes||0),0),exhausted:eligible.length===0||best?.count===eligible.length});
-      }
+        const entry={...pl,routes,mailboxes:routes.reduce((a,r)=>a+(r.mailboxes||0),0),
+          minutes:routes.reduce((a,r)=>a+(r.minutes||0),0),exhausted:eligible.length===0||best?.count===eligible.length,
+          left_mb:Math.round(eligible.reduce((a,e)=>a+e.mailboxes,0)-routes.reduce((a,r)=>a+(r.mailboxes||0),0))};
+        planned.push(entry); return entry;
+      };
+      for(const pl of places.slice(1)){ if(stale())return {skipped:true}; planPlace(pl); }
+      if(stale())return {skipped:true};
+      // the main town: everything the manual places did not use (their rides are reserved in Bwalk)
+      places[0].time=Math.max(30,Bwalk-planned.reduce((a,p)=>a+p.minutes,0));
+      planPlace(places[0]);
       // A time target must not be arbitrarily capped by the first loaded map
       // square. If we exhausted every nearby street but still have plenty of
       // time, load a wider region once and recalculate from scratch.
@@ -680,6 +689,42 @@ export function createPlanService(cache){
           },stage,stale);
         }
       }
+      // villages inside the circle (19.11.2026): the walking map of the main town ends where only country roads without
+      // footpath lead on, so the villages are separate. When the town's streets are used up and hours are left, they are
+      // added one by one, nearest first, each with its own street map; the car ride to it is reserved.
+      const villages=[], failedVillages=[]; let rideRes=0, candidatesLeft=0;
+      const walkUsed=()=>planned.reduce((a,p)=>a+p.minutes,0), want=B*(1-tol);
+      if(circleKm!=null && (budget._villages || walkUsed()+reservedTravel<want)){
+        stage('loadingVillages');
+        let cands=budget._villages||null;
+        if(!cands){
+          const list=await censusPlaces(start[0],start[1],circleKm*1000,{minH:40}).catch(()=>[]);
+          const own=new Set();
+          for(const e of G.edges)for(const b of e.boxes||[]){const [a,c]=cellOf(b[0],b[1]);own.add(a+','+c);}
+          for(const pl of planned)for(const r of pl.routes)for(const b of r.boxes||[]){const [a,c]=cellOf(b[0],b[1]);own.add(a+','+c);}
+          const covered=x=>{let n=0,k2=0;for(let k=0;k+1<(x.cells||[]).length;k+=2){k2++;if(own.has(x.cells[k]+','+x.cells[k+1]))n++;}return k2>0&&n/k2>.3;};
+          cands=list.filter(x=>insideCircle([x.lat,x.lng],start,circleKm)&&!covered(x))
+            .map(x=>({lat:x.lat,lng:x.lng,cid:x.id,households:x.households,d:segLen(start,[x.lat,x.lng])})).sort((a,b)=>a.d-b.d).slice(0,25);
+        }
+        for(const [ci,c] of cands.entries()){
+          if(stale())return {skipped:true};
+          const est=manualRide??estimate(start,[c.lat,c.lng]).min, left=B-walkUsed()-reservedTravel-rideRes;
+          if(!budget._villages&&left-est<Math.max(30,B*tol)){candidatesLeft=cands.length-ci;break;}
+          try{
+            const g0=await sideGraph({lat:c.lat,lng:c.lng,loadFor:Math.max(1500,Math.round((c.households||500)*1.3))},stage,stale);
+            if(stale())return {skipped:true};
+            const mask=await placeMask(c.lat,c.lng,{pick:150}).catch(()=>null);
+            const inside=p=>!mask||mask.inside(p[0],p[1]);
+            let g1=clipDeliveryGraph({...g0,zoned:true,edges:g0.edges.map(e=>retainBoxes(e,inside,()=>inside(e.coords?.[Math.floor(e.coords.length/2)]||g0.pts[e.a])))},start,circleKm);
+            if(budget._capKeep)g1=clipToKeep(g1,budget._capKeep);
+            const name=c.name||await villageName(c.lat,c.lng)||('Ort '+(Math.round(segLen(start,[c.lat,c.lng])/100)/10).toString().replace('.',',')+' km');
+            const time=budget._villages?Math.max(30,B):left-est;
+            const res=planPlace({name,st:[c.lat,c.lng],g:g1,time,workers:Math.max(1,Math.min(N,Math.round(time/(H*60)))),isMain:false,village:true});
+            if(res.mailboxes>0){rideRes+=est;villages.push({name,lat:c.lat,lng:c.lng,cid:c.cid,households:c.households});}
+            else planned.splice(planned.indexOf(res),1);
+          }catch(e){failedVillages.push({lat:c.lat,lng:c.lng,error:String(e&&e.message||e).slice(0,120)});}
+        }
+      }
       planned.sort((a,b)=>Number(b.isMain)-Number(a.isMain));
       const bins=Array.from({length:N},(_,w)=>({w,items:[],minutes:0}));
       planned[0].routes.forEach((r,i)=>{
@@ -687,18 +732,29 @@ export function createPlanService(cache){
       });
       for(const pl of planned.slice(1))for(const [i,r] of pl.routes.entries()){
         const b=bins.reduce((a,c)=>c.minutes<a.minutes?c:a,bins[0]);
-        b.items.push({r,name:pl.name,part:i+1,isMain:false});b.minutes+=(r.minutes||0)+(travelMin||0);
+        b.items.push({r,name:pl.name,part:i+1,isMain:false});b.minutes+=(r.minutes||0)+(manualRide??estimate(start,r.path[0]).min);
       }
+      // 19.11.2026: rides by car on real roads – one matrix over the studio and the first/last point of every work area;
+      // every worker drives his areas in the order with the least driving (A → C → B → D if that is faster)
+      const ends=[[start[0],start[1]]],ix=new Map();
+      const P=p=>{const k=(+p[0]).toFixed(5)+','+(+p[1]).toFixed(5);if(!ix.has(k)){ix.set(k,ends.length);ends.push([+p[0],+p[1]]);}return ix.get(k);};
+      for(const bin of bins)for(const it of bin.items){it.a=P(it.r.path[0]);it.b=P(it.r.path.at(-1));}
+      const needRides=bins.some(b=>b.items.length>1||(b.items[0]&&segLen(start,b.items[0].r.path[0])>150));
+      if(needRides)stage('rides');
+      const M=needRides?await carRides(start,Math.max(3,Math.max(...ends.map(p=>segLen(start,p)))/1000+3),ends):null;
+      if(stale())return {skipped:true};
+      const rideOf=(i,j)=>{
+        if(i===j)return {min:0,km:0,known:true,geom:[]};
+        const x=M&&M[i]&&M[i][j]?M[i][j]:estimate(ends[i],ends[j]);
+        return manualRide!=null&&!x.walk?{...x,min:manualRide,known:true,manual:true}:x;
+      };
       const routes=[],jumpsAll=[];
       for(const bin of bins){
         if(!bin.items.length)continue;
-        const its=bin.items;
-        // If a worker starts in a side town without a main-town section, the
-        // journey from the order's starting point must also appear and count.
-        const origin=!its[0].isMain ? start : undefined;
-        const hasOrigin=!!origin && segLen(start,its[0].r.path[0])>30;
-        const line=buildLine(its.map(x=>({r:x.r,name:x.name||'·'})),H,
-          () => travelMin||0,undefined,origin,false);
+        const ord=bestOrder(bin.items.length,(i,j)=>rideOf(i<0?0:bin.items[i].b,bin.items[j].a).min);
+        const its=ord.map(k=>bin.items[k]);
+        const line=buildLine(its.map(x=>({r:x.r,name:x.name||'·'})),H,(a,b)=>rideOf(P(a),P(b)).min,undefined,start,false);
+        const hasOrigin=segLen(start,its[0].r.path[0])>30;
         let off=hasOrigin?1:0;
         const parts=its.map(x=>{
           const part={place:x.name,part:x.part,i0:off,i1:off+x.r.path.length-1,
@@ -706,19 +762,13 @@ export function createPlanService(cache){
           off+=x.r.path.length;return part;
         });
         const jumps=[];
-        if(hasOrigin){
-          const km=Math.round(segLen(start,its[0].r.path[0])/100)/10;
-          jumps.push({w:bin.w,from:planned[0].name||'Start',to:its[0].name,idx:1,
-            km,min:travelMin,known:true,far:km>3,same:false});
-        }
-        for(let i=1;i<its.length;i++){
-          const a=its[i-1].r.path.at(-1),b=its[i].r.path[0],km=Math.round(segLen(a,b)/100)/10;
-          jumps.push({w:bin.w,from:its[i-1].name,to:its[i].name,idx:parts[i].i0,
-            km,min:travelMin,known:travelMin!=null,far:km>3,same:false});
-        }
-        const rideMinutes=jumps.length*(travelMin||0);
+        const jump=(i,j,from,to,idx)=>{const x=rideOf(i,j);jumps.push({w:bin.w,from,to,idx,km:x.km,min:x.min,known:!!x.known,manual:!!x.manual,
+          geom:x.geom||[],far:x.km>3,same:false});};
+        if(hasOrigin)jump(0,its[0].a,planned[0].name||'Start',its[0].name,1);
+        for(let i=1;i<its.length;i++)if(segLen(its[i-1].r.path.at(-1),its[i].r.path[0])>30)jump(its[i-1].b,its[i].a,its[i-1].name,its[i].name,parts[i].i0);
+        const rideMinutes=jumps.reduce((a,j)=>a+(j.min||0),0);   // every ride once
         routes.push({...line,w:bin.w,idx:routes.length,place:[...new Set(its.map(x=>x.name))].join(' + '),
-          parts,jumps,work_minutes:Math.round(line.minutes),minutes:Math.round(line.minutes+rideMinutes)});
+          parts,jumps,work_minutes:Math.round(line.minutes),ride_minutes:Math.round(rideMinutes),minutes:Math.round(line.minutes+rideMinutes)});
         jumpsAll.push(...jumps);
       }
       const per_worker=Array.from({length:N},(_,w)=>routes.filter(r=>r.w===w).reduce((a,r)=>a+r.minutes,0));
@@ -742,7 +792,12 @@ export function createPlanService(cache){
           length_m:Math.round(routes.reduce((a,r)=>a+(r.length_m||0),0)),
           workers:routes.map(r=>({w:r.w,minutes:r.minutes,mailboxes:Math.round(r.mailboxes||0),
             km:Math.round((r.length_m||0)/100)/10})),
-          travel:{known:side.length>0,moves:jumpsAll.length,minutes:travelMinutes,
+          villages, failed_villages:failedVillages,
+          shortfall:(()=>{ if(budget._capKeep||actual>=want-1)return null;
+            const left=Math.round(want-actual), teamCap=N*H*60*maxDays, asked=Math.max(60,+budget.hours*60);
+            const reason=teamCap<asked?'team_cap':failedVillages.length?'villages_failed':planned.every(p=>p.exhausted)&&!candidatesLeft?'all_planned':'time_left';
+            return { reason, left_min:left, team_cap_min:teamCap, asked_min:Math.round(asked) }; })(),
+          travel:{known:jumpsAll.every(j=>j.known),manual:manualRide!=null,moves:jumpsAll.length,minutes:travelMinutes,
             far:jumpsAll.filter(j=>j.far).length,far_km:3,jumps:jumpsAll}}
       };
       plan.capacity=Planner.capacity(per_worker.map((m,i)=>({idx:i,minutes:m})),mailboxes,
