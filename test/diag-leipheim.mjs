@@ -18,7 +18,7 @@ for(const sc of scen){
       budget:{ strategy:'near-first', mode:'drive', tolerance:0, ...sc.b } }, () => {}, () => false);
     const b = plan.budget, v = b.drive;
     console.log(JSON.stringify({ scenario:sc.name, seconds:Math.round((Date.now() - t0) / 1000), stop:v.stop, full_min:v.full_min, next:v.next, rings:v.rings.slice(0, 20),
-      mailboxes:plan.mailboxes, walk_h:h(b.work_minutes), ride_h:h(b.travel.minutes), total_h:h(b.actual_minutes), max_h:h(v.max_minutes), left_min:v.left_minutes,
+      mailboxes:plan.mailboxes, walk_h:h(b.work_minutes), ride_h:h(b.travel.minutes), total_h:h(b.actual_minutes), max_h:h(v.max_minutes), left_min:v.left_minutes, filled:v.filled,
       real_roads:v.real_roads, road_error:v.road_error, rides_known:b.travel.known, villages:v.villages, skipped_mb:v.skipped_mb,
       workers:plan.routes.map(r => ({ w:r.w + 1, walk_h:h(r.work_minutes), ride_h:h(r.ride_minutes), total_h:h(r.minutes), mailboxes:Math.round(r.mailboxes), order:r.parts.map(p => p.place + ' ' + p.part).join(' → ') })),
       places:plan.split, start_hops:plan.routes.flatMap(r => r.jumps).filter(j => j.from === 'Start').map(j => ({ walk:j.walk, km:j.km, min:j.min })),
