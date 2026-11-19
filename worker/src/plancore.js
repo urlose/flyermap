@@ -660,7 +660,11 @@ export function createPlanService(cache){
           (r.part||[]).forEach(i=>seen.add(edgeKey(g,i)));
           (r.boxes||[]).forEach(b=>seenBoxes.add(boxKey(b)));
         });
-        const entry={...pl,routes,mailboxes:routes.reduce((a,r)=>a+(r.mailboxes||0),0),
+        // the same streets cut into k parts (to share the work more evenly when villages come on top)
+        const resplit=k=>{ if(!best)return routes; const ids=new Set(eligible.slice(0,best.count).map(q=>q.i));
+          const region={...g,zoned:true,edges:g.edges.map((e,i)=>ids.has(i)?e:{...e,mb:0,boxes:[]})}, max=eligible.slice(0,best.count).reduce((a,e)=>a+e.mailboxes,0);
+          return Planner.planFlyers(region,pl.st,max+1,k,{days:maxDays,hoursPerDay:H,selectedEdgeIds:[...ids]}).routes.filter(r=>r.path?.length>1); };
+        const entry={...pl,routes,resplit,mailboxes:routes.reduce((a,r)=>a+(r.mailboxes||0),0),
           minutes:routes.reduce((a,r)=>a+(r.minutes||0),0),exhausted:eligible.length===0||best?.count===eligible.length,
           left_mb:Math.round(eligible.reduce((a,e)=>a+e.mailboxes,0)-routes.reduce((a,r)=>a+(r.mailboxes||0),0))};
         planned.push(entry); return entry;
@@ -736,12 +740,21 @@ export function createPlanService(cache){
       }
       planned.sort((a,b)=>Number(b.isMain)-Number(a.isMain));
       const bins=Array.from({length:N},(_,w)=>({w,items:[],minutes:0}));
-      planned[0].routes.forEach((r,i)=>{
-        const b=bins[i%N];b.items.push({r,name:planned[0].name,part:i+1,isMain:true});b.minutes+=r.minutes||0;
-      });
-      for(const pl of planned.slice(1))for(const [i,r] of pl.routes.entries()){
-        const b=bins.reduce((a,c)=>c.minutes<a.minutes?c:a,bins[0]);
-        b.items.push({r,name:pl.name,part:i+1,isMain:false});b.minutes+=(r.minutes||0)+(manualRide??estimate(start,r.path[0]).min);
+      if(villages.length&&N>1&&planned[0].routes.length){
+        // villages on top: the main town in 2 parts per person, then everything largest first to whoever has least (LPT)
+        const finer=planned[0].resplit(N*2);
+        if(finer.length>planned[0].routes.length){planned[0].routes=finer;planned[0].minutes=finer.reduce((a,r)=>a+(r.minutes||0),0);planned[0].mailboxes=finer.reduce((a,r)=>a+(r.mailboxes||0),0);}
+        const all=planned.flatMap(pl=>pl.routes.map((r,i)=>({r,name:pl.name,part:i+1,isMain:!!pl.isMain,cost:(r.minutes||0)+(pl.isMain?0:(manualRide??estimate(start,r.path[0]).min))})));
+        all.sort((a,b)=>b.cost-a.cost);
+        for(const it of all){const b=bins.reduce((a,c)=>c.minutes<a.minutes?c:a,bins[0]);b.items.push(it);b.minutes+=it.cost;}
+      }else{
+        planned[0].routes.forEach((r,i)=>{
+          const b=bins[i%N];b.items.push({r,name:planned[0].name,part:i+1,isMain:true});b.minutes+=r.minutes||0;
+        });
+        for(const pl of planned.slice(1))for(const [i,r] of pl.routes.entries()){
+          const b=bins.reduce((a,c)=>c.minutes<a.minutes?c:a,bins[0]);
+          b.items.push({r,name:pl.name,part:i+1,isMain:false});b.minutes+=(r.minutes||0)+(manualRide??estimate(start,r.path[0]).min);
+        }
       }
       // 19.11.2026: rides by car on real roads – one matrix over the studio and the first/last point of every work area;
       // every worker drives his areas in the order with the least driving (A → C → B → D if that is faster)
