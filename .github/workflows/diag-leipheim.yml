@@ -1,9 +1,6 @@
 name: Diagnose time-first hours (Leipheim, read-only)
 on:
   workflow_dispatch:
-  push:
-    branches: [feature/timefirst-hours]
-    paths: ['test/diag-leipheim.mjs', 'worker/src/plancore.js', 'worker/src/carroute.js', 'admin/planner.js', '.github/workflows/diag-leipheim.yml']
 permissions:
   contents: read
 jobs:
