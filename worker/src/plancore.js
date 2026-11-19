@@ -661,7 +661,8 @@ export function createPlanService(cache){
         for(const [ai,ids] of by){ const a=areas[ai], r=areaPlan(ai,ids,a.isMain?N:1); walk+=r.minutes; mb+=r.mb; if(!a.isMain)ride+=rideTo(a)*Math.max(1,r.routes.length); res.push({ai,...r}); }
         return {c,extra,walk,ride,mb,total:walk+ride,res};
       };
-      const fits=e=>e.total<=limH+.01&&e.mb<=limF+.01;
+      const calib=+budget._calib>0?+budget._calib:1;   // real minutes / estimated minutes of an earlier pass (rides, finer split)
+      const fits=e=>e.total*calib<=limH+.01&&e.mb<=limF+.01;
       const maxC=Math.min(items.length,budget._maxItems??items.length);   // after a re-plan with longer real rides: fewer streets
       let lo=0,hi=maxC,best=evalPrefix(0);
       if(maxC&&fits(evalPrefix(maxC)))best=evalPrefix(maxC);
@@ -672,8 +673,8 @@ export function createPlanService(cache){
       if(best.c<maxC){ let tries=0; const perMb=best.mb>0?best.walk/best.mb:3, used=new Set(best.res.map(r=>r.ai));
         for(let k=best.c;k<maxC&&tries<25;k++){
           const it=items[k], est=it.mb*perMb+(used.has(it.ai)?0:rideTo(areas[it.ai]));   // rough cost first: only plausible streets are planned
-          if(nextList.length<10)nextList.push({area:areas[it.ai].name,ring:it.ring,mb:Math.round(it.mb),est_min:Math.round(est),left_min:Math.round(limH-best.total),tried:!(best.mb+it.mb>limF||best.total+est*.8>limH)});
-          if(best.mb+it.mb>limF||best.total+est*.8>limH)continue;
+          if(nextList.length<10)nextList.push({area:areas[it.ai].name,ring:it.ring,mb:Math.round(it.mb),est_min:Math.round(est),left_min:Math.round(limH-best.total),tried:!(best.mb+it.mb>limF||(best.total+est*.8)*calib>limH)});
+          if(best.mb+it.mb>limF||(best.total+est*.8)*calib>limH)continue;
           tries++; const e=evalPrefix(best.c,[...best.extra,k]); if(fits(e)){best=e;used.add(it.ai);} else if(nextCost==null||e.total-best.total<nextCost.min)nextCost={min:Math.round(e.total-best.total),mb:Math.round(it.mb),ring:it.ring,area:areas[it.ai].name,village:!used.has(it.ai)};
         }
       }
@@ -727,9 +728,9 @@ export function createPlanService(cache){
       }
       const mailboxes=Math.round(routes.reduce((s,r)=>s+(r.mailboxes||0),0)), walking=routes.reduce((s,r)=>s+r.work_minutes,0), riding=routes.reduce((s,r)=>s+r.ride_minutes,0), actual=walking+riding;
       // real rides longer than estimated: fewer streets, plan again (at most 3 times)
-      if(actual>limH+1&&best.c>0&&(budget._shrink||0)<3){
-        const cut=Math.max(1,Math.ceil(best.c*(actual-limH)/Math.max(1,actual)));
-        return this.driveFirstCore({start,n,days,hours,budget:{...budget,_grid:grid,_villages:areas.filter(a=>a.village).map(a=>({...a.cand})),_shrink:(budget._shrink||0)+1,_maxItems:best.c-cut},side,must,zone,mainName},stage,stale);
+      if(actual>limH+1&&best.c>0&&(budget._shrink||0)<3){   // real plan longer than estimated: the same order again with the measured factor
+        const f=Math.max(1.005,actual/Math.max(1,best.total))*(1+.004*((budget._shrink||0)+1));
+        return this.driveFirstCore({start,n,days,hours,budget:{...budget,_grid:grid,_villages:areas.filter(a=>a.village).map(a=>({...a.cand})),_shrink:(budget._shrink||0)+1,_calib:f},side,must,zone,mainName},stage,stale);
       }
       const per_worker=Array.from({length:N},(_,w)=>routes.filter(r=>r.w===w).reduce((s,r)=>s+r.minutes,0));
       const villages=areas.filter(a=>a.village&&planned.some(p=>p.name===a.name)).map(a=>({name:a.name,lat:a.st[0],lng:a.st[1],cid:a.cand.cid,households:a.cand.households,min:Math.round(a.cand.min)}));
