@@ -140,7 +140,11 @@ export function bestOrder(n, ride){
 }
 
 // village name for the plan (Photon reverse geocoding, as the admin panel); null when offline
-export async function villageName(lat, lng, fetchImpl = (...a) => fetch(...a)){
+export async function villageName(lat, lng, fetchImpl = (...a) => fetch(...a), tries = 2){
+  for(let k = 0; k < tries; k++){ const n = await villageName1(lat, lng, fetchImpl); if(n) return n; await new Promise(r => setTimeout(r, 1200)); }
+  return null;
+}
+async function villageName1(lat, lng, fetchImpl){
   try{
     const r = await fetchImpl(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}&lang=de&limit=1`); if(!r.ok) return null;
     const f = ((await r.json()).features || [])[0]; if(!f) return null;

@@ -2,6 +2,7 @@
 // Leipheim start of the order of 17.11.2026. Prints a summary per scenario and writes the plans to diag-out/.
 // Run in GitHub Actions (.github/workflows/diag-leipheim.yml) or locally with network: node test/diag-leipheim.mjs
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
 import { createPlanService } from '../worker/src/plancore.js';
 const start = [48.460716, 10.212487];
 const scen = [
@@ -22,6 +23,9 @@ for(const sc of scen){
       places:plan.split, villages:b.villages.map(v => v.name), failed_villages:b.failed_villages,
       rides:b.travel.jumps.map(j => ({ w:j.w + 1, from:j.from, to:j.to, km:j.km, min:j.min, known:j.known, points:j.geom.length })), shortfall:b.shortfall, team_cap_h:h(diag.team_cap_min), main_exhausted:(diag.results || []).find(r => r.main)?.exhausted };
     console.log(JSON.stringify(out, null, 1));
+    const r5 = p => [+(+p[0]).toFixed(5), +(+p[1]).toFixed(5), ...(p[2] === 1 ? [1] : [])];
+    const geo = { start, km:sc.km, routes:plan.routes.map(r => ({ w:r.w, path:r.path.map(r5), parts:r.parts, jumps:r.jumps.map(j => ({ ...j, geom:(j.geom || []).map(r5) })) })) };
+    console.log('PLAN_' + sc.id + ' ' + gzipSync(JSON.stringify(geo)).toString('base64'));
     writeFileSync('diag-out/plan-' + sc.id + '.json', JSON.stringify({ start, km:sc.km, summary:out, routes:plan.routes.map(r => ({ w:r.w, path:r.path, parts:r.parts, jumps:r.jumps })) }));
   }catch(e){ console.log(JSON.stringify({ scenario:sc.name, error:String(e && e.stack || e).slice(0, 900), diag })); }
 }

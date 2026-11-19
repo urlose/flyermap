@@ -6,7 +6,7 @@ import { savedMailboxCounts } from './savecounts.js';
 import { t, I } from './i18n.js';
 import { sb, store, $, esc, css, hav, fmtDist, fmtH, fmtHm, fmtN, fmtDay, fmtDT, ago, waLink, telLink, loopPath, deMobile, loc, reversePlace, placeArea, errText } from './core.js';
 import { groupIcon } from './ui.js';
-import { UI, ICONS, shell, setLoc, getLoc, plain, topbar, bindBack, makeMap, dot, labelIcon, fit, drawJumps, rideMinOf, modal, confirmBox, toast, searchField, langSwitch, themeSwitch, statusPill, emptyState, avatar, every, personIcon, secNav } from './ui.js';
+import { UI, ICONS, shell, setLoc, getLoc, plain, topbar, bindBack, makeMap, dot, labelIcon, fit, drawJumps, rideMinOf, ridesOf, modal, confirmBox, toast, searchField, langSwitch, themeSwitch, statusPill, emptyState, avatar, every, personIcon, secNav } from './ui.js';
 import { legalLinks, bindLegal } from './legalview.js';
 import { adminContractHtml, bindAdminContract } from './contractview.js';
 import { loadWorkerStats, okBadge, shortLine, workerStatsHtml, bindWorkerStats, isVerified, viewStats } from './stats.js';
@@ -1231,7 +1231,7 @@ function viewCreate(edit){
     L.marker(startArr(), { icon:dot('pin-start', 26) }).addTo(zoneLayer); drawMust();
     (d.plan.dropped || []).forEach(l => L.polyline(l, { color:'#94A3B8', weight:4, opacity:.9, dashArray:'4 6', interactive:false, className:'dropped-street' }).addTo(planLayer));   // taken out for the smaller print run
     d.plan.routes.forEach((r, i) => { if(r.path.length > 1) L.polyline(Planner.pathRuns(r.path), { color:Planner.COLORS[(r.w != null ? r.w : i) % 10], weight:4, opacity:.85 }).addTo(planLayer); });
-    d.plan.routes.forEach(r => drawJumps(planLayer, r.path, d.travel, d.budget && d.budget.on && +d.budget.travelMin > 0 ? +d.budget.travelMin : rideMinOf([r])));
+    d.plan.routes.forEach(r => drawJumps(planLayer, r.path, d.travel, d.budget && d.budget.on && +d.budget.travelMin > 0 ? +d.budget.travelMin : rideMinOf([r]), r.jumps || null));
     (d.plan.cores || []).forEach(c => L.marker(c.c, { icon:L.divIcon({ className:'', html:`<span class="must-tip zone-tip">${esc(c.name + ' · ' + fmtN(c.mb))}</span>`, iconSize:null }), interactive:false, keyboard:false }).addTo(planLayer));
     if(z && !d.keepView) { const bounds = z.getBounds(); d.plan.routes.forEach(r => r.path.forEach(p => bounds.extend([p[0],p[1]]))); const wide = innerWidth >= 900; m.fitBounds(bounds, { paddingTopLeft:[wide ? 480 : 24, 80], paddingBottomRight:[24, wide ? 24 : Math.round(innerHeight * .5)], maxZoom:17, animate:false }); }
   }
@@ -1353,6 +1353,19 @@ function viewCreate(edit){
           </tbody><tfoot><tr><td>${esc(t('capTotal'))}</td><td>${fmtN(c.full_planned)}</td><td><b id="capSum">${fmtN(c.planned)}</b></td></tr><tr><td>${esc(t('capTime'))}</td><td>${hh(c.full_minutes)}</td><td><b>${hh(b.actual_minutes)}</b></td></tr></tfoot></table>
           <p class="small muted" style="margin:4px 0 0">${esc(t('capDropped'))}</p>` : ''}</div>`;
     };
+    // 19.11.2026: hours of the plan – handing out incl. walking, car rides, total per person and team; why the target is not reached
+    const hoursHtml = b => {
+      const hh = m => fmtHm(Math.round(m || 0)), ws = b.workers || [], tw = ws.reduce((a, w) => a + (w.walk || 0), 0), tr = ws.reduce((a, w) => a + (w.ride || 0), 0);
+      const sf = b.shortfall, lo = b.target_minutes * (1 - b.tolerance), hi = b.target_minutes * (1 + b.tolerance);
+      const why = sf ? t('hrsWhy_' + sf.reason, { left:hh(sf.left_min), cap:hh(sf.team_cap_min), asked:hh(sf.asked_min) }) : '';
+      return `<table class="cap-table" id="hrsTable"><thead><tr><th></th><th>${esc(t('hrsWalk'))}</th><th>${esc(t('hrsRide'))}</th><th>${esc(t('hrsTotal'))}</th></tr></thead><tbody>
+        ${ws.map(w => `<tr><td>${esc(t('personN', { n:w.w + 1 }))}</td><td>${hh(w.walk)}</td><td>${hh(w.ride)}</td><td><b>${hh(w.minutes)}</b></td></tr>`).join('')}</tbody>
+        <tfoot><tr><td>${esc(t('hrsTeam'))}</td><td>${hh(tw)}</td><td>${hh(tr)}</td><td><b id="hrsSum">${hh(b.actual_minutes)}</b></td></tr></tfoot></table>
+        <p class="small muted" style="margin:4px 0 0">${esc(t('hrsTarget', { lo:hh(lo), hi:hh(hi) }))}${(b.villages || []).length ? ' ' + esc(t('hrsVillages', { list:b.villages.map(v => v.name).join(', ') })) : ''}</p>
+        ${sf ? `<div class="warnbox" id="hrsShort">${esc(why)}</div>` : ''}
+        ${b.travel && b.travel.moves && (!b.travel.known || b.travel.manual) ? `<div class="${b.travel.manual ? 'hint' : 'warnbox'}" id="hrsRideBox">${esc(t(b.travel.manual ? 'hrsRideManual' : 'hrsRideEst'))}
+          <div class="cap-in" style="margin-top:6px"><input class="in" type="number" id="cRideMan" min="1" max="240" step="1" placeholder="${esc(t('hrsRidePh'))}" value="${+d.budget.travelMin > 0 ? +d.budget.travelMin : ''}">${+d.budget.travelMin > 0 ? `<button class="btn ghost small" id="cRideAuto">${esc(t('hrsRideAuto'))}</button>` : ''}</div></div>` : ''}`;
+    };
     const budgetPanel = pl => { const b = pl.budget, hh = m => fmtHm(Math.round(m)), f1 = v => String(v).replace('.', ',');
       // the shifts until the deadline (days × hours per day × people) can cap the hours the admin entered: all texts use the capped target
       const effMin = +b.effective_minutes || +b.target_minutes || b.hours * 60, capped = b.strategy === 'near-first' && effMin < b.hours * 60 - 1, effH = capped ? hh(effMin) : b.hours;
@@ -1362,6 +1375,7 @@ function viewCreate(edit){
         <p class="small">${b.strategy === 'near-first' ? esc(t('budNearFirstResult', { h:effH, mb:fmtN(b.planned) })) : esc(t(b.fits_all ? 'budFitsAll' : b.limit === 'time' ? 'budLimitTime' : 'budLimitCap', { h:b.hours, mb:fmtN(b.planned), f:fmtN(b.flyers_max) }))}</p>${capped ? `<p class="small warn">${esc(t('budCappedDays', { h:b.hours, eff:effH, days:d.days, hpd:d.hours, n:d.n }))}</p>` : ''}
         ${b.workers.map(w => `<div class="route-row"><span class="swatch" style="background:${Planner.COLORS[w.w % 10]}"></span><div class="grow"><b>${esc(t('personN', { n:w.w + 1 }))}</b><span class="small muted">${esc(hh(w.minutes))} · ≈ ${fmtN(w.mailboxes)} · ${esc(f1(w.km))} km</span></div></div>`).join('')}
         <p class="small muted" style="margin:6px 0 0">${esc(t('budDist', { km:f1(Math.round(b.length_m / 100) / 10) }))}</p>
+        ${b.strategy === 'near-first' ? hoursHtml(b) : ''}
         ${b.travel.moves ? `<div class="${b.travel.known && !b.travel.far ? 'hint' : 'warnbox'}">${esc(b.travel.known ? t('budTravelKnown', { n:b.travel.moves, min:b.travel.minutes }) : t('budTravelUnknown', { n:b.travel.moves }))}${b.travel.far ? ' ' + esc(t('budTravelFar', { n:b.travel.far, km:b.travel.far_km })) : ''}</div>` : ''}
         ${b.main && b.main.empty ? `<div class="warnbox">${esc(t('budMainEmpty'))}</div>` : b.main && b.main.short ? `<div class="warnbox">${esc(t('budMainShort'))}</div>` : ''}
         ${(b.unplanned || []).length ? `<div class="warnbox">${esc(t('budUnplanned', { list:b.unplanned.join(', ') }))}</div>` : ''}
@@ -1483,6 +1497,8 @@ ${d.budget.on && d.budget.strategy === 'near-first' ? '' : `      <label class="
     if($('#cCircle')) $('#cCircle').onchange = e => { saved = keep(); d.budget.radiusKm = e.target.checked ? DEFAULT_RADIUS_KM : null; d.assign = {}; sugFlow.reset(); d.sugT = null; if(d.plan) draw(); recompute(); };
     if($('#cRadiusKm')) $('#cRadiusKm').onchange = e => { saved = keep(); const value = Number(e.target.value); if(!Number.isFinite(value) || value < MIN_RADIUS_KM || value > MAX_RADIUS_KM){ e.target.reportValidity(); e.target.value = d.budget.radiusKm; return; } d.budget.radiusKm = value; d.assign = {}; sugFlow.reset(); d.sugT = null; if(d.plan) draw(); recompute(); };
     if($('#cBudgetStrategy')) $('#cBudgetStrategy').onchange = e => { saved = keep(); d.budget.strategy = e.target.value; d.assign = {}; recompute(); };
+    if($('#cRideMan')) $('#cRideMan').onchange = e => { saved = keep(); const v = Math.round(Number(e.target.value)); d.budget.travelMin = v > 0 ? v : null; d.assign = {}; recompute(); };
+    if($('#cRideAuto')) $('#cRideAuto').onclick = () => { saved = keep(); d.budget.travelMin = null; d.assign = {}; recompute(); };
     if($('#cCap')) $('#cCap').onchange = e => { saved = keep(); const v = Math.round(Number(e.target.value)), max = +e.target.max;
       d.budget.cap = v > 0 && !(max > 0 && v >= max) ? v : null; d.assign = {}; recompute(); };
     if($('#cCapAll')) $('#cCapAll').onclick = () => { saved = keep(); d.budget.cap = null; d.assign = {}; recompute(); };
@@ -1837,7 +1853,7 @@ async function viewTask(id){
   (plans || []).forEach(p => { if(!(p.path?.length > 1)) return; const ds = (p.days || []).length > 1 ? p.days : [{ i0:0, i1:p.path.length - 1 }];
     ds.forEach((d, k) => L.polyline(Planner.pathRuns(p.path.slice(d.i0, d.i1 + 1)), { color:dayColor(p.color, k), weight:4, opacity:.7, dashArray:k ? '10 8' : null }).addTo(m)); });
   drawSkips(m, plans);
-  (plans || []).forEach(p => drawJumps(m, p.path, (tk.travel || (tk.bike ? 'bike' : 'bus')), rideMinOf(plans)));
+  (plans || []).forEach(p => drawJumps(m, p.path, (tk.travel || (tk.bike ? 'bike' : 'bus')), rideMinOf(plans), ridesOf([p])));
   const doneLayer = L.layerGroup().addTo(m);
   L.marker([tk.start_lat, tk.start_lng], { icon:dot('pin-start', 24) }).addTo(m);
   liveWorkers(L.layerGroup().addTo(m), tk, plans, () => true);
