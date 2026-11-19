@@ -668,11 +668,11 @@ export function createPlanService(cache){
       else for(let it=0;it<18&&lo<hi;it++){ const mid=Math.ceil((lo+hi)/2), e=evalPrefix(mid); if(fits(e)){best=e;lo=mid;}else hi=mid-1; }
       // the rest of the budget by nearness: later streets that still fit are added one by one (Cem: fill until it is really used up)
       const firstOut=best.c;
-      let nextCost=null; const cands=[];
+      let nextCost=null; const nextList=[];
       if(best.c<maxC){ let tries=0; const perMb=best.mb>0?best.walk/best.mb:3, used=new Set(best.res.map(r=>r.ai));
         for(let k=best.c;k<maxC&&tries<25;k++){
           const it=items[k], est=it.mb*perMb+(used.has(it.ai)?0:rideTo(areas[it.ai]));   // rough cost first: only plausible streets are planned
-          if(cands.length<10)cands.push({area:areas[it.ai].name,ring:it.ring,mb:Math.round(it.mb),est_min:Math.round(est),left_min:Math.round(limH-best.total),tried:!(best.mb+it.mb>limF||best.total+est*.8>limH)});
+          if(nextList.length<10)nextList.push({area:areas[it.ai].name,ring:it.ring,mb:Math.round(it.mb),est_min:Math.round(est),left_min:Math.round(limH-best.total),tried:!(best.mb+it.mb>limF||best.total+est*.8>limH)});
           if(best.mb+it.mb>limF||best.total+est*.8>limH)continue;
           tries++; const e=evalPrefix(best.c,[...best.extra,k]); if(fits(e)){best=e;used.add(it.ai);} else if(nextCost==null||e.total-best.total<nextCost.min)nextCost={min:Math.round(e.total-best.total),mb:Math.round(it.mb),ring:it.ring,area:areas[it.ai].name,village:!used.has(it.ai)};
         }
@@ -743,7 +743,7 @@ export function createPlanService(cache){
           workers:routes.map(r=>({w:r.w,minutes:r.minutes,walk:r.work_minutes,ride:r.ride_minutes,mailboxes:Math.round(r.mailboxes||0),km:Math.round((r.length_m||0)/100)/10})),
           drive:{ limit_min:limMin, max_flyers:Number.isFinite(limF)?limF:null, max_minutes:Math.round(limH), asked_minutes:askH, team_cap_minutes:teamCap, stop, full_min:fullMin,
             next:nextR?{min:nextR.min,pct:nextR.mb?Math.round(nextR.planned/nextR.mb*100):0,planned:nextR.planned,mb:nextR.mb}:null, rings:rings.slice(0,60),
-            left_minutes:Math.max(0,Math.round(limH-actual)), filled:{streets:best.extra.length,mb:Math.round(best.extra.reduce((t,k)=>t+items[k].mb,0)),before_minutes:Math.round(evalPrefix(best.c).total),next_cheapest:nextCost,next_streets:cands}, outlier:{m:gapM,perKm}, skipped_mb:Math.round(skippedMb[0]), real_roads:grid.real!==false, road_error:grid.error||null,
+            left_minutes:Math.max(0,Math.round(limH-actual)), filled:{streets:best.extra.length,mb:Math.round(best.extra.reduce((t,k)=>t+items[k].mb,0)),before_minutes:Math.round(evalPrefix(best.c).total),next_cheapest:nextCost,next_streets:nextList}, outlier:{m:gapM,perKm}, skipped_mb:Math.round(skippedMb[0]), real_roads:grid.real!==false, road_error:grid.error||null,
             villages, failed_villages:failed },
           driveZone:grid,
           travel:{known:jumpsAll.filter(j=>!j.walk).every(j=>j.known),manual:manualRide!=null,moves:jumpsAll.filter(j=>!j.walk).length,minutes:Math.round(riding),far:jumpsAll.filter(j=>j.far).length,far_km:3,jumps:jumpsAll}}};
