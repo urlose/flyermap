@@ -5,7 +5,7 @@
 // Pure parts tested in test/carroute.mjs.
 import { distanceM } from './circlearea.js';
 
-const OVERPASS = ['https://overpass.openstreetmap.fr/api/interpreter', 'https://overpass-api.de/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
+const OVERPASS = ['https://overpass.kumi.systems/api/interpreter', 'https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://overpass.openstreetmap.fr/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
 const MAIN = 'motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified';
 const LOCAL = 'residential|living_street';   // no service roads: lighter query, the busy public servers answer more often
 const SPEED = { motorway:115, motorway_link:60, trunk:90, trunk_link:50, primary:70, primary_link:45, secondary:65, secondary_link:40,
@@ -50,7 +50,7 @@ async function overpass1(q, fetchImpl, timeoutMs){
     const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null, tm = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
     try{
       const r = await fetchImpl(url, { method:'POST', body:'data=' + encodeURIComponent(q), headers:{ 'Content-Type':'application/x-www-form-urlencoded' }, signal:ctrl ? ctrl.signal : undefined });
-      if(!r.ok) throw new Error('overpass ' + r.status);
+      if(!r.ok) throw new Error('overpass ' + r.status + ' ' + url.split('/')[2]);
       const j = await r.json();
       if(j && j.remark && /runtime error|out of memory|timed out/i.test(j.remark)) throw new Error('overpass ' + j.remark);
       return j;
