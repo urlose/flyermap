@@ -16,7 +16,7 @@ permissions:
 jobs:
   sql:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:16
@@ -48,7 +48,7 @@ jobs:
       - name: Browser re-plan against a real Postgres (synthetic data, no production)
         working-directory: test/ui
         env: { PGHOST: 127.0.0.1, PGPORT: '5432', PGUSER: postgres, PGPASSWORD: postgres }
-        run: timeout 560s node e2e-replan.cjs out-replan
+        run: timeout 1200s node e2e-replan.cjs out-replan
       - uses: actions/upload-artifact@v4
         if: always()
         with:

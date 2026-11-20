@@ -90,3 +90,7 @@ Object.assign(T.de, { rideTipPlan:'Ortswechsel · Fahrt ≈ {min} Min. (im Plan)
 Object.assign(T.ru, { rideTipPlan:'Смена места · переезд ≈ {min} мин (в плане) · ≈ {km} км по прямой', tripsPlan:'Смена места (переезд ≈ {min} мин)' });
 Object.assign(T.en, { rideTipPlan:'Change of place · ride ≈ {min} min (in the plan) · ≈ {km} km straight line', tripsPlan:'Changes of place (ride ≈ {min} min)' });
 
+// 19.11.2026: car rides on the road (time-first) and the hours of the plan
+Object.assign(T.de, { rideRoadLabel:'{km} km · {min} Min.', rideRoadEst:'geschätzt {km} km · ≈ {min} Min. – bitte prüfen' });
+Object.assign(T.ru, { rideRoadLabel:'{km} км · {min} мин', rideRoadEst:'оценка {km} км · ≈ {min} мин – проверьте' });
+if(T.en) Object.assign(T.en, { rideRoadLabel:'{km} km · {min} min', rideRoadEst:'estimate {km} km · ≈ {min} min – please check' });

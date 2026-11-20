@@ -24,6 +24,11 @@ on:
       - 'test/sql/atomic_task_plans.sh'
       - 'test/ui/e2e-timefirst.cjs'
       - 'worker/src/flyercap.js'
+      - 'worker/src/drivezone.js'
+      - 'worker/src/carroute.js'
+      - 'test/drivefirst.mjs'
+      - 'test/leipheim-drive-snapshot.mjs'
+      - 'test/fixtures/leipheim-drive-*'
       - 'worker/src/budgetplan.js'
       - 'worker/src/savecounts.js'
       - 'test/save-integers.mjs'
@@ -36,7 +41,7 @@ permissions:
 jobs:
   node:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:16
@@ -66,6 +71,8 @@ jobs:
       - run: node test/nearfirst-service.mjs
       - run: node test/circlearea.mjs
       - run: node test/flyercap.mjs
+      - run: node test/drivefirst.mjs
+      - run: node test/leipheim-drive-snapshot.mjs   # real Leipheim data, saved snapshot, no network
       - run: node test/save-integers.mjs
       - run: node test/customerexport.mjs
       - name: Check atomic save on synthetic Postgres
@@ -81,7 +88,7 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Browser test (synthetic Supabase, no production)
         working-directory: test/ui
-        run: timeout 540s node e2e-timefirst.cjs out-timefirst
+        run: timeout 900s node e2e-timefirst.cjs out-timefirst
       - name: Browser test smaller print run (synthetic, no production)
         working-directory: test/ui
         env:

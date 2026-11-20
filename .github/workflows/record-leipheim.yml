@@ -1,0 +1,28 @@
+name: Record Leipheim snapshot (read-only public data)
+# re-run: 20.11.2026 after the top-up fix (2)
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/drive-first]
+    paths: ['.github/workflows/record-leipheim.yml']
+permissions:
+  contents: write
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Record (up to 4 tries until the public road server answers)
+        run: |
+          for i in 1 2 3 4; do node test/leipheim-drive-snapshot.mjs record && break; sleep 60; done
+          test -f test/fixtures/leipheim-drive-2026-11-20.json.gz
+      - name: Replay offline
+        run: node test/leipheim-drive-snapshot.mjs
+      - name: Commit the snapshot
+        run: |
+          git config user.name "github-actions[bot]"; git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add test/fixtures/leipheim-drive-2026-11-20.json.gz
+          git commit -m "Leipheim snapshot of the real data for the drive-time planner (recorded in CI)" && git push
