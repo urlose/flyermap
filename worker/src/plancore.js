@@ -643,7 +643,7 @@ export function createPlanService(cache){
           const e=a.g.edges[q.i], bx=e.boxes||[], mid=bx.length?bx[Math.floor(bx.length/2)]:(e.coords?.[Math.floor(e.coords.length/2)]||a.g.pts[e.a]);
           let m=minOf(mid); if(m==null&&a.manual)m=estimate(start,mid).min;
           if(m==null)continue;
-          if(limMin!=null&&m>limMin&&!a.manual)continue;
+          if(limMin!=null&&m>limMin)continue;   // the same minute limit for places added by hand
           items.push({ai,i:q.i,min:m,ring:Math.max(1,Math.ceil(m)),mb:q.mailboxes,dist:q.distance});
         }
       });
@@ -669,14 +669,20 @@ export function createPlanService(cache){
       else for(let it=0;it<18&&lo<hi;it++){ const mid=Math.ceil((lo+hi)/2), e=evalPrefix(mid); if(fits(e)){best=e;lo=mid;}else hi=mid-1; }
       // the rest of the budget by nearness: later streets that still fit are added one by one (Cem: fill until it is really used up)
       const firstOut=best.c;
-      let nextCost=null; const nextList=[];
-      if(best.c<maxC){ let tries=0; const perMb=best.mb>0?best.walk/best.mb:3, used=new Set(best.res.map(r=>r.ai));
-        for(let k=best.c;k<maxC&&tries<25;k++){
+      // the rest of the budget by nearness – only inside the first ring that is not complete (Cem: the last drive-time step)
+      let nextCost=null; const nextList=[]; const ringNow=best.c<maxC?items[best.c].ring:null;
+      if(ringNow!=null){ let tries=0; const perMb=best.mb>0?best.walk/best.mb:3, used=new Set(best.res.map(r=>r.ai));
+        for(let k=best.c;k<maxC&&items[k].ring===ringNow&&tries<25;k++){
           const it=items[k], est=it.mb*perMb+(used.has(it.ai)?0:rideTo(areas[it.ai]));   // rough cost first: only plausible streets are planned
-          if(nextList.length<10)nextList.push({area:areas[it.ai].name,ring:it.ring,mb:Math.round(it.mb),est_min:Math.round(est),left_min:Math.round(limH-best.total),tried:!(best.mb+it.mb>limF||(best.total+est*.8)*calib>limH)});
           if(best.mb+it.mb>limF||(best.total+est*.8)*calib>limH)continue;
-          tries++; const e=evalPrefix(best.c,[...best.extra,k]); if(fits(e)){best=e;used.add(it.ai);} else if(nextCost==null||e.total-best.total<nextCost.min)nextCost={min:Math.round(e.total-best.total),mb:Math.round(it.mb),ring:it.ring,area:areas[it.ai].name,village:!used.has(it.ai)};
+          tries++; const e=evalPrefix(best.c,[...best.extra,k]); if(fits(e)){best=e;used.add(it.ai);}
         }
+        // what the remaining streets of this ring would cost (planned, incl. the ride to a new area), cheapest first
+        const rest=[]; for(let k=best.c;k<maxC&&items[k].ring===ringNow;k++)if(!best.extra.includes(k))rest.push(k);
+        rest.sort((x,y)=>items[x].mb-items[y].mb);
+        for(const k of rest.slice(0,6)){ const e=evalPrefix(best.c,[...best.extra,k]), it=items[k];
+          nextList.push({area:areas[it.ai].name,ring:it.ring,mb:Math.round(it.mb),add_min:Math.round((e.total-best.total)*calib),new_area:!best.res.some(r=>r.ai===it.ai)}); }
+        nextCost=nextList.slice().sort((a,b)=>a.add_min-b.add_min)[0]||null;
       }
       const inPlan=new Set([...Array(best.c).keys(),...best.extra]);
       // stop reason: what the next street would break
@@ -728,9 +734,13 @@ export function createPlanService(cache){
       }
       const mailboxes=Math.round(routes.reduce((s,r)=>s+(r.mailboxes||0),0)), walking=routes.reduce((s,r)=>s+r.work_minutes,0), riding=routes.reduce((s,r)=>s+r.ride_minutes,0), actual=walking+riding;
       // real rides longer than estimated: fewer streets, plan again (at most 3 times)
-      if(actual>limH+1&&best.c>0&&(budget._shrink||0)<3){   // real plan longer than estimated: the same order again with the measured factor
-        const f=Math.max(1.005,actual/Math.max(1,best.total))*(1+.004*((budget._shrink||0)+1));
-        return this.driveFirstCore({start,n,days,hours,budget:{...budget,_grid:grid,_villages:areas.filter(a=>a.village).map(a=>({...a.cand})),_shrink:(budget._shrink||0)+1,_calib:f},side,must,zone,mainName},stage,stale);
+      // the person-hours are a hard ceiling for the FINAL routes (rides and the split into parts included): plan again with the
+      // measured factor; after 3 rounds also with fewer streets of the order, until it fits (0 streets always fits)
+      if(actual>limH&&best.c+best.extra.length>0&&(budget._shrink||0)<12){
+        const k=(budget._shrink||0)+1, f=Math.max(Math.max(1.005,actual/Math.max(1,best.total))*(1+.004*k),(+budget._calib||1)*1.01);
+        const nb={...budget,_grid:grid,_villages:areas.filter(a=>a.village).map(a=>({...a.cand})),_shrink:k,_calib:f};
+        if(k>3)nb._maxItems=k>=12?0:Math.max(0,Math.floor(best.c*(1-.04*(k-3))));
+        return this.driveFirstCore({start,n,days,hours,budget:nb,side,must,zone,mainName},stage,stale);
       }
       const per_worker=Array.from({length:N},(_,w)=>routes.filter(r=>r.w===w).reduce((s,r)=>s+r.minutes,0));
       const villages=areas.filter(a=>a.village&&planned.some(p=>p.name===a.name)).map(a=>({name:a.name,lat:a.st[0],lng:a.st[1],cid:a.cand.cid,households:a.cand.households,min:Math.round(a.cand.min)}));

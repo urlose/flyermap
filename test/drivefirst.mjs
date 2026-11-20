@@ -51,3 +51,37 @@ Planner.loadForFlyers = async s => structuredClone(Math.abs(s[0] - start[0]) < 1
 const o1 = await run({ hours:20, _villages:[] }), o2 = await run({ hours:20, _villages:[], outlierM:5000 });
 assert.ok(o1.mailboxes === 60 && o2.mailboxes === 62, 'outlier threshold: ' + o1.mailboxes + ' / ' + o2.mailboxes);
 console.log('all ok');
+
+// ---- 20.11.2026: three fixes before release ----
+// A. the rest of the hours is filled ONLY inside the first ring that is not complete: a small village further out (later
+//    ring) is not taken while the current ring still has streets left
+{
+  const mainA = join(street(0, 100, 300, 30, 2, 'Nah'), street(0, 1200, 300, 60, 2, 'Mittel'));
+  const mini = join(street(2600, 0, 60, 1, 2, 'Mini'));
+  Planner.loadForFlyers = async s => structuredClone(Math.abs(s[0] - start[0]) < 1e-3 ? mainA : mini);
+  const vMini = [{ name:'Mini', lat:at(2600, 30)[0], lng:at(2600, 30)[1], cid:'m', households:1, min:3.9 }];
+  const full = await run({ hours:20, _villages:vMini });
+  assert.equal(full.mailboxes, 182, 'all: 60 + 120 + 2');
+  const nearOnly = (await run({ hours:20, maxFlyers:60, _villages:vMini })).budget.actual_minutes;
+  const p = await run({ hours:(nearOnly + 25) / 60, _villages:vMini });   // the near street + 25 min: enough for Mini, not for 'Mittel'
+  assert.ok(!p.split.some(x => x.name === 'Mini'), 'no street from a later ring: ' + JSON.stringify(p.split));
+  assert.ok(p.budget.drive.filled.next_streets.every(x => x.ring === p.budget.drive.next.min), 'the report lists only streets of the current ring');
+  assert.equal(p.budget.drive.stop, 'hours');
+}
+// B. one minute limit for places added by hand and found automatically
+{
+  const farV = join(street(5000, 0, 300, 30, 2, 'HandStr'));
+  Planner.loadForFlyers = async s => structuredClone(Math.abs(s[0] - start[0]) < 1e-3 ? main : Math.abs(s[0] - at(5000, 0)[0]) < 5e-3 ? farV : village);
+  const hand = [{ name:'Hand', lat:at(5000, 150)[0], lng:at(5000, 150)[1], flyers:60, auto:false }];
+  const go = async m => (await createPlanService(null).plan({ ...base, side:hand, budget:{ strategy:'near-first', mode:'drive', tolerance:0, _villages:[], hours:20, driveMin:m } }, () => {}, () => false)).plan;
+  const in15 = await go(15), in5 = await go(5);
+  assert.equal(by(in15).Hand, 60, 'hand-added place at ≈ 7,5 min is planned with 15 min');
+  assert.ok(!by(in5).Hand, 'hand-added place at ≈ 7,5 min is outside a 5 min limit: ' + JSON.stringify(by(in5)));
+}
+// C. the person-hours are a hard ceiling for the final routes (rides between areas and the split included)
+{
+  Planner.loadForFlyers = async s => structuredClone(Math.abs(s[0] - start[0]) < 1e-3 ? main : village);
+  const two = async hrs => (await createPlanService(null).plan({ ...base, n:2, budget:{ strategy:'near-first', mode:'drive', tolerance:0, _villages:villages, hours:hrs, travelMin:25 } }, () => {}, () => false)).plan;
+  for(const hrs of [0.6, 1, 1.5, 2, 3, 4]){ const q = await two(hrs); assert.ok(q.budget.actual_minutes <= hrs * 60, hrs + ' h: ' + q.budget.actual_minutes + ' min'); }
+}
+console.log('fixes ok');
