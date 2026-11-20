@@ -24,6 +24,11 @@ on:
       - 'test/sql/atomic_task_plans.sh'
       - 'test/ui/e2e-timefirst.cjs'
       - 'worker/src/flyercap.js'
+      - 'worker/src/drivezone.js'
+      - 'worker/src/carroute.js'
+      - 'test/drivefirst.mjs'
+      - 'test/leipheim-drive-snapshot.mjs'
+      - 'test/fixtures/leipheim-drive-*'
       - 'test/ui/e2e-cap.cjs'
       - 'worker/src/coord.js'
       - 'test/ui/e2e-coord.cjs'
@@ -63,6 +68,8 @@ jobs:
       - run: node test/nearfirst-service.mjs
       - run: node test/circlearea.mjs
       - run: node test/flyercap.mjs
+      - run: node test/drivefirst.mjs
+      - run: node test/leipheim-drive-snapshot.mjs   # real Leipheim data, saved snapshot, no network
       - run: node test/customerexport.mjs
       - name: Check atomic save on synthetic Postgres
         run: |
