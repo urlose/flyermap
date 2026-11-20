@@ -742,6 +742,13 @@ export function createPlanService(cache){
         if(k>3)nb._maxItems=k>=12?0:Math.max(0,Math.floor(best.c*(1-.04*(k-3))));
         return this.driveFirstCore({start,n,days,hours,budget:nb,side,must,zone,mainName},stage,stale);
       }
+      // top-up: the safety margin of the estimate left room for a street of the current ring – one more pass with the exact factor,
+      // kept only if the FINAL routes still fit
+      if(!budget._topup&&nextCost&&nextCost.add_min<=limH-actual&&best.total>0){
+        const exact=actual/best.total;
+        const again=await this.driveFirstCore({start,n,days,hours,budget:{...budget,_grid:grid,_villages:areas.filter(a=>a.village).map(a=>({...a.cand})),_calib:exact,_topup:true,_shrink:99},side,must,zone,mainName},stage,stale);
+        if(again&&again.plan&&again.plan.budget.actual_minutes<=limH&&again.plan.mailboxes>mailboxes)return again;
+      }
       const per_worker=Array.from({length:N},(_,w)=>routes.filter(r=>r.w===w).reduce((s,r)=>s+r.minutes,0));
       const villages=areas.filter(a=>a.village&&planned.some(p=>p.name===a.name)).map(a=>({name:a.name,lat:a.st[0],lng:a.st[1],cid:a.cand.cid,households:a.cand.households,min:Math.round(a.cand.min)}));
       const plan={routes,mailboxes,zone:[],zones:true,merged:true,per_worker,

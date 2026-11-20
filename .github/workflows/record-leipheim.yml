@@ -1,4 +1,5 @@
 name: Record Leipheim snapshot (read-only public data)
+# re-run: 20.11.2026 after the top-up fix
 on:
   workflow_dispatch:
   push:
