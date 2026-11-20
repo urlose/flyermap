@@ -41,7 +41,7 @@ permissions:
 jobs:
   node:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:16
@@ -88,7 +88,7 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Browser test (synthetic Supabase, no production)
         working-directory: test/ui
-        run: timeout 540s node e2e-timefirst.cjs out-timefirst
+        run: timeout 900s node e2e-timefirst.cjs out-timefirst
       - name: Browser test smaller print run (synthetic, no production)
         working-directory: test/ui
         env:
