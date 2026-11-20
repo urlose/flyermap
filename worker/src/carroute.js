@@ -172,3 +172,27 @@ export async function placeNames(start, km, fetchImpl = (...a) => fetch(...a)){
     return p => { let best = null; for(const n of nodes){ const d = distanceM(n.p, p) + n.rank * 250; if(d < 2000 + n.rank * 250 && (!best || d < best.d)) best = { d, name:n.name }; } return best ? best.name : null; };
   }catch{ return () => null; }
 }
+
+// ---- own car-road squares (20.11.2026, tools/tiles/build.py → storage "tiles/v4/car1/") ----
+export const CAR_TILES = 'https://xobrvfkwqessbkdwiavu.supabase.co/storage/v1/object/public/tiles/v4/car1/';
+export const CAR_LAT = 0.15, CAR_LNG = 0.225;
+const CAR_CLS = ['motorway', 'motorway_link', 'trunk', 'trunk_link', 'primary', 'primary_link', 'secondary', 'secondary_link', 'tertiary', 'tertiary_link', 'unclassified'];
+// cr1 square -> Overpass-like ways (so carGraph() reads both the same way)
+export function decodeCarTile(j){
+  if(!j || j.v !== 'cr1' || !Array.isArray(j.w)) throw new Error('bad car square');
+  return j.w.map(c => { let la = c[3], lo = c[4]; const geometry = [{ lat:la / 1e6, lon:lo / 1e6 }];
+    for(let k = 5; k + 1 < c.length; k += 2){ la += c[k]; lo += c[k + 1]; geometry.push({ lat:la / 1e6, lon:lo / 1e6 }); }
+    return { type:'way', tags:{ highway:CAR_CLS[c[0]], ...(c[1] ? { maxspeed:String(c[1]) } : {}), ...(c[2] === 1 ? { oneway:'yes' } : c[2] === -1 ? { oneway:'-1' } : {}) }, geometry }; });
+}
+async function gunzipJson(buf){
+  const u8 = new Uint8Array(buf);
+  if(u8[0] === 0x1f && u8[1] === 0x8b) return JSON.parse(await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream('gzip'))).text());
+  return JSON.parse(new TextDecoder().decode(u8));
+}
+// all car squares of a box; null when one is missing (not built yet, outside Germany) – then the public server is asked
+export async function carTileWays(S, W, N, E, fetchImpl = (...a) => fetch(...a)){
+  const out = [], jobs = [];
+  for(let i = Math.floor(S / CAR_LAT); i <= Math.floor(N / CAR_LAT); i++) for(let j = Math.floor(W / CAR_LNG); j <= Math.floor(E / CAR_LNG); j++)
+    jobs.push(fetchImpl(CAR_TILES + i + '_' + j + '.json.gz').then(async r => { if(!r.ok) throw new Error('car square ' + i + '_' + j + ': ' + r.status); return decodeCarTile(await gunzipJson(await r.arrayBuffer())); }));
+  try{ for(const w of await Promise.all(jobs)) out.push(...w); return { elements:out }; }catch{ return null; }
+}

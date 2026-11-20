@@ -36,6 +36,8 @@ def send(batch, d):
 def main():
     d = sys.argv[1]
     files = sorted(f for f in os.listdir(d) if f.endswith('.json.gz'))
+    if os.path.isdir(os.path.join(d, 'car1')):   # own car-road squares (20.11.2026) → v4/car1/
+        files += sorted('car1/' + f for f in os.listdir(os.path.join(d, 'car1')) if f.endswith('.json.gz'))
     batches, cur, size = [], [], 0
     for f in files:
         s = os.path.getsize(os.path.join(d, f))

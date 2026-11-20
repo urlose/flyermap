@@ -45,8 +45,9 @@ function inGridish(gr, p){ return minutesTo(gr, p) != null; }
 let calls = 0;
 const z = await driveZone(start, 15, { fetchImpl:async () => { calls++; return { ok:true, json:async () => json }; } });
 ok('driveZone: real zone from the map server', z.real && minutesTo(z, at(0, 10000)) != null);
+const after = calls;
 await driveZone(start, 15, { fetchImpl:async () => { calls++; throw new Error('x'); } });
-ok('driveZone: cached per start and minutes', calls === 1, calls);
+ok('driveZone: cached per start and minutes (no new request)', calls === after, calls + ' / ' + after);
 const z2 = await driveZone([48.5, 10.3], 15, { fetchImpl:async () => { throw new Error('offline'); } });
 ok('driveZone: offline → circle, not real', z2.real === false && z2.km === 9);
 // speed: realistic size
