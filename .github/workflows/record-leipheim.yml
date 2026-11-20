@@ -1,6 +1,9 @@
 name: Record Leipheim snapshot (read-only public data)
 on:
   workflow_dispatch:
+  push:
+    branches: [feature/drive-first]
+    paths: ['.github/workflows/record-leipheim.yml']
 permissions:
   contents: write
 jobs:
