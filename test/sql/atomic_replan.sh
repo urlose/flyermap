@@ -90,6 +90,7 @@ ok "no routes is refused"             "$(has invalid_order_payload "$(replan $UA
 MANY="[$(for i in $(seq 0 30); do [ $i = 0 ] || printf ,; plan $i null 1 1; done)]"
 ok "31 routes are refused"            "$(has invalid_order_payload "$(replan $UA $T1 "$TASKJ" "$MANY")")"
 ok "fractional mailboxes are refused" "$(has mailboxes_must_be_nonnegative_integers "$(replan $UA $T1 "$TASKJ" "[$(plan 0 $W1 1 12.5)]")")"
+ok "1381.5 mailboxes (reported case) are refused" "$(has mailboxes_must_be_nonnegative_integers "$(replan $UA $T1 "$TASKJ" "[$(plan 0 $W1 1 1381.5)]")")"
 ok "duplicate route number is refused" "$(has invalid_route_index "$(replan $UA $T1 "$TASKJ" "[$(plan 0 $W1 1 10),$(plan 0 $W3 1 10)]")")"
 
 # ---------- a failure in the middle keeps the old state ----------
