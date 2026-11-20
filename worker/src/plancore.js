@@ -649,7 +649,7 @@ export function createPlanService(cache){
       });
       items.sort((x,y)=>x.ring-y.ring||x.min-y.min||x.dist-y.dist);
       // a prefix of the order -> routes per area (cached), walking minutes, rides (estimate) and mailboxes
-      const memo=new Map();
+      const memo=budget._memo||new Map();   // shared by the extra passes (same areas, same streets): routes of an area are planned once
       const areaPlan=(ai,ids,workers)=>{ const k=ai+':'+workers+':'+ids.join(','); if(memo.has(k))return memo.get(k);
         const a=areas[ai], set=new Set(ids), region={...a.g,zoned:true,edges:a.g.edges.map((e,i)=>set.has(i)?e:{...e,mb:0,boxes:[]})}, max=ids.reduce((s,i)=>s+(+a.g.edges[i].mb||0),0);
         const p=Planner.planFlyers(region,a.st,max+1,workers,{days:maxDays,hoursPerDay:H,selectedEdgeIds:ids}); const routes=p.routes.filter(r=>r.path?.length>1);
@@ -738,7 +738,7 @@ export function createPlanService(cache){
       // measured factor; after 3 rounds also with fewer streets of the order, until it fits (0 streets always fits)
       if(actual>limH&&best.c+best.extra.length>0&&(budget._shrink||0)<12){
         const k=(budget._shrink||0)+1, f=Math.max(Math.max(1.005,actual/Math.max(1,best.total))*(1+.004*k),(+budget._calib||1)*1.01);
-        const nb={...budget,_grid:grid,_villages:areas.filter(a=>a.village).map(a=>({...a.cand})),_shrink:k,_calib:f};
+        const nb={...budget,_grid:grid,_villages:areas.filter(a=>a.village).map(a=>({...a.cand})),_shrink:k,_calib:f,_memo:memo};
         if(k>3)nb._maxItems=k>=12?0:Math.max(0,Math.floor(best.c*(1-.04*(k-3))));
         return this.driveFirstCore({start,n,days,hours,budget:nb,side,must,zone,mainName},stage,stale);
       }
@@ -747,7 +747,7 @@ export function createPlanService(cache){
       let topup=null;
       if((budget._topup||0)<3&&nextCost&&nextCost.add_min<=limH-actual&&best.total>0){
         const exact=actual/best.total*(1-(nextCost.add_min+.5)/Math.max(1,actual));   // just enough room for the next street
-        const again=await this.driveFirstCore({start,n,days,hours,budget:{...budget,_grid:grid,_villages:areas.filter(a=>a.village).map(a=>({...a.cand})),_calib:exact,_topup:(budget._topup||0)+1,_shrink:99},side,must,zone,mainName},stage,stale);
+        const again=await this.driveFirstCore({start,n,days,hours,budget:{...budget,_grid:grid,_villages:areas.filter(a=>a.village).map(a=>({...a.cand})),_calib:exact,_topup:(budget._topup||0)+1,_shrink:99,_memo:memo},side,must,zone,mainName},stage,stale);
         if(again&&again.plan&&again.plan.budget.actual_minutes<=limH&&again.plan.mailboxes>mailboxes)return again;
         // the real routes say no: keep this plan and report what the check found
         topup={tried:(budget._topup||0)+1,street:nextCost,real_minutes:again&&again.plan?again.plan.budget.actual_minutes:null,real_flyers:again&&again.plan?again.plan.mailboxes:null,fits:false};
