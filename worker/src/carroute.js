@@ -176,23 +176,64 @@ export async function placeNames(start, km, fetchImpl = (...a) => fetch(...a)){
 // ---- own car-road squares (20.11.2026, tools/tiles/build.py → storage "tiles/v4/car1/") ----
 export const CAR_TILES = 'https://xobrvfkwqessbkdwiavu.supabase.co/storage/v1/object/public/tiles/v4/car1/';
 export const CAR_LAT = 0.15, CAR_LNG = 0.225;
+let carTileStamp = '';
+export function setCarTileStamp(stamp){ carTileStamp = stamp ? '?b=' + encodeURIComponent(stamp) : ''; }
 const CAR_CLS = ['motorway', 'motorway_link', 'trunk', 'trunk_link', 'primary', 'primary_link', 'secondary', 'secondary_link', 'tertiary', 'tertiary_link', 'unclassified'];
-// cr1 square -> Overpass-like ways (so carGraph() reads both the same way)
-export function decodeCarTile(j){
-  if(!j || j.v !== 'cr1' || !Array.isArray(j.w)) throw new Error('bad car square');
-  return j.w.map(c => { let la = c[3], lo = c[4]; const geometry = [{ lat:la / 1e6, lon:lo / 1e6 }];
-    for(let k = 5; k + 1 < c.length; k += 2){ la += c[k]; lo += c[k + 1]; geometry.push({ lat:la / 1e6, lon:lo / 1e6 }); }
-    return { type:'way', tags:{ highway:CAR_CLS[c[0]], ...(c[1] ? { maxspeed:String(c[1]) } : {}), ...(c[2] === 1 ? { oneway:'yes' } : c[2] === -1 ? { oneway:'-1' } : {}) }, geometry }; });
+function carRows(tile){
+  if(!tile || tile.v !== 'cr1' || !Array.isArray(tile.w)) throw new Error('bad car square');
+  return tile.w;
 }
+function decodeCarRow(row){
+  if(!Array.isArray(row) || row.length < 7 || row.length % 2 !== 1 ||
+    !row.every(Number.isInteger) || !CAR_CLS[row[0]] || row[1] < 0 ||
+    row[1] > 150 || Math.abs(row[2]) > 1) throw new Error('bad car road');
+  let la = row[3], lo = row[4];
+  const geometry = [];
+  const add = () => {
+    if(Math.abs(la) > 90e6 || Math.abs(lo) > 180e6) throw new Error('bad car coordinates');
+    geometry.push({ lat:la / 1e6, lon:lo / 1e6 });
+  };
+  add();
+  for(let k = 5; k < row.length; k += 2){ la += row[k]; lo += row[k + 1]; add(); }
+  const [highway, maxspeed, oneway] = row;
+  return { type:'way', tags:{ highway:CAR_CLS[highway],
+    ...(maxspeed ? { maxspeed:String(maxspeed) } : {}),
+    ...(oneway ? { oneway:oneway === 1 ? 'yes' : '-1' } : {}) }, geometry };
+}
+export function decodeCarTile(tile){ return carRows(tile).map(decodeCarRow); }
 async function gunzipJson(buf){
   const u8 = new Uint8Array(buf);
   if(u8[0] === 0x1f && u8[1] === 0x8b) return JSON.parse(await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream('gzip'))).text());
   return JSON.parse(new TextDecoder().decode(u8));
 }
-// all car squares of a box; null when one is missing (not built yet, outside Germany) – then the public server is asked
-export async function carTileWays(S, W, N, E, fetchImpl = (...a) => fetch(...a)){
-  const out = [], jobs = [];
-  for(let i = Math.floor(S / CAR_LAT); i <= Math.floor(N / CAR_LAT); i++) for(let j = Math.floor(W / CAR_LNG); j <= Math.floor(E / CAR_LNG); j++)
-    jobs.push(fetchImpl(CAR_TILES + i + '_' + j + '.json.gz').then(async r => { if(!r.ok) throw new Error('car square ' + i + '_' + j + ': ' + r.status); return decodeCarTile(await gunzipJson(await r.arrayBuffer())); }));
-  try{ for(const w of await Promise.all(jobs)) out.push(...w); return { elements:out }; }catch{ return null; }
+// Incomplete coverage falls back to one Overpass query for the whole box.
+export async function carTileWays(S, W, N, E, fetchImpl = (...a) => fetch(...a), timeoutMs = 8000){
+  const controller = new AbortController();
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('car square timeout')), timeoutMs);
+  });
+  try{
+    const jobs = [];
+    for(let i = Math.floor(S / CAR_LAT); i <= Math.floor(N / CAR_LAT); i++){
+      for(let j = Math.floor(W / CAR_LNG); j <= Math.floor(E / CAR_LNG); j++){
+        jobs.push((async () => {
+          const r = await fetchImpl(CAR_TILES + i + '_' + j + '.json.gz' + carTileStamp, { signal:controller.signal });
+          if(!r.ok) throw new Error('car square ' + i + '_' + j + ': ' + r.status);
+          return carRows(await gunzipJson(await r.arrayBuffer()));
+        })());
+      }
+    }
+    const elements = [], seen = new Set();
+    for(const rows of await Promise.race([Promise.all(jobs), deadline])){
+      for(const row of rows){
+        const key = JSON.stringify(row);
+        if(seen.has(key)) continue;
+        elements.push(decodeCarRow(row));
+        seen.add(key);
+      }
+    }
+    return { elements };
+  }catch{ return null; }
+  finally{ clearTimeout(timer); controller.abort(); }
 }

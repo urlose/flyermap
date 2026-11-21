@@ -128,6 +128,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       JSON.stringify(cfg));
     ok(name+': new orders: three optional maxima – drive time (15 min), hours, flyers; no km circle',
       await pg.evaluate(()=>+document.getElementById('cDriveMin')?.value===15 && document.getElementById('cMaxFly')?.value==='' && !document.getElementById('cCircle')));
+    ok(name+': no tolerance / car fields in drive mode', await pg.evaluate(()=>!document.getElementById('cBudT') && !document.getElementById('cBudgetCar')));
     await pg.evaluate(()=>{ const r=document.getElementById('cDriveMin'); r.value=12; r.dispatchEvent(new Event('change')); });
     await pg.evaluate(()=>{
       const h=document.getElementById('cBudH');h.value=6;h.dispatchEvent(new Event('change'));

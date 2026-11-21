@@ -108,15 +108,22 @@ export async function driveZone(start, min, { fetchImpl = (...a) => fetch(...a),
   const job = (async () => {
     try{
       const km = searchKm(lim), d = km * 1000 / 111320, e = d / Math.cos(start[0] * Math.PI / 180);
-      // own car-road squares first (no public server); the public Overpass server only where they are missing
+      const gridOf = (data, source) => {
+        const g = carGraph(data);
+        if(g.pts.length < 10) return null;
+        const grid = buildGrid(g, driveTimes(g, start, lim), start, lim);
+        if(!grid.runs.length) return null;
+        Object.defineProperty(grid, '_g', { value:g, enumerable:false });
+        grid.source = source;
+        return grid;
+      };
       const own = await carTileWays(start[0] - d, start[1] - e, start[0] + d, start[1] + e, fetchImpl);
-      const g = carGraph(own || await overpass(carQuery(start, 0, [[start[0] - d, start[1] - e], [start[0] + d, start[1] + e], start]), fetchImpl, timeoutMs));
-      g.source = own ? 'tiles' : 'overpass';
-      if(g.pts.length < 10) throw new Error('no roads');
-      const grid = buildGrid(g, driveTimes(g, start, lim), start, lim);
-      Object.defineProperty(grid, '_g', { value:g, enumerable:false });
-      grid.source = g.source;   // the same roads give the rides between work areas
-      return grid;
+      const gr = own && gridOf(own, 'tiles');
+      if(gr) return gr;
+      const publicRoads = await overpass(carQuery(start, 0, [[start[0] - d, start[1] - e], [start[0] + d, start[1] + e], start]), fetchImpl, timeoutMs);
+      const fallback = gridOf(publicRoads, 'overpass');
+      if(!fallback) throw new Error('no roads');
+      return fallback;
     }catch(err){
       const fb = fallbackGrid(start, lim); fb.error = String(err && err.message || err).slice(0, 120); return fb;
     }

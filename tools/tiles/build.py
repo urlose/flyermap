@@ -122,10 +122,10 @@ def i6(v): return js_round(v * 1e6)
 
 class Collect(osmium.SimpleHandler):
     """streets and houses for the squares in `want` (set of (i, j)); nodes are kept only for streets"""
-    def __init__(self, want):
+    def __init__(self, want, car_want):
         super().__init__(); self.want = want
         self.nodes = {}; self.ways = {}; self.tile_ways = {}; self.tile_b = {}; self.tile_lu = {}
-        self.n_ways = 0; self.car = {}; self.car_want = {car_tile_of(i * TILE_LAT + 1e-9, j * TILE_LNG + 1e-9) for (i, j) in want}; self.n_car = 0
+        self.n_ways = 0; self.car = {}; self.car_want = car_want; self.n_car = 0
     def way(self, w):
         tags = w.tags
         b = tags.get('building')
@@ -160,7 +160,15 @@ class Collect(osmium.SimpleHandler):
     def add_car(self, cr, w):
         pts = [(i6(nd.lat), i6(nd.lon)) for nd in w.nodes if nd.location.valid()]
         if len(pts) < 2: return
-        tiles = {car_tile_of(la / 1e6, lo / 1e6) for la, lo in pts} & self.car_want
+        tiles = set()
+        for a, b in zip(pts, pts[1:]):
+            i, j = car_tile_of(a[0] / 1e6, a[1] / 1e6)
+            x, y = car_tile_of(b[0] / 1e6, b[1] / 1e6)
+            # Include segments that cross a square without a vertex inside it.
+            for row in range(min(i, x), max(i, x) + 1):
+                for col in range(min(j, y), max(j, y) + 1):
+                    if (row, col) in self.car_want:
+                        tiles.add((row, col))
         for t in tiles: self.car.setdefault(t, []).append(cr + [p for xy in pts for p in xy])
         if tiles: self.n_car += 1
     def add_landuse(self, ring):   # Gewerbegebiet / shops: plain "building=yes" there has no mailboxes
@@ -218,13 +226,17 @@ def write_car(c, out):
     for t in c.car_want:   # empty squares too: 'missing' must mean 'not built', not 'no roads here'
         rows = c.car.get(t, [])
         p = os.path.join(d, '%d_%d.json.gz' % t)
+        previous_bytes = 0
         if os.path.exists(p):   # a square split over two bands: merge
-            rows = rows + [decode_car_row(x) for x in json.loads(gzip.decompress(open(p, 'rb').read()))['w']]
+            previous_bytes = os.path.getsize(p)
+            with gzip.open(p, 'rt') as f:
+                rows += [decode_car_row(x) for x in json.load(f)['w']]
             rows = [list(x) for x in {tuple(r) for r in rows}]
         data = gzip.compress(json.dumps(encode_car(rows), separators=(',', ':')).encode(), 9)
         with open(p, 'wb') as f: f.write(data)
-        size += len(data)
+        size += len(data) - previous_bytes
     return size
+
 def decode_car_row(c):
     r = c[:5]; la, lo = c[3], c[4]
     for k in range(5, len(c), 2): la += c[k]; lo += c[k + 1]; r += [la, lo]
@@ -271,7 +283,13 @@ def main():
     poly = read_poly(a.poly) if a.poly else None
     bbox = list(map(float, a.bbox.split(','))) if a.bbox else (lambda b: [b[1], b[0], b[3], b[2]])(poly.bounds)
     want_all = full_tiles(poly, bbox)
-    print('squares inside the boundary:', len(want_all), flush=True)
+    car_candidates = {(i // 5, j // 5) for i, j in want_all}
+    south, west, north, east = bbox
+    car_all = {(i, j) for i, j in car_candidates
+               if south <= round(i * CAR_LAT, 9) and round((i + 1) * CAR_LAT, 9) <= north
+               and west <= round(j * CAR_LNG, 9) and round((j + 1) * CAR_LNG, 9) <= east
+               and all((i * 5 + r, j * 5 + c) in want_all for r in range(5) for c in range(5))}
+    print('squares inside the boundary:', len(want_all), 'car squares:', len(car_all), flush=True)
     rows = sorted({t[0] for t in want_all}); total = 0; t0 = time.time(); done = 0
     bands = [rows] if a.nosplit else [rows[k:k + a.band] for k in range(0, len(rows), a.band)]
     for band in bands:
@@ -281,7 +299,8 @@ def main():
             s, n = band[0] * TILE_LAT - 0.02, (band[-1] + 1) * TILE_LAT + 0.02
             src = os.path.join(a.work, 'band.osm.pbf')
             subprocess.run(['osmium', 'extract', '-b', '%f,%f,%f,%f' % (bbox[1] - 0.05, s, bbox[3] + 0.05, n), '-s', 'complete_ways', '--overwrite', '-o', src, a.pbf], check=True)
-        c = Collect(want); c.apply_file(src, locations=True, idx='flex_mem')
+        band_car = {(i, j) for i, j in car_all if band[0] // 5 <= i <= band[-1] // 5}
+        c = Collect(want, band_car); c.apply_file(src, locations=True, idx='flex_mem')
         total += write_tiles(c, want, a.out) + write_car(c, a.out); done += len(want)
         print('rows %d-%d: %d squares, %d streets, %d houses · %d/%d · %.1f MB · %d s' % (band[0], band[-1], len(want), c.n_ways, sum(len(v) for v in c.tile_b.values()), done, len(want_all), total / 1e6, time.time() - t0), flush=True)
     with open(os.path.join(a.out, 'meta.json'), 'w') as f:
