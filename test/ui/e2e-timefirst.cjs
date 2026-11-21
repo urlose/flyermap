@@ -5,7 +5,7 @@
 // What is SYNTHETIC: Supabase (fixtures.cjs, auth included – nothing leaves the machine, every write is recorded and must stay empty),
 // the street/house data: Overpass is answered with an invented street grid + houses generated FROM the real census cells
 // (so villages lie where the census has them, but the streets are not OSM). Geocoder: invented names. No outbound network is used.
-// Run: (cd worker && npm ci && node build.mjs) && node test/ui/e2e-phase2a.cjs [outDir]
+// Run: (cd worker && npm ci && node build.mjs) && node test/ui/e2e-timefirst.cjs [outDir]
 const http = require('http'), fs = require('fs'), path = require('path');
 const { chromium } = require('playwright');
 const F = require('./fixtures.cjs');
@@ -41,7 +41,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const rnd = (a, c, i) => { const v = Math.sin(a * 12.9898 + c * 78.233 + i * 37.719) * 43758.5453; return v - Math.floor(v); };
     function overpassAnswer(S, W, N, E){
       const els = [], nodes = new Set(), addNode = (cx, cy) => { const k = id(cx, cy); if(nodes.has(k)) return k; nodes.add(k); const [la, lo] = ll(cx, cy); els.push({ type:'node', id:k, lat:la, lon:lo }); return k; };
-      const inb = (la, lo) => la >= S && la <= N && lo >= W && lo <= E; let wid = 1;
+      const inb = (la, lo) => la >= S && la <= N && lo >= W && lo <= E && Math.abs(la - lat) <= .028 && Math.abs(lo - lng) <= .04; let wid = 1;
       for(const [k, h] of H){ const [cx, cy] = k.split(',').map(Number), [la, lo] = ll(cx, cy); if(!inb(la, lo)) continue;
         for(const [dx, dy] of [[1, 0], [0, 1]]) for(let s = 1; s <= 30; s++){ const nx = cx + dx * s, ny = cy + dy * s; if(!H.has(nx + ',' + ny)) continue; const ns = []; for(let q = 0; q <= s; q++) ns.push(addNode(cx + dx * q, cy + dy * q)); els.push({ type:'way', id:id(cx, cy) * 2 + dx, nodes:ns, tags:{ highway:'residential', name:'Str ' + cx + '-' + cy } }); break; }
         const n = Math.min(40, h); for(let i = 0; i < n; i++) els.push({ type:'way', id:900000000000 + wid++, center:{ lat:la + (rnd(cx, cy, i) - .5) * 80 / 111320, lon:lo + (rnd(cy, cx, i + 9) - .5) * 80 / (111320 * Math.cos(la * Math.PI / 180)) }, tags:{ building:'house' } }); }
@@ -91,7 +91,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         return route.fulfill({ status:200, headers:{ 'content-range':`0-${Math.max(0, rows.length - 1)}/${rows.length}`, 'content-type':'application/json' }, body:JSON.stringify(single ? (rows[0] || null) : rows) });
       }
       if(/overpass|maps\.mail\.ru/.test(u.hostname)){ const q = decodeURIComponent((rq.postData() || u.search).replace(/\+/g, ' ')), m = q.match(/\(([\d.]+),([\d.]+),([\d.]+),([\d.]+)\)/);
-        if(q.includes('out tags geom')) await roadGate;
+        if(q.includes('out tags geom')){
+          await roadGate;
+          return route.fulfill({ json:{ elements:[] }, headers:{ 'access-control-allow-origin':'*' } });
+        }
         return route.fulfill({ status:200, json:m ? overpassAnswer(+m[1], +m[2], +m[3], +m[4]) : { elements:[] }, headers:{ 'access-control-allow-origin':'*' } }); }
       if(/urlose\.github\.io$/.test(u.hostname) && u.pathname.includes('/zensus/')){ const f = ZEN + u.pathname.split('/').pop(); return fs.existsSync(f) ? route.fulfill({ status:200, body:fs.readFileSync(f), headers:{ 'access-control-allow-origin':'*' } }) : route.fulfill({ status:404, body:'', headers:{ 'access-control-allow-origin':'*' } }); }
       if(/photon\.komoot\.io$/.test(u.hostname)){ const la = +u.searchParams.get('lat'), lo = +u.searchParams.get('lon'), nm = 'Testdorf ' + (Math.abs(Math.round(la * 1e3)) % 1000) + '/' + (Math.abs(Math.round(lo * 1e3)) % 1000);
@@ -153,7 +156,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       await pg.evaluate(()=>+document.getElementById('cDriveMin')?.value===15 && document.getElementById('cMaxFly')?.value==='' && !document.getElementById('cCircle')));
     ok(name+': no tolerance / car fields in drive mode', await pg.evaluate(()=>!document.getElementById('cBudT') && !document.getElementById('cBudgetCar')));
     await pg.evaluate(() => {
-      for(const [id, value] of [['cDeadline', '2026-11-23'], ['cHours', '7,5']]){
+      for(const [id, value] of [['cDeadline', '2026-11-23'], ['cHours', '7,5'], ['cBudH', '6'], ['cDriveMin', '12']]){
         const input = document.getElementById(id);
         input.value = value;
         input.dispatchEvent(new Event('change'));
@@ -178,14 +181,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await pg.setViewportSize({ width:1440, height:900 });
     await pg.locator('#cMin').click();
     releaseRoads();
-    ok(name+': 7,5 h × 2 people × 2 working days caps team at 1800 min', !!await waitLimit(1800, 1800));
+    ok(name+': 7,5 h × 2 people × 2 working days gives a 1800 min team capacity and a 360 min active cap', !!await waitLimit(1800, 360));
     ok(name+': progress has German stage labels and elapsed seconds', await pg.evaluate(() =>
-      ['Warte auf Straßendaten', 'Berechne Routen', 'Prüfe Zeit- und Flyergrenzen'].every(label =>
+      ['Warte auf Straßendaten', 'Lade Orte in Reichweite', 'Berechne Routen', 'Berechne Fahrten zwischen Orten', 'Prüfe Zeit- und Flyergrenzen'].every(label =>
         window.__stages.some(s => s.startsWith(label) && /\d+ s$/.test(s)))));
-    await pg.evaluate(()=>{ const r=document.getElementById('cDriveMin'); r.value=12; r.dispatchEvent(new Event('change')); });
-    await pg.evaluate(()=>{
-      const h=document.getElementById('cBudH');h.value=6;h.dispatchEvent(new Event('change'));
-    });
     await pg.evaluate(()=>{const b=document.getElementById('cNext');if(b&&!b.disabled)b.click();});
     ok(name+': no flyer quantity as input on route step',
       !!await until(()=>!!document.querySelector('.budget-box'),240000) &&
