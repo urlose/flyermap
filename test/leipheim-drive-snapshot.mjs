@@ -8,7 +8,8 @@ import { gzipSync, gunzipSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 const mode = process.argv[2] === 'record' ? 'record' : 'replay';
-const file = (mode === 'record' ? process.argv[3] : process.argv[2]) || new URL('./fixtures/leipheim-drive-2026-11-20.json.gz', import.meta.url).pathname;
+const pinned = new URL('./fixtures/leipheim-drive-2026-11-20.json.gz', import.meta.url).pathname;
+const file = (mode === 'record' ? process.argv[3] : process.argv[2]) || pinned;
 const keyOf = (url, init) => (init && init.method || 'GET') + ' ' + url + ' ' + createHash('sha1').update(String(init && init.body || '')).digest('hex').slice(0, 16);
 const realFetch = globalThis.fetch, log = new Map();
 let namingRequests = 0;
@@ -52,7 +53,7 @@ if(mode === 'record'){
   console.log('snapshot written: ' + log.size + ' requests');
 }else{
   assert.equal(namingRequests, 0, 'the route plan does not wait for place names');
-  assert.deepEqual([plan.mailboxes, b.actual_minutes, v.max_minutes], [5285, 1917, 1920]);
+  if(file === pinned) assert.deepEqual([plan.mailboxes, b.actual_minutes, v.max_minutes], [5285, 1917, 1920]);
   // Cem's rules on the real data
   assert.ok(v.real_roads && b.travel.known, 'real roads in the snapshot');
   const rings = v.rings; let open = false;
@@ -70,7 +71,7 @@ if(mode === 'record'){
     assert.equal(saved._g, undefined);
     const { plan:replanned } = await calculate({ ...args.budget, _grid:saved });
     assert.ok(replanned.budget.travel.known);
-    assert.deepEqual([replanned.mailboxes, replanned.budget.actual_minutes], [5285, 1917]);
+    assert.deepEqual([replanned.mailboxes, replanned.budget.actual_minutes], [plan.mailboxes, b.actual_minutes]);
     assert.deepEqual(replanned.budget.travel.jumps.map(j => [j.min, j.km]), b.travel.jumps.map(j => [j.min, j.km]));
     console.log('saved grid: reapplied with the same real-road rides');
   }

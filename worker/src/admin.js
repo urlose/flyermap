@@ -1218,10 +1218,11 @@ function viewCreate(edit){
   async function resolveDriveNames(plan, token){
     const villages = plan.budget?.drive?.villages;
     if(!villages?.length) return;
+    const sheetAtLookup = $('#cSheet');
     const names = new Map();
     const used = new Set(plan.split.map(x => x.name));
     for(const village of villages){
-      if(!alive() || token !== d.token) return;
+      if(!sheetAtLookup?.isConnected || token !== d.token) return;
       const key = village.cid || nameKey(village);
       const cached = d.sugNames.get(key);
       if(!cached && !driveNameRequests.has(key)){
@@ -1238,7 +1239,7 @@ function viewCreate(edit){
       used.add(unique);
       names.set(village.name, unique);
     }
-    if(!names.size || !alive() || token !== d.token || d.plan !== plan) return;
+    if(!names.size || !sheetAtLookup?.isConnected || token !== d.token || d.plan !== plan) return;
     const rename = name => names.get(name) || name;
     const renameList = name => name?.split(' + ').map(rename).join(' + ');
     for(const route of plan.routes){
