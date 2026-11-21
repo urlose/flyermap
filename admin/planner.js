@@ -310,6 +310,33 @@
     while(h.size){ const [k, v] = h.pop(); if(k > d[v]) continue; for(const { e, to } of g.adj[v]){ const nd = k + g.edges[e].len; if(nd < d[to]){ d[to] = nd; pe[to] = e; pv[to] = v; h.push(nd, to); } } }
     return { d, pe, pv };
   }
+  // A drive plan tests many street selections on the same walking graph. Their
+  // mailbox weights change, but the shortest paths depend only on the topology
+  // and edge lengths. Keep the most recently used trees for this plan only.
+  function walkingTreeCache(maxBytes = 64 * 1024 * 1024){
+    const byGraph = new WeakMap(), recent = new Set();
+    let bytes = 0;
+    return (g, src) => {
+      let bySource = byGraph.get(g.adj);
+      if(!bySource){ bySource = new Map(); byGraph.set(g.adj, bySource); }
+      let entry = bySource.get(src);
+      if(entry){ recent.delete(entry); recent.add(entry); return entry.tree; }
+      const tree = sssp(g, src);
+      const size = tree.d.byteLength + tree.pe.byteLength + tree.pv.byteLength;
+      if(size > maxBytes) return tree;
+      while(bytes + size > maxBytes){
+        const oldest = recent.values().next().value;
+        recent.delete(oldest);
+        oldest.bySource.delete(oldest.src);
+        bytes -= oldest.size;
+      }
+      entry = { src, tree, size, bySource };
+      bySource.set(src, entry);
+      recent.add(entry);
+      bytes += size;
+      return tree;
+    };
+  }
   // metres walked WITHOUT mailboxes on the cheapest way from the start into an area: streets with flyers on the way cost
   // nothing (they are worth walking), empty roads count. Big value → better take the bus to that place.
   function emptyGap(g, start, poly){
@@ -463,7 +490,7 @@
   const bearing = (a, b) => Math.atan2((b[1] - a[1]) * Math.cos(a[0] * RAD), b[0] - a[0]) / RAD;
   const turnCode = d => { const a = Math.abs(d); return a < 25 ? 'S' : a < 60 ? (d < 0 ? 'SL' : 'SR') : a < 150 ? (d < 0 ? 'L' : 'R') : 'U'; };
   // rootNode (optional): common start/end junction, so that several day-loops of one worker all begin and end at the same place
-  function planPart(g, req, start, rootNode){
+  function planPart(g, req, start, rootNode, walkTree = sssp){
     if(!req.length) return { path:[], length_m:0, street_m:0, edges:0, steps:[] };
     const inst = req.map(e => ({ e, dead:false }));
     const touched = new Set(); for(const e of req){ touched.add(g.edges[e].a); touched.add(g.edges[e].b); }
@@ -490,7 +517,7 @@
     if(odd.length){
       const k = odd.length, idx = new Map(odd.map((v, i) => [v, i]));
       const D = Array.from({ length:k }, () => new Float64Array(k).fill(Infinity));
-      const trees = odd.map(v => sssp(g, v));
+      const trees = odd.map(v => walkTree(g, v));
       for(let i = 0; i < k; i++) for(let j = 0; j < k; j++) D[i][j] = trees[i].d[odd[j]];
       const pairs = [];
       for(let i = 0; i < k; i++) for(let j = i + 1; j < k; j++) if(isFinite(D[i][j])) pairs.push([D[i][j], i, j]);
@@ -1290,7 +1317,7 @@
     const total = sel.ids.reduce((s, i) => s + g.edges[i].len, 0), mbTotal = sel.mailboxes || 1;
     const w = e => 0.5 * e.len / (total || 1) + 0.5 * e.mb / mbTotal;
     const N = n || 1, build = (parts, rootNode) => parts.map((part, k) => {
-      const r = planPart(g, part, start, rootNode);
+      const r = planPart(g, part, start, rootNode, opt.walkTree);
       const boxes = []; let mb = 0; for(const i of part){ mb += g.edges[i].mb; for(const b of g.edges[i].boxes) boxes.push(b); }
       return { idx:k, ...r, part, mailboxes:mb, boxes, minutes:routeMinutes(r.length_m, mb) };
     });
@@ -1368,6 +1395,6 @@
     return partition(g, start, n).map((part, k) => ({ idx:k, ...planPart(g, part, start) }));
   }
 
-  const api = { reserveFor, censusFill, setTileStamp, setPace, denseEntry, pathRuns, emptyGap, tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, DIR_FROM, makeBoxCounter, walkRuns, DRIVE_MS, DRIVE_MIN_M, DRIVE_NET_M, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
+  const api = { walkingTreeCache, reserveFor, censusFill, setTileStamp, setPace, denseEntry, pathRuns, emptyGap, tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, DIR_FROM, makeBoxCounter, walkRuns, DRIVE_MS, DRIVE_MIN_M, DRIVE_NET_M, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
   if(typeof module !== 'undefined' && module.exports) module.exports = api; else root.Planner = api;
 })(typeof window !== 'undefined' ? window : globalThis);

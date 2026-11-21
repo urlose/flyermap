@@ -1181,7 +1181,7 @@ function viewCreate(edit){
     if(capOn() && !d.capPlaces) await loadCapPlaces();
     const tok = ++d.token, pr = progress(tok);
     let res = null;
-    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, quota:Math.max(200, Math.round(+saved.quota || NEW_QUOTA)), bike:d.bike, travel:d.travel, split:d.split, exact:d.exact, mainAll:d.mainAll, cores:d.cores && (d.travel === 'car' || d.travel === 'zones'), mainName:mainCity() || '', together:d.cores && d.travel === 'car' && d.together, first:d.cores && d.travel === 'car' ? d.first : null, near:d.side.length > 0 && d.side.every(x => x.auto), budget:d.budget && d.budget.on && d.travel === 'zones' ? { hours:+d.budget.hours || 32, tolerance:(+d.budget.tol >= 0 ? +d.budget.tol : 5) / 100, strategy:d.budget.strategy, travelMin:d.budget.travelMin, car:d.budget.car, radiusKm:circleKm(), ...(driveOn() ? { mode:'drive', driveMin:d.budget.driveMin, maxFlyers:d.budget.maxFlyers, outlierM:d.budget.outlierM, outlierPerKm:d.budget.outlierPerKm, ...(d.budget.grid && d.budget.gridFor === (d.start ? d.start.lat.toFixed(5) + ',' + d.start.lng.toFixed(5) : '') ? { _grid:d.budget.grid } : {}) } : {}), ...(capOn() ? { cap:{ target:d.budget.cap, places:(d.capPlaces || []).map(x => ({ id:x.id, lat:x.lat, lng:x.lng, cells:x.cells })) } } : {}) } : null, must:d.must, zone:d.zone, side:d.side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers, zone:x.p && x.p.length > 2 ? x.p : null, all:!!x.all, ...(x.cid ? { cid:x.cid } : {}), auto:!!x.auto })) }, pr.stage); }
+    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, quota:Math.max(200, Math.round(+saved.quota || NEW_QUOTA)), bike:d.bike, travel:d.travel, split:d.split, exact:d.exact, mainAll:d.mainAll, cores:d.cores && (d.travel === 'car' || d.travel === 'zones'), mainName:mainCity() || '', together:d.cores && d.travel === 'car' && d.together, first:d.cores && d.travel === 'car' ? d.first : null, near:d.side.length > 0 && d.side.every(x => x.auto), budget:d.budget && d.budget.on && d.travel === 'zones' ? { hours:+d.budget.hours || 32, tolerance:(+d.budget.tol >= 0 ? +d.budget.tol : 5) / 100, strategy:d.budget.strategy, travelMin:d.budget.travelMin, car:d.budget.car, radiusKm:circleKm(), ...(driveOn() ? { mode:'drive', placeLabel:t('sugUnnamed', { km:'{km}' }), driveMin:d.budget.driveMin, maxFlyers:d.budget.maxFlyers, outlierM:d.budget.outlierM, outlierPerKm:d.budget.outlierPerKm, ...(d.budget.grid && d.budget.gridFor === (d.start ? d.start.lat.toFixed(5) + ',' + d.start.lng.toFixed(5) : '') ? { _grid:d.budget.grid } : {}) } : {}), ...(capOn() ? { cap:{ target:d.budget.cap, places:(d.capPlaces || []).map(x => ({ id:x.id, lat:x.lat, lng:x.lng, cells:x.cells })) } } : {}) } : null, must:d.must, zone:d.zone, side:d.side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers, zone:x.p && x.p.length > 2 ? x.p : null, all:!!x.all, ...(x.cid ? { cid:x.cid } : {}), auto:!!x.auto })) }, pr.stage); }
     catch(e){ pr.stop(); if(tok !== d.token || !alive()) return; d.err = errText2(e); d.busy = false; toast(t('streetsFail', { e:d.err })); renderSheet(); return; }
     pr.stop();
     if(tok !== d.token || !alive() || !res || res.skipped) return;
@@ -1190,6 +1190,7 @@ function viewCreate(edit){
     if(d.plan.cores) d.days = Math.max(1, ...d.plan.routes.map(r => (r.days || []).length));   // village cores: the days follow from the tour
     if(tkE && !d.prefilled){ d.prefilled = true; edit.plans.forEach(p => { if(p.worker_id && p.idx < d.plan.routes.length) d.assign[p.idx] = p.worker_id; }); }
     draw(); renderSheet();
+    resolveDriveNames(d.plan, tok).catch(() => {});
     // Phase 1 (16.11.2026): never add places by itself – too few mailboxes only leads to suggestions the admin may add
     if(!tkE && !d.zone && !d.mainAll) findSuggestions(); // browse nearby towns even when the flyer target is covered
   }
@@ -1221,6 +1222,47 @@ function viewCreate(edit){
   // (the free geocoder refuses many at once); the list is usable before the names arrive; stops when the list is replaced.
   d.sugTries = d.sugTries || new Map();   // lookups per place (max 2 in total, see sugmap.js nameShown): an empty geocoder answer cannot loop
   const geoName = async sg => { const r = await reversePlace(sg.lat, sg.lng), ps = r ? r.split(', ') : []; return ps.length > 1 && sg.households < 5000 ? ps[0] + ' (' + ps[1] + ')' : ps[ps.length - 1] || null; };
+  const driveNameRequests = new Map();
+  async function resolveDriveNames(plan, token){
+    const villages = plan.budget?.drive?.villages;
+    if(!villages?.length) return;
+    const sheetAtLookup = $('#cSheet');
+    const names = new Map();
+    const used = new Set(plan.split.map(x => x.name));
+    for(const village of villages){
+      if(!sheetAtLookup?.isConnected || token !== d.token) return;
+      const key = village.cid || nameKey(village);
+      const cached = d.sugNames.get(key);
+      if(!cached && !driveNameRequests.has(key)){
+        driveNameRequests.set(key, geoName(village).catch(() => null).then(name => {
+          if(name) d.sugNames.set(key, name);
+          driveNameRequests.delete(key);
+          return name;
+        }));
+      }
+      const name = cached || await driveNameRequests.get(key);
+      if(!name) continue;
+      let unique = name;
+      for(let i = 2; used.has(unique); i++) unique = name + ' (' + i + ')';
+      used.add(unique);
+      names.set(village.name, unique);
+    }
+    if(!names.size || !sheetAtLookup?.isConnected || token !== d.token || d.plan !== plan) return;
+    const rename = name => names.get(name) || name;
+    const renameList = name => name?.split(' + ').map(rename).join(' + ');
+    for(const route of plan.routes){
+      route.place = renameList(route.place);
+      for(const part of route.parts) part.place = rename(part.place);
+      for(const day of route.days) day.place = renameList(day.place);
+    }
+    for(const jump of plan.budget.travel.jumps){
+      jump.from = rename(jump.from);
+      jump.to = rename(jump.to);
+    }
+    for(const item of [...villages, ...plan.split]) item.name = rename(item.name);
+    draw();
+    renderSheet();
+  }
   async function renamePicked(picks){
     // Geocoding is cosmetic; the routes keep working if the free service is offline.
     let changed = false;

@@ -3,7 +3,10 @@
 import assert from 'node:assert/strict';
 import Planner from '../admin/planner.js';
 import { createPlanService } from '../worker/src/plancore.js';
-globalThis.fetch = async () => { throw new Error('No network in synthetic tests'); };
+globalThis.fetch = async url => {
+  if(/overpass|maps\.mail\.ru/.test(new URL(url).hostname)) return Response.json({ elements:[] });
+  throw new Error('No network in synthetic tests');
+};
 const start = [48.46, 10.21], at = (n, e) => [start[0] + n / 111320, start[1] + e / (111320 * Math.cos(start[0] * Math.PI / 180))];
 // a street of `len` m going east from (n, e0) with k houses of `per` mailboxes
 function street(n, e0, len, k, per, name){ const a = at(n, e0), b = at(n, e0 + len), pts = [a, b];
@@ -83,5 +86,16 @@ console.log('all ok');
   Planner.loadForFlyers = async s => structuredClone(Math.abs(s[0] - start[0]) < 1e-3 ? main : village);
   const two = async hrs => (await createPlanService(null).plan({ ...base, n:2, budget:{ strategy:'near-first', mode:'drive', tolerance:0, _villages:villages, hours:hrs, travelMin:25 } }, () => {}, () => false)).plan;
   for(const hrs of [0.6, 1, 1.5, 2, 3, 4]){ const q = await two(hrs); assert.ok(q.budget.actual_minutes <= hrs * 60, hrs + ' h: ' + q.budget.actual_minutes + ' min'); }
+}
+// D. Net shifts and the days until the deadline set the actual team ceiling.
+{
+  const svc = createPlanService(null);
+  for(const [hours, cap] of [[7.5, 1800], [8, 1920]]){
+    const { plan } = await svc.plan({ ...base, n:2, days:2, hours,
+      budget:{ strategy:'near-first', mode:'drive', _villages:villages, hours:32 } }, () => {}, () => false);
+    assert.equal(plan.budget.drive.team_cap_minutes, cap);
+    assert.equal(plan.budget.drive.max_minutes, cap);
+    assert.ok(plan.budget.actual_minutes <= cap);
+  }
 }
 console.log('fixes ok');
