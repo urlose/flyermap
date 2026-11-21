@@ -29,7 +29,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 (async () => {
   await new Promise(r => srv.listen(4519, r));
   const Z = await import('../../worker/src/zensus.js'), src = Z.censusSource(async u => { const p = ZEN + u.split('/').pop(); return fs.existsSync(p) ? { ok:true, status:200, arrayBuffer:async () => new Uint8Array(fs.readFileSync(p)).buffer } : { ok:false, status:404 }; });
-  const b = await chromium.launch();
+  const b = await chromium.launch(process.env.CHROME ? { executablePath:process.env.CHROME, args:['--no-sandbox'] } : {});
   const TILE = fs.readFileSync(path.join(__dirname, 'tile.png'));
 
 
@@ -51,6 +51,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const DB = { tasks:F.tables.tasks.map(t => ({ ...t })), task_plans:F.tables.task_plans.map(p => ({ ...p })), routes:F.tables.routes.map(r => ({ ...r })), task_workers:F.tables.task_workers.map(r => ({ ...r })) };
     const posts = [], patches = [], deletes = [], errors = [], blocked = [];
     const ctx = await b.newContext({ viewport:{ width:1440, height:900 } });
+    let releaseRoads;
+    const roadGate = new Promise(resolve => { releaseRoads = resolve; });
     await ctx.route(/.*/, async route => {
       const rq = route.request(), u = new URL(rq.url());
       if(u.hostname === 'localhost') return route.continue();
@@ -89,6 +91,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         return route.fulfill({ status:200, headers:{ 'content-range':`0-${Math.max(0, rows.length - 1)}/${rows.length}`, 'content-type':'application/json' }, body:JSON.stringify(single ? (rows[0] || null) : rows) });
       }
       if(/overpass|maps\.mail\.ru/.test(u.hostname)){ const q = decodeURIComponent((rq.postData() || u.search).replace(/\+/g, ' ')), m = q.match(/\(([\d.]+),([\d.]+),([\d.]+),([\d.]+)\)/);
+        if(q.includes('out tags geom')) await roadGate;
         return route.fulfill({ status:200, json:m ? overpassAnswer(+m[1], +m[2], +m[3], +m[4]) : { elements:[] }, headers:{ 'access-control-allow-origin':'*' } }); }
       if(/urlose\.github\.io$/.test(u.hostname) && u.pathname.includes('/zensus/')){ const f = ZEN + u.pathname.split('/').pop(); return fs.existsSync(f) ? route.fulfill({ status:200, body:fs.readFileSync(f), headers:{ 'access-control-allow-origin':'*' } }) : route.fulfill({ status:404, body:'', headers:{ 'access-control-allow-origin':'*' } }); }
       if(/photon\.komoot\.io$/.test(u.hostname)){ const la = +u.searchParams.get('lat'), lo = +u.searchParams.get('lon'), nm = 'Testdorf ' + (Math.abs(Math.round(la * 1e3)) % 1000) + '/' + (Math.abs(Math.round(lo * 1e3)) % 1000);
@@ -101,6 +104,26 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const sess = { access_token:'x', token_type:'bearer', expires_in:3600, expires_at:Math.floor(Date.now() / 1000) + 3600, refresh_token:'y', user:{ id:'u1', email:'admin@example.com', aud:'authenticated', role:'authenticated' } };
     await pg.addInitScript(s => { localStorage.setItem('fm-admin-auth', JSON.stringify(s)); localStorage.setItem('CapacitorStorage.role', '"admin"'); localStorage.setItem('CapacitorStorage.theme', '"light"'); localStorage.setItem('CapacitorStorage.lang', '"de"'); localStorage.setItem('CapacitorStorage.introSeen', 'true'); }, sess);
     await pg.addInitScript(() => { const P = Worker.prototype.postMessage; Worker.prototype.postMessage = function(m, ...r){ try{ const pl = m && (m.payload || m.args || m); const q = pl && (pl.payload || pl); if(q && q.flyers != null) (window.__req = window.__req || []).push({ op:m.op, budget:q.budget, n:q.n, travel:q.travel, flyers:q.flyers, days:q.days, hours:q.hours, sides:(q.side || []).length }); else (window.__req = window.__req || []).push({ keys:Object.keys(m || {}).join(), op:m && m.op }); }catch{} return P.call(this, m, ...r); }; });
+    await pg.clock.install({ time:new Date(2026, 10, 20, 12) }); // Friday: the Monday deadline allows Saturday and Monday
+    await pg.addInitScript(() => {
+      const seen = new WeakSet(), post = Worker.prototype.postMessage;
+      window.__limits = [];
+      window.__stages = [];
+      new MutationObserver(() => {
+        const status = document.querySelector('#cBusy:not([hidden])');
+        if(status?.textContent) window.__stages.push(status.textContent);
+      }).observe(document, { subtree:true, childList:true, attributes:true, attributeFilter:['hidden'] });
+      Worker.prototype.postMessage = function(message, ...rest){
+        if(!seen.has(this)){
+          seen.add(this);
+          this.addEventListener('message', ({data}) => {
+            const b = data?.result?.plan?.budget;
+            if(b?.drive) window.__limits.push({ team:b.drive.team_cap_minutes, max:b.drive.max_minutes, actual:b.actual_minutes });
+          });
+        }
+        return post.call(this, message, ...rest);
+      };
+    });
     await pg.goto('http://localhost:4519/#new', { waitUntil:'load' }); await sleep(3000);
     const until = async (fn, ms = 90000, arg) => { const t0 = Date.now(); while(Date.now() - t0 < ms){ try{ const v = await pg.evaluate(fn, arg); if(v) return v; }catch{} await sleep(400); } return null; };
     const budget = () => pg.evaluate(() => { const bx = document.querySelector('.budget-box'); if(!bx) return null; const nums = [...bx.querySelectorAll('.cov-n b')].map(e => e.textContent), rows = [...bx.querySelectorAll('.route-row')].map(e => e.innerText.replace(/\n+/g, ' | ')); return { nums, rows, text:bx.innerText }; });
@@ -129,6 +152,36 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(name+': new orders: three optional maxima – drive time (15 min), hours, flyers; no km circle',
       await pg.evaluate(()=>+document.getElementById('cDriveMin')?.value===15 && document.getElementById('cMaxFly')?.value==='' && !document.getElementById('cCircle')));
     ok(name+': no tolerance / car fields in drive mode', await pg.evaluate(()=>!document.getElementById('cBudT') && !document.getElementById('cBudgetCar')));
+    await pg.evaluate(() => {
+      for(const [id, value] of [['cDeadline', '2026-11-23'], ['cHours', '7,5']]){
+        const input = document.getElementById(id);
+        input.value = value;
+        input.dispatchEvent(new Event('change'));
+      }
+    });
+    const waitLimit = (team, max) => until(({team,max}) => window.__limits.some(x => x.team === team && x.max === max && x.actual <= max), 180000, {team,max});
+    await pg.locator('#cMin').click();
+    const measureStatus = () => pg.evaluate(() => {
+      const status = document.getElementById('cBusy'), toggle = document.getElementById('cMin');
+      const a = status.getBoundingClientRect(), b = toggle.getBoundingClientRect(), style = getComputedStyle(status);
+      return !status.hidden && a.width > 0 && a.height > 0 && a.left >= 0 && a.right <= innerWidth &&
+        a.right <= b.left && style.display !== 'none' && style.color !== style.backgroundColor &&
+        /\d+ s$/.test(status.textContent);
+    });
+    for(const width of [1440, 375]){
+      await pg.setViewportSize({ width, height:812 });
+      for(const theme of ['light','dark']){
+        await pg.evaluate(theme => { document.documentElement.dataset.theme = theme; }, theme);
+        ok(name+': collapsed progress at '+width+' px in '+theme+' theme', await measureStatus());
+      }
+    }
+    await pg.setViewportSize({ width:1440, height:900 });
+    await pg.locator('#cMin').click();
+    releaseRoads();
+    ok(name+': 7,5 h × 2 people × 2 working days caps team at 1800 min', !!await waitLimit(1800, 1800));
+    ok(name+': progress has German stage labels and elapsed seconds', await pg.evaluate(() =>
+      ['Warte auf Straßendaten', 'Berechne Routen', 'Prüfe Zeit- und Flyergrenzen'].every(label =>
+        window.__stages.some(s => s.startsWith(label) && /\d+ s$/.test(s)))));
     await pg.evaluate(()=>{ const r=document.getElementById('cDriveMin'); r.value=12; r.dispatchEvent(new Event('change')); });
     await pg.evaluate(()=>{
       const h=document.getElementById('cBudH');h.value=6;h.dispatchEvent(new Event('change'));
@@ -189,6 +242,11 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await pg.evaluate(()=>document.querySelector('[data-step="2"]').click());
     await pg.waitForSelector('#cDriveMin');
     ok(name+': reopening restores the drive time limit', await pg.evaluate(()=>+document.getElementById('cDriveMin').value===12));
+    ok(name+': new order saves and reopens with 7,5 net hours', tk?.work_hours === 7.5 && tk?.work_days === 2 && await pg.locator('#cHours').inputValue() === '7.5');
+    await pg.locator('#cHours').fill('8');
+    await pg.locator('#cHours').press('Tab');
+    ok(name+': replan uses 8 h × 2 people × 2 days and the 360 min order limit', !!await waitLimit(1920, 360));
+
     await pg.evaluate(()=>document.querySelector('[data-step="3"]').click());
     ok(name+': reopened order recalculates successfully',
       !!await until(()=>!!document.querySelector('.budget-box') && !document.getElementById('cNext').disabled,240000) && await stable(3000,30000));
@@ -197,6 +255,15 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await pg.locator('#cDriveMin').scrollIntoViewIfNeeded();
     await shot('drive-settings-mobile');
     ok(name+': limit fields fit a phone', await pg.evaluate(()=>['cDriveMin','cMaxFly','cBudH'].every(id=>{ const b=document.getElementById(id).getBoundingClientRect(); return b.left>=0&&b.right<=innerWidth+1; })));
+    await pg.setViewportSize({width:1440,height:900});
+    await pg.evaluate(() => document.querySelector('[data-step="5"]').click());
+    await pg.waitForSelector('#cSave');
+    await pg.locator('#cSave').click();
+    ok(name+': replanned 8 h is persisted', !!await until(() => !!document.querySelector('#tCustomerExport'), 60000) && DB.tasks.find(t=>t.id==='tnew')?.work_hours === 8);
+    await pg.locator('#tEdit').click();
+    await pg.locator('#eReplan').click();
+    await pg.locator('[data-step="2"]').click();
+    ok(name+': reopening after replanning restores 8 net hours', await pg.locator('#cHours').inputValue() === '8');
     ok(name+': no browser JavaScript errors',errors.length===0,errors.slice(0,3).join(' | '));
     ok(name+': no request left the test environment',blocked.length===0,[...new Set(blocked)].join(','));
     await ctx.close();

@@ -664,6 +664,7 @@ export function createPlanService(cache){
       const calib=+budget._calib>0?+budget._calib:1;   // real minutes / estimated minutes of an earlier pass (rides, finer split)
       const fits=e=>e.total*calib<=limH+.01&&e.mb<=limF+.01;
       const maxC=Math.min(items.length,budget._maxItems??items.length);   // after a re-plan with longer real rides: fewer streets
+      stage('calculating');
       let lo=0,hi=maxC,best=evalPrefix(0);
       if(maxC&&fits(evalPrefix(maxC)))best=evalPrefix(maxC);
       else for(let it=0;it<18&&lo<hi;it++){ const mid=Math.ceil((lo+hi)/2), e=evalPrefix(mid); if(fits(e)){best=e;lo=mid;}else hi=mid-1; }
@@ -733,6 +734,7 @@ export function createPlanService(cache){
         jumpsAll.push(...jumps);
       }
       const mailboxes=Math.round(routes.reduce((s,r)=>s+(r.mailboxes||0),0)), walking=routes.reduce((s,r)=>s+r.work_minutes,0), riding=routes.reduce((s,r)=>s+r.ride_minutes,0), actual=walking+riding;
+      stage('checkingLimits');
       // real rides longer than estimated: fewer streets, plan again (at most 3 times)
       // the person-hours are a hard ceiling for the FINAL routes (rides and the split into parts included): plan again with the
       // measured factor; after 3 rounds also with fewer streets of the order, until it fits (0 streets always fits)

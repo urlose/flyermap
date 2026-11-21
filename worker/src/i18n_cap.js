@@ -46,3 +46,9 @@ Object.assign(T.en, { dfMin:'Max. drive time from start (min)', dfFly:'Max. flye
   dfFull:'Complete up to {min} min drive', dfNext:'Minute {min}: {pct} % covered', dfMax:'At most {h} (all workers, incl. rides).',
   dfStop_hours:'Stopped by: hours ({h}). Free: {left}.', dfStop_team:'Stopped by: shifts until the deadline ({cap}). Free: {left}.', dfStop_flyers:'Stopped by: flyers ({f}).', dfStop_drive:'Stopped by: drive time ({min} min) – every address up to it planned. Free: {left}.', dfStop_all:'Every reachable address planned. Free: {left}.',
   dfNoRoads:'Road map for drive times not reachable – estimated (40 km/h straight line). Recalculate later.', dfSkipped:'{mb} mailboxes skipped as outliers (dead end from {m} m, under {k} per km).' });
+
+Object.assign(T.de, { driveZone:'Warte auf Straßendaten…', loadingVillages:'Lade Orte in Reichweite…', rides:'Berechne Fahrten zwischen Orten…', checkingLimits:'Prüfe Zeit- und Flyergrenzen…', planElapsed:'{n} s' });
+
+Object.assign(T.ru, { driveZone:'Жду данные о дорогах…', loadingVillages:'Загружаю ближайшие населённые пункты…', rides:'Рассчитываю переезды между населёнными пунктами…', checkingLimits:'Проверяю лимиты времени и флаеров…', planElapsed:'{n} с' });
+
+Object.assign(T.en, { driveZone:'Waiting for road data…', loadingVillages:'Loading places within reach…', rides:'Calculating drives between places…', checkingLimits:'Checking time and flyer limits…', planElapsed:'{n} s' });
