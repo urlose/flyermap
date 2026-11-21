@@ -73,11 +73,11 @@ export function carQuery(start, km, points){
 }
 
 // from one point: minutes/metres to every node (Dijkstra) and the node it came from; entry: the 5 nearest nodes at 20 km/h
-function search(g, from){
+function search(g, from, accessLimit){
   const n = g.pts.length, t = new Float64Array(n).fill(Infinity), m = new Float64Array(n).fill(Infinity), par = new Int32Array(n).fill(-1), heap = [];
   const push = (i, v) => { heap.push([v, i]); let c = heap.length - 1; while(c > 0){ const p = (c - 1) >> 1; if(heap[p][0] <= heap[c][0]) break; [heap[p], heap[c]] = [heap[c], heap[p]]; c = p; } };
   const pop = () => { const top = heap[0], last = heap.pop(); if(heap.length){ heap[0] = last; let c = 0; for(;;){ const l = 2 * c + 1, r = l + 1; let k = c; if(l < heap.length && heap[l][0] < heap[k][0]) k = l; if(r < heap.length && heap[r][0] < heap[k][0]) k = r; if(k === c) break; [heap[k], heap[c]] = [heap[c], heap[k]]; c = k; } } return top; };
-  for(const [dm, i] of nearest(g, from)){ const v = dm / (LAST_KMH * 1000 / 60); if(v < t[i]){ t[i] = v; m[i] = dm; par[i] = -2; push(i, v); } }
+  for(const [dm, i] of nearest(g, from, accessLimit)){ const v = dm / (LAST_KMH * 1000 / 60); if(v < t[i]){ t[i] = v; m[i] = dm; par[i] = -2; push(i, v); } }
   while(heap.length){
     const [v, i] = pop(); if(v > t[i]) continue;
     const a = g.adj[i];
@@ -88,26 +88,43 @@ function search(g, from){
 function nearest(g, p, k = 5){
   const best = [];
   for(let i = 0; i < g.pts.length; i++){ if(!g.adj[i].length) continue; const d = distanceM(g.pts[i], p); if(d > SNAP_M) continue;
+    if(k === Infinity){ best.push([d, i]); continue; }
     if(best.length < k){ best.push([d, i]); best.sort((a, b) => a[0] - b[0]); } else if(d < best[k - 1][0]){ best[k - 1] = [d, i]; best.sort((a, b) => a[0] - b[0]); } }
   return best;
 }
 const simplify = (pts, step = 40) => { const out = []; let last = null; for(const p of pts){ if(!last || distanceM(last, p) >= step){ out.push([+p[0].toFixed(5), +p[1].toFixed(5)]); last = p; } } const e = pts[pts.length - 1]; if(e && (!out.length || distanceM(out[out.length - 1], e) > 1)) out.push([+e[0].toFixed(5), +e[1].toFixed(5)]); return out; };
 
 // rides between all given points: rides[i][j] = { min, km, geom, known }
-export function rideMatrix(g, points){
+export function rideMatrix(g, points, {shortWalk=true, alternateAccess=false} = {}){
   if(!g || !g.pts || !g.pts.length) return points.map(a => points.map(b => a === b ? { min:0, km:0, geom:[a, b], known:true } : estimate(a, b)));
   const res = points.map(() => points.map(() => null));
+  const arrival = (tree, candidates) => {
+    let best = null;
+    for(const [dm, k] of candidates){
+      const v = tree.t[k] + dm / (LAST_KMH * 1000 / 60);
+      if(Number.isFinite(v) && (!best || v < best.v)) best = { v, k, dm };
+    }
+    return best;
+  };
+  const candidates = points.map(p => nearest(g, p)), alternates = new Map();
   points.forEach((a, i) => {
-    const s = g && g.pts.length ? search(g, a) : null;
+    const s = search(g, a);
+    let wider;
     points.forEach((b, j) => {
       if(i === j){ res[i][j] = { min:0, km:0, geom:[a, b], known:true }; return; }
-      if(distanceM(a, b) < 150){ const dm = distanceM(a, b); res[i][j] = { min:Math.round(dm / (5000 / 60) * 10) / 10, km:Math.round(dm / 100) / 10, geom:[a, b], known:true, walk:true }; return; }
-      let best = null;
-      if(s) for(const [dm, k] of nearest(g, b)){ const v = s.t[k] + dm / (LAST_KMH * 1000 / 60); if(Number.isFinite(v) && (!best || v < best.v)) best = { v, k, dm }; }
+      if(shortWalk && distanceM(a, b) < 150){ const dm = distanceM(a, b); res[i][j] = { min:Math.round(dm / (5000 / 60) * 10) / 10, km:Math.round(dm / 100) / 10, geom:[a, b], known:true, walk:true }; return; }
+      let tree = s, best = arrival(tree, candidates[j]);
+      // The nearest nodes can all belong to a disconnected service road.
+      // Look for another connection inside the same access radius before estimating.
+      if(!best && alternateAccess){
+        tree = wider ||= search(g, a, Infinity);
+        if(!alternates.has(j)) alternates.set(j, nearest(g, b, Infinity));
+        best = arrival(tree, alternates.get(j));
+      }
       if(!best){ res[i][j] = estimate(a, b); return; }
-      const nodes = []; for(let k = best.k; k >= 0; k = s.par[k]) nodes.push(g.pts[k]);
+      const nodes = []; for(let k = best.k; k >= 0; k = tree.par[k]) nodes.push(g.pts[k]);
       nodes.reverse();
-      res[i][j] = { min:Math.max(1, Math.round(best.v)), km:Math.round((s.m[best.k] + best.dm) / 100) / 10, geom:simplify([a, ...nodes, b]), known:true };
+      res[i][j] = { min:Math.max(1, Math.round(best.v)), km:Math.round((tree.m[best.k] + best.dm) / 100) / 10, geom:simplify([a, ...nodes, b]), known:true };
     });
   });
   return res;
