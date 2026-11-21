@@ -762,9 +762,9 @@ export function createPlanService(cache){
           fits_all:stop==='all'||stop==='drive',limit:stop,estimate:true,unplanned:[],main:{reserved:Math.round(planned[0]?.mailboxes||0),empty:!planned.length,short:false},
           length_m:Math.round(routes.reduce((s,r)=>s+(r.length_m||0),0)),
           workers:routes.map(r=>({w:r.w,minutes:r.minutes,walk:r.work_minutes,ride:r.ride_minutes,mailboxes:Math.round(r.mailboxes||0),km:Math.round((r.length_m||0)/100)/10})),
-          drive:{ limit_min:limMin, max_flyers:Number.isFinite(limF)?limF:null, max_minutes:Math.round(limH), asked_minutes:askH, team_cap_minutes:teamCap, stop, full_min:fullMin,
+          drive:{ limit_min:limMin, max_flyers:Number.isFinite(limF)?limF:null, max_minutes:Math.round(limH), asked_minutes:askH, team_cap_minutes:teamCap, stop, full_min:fullMin, road_source:grid.source||null,
             next:nextR?{min:nextR.min,pct:nextR.mb?Math.round(nextR.planned/nextR.mb*100):0,planned:nextR.planned,mb:nextR.mb}:null, rings:rings.slice(0,60),
-            left_minutes:Math.max(0,Math.round(limH-actual)), topup, filled:{streets:best.extra.length,mb:Math.round(best.extra.reduce((t,k)=>t+items[k].mb,0)),before_minutes:Math.round(evalPrefix(best.c).total),next_cheapest:nextCost,next_streets:nextList}, outlier:{m:gapM,perKm}, skipped_mb:Math.round(skippedMb[0]), real_roads:grid.real!==false, road_source:grid.source||null, road_error:grid.error||null,
+            left_minutes:Math.max(0,Math.round(limH-actual)), topup, filled:{streets:best.extra.length,mb:Math.round(best.extra.reduce((t,k)=>t+items[k].mb,0)),before_minutes:Math.round(evalPrefix(best.c).total),next_cheapest:nextCost,next_streets:nextList}, outlier:{m:gapM,perKm}, skipped_mb:Math.round(skippedMb[0]), real_roads:grid.real!==false, road_error:grid.error||null,
             villages, failed_villages:failed },
           driveZone:grid,
           travel:{known:jumpsAll.filter(j=>!j.walk).every(j=>j.known),manual:manualRide!=null,moves:jumpsAll.filter(j=>!j.walk).length,minutes:Math.round(riding),far:jumpsAll.filter(j=>j.far).length,far_km:3,jumps:jumpsAll}}};
