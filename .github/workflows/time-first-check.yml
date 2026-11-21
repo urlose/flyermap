@@ -73,6 +73,8 @@ jobs:
       - run: node test/flyercap.mjs
       - run: node test/drivefirst.mjs
       - run: node test/leipheim-drive-snapshot.mjs   # real Leipheim data, saved snapshot, no network
+        env:
+          FLYERMAP_CHECK_REPLAN: 1
       - run: node test/save-integers.mjs
       - run: node test/customerexport.mjs
       - name: Check atomic save on synthetic Postgres
