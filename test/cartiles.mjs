@@ -32,7 +32,7 @@ const g = carGraph(ways); assert.ok(g.pts.length > 10, 'road graph from the squa
 const start = [52.2, 8.7], z = await driveZone(start, 5, { fetchImpl:serve() });
 assert.ok(z.real && z.source === 'tiles' && minutesTo(z, start) === 0, 'drive zone from own squares, no public server: ' + z.source + ' ' + z.error);
 // a missing square (not built, abroad): the public server is asked
-let asked = 0; const fb = await driveZone([52.21, 8.71], 5, { fetchImpl:async (u, i) => { if(!String(u).startsWith(CAR_TILES)){ asked++; return { ok:true, json:async () => ways }; } return serve(files)(u, i); } });
+let asked = 0; const fb = await driveZone([52.2002, 8.7002], 5, { fetchImpl:async (u, i) => { if(!String(u).startsWith(CAR_TILES)){ asked++; return { ok:true, json:async () => ways }; } return serve(files)(u, i); } });
 assert.ok(asked >= 1 && fb.source === 'overpass', 'missing square → public server');
 const dataDir = join(dir, 'tiles', 'car1');
 const loadTile = f => decodeCarTile(JSON.parse(gunzipSync(readFileSync(join(dataDir, f)))));
@@ -59,14 +59,20 @@ setCarTileStamp('');
 const stalled = await carTileWays(52.19, 8.66, 52.24, 8.76, () => new Promise(() => {}), 10);
 assert.equal(stalled, null, 'stalled tiles trigger fallback');
 let emptyFallback = 0;
-const empty = await driveZone([52.205, 8.705], 5, { fetchImpl:async url => {
+const empty = await driveZone([52.2003, 8.7003], 5, { fetchImpl:async url => {
   if(String(url).startsWith(CAR_TILES)) return new Response(JSON.stringify({v:'cr1', w:[]}));
   emptyFallback++;
   return Response.json(ways);
 } });
 assert.equal(empty.source, 'overpass');
 assert.equal(emptyFallback, 1);
-const unavailable = await driveZone([52.208, 8.708], 5, { fetchImpl:async url =>
+const farRoad = {
+  v:'cr1', w:[[6, 50, 0, 52300000, 8700000, ...Array.from({length:12}, () => [100, 100]).flat()]],
+};
+const distant = await driveZone([52.2004, 8.7004], 5, { fetchImpl:async url =>
+  String(url).startsWith(CAR_TILES) ? Response.json(farRoad) : Response.json(ways) });
+assert.equal(distant.source, 'overpass', 'tiles with no roads at the start trigger fallback');
+const unavailable = await driveZone([52.2005, 8.7005], 5, { fetchImpl:async url =>
   String(url).startsWith(CAR_TILES) ? new Response('', {status:404}) : Response.json({elements:[]}) });
 assert.equal(unavailable.real, false, 'unusable tiles and Overpass lead to the estimated zone');
 console.log('all ok');

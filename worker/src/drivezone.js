@@ -111,8 +111,9 @@ export async function driveZone(start, min, { fetchImpl = (...a) => fetch(...a),
       const gridOf = (data, source) => {
         const g = carGraph(data);
         if(g.pts.length < 10) return null;
-        const grid = buildGrid(g, driveTimes(g, start, lim), start, lim);
-        if(!grid.runs.length) return null;
+        const times = driveTimes(g, start, lim);
+        if(!times.some(min => min <= lim)) return null;
+        const grid = buildGrid(g, times, start, lim);
         Object.defineProperty(grid, '_g', { value:g, enumerable:false });
         grid.source = source;
         return grid;
