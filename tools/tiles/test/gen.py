@@ -38,6 +38,9 @@ for k in range(900):
     if random.random() < 0.05: t['building:flats'] = random.choice(['6', '12a', ' 3', 'none'])
     if random.random() < 0.05: t[random.choice(['shop', 'office', 'amenity', 'abandoned', 'disused'])] = 'yes'
     way(ids, t)
+# A one-way segment from column 37 to column 39, with no nodes in column 38.
+if '--car-seam' in sys.argv:
+    way([node(52.2, 8.4), node(52.2, 8.9)], {'highway': 'secondary', 'oneway': 'yes', 'maxspeed': '70'})
 with open('data.json', 'w') as f: json.dump({'nodes': nodes, 'ways': ways}, f)
 with open('data.osm', 'w') as f:
     f.write("<?xml version='1.0' encoding='UTF-8'?>\n<osm version='0.6'>\n")

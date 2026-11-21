@@ -3,6 +3,7 @@
 //   out: { type:'stage', job, stage } · { type:'done', job, result } · { type:'error', job, message } · { type:'ask', id, op, payload }
 import { createPlanService } from './plancore.js';
 import Planner from '../../admin/planner.js';
+import { setCarTileStamp } from './carroute.js';
 
 let seq = 0, latest = 0, stampReady = null;
 const waiting = new Map();
@@ -26,7 +27,7 @@ self.onmessage = e => {
     const stale = () => m.job < latest;
     if(stale()){ postMessage({ type:'done', job:m.job, result:{ skipped:true } }); return; }
     try{
-      if(!stampReady) stampReady = ask('tileStamp').then(s => Planner.setTileStamp(s)).catch(() => {});
+      if(!stampReady) stampReady = ask('tileStamp').then(s => { Planner.setTileStamp(s); setCarTileStamp(s); }).catch(() => {});
       await stampReady;
       const stage = s => postMessage({ type:'stage', job:m.job, stage:s });
       const result = await svc[m.op](m.args, stage, stale);

@@ -6,7 +6,7 @@ import { createRemoteJWKSet, jwtVerify } from "npm:jose@5.9.6";
 
 const JWKS = createRemoteJWKSet(new URL("https://token.actions.githubusercontent.com/.well-known/jwks"));
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
-const PATH = /^(\d{1,4}_-?\d{1,4}\.json\.gz|meta\.json)$/;
+const PATH = /^((car1\/)?\d{1,4}_-?\d{1,4}\.json\.gz|meta\.json)$/;   // car1/: own car-road squares (20.11.2026)
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "method" }, 405);

@@ -1,0 +1,21 @@
+name: Car-road squares test
+on:
+  pull_request:
+    paths: ['tools/tiles/**', 'worker/src/carroute.js', 'worker/src/drivezone.js', 'test/cartiles.mjs', '.github/workflows/car-tiles-check.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: pip install -q osmium shapely
+      - run: node test/cartiles.mjs
+      - run: node test/drivezone.mjs
+      - run: node test/carroute.mjs

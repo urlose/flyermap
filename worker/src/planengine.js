@@ -3,9 +3,10 @@
 /* global __PLANWORKER__ */
 import { createPlanService } from './plancore.js';
 import Planner from '../../admin/planner.js';
+import { setCarTileStamp } from './carroute.js';
 let stampP = null, sbRef = null;
 export function setStampClient(c){ sbRef = c; }
-export function tileStamp(){ if(!sbRef) return Promise.resolve(''); if(!stampP) stampP = sbRef.rpc('tiles_stamp').then(r => { const s = (r && r.data) || ''; Planner.setTileStamp(s); return s; }).catch(() => ''); return stampP; }
+export function tileStamp(){ if(!sbRef) return Promise.resolve(''); if(!stampP) stampP = sbRef.rpc('tiles_stamp').then(r => { const s = (r && r.data) || ''; Planner.setTileStamp(s); setCarTileStamp(s); return s; }).catch(() => ''); return stampP; }
 
 export function makePlanEngine(cache, allowWorker = true){
   let worker = null, job = 0, local = null;

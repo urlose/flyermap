@@ -17,6 +17,21 @@ import argparse, gzip, json, math, os, re, subprocess, sys, time
 import osmium
 
 TILE_LAT, TILE_LNG, TILE_V = 0.03, 0.045, 'fm4'
+# car roads (20.11.2026): own coarse squares <out>/car1/<i>_<j>.json.gz with the roads a car uses between places, so the
+# drive-time planner needs no public road server. 5 x 5 walking squares each (≈ 16 x 16 km).
+CAR_LAT, CAR_LNG, CAR_V = 0.15, 0.225, 'cr1'
+CAR_CLS = ['motorway', 'motorway_link', 'trunk', 'trunk_link', 'primary', 'primary_link', 'secondary', 'secondary_link', 'tertiary', 'tertiary_link', 'unclassified']
+CAR_IDX = {c: k for k, c in enumerate(CAR_CLS)}
+def car_tile_of(lat, lon): return (math.floor(lat / CAR_LAT), math.floor(lon / CAR_LNG))
+def car_road(tags):
+    """[class index, max speed km/h (0 = unknown), one-way 1 / -1 / 0] or None – same filter as carQuery() in worker/src/carroute.js"""
+    k = CAR_IDX.get(tags.get('highway'))
+    if k is None or tags.get('area') == 'yes': return None
+    if RX_ACCESS.search(tags.get('access') or '') or RX_ACCESS.search(tags.get('motor_vehicle') or ''): return None
+    v = (tags.get('maxspeed') or '').strip().lower(); sp = 50 if v == 'de:urban' else 100 if v == 'de:rural' else 130 if v in ('none', 'de:motorway') else 10 if v in ('walk', 'de:living_street') else (parse_int(v) or 0)
+    if 'mph' in v and sp: sp = round(sp * 1.609)
+    ow = tags.get('oneway'); one = 1 if ow in ('yes', '1') or tags.get('junction') == 'roundabout' or CAR_CLS[k].startswith('motorway') else -1 if ow == '-1' else 0
+    return [k, max(0, min(150, sp)), one]
 R, RAD = 6371000.0, math.pi / 180
 
 NO_WAY = 'motorway|motorway_link|trunk|trunk_link|footway|cycleway|path|steps|bridleway|construction|proposed|raceway|corridor|elevator|platform|bus_stop|track|bus_guideway|escape|rest_area|services'
@@ -107,10 +122,10 @@ def i6(v): return js_round(v * 1e6)
 
 class Collect(osmium.SimpleHandler):
     """streets and houses for the squares in `want` (set of (i, j)); nodes are kept only for streets"""
-    def __init__(self, want):
+    def __init__(self, want, car_want):
         super().__init__(); self.want = want
         self.nodes = {}; self.ways = {}; self.tile_ways = {}; self.tile_b = {}; self.tile_lu = {}
-        self.n_ways = 0
+        self.n_ways = 0; self.car = {}; self.car_want = car_want; self.n_car = 0
     def way(self, w):
         tags = w.tags
         b = tags.get('building')
@@ -118,6 +133,8 @@ class Collect(osmium.SimpleHandler):
             ring = [(nd.lat, nd.lon) for nd in w.nodes if nd.location.valid()]
             if len(ring) > 3: self.add_landuse(ring)
             return
+        cr = car_road(tags) if b is None else None
+        if cr is not None: self.add_car(cr, w)
         street = is_street(tags)
         if not street and b is None: return
         pts = []
@@ -140,6 +157,20 @@ class Collect(osmium.SimpleHandler):
         for (nid, la, lo) in pts: self.nodes[nid] = (i6(la), i6(lo))
         for t in tiles: self.tile_ways.setdefault(t, []).append(wid)
         self.n_ways += 1
+    def add_car(self, cr, w):
+        pts = [(i6(nd.lat), i6(nd.lon)) for nd in w.nodes if nd.location.valid()]
+        if len(pts) < 2: return
+        tiles = set()
+        for a, b in zip(pts, pts[1:]):
+            i, j = car_tile_of(a[0] / 1e6, a[1] / 1e6)
+            x, y = car_tile_of(b[0] / 1e6, b[1] / 1e6)
+            # Include segments that cross a square without a vertex inside it.
+            for row in range(min(i, x), max(i, x) + 1):
+                for col in range(min(j, y), max(j, y) + 1):
+                    if (row, col) in self.car_want:
+                        tiles.add((row, col))
+        for t in tiles: self.car.setdefault(t, []).append(cr + [p for xy in pts for p in xy])
+        if tiles: self.n_car += 1
     def add_landuse(self, ring):   # Gewerbegebiet / shops: plain "building=yes" there has no mailboxes
         las = [p[0] for p in ring]; los = [p[1] for p in ring]; bb = (min(las), min(los), max(las), max(los))
         for i in range(math.floor(bb[0] / TILE_LAT), math.floor(bb[2] / TILE_LAT) + 1):
@@ -180,6 +211,36 @@ def encode(c, t):
         if soft and c.in_business_area(t, la, lo): continue
         b += [la - plat, lo - plon, k]; plat, plon = la, lo
     return {'v': TILE_V, 'n': n, 'w': w, 'b': b}
+
+def encode_car(rows):
+    """cr1: w = [[class, speed, one-way, lat0, lon0, Δlat, Δlon …] …] (coordinates in 1e-6 degrees)"""
+    w = []
+    for r in sorted(rows, key=lambda r: (r[3], r[4])):
+        c = r[:5]; pl, po = r[3], r[4]
+        for k in range(5, len(r), 2): c += [r[k] - pl, r[k + 1] - po]; pl, po = r[k], r[k + 1]
+        w.append(c)
+    return {'v': CAR_V, 'w': w}
+
+def write_car(c, out):
+    d = os.path.join(out, 'car1'); os.makedirs(d, exist_ok=True); size = 0
+    for t in c.car_want:   # empty squares too: 'missing' must mean 'not built', not 'no roads here'
+        rows = c.car.get(t, [])
+        p = os.path.join(d, '%d_%d.json.gz' % t)
+        previous_bytes = 0
+        if os.path.exists(p):   # a square split over two bands: merge
+            previous_bytes = os.path.getsize(p)
+            with gzip.open(p, 'rt') as f:
+                rows += [decode_car_row(x) for x in json.load(f)['w']]
+            rows = [list(x) for x in {tuple(r) for r in rows}]
+        data = gzip.compress(json.dumps(encode_car(rows), separators=(',', ':')).encode(), 9)
+        with open(p, 'wb') as f: f.write(data)
+        size += len(data) - previous_bytes
+    return size
+
+def decode_car_row(c):
+    r = c[:5]; la, lo = c[3], c[4]
+    for k in range(5, len(c), 2): la += c[k]; lo += c[k + 1]; r += [la, lo]
+    return r
 
 def read_poly(path):
     """Osmosis .poly: name line, then rings (header line, "lon lat" lines, END; header "!…" = hole), final END"""
@@ -222,7 +283,13 @@ def main():
     poly = read_poly(a.poly) if a.poly else None
     bbox = list(map(float, a.bbox.split(','))) if a.bbox else (lambda b: [b[1], b[0], b[3], b[2]])(poly.bounds)
     want_all = full_tiles(poly, bbox)
-    print('squares inside the boundary:', len(want_all), flush=True)
+    car_candidates = {(i // 5, j // 5) for i, j in want_all}
+    south, west, north, east = bbox
+    car_all = {(i, j) for i, j in car_candidates
+               if south <= round(i * CAR_LAT, 9) and round((i + 1) * CAR_LAT, 9) <= north
+               and west <= round(j * CAR_LNG, 9) and round((j + 1) * CAR_LNG, 9) <= east
+               and all((i * 5 + r, j * 5 + c) in want_all for r in range(5) for c in range(5))}
+    print('squares inside the boundary:', len(want_all), 'car squares:', len(car_all), flush=True)
     rows = sorted({t[0] for t in want_all}); total = 0; t0 = time.time(); done = 0
     bands = [rows] if a.nosplit else [rows[k:k + a.band] for k in range(0, len(rows), a.band)]
     for band in bands:
@@ -232,11 +299,12 @@ def main():
             s, n = band[0] * TILE_LAT - 0.02, (band[-1] + 1) * TILE_LAT + 0.02
             src = os.path.join(a.work, 'band.osm.pbf')
             subprocess.run(['osmium', 'extract', '-b', '%f,%f,%f,%f' % (bbox[1] - 0.05, s, bbox[3] + 0.05, n), '-s', 'complete_ways', '--overwrite', '-o', src, a.pbf], check=True)
-        c = Collect(want); c.apply_file(src, locations=True, idx='flex_mem')
-        total += write_tiles(c, want, a.out); done += len(want)
+        band_car = {(i, j) for i, j in car_all if band[0] // 5 <= i <= band[-1] // 5}
+        c = Collect(want, band_car); c.apply_file(src, locations=True, idx='flex_mem')
+        total += write_tiles(c, want, a.out) + write_car(c, a.out); done += len(want)
         print('rows %d-%d: %d squares, %d streets, %d houses · %d/%d · %.1f MB · %d s' % (band[0], band[-1], len(want), c.n_ways, sum(len(v) for v in c.tile_b.values()), done, len(want_all), total / 1e6, time.time() - t0), flush=True)
     with open(os.path.join(a.out, 'meta.json'), 'w') as f:
-        json.dump({'v': TILE_V, 'built': time.strftime('%Y-%m-%d'), 'squares': len(want_all), 'bytes': total, 'tile': [TILE_LAT, TILE_LNG]}, f)
+        json.dump({'v': TILE_V, 'built': time.strftime('%Y-%m-%d'), 'squares': len(want_all), 'bytes': total, 'tile': [TILE_LAT, TILE_LNG], 'car': {'v': CAR_V, 'tile': [CAR_LAT, CAR_LNG]}}, f)
     print('total %.1f MB in %d squares' % (total / 1e6, len(want_all)))
 
 if __name__ == '__main__': main()

@@ -5,7 +5,7 @@
 // The grid is the delivery boundary (saved with the order, so a re-plan uses the same area), gives the ride time to every
 // nearby place and the ride time between places. Pure functions are tested in test/drivezone.mjs.
 import { distanceM, circlePolygon } from './circlearea.js';
-import { carGraph, overpass, carQuery, rideMatrix } from './carroute.js';
+import { carGraph, overpass, carQuery, rideMatrix, carTileWays } from './carroute.js';
 
 export const DEFAULT_DRIVE_MIN = 15, MIN_DRIVE_MIN = 5, MAX_DRIVE_MIN = 30;
 export const DELIVERY_MAX_KM = 25;            // no km setting: only the street-map limit of the planner (MUST_MAX_R)
@@ -108,11 +108,23 @@ export async function driveZone(start, min, { fetchImpl = (...a) => fetch(...a),
   const job = (async () => {
     try{
       const km = searchKm(lim), d = km * 1000 / 111320, e = d / Math.cos(start[0] * Math.PI / 180);
-      const g = carGraph(await overpass(carQuery(start, 0, [[start[0] - d, start[1] - e], [start[0] + d, start[1] + e], start]), fetchImpl, timeoutMs));
-      if(g.pts.length < 10) throw new Error('no roads');
-      const grid = buildGrid(g, driveTimes(g, start, lim), start, lim);
-      Object.defineProperty(grid, '_g', { value:g, enumerable:false });   // the same roads give the rides between work areas
-      return grid;
+      const gridOf = (data, source) => {
+        const g = carGraph(data);
+        if(g.pts.length < 10) return null;
+        const times = driveTimes(g, start, lim);
+        if(!times.some(min => min <= lim)) return null;
+        const grid = buildGrid(g, times, start, lim);
+        Object.defineProperty(grid, '_g', { value:g, enumerable:false });
+        grid.source = source;
+        return grid;
+      };
+      const own = await carTileWays(start[0] - d, start[1] - e, start[0] + d, start[1] + e, fetchImpl);
+      const gr = own && gridOf(own, 'tiles');
+      if(gr) return gr;
+      const publicRoads = await overpass(carQuery(start, 0, [[start[0] - d, start[1] - e], [start[0] + d, start[1] + e], start]), fetchImpl, timeoutMs);
+      const fallback = gridOf(publicRoads, 'overpass');
+      if(!fallback) throw new Error('no roads');
+      return fallback;
     }catch(err){
       const fb = fallbackGrid(start, lim); fb.error = String(err && err.message || err).slice(0, 120); return fb;
     }
