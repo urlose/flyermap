@@ -134,7 +134,7 @@ export async function driveZone(start, min, { fetchImpl = (...a) => fetch(...a),
   return res;
 }
 // rides between points on the roads of a zone (or estimates without roads)
-export const zoneRides = (grid, points) => rideMatrix(grid && grid._g || null, points);
+export const zoneRides = (grid, points, options) => rideMatrix(grid && grid._g || null, points, options);
 // a circle on the same grid, minutes estimated from the distance (40 km/h)
 export function fallbackGrid(start, lim){
   const km = Math.min(DELIVERY_MAX_KM, lim * 0.6), dLat = CELL_M / 111320, dLng = CELL_M / (111320 * Math.cos(start[0] * Math.PI / 180));

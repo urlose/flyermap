@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import Planner from '../admin/planner.js';
 import { createPlanService } from '../worker/src/plancore.js';
+import { cellOf } from '../worker/src/zensus.js';
 globalThis.fetch = async url => {
   if(/overpass|maps\.mail\.ru/.test(new URL(url).hostname)) return Response.json({ elements:[] });
   throw new Error('No network in synthetic tests');
@@ -97,5 +98,43 @@ console.log('all ok');
     assert.equal(plan.budget.drive.max_minutes, cap);
     assert.ok(plan.budget.actual_minutes <= cap);
   }
+}
+// E. A village can already be fully covered by the walking map. It needs a
+// car transfer even when the two local loops start less than 400 m apart.
+{
+  const local=street(0,40,65,20,2,'Main street'), other=street(0,310,80,20,2,'Village street');
+  const cells=g=>[...new Set(g.edges[0].boxes.map(b=>cellOf(b[0],b[1]).join(',')))].flatMap(k=>k.split(',').map(Number));
+  const known=[
+    {id:'main',name:'Main',lat:start[0],lng:start[1],households:40,cells:cells(local)},
+    {id:'other',name:'Dorf',lat:other.pts[0][0],lng:other.pts[0][1],households:40,cells:cells(other)},
+  ];
+  Planner.loadForFlyers=async()=>structuredClone(join(local,other));
+  const p=await run({hours:2,_villages:known,travelMin:6});
+  assert.deepEqual(by(p),{Main:40,Dorf:40});
+  assert.ok(p.budget.travel.jumps.some(j=>j.to==='Dorf'&&!j.walk&&j.min===6));
+  assert.ok(p.routes[0].length_m<450,'do not walk back and forth between villages');
+}
+// F. An individual cap still applies when the team has spare time, including
+// the first ride for a worker who starts away from the main settlement.
+{
+  const local=join(street(0,120,160,30,2,'Main street'),street(70,120,170,25,2,'North street'));
+  const detached=join(street(2500,0,260,20,2,'Village west'),street(2570,20,250,20,2,'Village east'));
+  Planner.loadForFlyers=async s=>structuredClone(Math.abs(s[0]-start[0])<1e-3?local:detached);
+  const {plan}=await createPlanService(null).plan({...base,n:2,days:1,hours:.65,
+    budget:{strategy:'near-first',mode:'drive',_villages:villages,hours:1.3,travelMin:20}},()=>{},()=>false);
+  assert.equal(plan.routes.length,2);
+  assert.ok(plan.mailboxes>=100);
+  assert.ok(plan.routes.every(r=>r.minutes<=39 && r.minutes===r.work_minutes+r.ride_minutes));
+  assert.ok(plan.budget.actual_minutes<=78);
+}
+// G. A long low-yield road stays out even if neither end is a dead end.
+{
+  const local=join(street(0,100,200,25,2,'Near'),street(0,300,1200,1,2,'Thin'),street(0,1500,200,25,2,'Far'));
+  Planner.loadForFlyers=async()=>structuredClone(local);
+  const filtered=await run({hours:2,_villages:[]});
+  const disabled=await run({hours:2,_villages:[],outlierPerKm:0});
+  assert.equal(filtered.mailboxes,100);
+  assert.equal(filtered.budget.drive.skipped_mb,2);
+  assert.equal(disabled.mailboxes,102);
 }
 console.log('fixes ok');

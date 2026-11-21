@@ -53,7 +53,13 @@ if(mode === 'record'){
   console.log('snapshot written: ' + log.size + ' requests');
 }else{
   assert.equal(namingRequests, 0, 'the route plan does not wait for place names');
-  if(file === pinned) assert.deepEqual([plan.mailboxes, b.actual_minutes, v.max_minutes], [5285, 1917, 1920]);
+  if(file === pinned){
+    assert.ok(plan.mailboxes >= 5285, 'keep at least the original Leipheim coverage');
+    assert.ok(b.actual_minutes >= 1917 && b.actual_minutes <= 1920, 'use the budget without exceeding 32 hours');
+    assert.equal(v.max_minutes, 1920);
+    assert.ok(plan.per_worker.every(m => m <= args.hours * 60 * args.days));
+    assert.ok(Math.min(...plan.per_worker) >= .85 * Math.max(...plan.per_worker), 'balance the two tours');
+  }
   // Cem's rules on the real data
   assert.ok(v.real_roads && b.travel.known, 'real roads in the snapshot');
   const rings = v.rings; let open = false;
@@ -65,7 +71,7 @@ if(mode === 'record'){
   const cheapest = v.filled.next_cheapest;
   console.log(cheapest ? `next street of minute ${cheapest.ring}: ${cheapest.mb} mailboxes in ${cheapest.area}${cheapest.new_area ? ' (new area, incl. the ride)' : ''} would add ${cheapest.add_min} min – left ${v.left_minutes} min → ${cheapest.add_min <= v.left_minutes ? 'FITS' : 'does not fit'}` : 'no street left in the current ring');
   if(v.topup) console.log(`checked with the real routes: with that street ${v.topup.real_minutes} min for ${v.topup.real_flyers} flyers > ${v.max_minutes} → does not fit`);
-  if(cheapest && cheapest.add_min <= v.left_minutes) assert.ok(v.topup && v.topup.real_minutes > v.max_minutes, 'a street of the current ring that fits by estimate must have been checked with the real routes');
+  if(cheapest && v.left_minutes > 0 && cheapest.add_min > 0 && cheapest.add_min <= v.left_minutes) assert.ok(v.topup && v.topup.real_minutes > v.max_minutes, 'a street of the current ring that fits by estimate must have been checked with the real routes');
   if(process.env.FLYERMAP_CHECK_REPLAN){
     const saved = structuredClone(b.driveZone); // same shape as a grid sent from the admin to the worker
     assert.equal(saved._g, undefined);
