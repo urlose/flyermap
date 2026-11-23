@@ -14,7 +14,7 @@ import { loadWorkerStats, okBadge, shortLine, workerStatsHtml, bindWorkerStats, 
 window.addEventListener('fm-open-task', e => viewTask(e.detail, () => viewStats()));
 import { makePlanEngine, setStampClient, tileStamp } from './planengine.js';
 import { openMapView } from './routeview.js';
-import { checkpoints, addSkips, dayProgress, makeNav } from './nav.js';
+import { checkpoints, addSkips, dayProgress, makeNav, removedOf, keptBoxes, effPct, removedLen } from './nav.js';
 import { compare as zensusCompare, diffPct as zensusDiff, censusPlaces, MIN_HH } from './zensus.js';
 // census line: official households next to our mailbox estimate; more than 25 % apart is marked
 const zensusHtml = c => { const d = zensusDiff(c); return d == null ? '' : `${esc(t('zLine', { hh:fmtN(c.households) }))} · <i class="zd ${Math.abs(d) > 25 ? 'err' : ''}" >${esc(t('zDiff', { d:(d > 0 ? '+' : d < 0 ? '−' : '±') + Math.abs(d) }))}</i>`; };
@@ -565,7 +565,7 @@ async function boxesAlong(tracks, exclude){
 }
 // pieces a distributor marked as not needed: grey, dashed (pieces the admin closed are only counted as done, not drawn)
 // parts of a route the admin closed as done: their mailboxes count as delivered (worker skips – dangerous, no access – do not)
-const adminDone = p => (p.skipped || []).filter(x => x && /^Admin/.test(x.by || '') && Array.isArray(x.pts)).map(x => x.pts);
+const adminDone = p => (p.skipped || []).filter(x => x && !x.removed && /^Admin/.test(x.by || '') && Array.isArray(x.pts)).map(x => x.pts);   // removed sections are not "distributed"
 const byWorker = x => x && !/^Admin/.test(x.by || '');
 const workerSkips = p => ((p && p.skipped) || []).filter(byWorker);
 // pieces a worker reported as not walkable (orange): the admin decides – "Bestätigt" (stays out, drawn faded) or
@@ -708,16 +708,17 @@ function liveWorkers(g, tk, plans, showNames){
 }
 // checkpoint: numbered point on the route (day.section with several days), green tick when 80 % of the section is walked
 export const cpMarker = (c, color, multi) => L.marker(c.at, { keyboard:false, zIndexOffset:500, title:t('cpTitle', { d:c.day + 1, n:c.n, p:c.pct }),
-  icon:L.divIcon({ className:'', iconSize:[24, 24], iconAnchor:[12, 12], html:`<div class="cp ${c.done ? 'ok' : ''}" style="--c:${esc(color || '#2563EB')}">${c.done ? '✓' : (multi ? (c.day + 1) + '.' : '') + c.n}</div>` }) });
+  icon:L.divIcon({ className:'', iconSize:[24, 24], iconAnchor:[12, 12], html:`<div class="cp ${c.removed ? 'rm' : c.done ? 'ok' : ''}" style="--c:${esc(color || '#2563EB')}">${c.removed ? '×' : c.done ? '✓' : (multi ? (c.day + 1) + '.' : '') + c.n}</div>` }) });
 // admin: tap a checkpoint → its streets light up, and it can be closed as done (or opened again if it was closed here)
 const cpTag = c => (c.day + 1) + '.' + c.n;
 function densify(run){ const out = [run[0]]; for(let i = 1; i < run.length; i++){ const a = run[i - 1], b = run[i], n = Math.max(1, Math.ceil(hav(a[0], a[1], b[0], b[1]) / 8)); for(let k = 1; k <= n; k++) out.push([+(a[0] + (b[0] - a[0]) * k / n).toFixed(6), +(a[1] + (b[1] - a[1]) * k / n).toFixed(6)]); } return out; }
 function cpAdmin(c, color, multi, plan, reload){
+  const mine = (plan.skipped || []).filter(x => x && x.cp === cpTag(c)), closed = mine.length > 0, removed = mine.some(x => x.removed);
+  if(removed) c = { ...c, removed:true };
   const mk = cpMarker(c, color, multi), label = multi ? cpTag(c) : String(c.n);
-  const closed = (plan.skipped || []).some(x => x && x.cp === cpTag(c));
   let hl = null;
   mk.bindPopup(`<b>${esc(t('cpWord'))} ${esc(label)}</b><br><span class="small">${esc(t('cpPct', { p:c.pct }))}</span><div style="margin-top:6px">${
-    closed ? `<button class="btn ghost small" data-cpopen>${esc(t('cpReopen'))}</button>` : c.done ? '' : `<button class="btn primary small" data-cpclose>${esc(t('cpClose'))}</button>`}</div><div class="err" data-cperr></div>`, { className:'cp-pop', maxWidth:200, autoPan:false });
+    closed ? `${removed ? `<span class="small muted">${esc(t('cpRemovedInfo'))}</span><br>` : ''}<button class="btn ghost small" data-cpopen>${esc(t(removed ? 'cpRestore' : 'cpReopen'))}</button>` : c.done ? '' : `<button class="btn primary small" data-cpclose>${esc(t('cpClose'))}</button><button class="btn ghost small" data-cprm style="margin-top:6px">${esc(t('cpRemove'))}</button>`}</div><div class="err" data-cperr></div>`, { className:'cp-pop', maxWidth:220, autoPan:false });
   mk.on('popupopen', e => {
     const m = mk._map; if(m && c.runs && c.runs.length){ hl = L.featureGroup(c.runs.map(r => L.polyline(r, { color:'#F59E0B', weight:10, opacity:.85, lineCap:'round', lineJoin:'round', interactive:false }))).addTo(m); }
     const el = e.popup.getElement(), err = el.querySelector('[data-cperr]');
@@ -729,7 +730,28 @@ function cpAdmin(c, color, multi, plan, reload){
       mk.closePopup(); reload();
     };
     const bc = el.querySelector('[data-cpclose]'); if(bc) bc.onclick = () => { bc.disabled = true; save(sk => [...sk, ...c.runs.map(r => ({ at:new Date().toISOString(), by:'Admin', why:'Erledigt', cp:cpTag(c), pts:densify(r) }))]); };
-    const bo = el.querySelector('[data-cpopen]'); if(bo) bo.onclick = () => { bo.disabled = true; save(sk => sk.filter(x => !(x && x.cp === cpTag(c)))); };
+    // remove / restore: the section's mailboxes and its share of the walking time leave the route and the order (and come back)
+    const saveRm = async (add) => {
+      const { data:fr, error:e1 } = await sb.from('task_plans').select('skipped,mailboxes,minutes,length_m,boxes,task_id').eq('id', plan.id).maybeSingle(); if(e1 || !fr){ err.textContent = errText(e1); return; }
+      const sk = fr.skipped || [], tag = cpTag(c); let next, dmb, dmin;
+      if(add){
+        const ent = c.runs.map(r => ({ at:new Date().toISOString(), by:'Admin', why:'Entfernt', removed:true, cp:tag, pts:densify(r) }));
+        const base = { ...fr, skipped:sk.filter(x => !(x && x.cp === tag)) }, sum = b => b.reduce((s, x) => s + (x[2] || 1), 0);
+        dmb = Math.max(0, Math.round(sum(keptBoxes(base)) - sum(keptBoxes(base, ent))));
+        dmin = fr.length_m ? Math.max(0, Math.round((fr.minutes || 0) * removedLen({ skipped:ent }) / fr.length_m)) : 0;
+        ent[0].mb = dmb; ent[0].min = dmin; next = [...base.skipped, ...ent];
+      } else {
+        const own = sk.filter(x => x && x.cp === tag && x.removed); dmb = -own.reduce((s, x) => s + (+x.mb || 0), 0); dmin = -own.reduce((s, x) => s + (+x.min || 0), 0);
+        next = sk.filter(x => !(x && x.cp === tag));
+      }
+      const { error } = await sb.from('task_plans').update({ skipped:next, mailboxes:Math.max(0, Math.round((fr.mailboxes || 0) - dmb)), minutes:Math.max(0, Math.round((fr.minutes || 0) - dmin)) }).eq('id', plan.id);
+      if(error){ err.textContent = errText(error); return; }
+      if(dmb){ const { data:tk } = await sb.from('tasks').select('flyers,est_mailboxes').eq('id', fr.task_id).maybeSingle();
+        if(tk){ const upd = {}; if(tk.flyers != null) upd.flyers = Math.max(0, Math.round(tk.flyers - dmb)); if(tk.est_mailboxes != null) upd.est_mailboxes = Math.max(0, Math.round(tk.est_mailboxes - dmb)); if(Object.keys(upd).length) await sb.from('tasks').update(upd).eq('id', fr.task_id); } }
+      mk.closePopup(); try{ await loadTasks(); }catch{} reload();
+    };
+    const br = el.querySelector('[data-cprm]'); if(br) br.onclick = () => { br.disabled = true; saveRm(true); };
+    const bo = el.querySelector('[data-cpopen]'); if(bo) bo.onclick = () => { bo.disabled = true; if(removed) saveRm(false); else save(sk => sk.filter(x => !(x && x.cp === cpTag(c)))); };
   });
   mk.on('popupclose', () => { if(hl){ hl.remove(); hl = null; } });
   return mk;
@@ -749,11 +771,11 @@ async function viewTaskMap(id, back, keep){
       (byPlan[pid] = byPlan[pid] || []).push(...split[i].walk);
     });
     res = (plans || []).map(p => {
-      const tr = p.path && p.path.length > 1 ? addSkips(Planner.makeTracker(p.path), p) : null, ct = p.boxes && p.boxes.length ? Planner.makeBoxCounter(p.boxes) : null;
+      const tr = p.path && p.path.length > 1 ? addSkips(Planner.makeTracker(p.path), p) : null, kb = keptBoxes(p), ct = kb.length ? Planner.makeBoxCounter(kb) : null;
       // all tracks of the order count: streets of this route walked by somebody else are done too
       for(const pts of tracks){ if(tr) tr.addTrack(pts); if(ct) ct.visitAll(pts); }
       if(ct) adminDone(p).forEach(pts => ct.visitAll(pts));   // parts the admin closed as done (e.g. phone broken) count their mailboxes too
-      const pct = tr ? tr.pct() : 0; doneM += pct * (p.length_m || 0) / 100; allM += p.length_m || 0; if(ct){ flAll += ct.count(); hasFl = true; }
+      const pct = tr ? effPct(tr, p) : 0, Lp = Math.max(0, (p.length_m || 0) - removedLen(p)); doneM += pct * Lp / 100; allM += Lp; if(ct){ flAll += ct.count(); hasFl = true; }
       return { p, runs:tr ? tr.runs() : [], pct, fl:ct ? ct.count() : null, cps:tr ? checkpoints(p, i => tr.isDone(i)) : [] };
     });
     // houses along a route's tracks outside every planned route count for that route like planned ones
@@ -792,7 +814,7 @@ async function viewTaskMap(id, back, keep){
           : [{ key:'plan', label:t('rvPlan'), add:g => { drawDay(g, 0); start(g); } }];
       })(),
       // one switch: what is done (green) together with the GPS tracks it comes from
-      { key:'done', label:t('rvDone'), add:g => { res.forEach(x => x.runs.forEach(run => L.polyline(run, { color:GREEN_C(), weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g))); offRuns.forEach(run => L.polyline(run, { color:GREEN_C(), weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g));
+      { key:'done', label:t('rvDone'), add:g => { res.forEach(x => x.runs.forEach(run => L.polyline(run, { color:GREEN_C(), weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g))); res.forEach(x => removedOf(x.p).forEach(x => L.polyline(x.pts, { color:'#94A3B8', weight:8, opacity:.95, dashArray:'4 8', lineCap:'round', interactive:false }).addTo(g))); offRuns.forEach(run => L.polyline(run, { color:GREEN_C(), weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g));
         tracks.forEach(ll => { if(ll.length > 1) gpsLine(g, ll, 2.5); }); drives.forEach(ll => driveLine(g, ll, 2.5)); } },
       ...((plans || []).some(p => (p.path || []).some(q => q[2] === 1)) ? [{ key:'jumps', label:(tk.travel === 'zones' && rideMinOf(plans)) ? t('tripsPlan', { min:rideMinOf(plans) }) : t({ car:'tripsCar', bike:'tripsBike', bus:'tripsBus', zones:'tripsUnknown' }[(tk.travel || (tk.bike ? 'bike' : 'bus'))]), add:g => (plans || []).forEach(p => drawJumps(g, p.path, (tk.travel || (tk.bike ? 'bike' : 'bus')), rideMinOf(plans), ridesOf([p]))) }] : []),
       ...((plans || []).some(p => workerSkips(p).length) ? [{ key:'skip', label:t('rvSkipped'), add:g => drawSkips(g, plans, () => viewTaskMap(id, back, m && m.rvState())) }] : []),
@@ -2084,11 +2106,11 @@ async function viewTask(id){
   for(const p of plans || []){
     if((!allTracks.length && !(p.skipped || []).length) || !p.path?.length){ PROG._l = (PROG._l || 0) + (p.length_m || 0); continue; }
     byPlan[p.id] = byPlan[p.id] || [];
-    const tr = addSkips(Planner.makeTracker(p.path), p), ct = p.boxes && p.boxes.length ? Planner.makeBoxCounter(p.boxes) : null;
+    const tr = addSkips(Planner.makeTracker(p.path), p), kb = keptBoxes(p), ct = kb.length ? Planner.makeBoxCounter(kb) : null;
     allTracks.forEach(pts => { tr.addTrack(pts); if(ct) ct.visitAll(pts); });
     if(ct) adminDone(p).forEach(pts => ct.visitAll(pts));
     PLAN_TR[p.id] = tr;
-    { const L = p.length_m || 0; PROG._d = (PROG._d || 0) + tr.pct() * L; PROG._l = (PROG._l || 0) + L; if(PROG._l) { PROG.r = PROG._d / PROG._l; showProg(); } }
+    { const L = Math.max(0, (p.length_m || 0) - removedLen(p)); PROG._d = (PROG._d || 0) + effPct(tr, p) * L; PROG._l = (PROG._l || 0) + L; if(PROG._l) { PROG.r = PROG._d / PROG._l; showProg(); } }
     // per day: done or how far; and what is still open (what a new worker gets)
     try{
       const ds = p.days && p.days.length > 1 ? p.days : [{ minutes:p.minutes, length_m:p.length_m }], dp = p.days && p.days.length > 1 ? dayProgress(p, tr) : [tr.pct()];
@@ -2098,7 +2120,8 @@ async function viewTask(id){
       const rb = $('#pred' + p.idx); if(rb && restMin > 1 && dp.some(x => x > 0)) rb.classList.remove('hidden');
     }catch{}   // also streets of this route walked by somebody else
     tr.runs().forEach(run => L.polyline(run, { color:GREEN_C(), weight:6, opacity:.95 }).addTo(doneLayer));
-    const pct = tr.pct(); const el = $('#pp' + p.idx); if(el) el.textContent = '· ' + t('done', { p:pct }); const bar = $('#pb' + p.idx); if(bar) bar.style.width = pct + '%';
+    removedOf(p).forEach(x => L.polyline(x.pts, { color:'#94A3B8', weight:8, opacity:.95, dashArray:'4 8', lineCap:'round', interactive:false }).addTo(doneLayer));   // removed sections: grey, not green
+    const pct = effPct(tr, p); const el = $('#pp' + p.idx); if(el) el.textContent = '· ' + t('done', { p:pct }); const bar = $('#pb' + p.idx); if(bar) bar.style.width = pct + '%';
     const pf = $('#pf' + p.idx); if(pf && ct) pf.textContent = t('flyersDone', { a:fmtN(ct.count()), b:fmtN(ct.total) }) + (ct.total ? ' · ' + Math.round(ct.count() / ct.total * 100) + ' %' : '');
     if(ct){ flSum += ct.count(); flHas = true; }
   }
