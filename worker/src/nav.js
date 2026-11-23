@@ -222,6 +222,28 @@ export function checkpoints(plan, isDone, every){
   return out;
 }
 
+// 23.11.2026: sections the admin REMOVED from the order (farms, nothing to deliver): skipped entries with removed:true.
+// For the walker they are like done (guidance passes them); in the admin's figures they do not exist: no progress, no flyers.
+export const removedOf = plan => ((plan && plan.skipped) || []).filter(s => s && s.removed && Array.isArray(s.pts) && s.pts.length > 1);
+const RM_CELL = 0.0004;
+function rmGrid(plan){ const g = new Map(); for(const s of removedOf(plan)) for(const q of s.pts){ const k = Math.floor(q[0] / RM_CELL) + ':' + Math.floor(q[1] / RM_CELL); if(!g.has(k)) g.set(k, []); g.get(k).push(q); } return g; }
+const nearAny = (g, b, tol) => { const cy = Math.floor(b[0] / RM_CELL), cx = Math.floor(b[1] / RM_CELL), kx = Math.cos(b[0] * Math.PI / 180) * 111320;
+  for(let dy = -2; dy <= 2; dy++) for(let dx = -3; dx <= 3; dx++){ const l = g.get((cy + dy) + ':' + (cx + dx)); if(l) for(const q of l) if(Math.hypot((q[0] - b[0]) * 111320, (q[1] - b[1]) * kx) <= tol) return true; }
+  return false; };
+// mailbox points of a plan without those along removed sections (same reach as the box counter: 30 m + building size)
+export function keptBoxes(plan, extra){
+  const boxes = (plan && plan.boxes) || [], g = rmGrid(extra ? { skipped:[...((plan && plan.skipped) || []), ...extra] } : plan); if(!g.size) return boxes;
+  return boxes.filter(b => !nearAny(g, b, 30 + Math.min(25, 4 * Math.sqrt(Math.max(1, b[2] || 1)))));
+}
+const lenOf = pts => { let m = 0; for(let i = 1; i < pts.length; i++){ const a = pts[i - 1], b = pts[i]; m += Math.hypot((b[0] - a[0]) * 111320, (b[1] - a[1]) * 111320 * Math.cos(a[0] * Math.PI / 180)); } return m; };
+export const removedLen = plan => removedOf(plan).reduce((s, x) => s + lenOf(x.pts), 0);
+// progress of a route in % without its removed sections (the tracker counts them as walked)
+export function effPct(tr, plan){
+  const L = (plan && plan.length_m) || 0, rem = Math.min(removedLen(plan), L * .999), pct = tr.pct();
+  if(!(rem > 0) || !(L > 0)) return pct;
+  return Math.max(0, Math.min(100, Math.round((pct * L / 100 - rem) / (L - rem) * 100)));
+}
+
 // pieces of the route a distributor marked as not needed: they count as done everywhere (progress, guidance, checkpoints)
 export function addSkips(tr, plan){
   if(!tr || !plan) return tr;
