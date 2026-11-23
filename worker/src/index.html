@@ -502,6 +502,8 @@ i.zd{font-style:normal}
 .ov-t>b{font-size:17px;line-height:24px;font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis}
 .ov-t>small{font-size:12px;color:var(--color-text-secondary)}
 .ov-t.warn{border-color:var(--color-warning,#D97706)}
+.ov-t.ov-wide{grid-column:1/-1}.ov-t.ov-text>b,.ov-t.ov-wide>b{white-space:normal;overflow-wrap:anywhere;font-size:15px;line-height:21px}
+#tZenB{white-space:normal;font-size:15px;line-height:21px}
 .ov-acts{margin-bottom:4px}
 .list-card{background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);overflow:hidden}
 .lc-row{display:flex;align-items:center;gap:12px;width:100%;padding:10px 12px;background:none;border:0;border-top:1px solid var(--color-border);text-align:left;color:var(--color-text);font:inherit;min-height:52px}
@@ -512,6 +514,7 @@ i.zd{font-style:normal}
 .lc-row .swatch{width:10px;height:28px;border-radius:5px;flex:none}
 .rep-dot{width:12px;height:12px;border-radius:50%;flex:none;background:#F97316}.rep-dot.ok{background:var(--color-text-secondary);opacity:.5}
 @media (min-width:700px){.ov-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (min-width:1100px){.ov-grid.ov4{grid-template-columns:repeat(4,minmax(0,1fr))}}
 .tab .tab-badge{position:absolute;z-index:2;max-width:none;overflow:visible;top:6px;left:calc(50% + 6px);min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--color-danger);color:#fff;font-size:11px;line-height:18px;font-weight:700;text-align:center;box-shadow:0 0 0 2px var(--color-surface)}
 .set-nav .mchip.on{background:var(--color-primary-soft);color:var(--color-primary);border-color:transparent;font-weight:600}
 .content h2.sec{scroll-margin-top:calc(var(--st) + 124px)}

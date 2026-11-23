@@ -794,7 +794,7 @@ async function viewTaskMap(id, back, keep){
       // one switch: what is done (green) together with the GPS tracks it comes from
       { key:'done', label:t('rvDone'), add:g => { res.forEach(x => x.runs.forEach(run => L.polyline(run, { color:GREEN_C(), weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g))); offRuns.forEach(run => L.polyline(run, { color:GREEN_C(), weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g));
         tracks.forEach(ll => { if(ll.length > 1) gpsLine(g, ll, 2.5); }); drives.forEach(ll => driveLine(g, ll, 2.5)); } },
-      ...((plans || []).some(p => (p.path || []).some(q => q[2] === 1)) ? [{ key:'jumps', label:(tk.travel === 'zones' && rideMinOf(plans)) ? t('tripsPlan', { min:rideMinOf(plans) }) : t({ car:'tripsCar', bike:'tripsBike', bus:'tripsBus', zones:'tripsUnknown' }[(tk.travel || (tk.bike ? 'bike' : 'bus'))]), add:g => (plans || []).forEach(p => drawJumps(g, p.path, (tk.travel || (tk.bike ? 'bike' : 'bus')), rideMinOf(plans))) }] : []),
+      ...((plans || []).some(p => (p.path || []).some(q => q[2] === 1)) ? [{ key:'jumps', label:(tk.travel === 'zones' && rideMinOf(plans)) ? t('tripsPlan', { min:rideMinOf(plans) }) : t({ car:'tripsCar', bike:'tripsBike', bus:'tripsBus', zones:'tripsUnknown' }[(tk.travel || (tk.bike ? 'bike' : 'bus'))]), add:g => (plans || []).forEach(p => drawJumps(g, p.path, (tk.travel || (tk.bike ? 'bike' : 'bus')), rideMinOf(plans), ridesOf([p]))) }] : []),
       ...((plans || []).some(p => workerSkips(p).length) ? [{ key:'skip', label:t('rvSkipped'), add:g => drawSkips(g, plans, () => viewTaskMap(id, back, m && m.rvState())) }] : []),
       { key:'cp', label:t('checkpoints'), on:false, add:g => res.forEach(({ p, cps }) => cps.forEach(c => cpAdmin(c, dayColor(p.color, c.day), (p.days || []).length > 1, p, () => viewTaskMap(id, back, m && m.rvState())).addTo(g))) },
       // a tap on "Wo gerade" moves the map to the people: the ones walking right now, else the last known positions
@@ -1857,32 +1857,26 @@ async function viewTask(id){
     <div class="pad">
       <nav class="set-nav sec-nav" id="tNav" aria-label="${esc(t('secIndex'))}"></nav>
       <h2 class="sec" style="margin-top:4px" data-short="${esc(t('secOverview'))}">${esc(t('secOverview'))}</h2>
-      <div class="ov-grid">
+      <div class="ov-grid ov4">
         ${ov(t('colStatus'), statusPill(...taskState(tk)), '')}
         ${ov(t('deadline'), `<span class="due-${due.cls}">${esc(due.txt)}</span>`, '')}
-        ${ov(t('colProgress'), ps0.length ? `${ps0.filter(p => p.status === 'done').length} / ${ps0.length}` : '–', '')}
-        ${ov(t('flyers'), tk.flyers ? esc(fmtN(tk.flyers)) : '–', estMb ? esc(t('mbApprox', { n:fmtN(estMb) })) : '')}
         ${ov(t('colTeam'), `${team.length}`, ps0.length - nAssigned > 0 ? `<span class="due-warn">${esc(t('freeN', { n:ps0.length - nAssigned }))}</span>` : esc(t('ovAllAssigned')), '')}
         ${ov(t('secReports'), String(repOpen + lateN), repOpen + lateN ? `<span class="due-warn">${esc(t('ovToDecide'))}</span>` : esc(t('ovNothing')), repOpen + lateN ? 'warn' : '')}
+        <div class="ov-t"><span>${esc(t('progLbl'))}</span><b id="tProg">—</b><small>${esc(t('colProgress'))}: ${ps0.length ? `${ps0.filter(p => p.status === 'done').length} / ${ps0.length}` : '–'}</small></div>
+        <div class="ov-t" id="tFlRow" ${tk.flyers_done != null ? '' : 'style="display:none"'}><span>${esc(t('handedLbl'))} <button class="link" id="tFlEdit" style="font-size:12px">${esc(t('adjust'))}</button></span><b id="tFl">${tk.flyers_done != null ? '≈ ' + fmtN(tk.flyers_done) + (tk.flyers ? ' / ' + fmtN(tk.flyers) : '') : ''}</b>${tk.flyers_done != null ? `<small>${esc(t('flDoneManual', { d:fmtDT(tk.flyers_done_at) }))}${(A.live || []).some(r => r.task_id === tk.id) ? ' · ' + esc(t('stillWorking')) : ''}</small>` : ''}</div>
+        <div class="ov-t"><span>${esc(t('hoursLbl'))}</span><b id="tHrs">${taskHours(plans, routes)}</b></div>
+        ${ov(t('walkedLbl'), esc(fmtDist(walked)), '')}
+        ${ov(t('place'), esc([tk.district, tk.city_name].filter(Boolean).join(', ') || '—'), esc(fmtDay(tk.work_date)))}
+        ${ov(t('flyers'), tk.flyers ? esc(fmtN(tk.flyers)) : '–', estMb ? esc(t('mbApprox', { n:fmtN(estMb) })) : '')}
+        ${routeM ? ov(t('dist2'), esc(fmtDist(routeM)), '') : ''}
+        ${tk.quota_m30 ? ov(t('quotaInfo'), `${fmtN(tk.quota_m30)} m / 30 ${esc(t('min'))}`, '') : ''}
+        ${((tk.travel && tk.travel !== 'bus') || tk.bike) && tk.travel !== 'zones' ? ov(t('travelLbl'), esc(t('travel_' + (tk.travel || 'bike'))), '') : ''}
+        ${(tk.side_towns || []).length ? ov(t('sideTitle'), esc(tk.side_towns.map(x => x.name + ' (' + fmtN(x.flyers) + ')').join(', ')), '', 'ov-wide') : ''}
+        ${(tk.must_areas || []).length ? ov(t('mustTitle'), esc(tk.must_areas.map((a, k) => mName(mArea(a), k) + (mArea(a).n ? ' (' + fmtN(mArea(a).n) + ')' : '')).join(', ')), '', 'ov-wide') : ''}
+        <div class="ov-t ov-wide" id="tZen" style="display:none"><span>${esc(t('zLabel'))}</span><b id="tZenB"></b><small>${esc(t('zHint'))}</small></div>
+        ${tk.notes ? ov(t('note'), esc(tk.notes), '', 'ov-wide ov-text') : ''}
       </div>
       <div class="tool-row ov-acts"><button class="btn ghost small" id="tOnMap">${ICONS.map}${esc(t('showOnMap'))}</button><button class="btn ghost small" id="tRMap">${ICONS.route}${esc(t('rvBig'))}</button><button class="btn ghost small" id="tEdit2">${ICONS.edit}${esc(t('editTask'))}</button><button class="btn ghost small" id="tCustomerExport">${ICONS.map}${esc(t('customerGeoJSON'))}</button></div>
-      <h2 class="sec" data-short="${esc(t('secData'))}">${esc(t('taskInfo'))}</h2>
-      <div class="info">
-        <div><span>${esc(t('place'))}</span><b>${esc([tk.district, tk.city_name].filter(Boolean).join(', ') || '—')}</b></div>
-        <div><span>${esc(t('date'))}</span><b>${esc(fmtDay(tk.work_date))}</b></div>
-        ${tk.flyers ? `<div><span>${esc(t('flyers'))}</span><b>${esc(fmtN(tk.flyers))} · ${esc(t('mbApprox', { n:fmtN(estMb || 0) }))}</b></div>` : ''}
-        <div id="tZen" style="display:none"><span>${esc(t('zLabel'))}</span><b id="tZenB"></b><small class="muted">${esc(t('zHint'))}</small></div>
-        ${routeM ? `<div><span>${esc(t('dist2'))}</span><b>${esc(fmtDist(routeM))}</b></div>` : ''}
-        ${tk.quota_m30 ? `<div><span>${esc(t('quotaInfo'))}</span><b>${fmtN(tk.quota_m30)} m / 30 ${esc(t('min'))}</b></div>` : ''}
-        ${((tk.travel && tk.travel !== 'bus') || tk.bike) && tk.travel !== 'zones' ? `<div><span>${esc(t('travelLbl'))}</span><b>${esc(t('travel_' + (tk.travel || 'bike')))}</b></div>` : ''}
-        ${(tk.side_towns || []).length ? `<div><span>${esc(t('sideTitle'))}</span><b>${esc(tk.side_towns.map(x => x.name + ' (' + fmtN(x.flyers) + ')').join(', '))}</b></div>` : ''}
-        ${(tk.must_areas || []).length ? `<div><span>${esc(t('mustTitle'))}</span><b>${esc(tk.must_areas.map((a, k) => mName(mArea(a), k) + (mArea(a).n ? ' (' + fmtN(mArea(a).n) + ')' : '')).join(', '))}</b></div>` : ''}
-        <div><span>${esc(t('walkedLbl'))}</span><b>${esc(fmtDist(walked))}</b></div>
-        <div><span>${esc(t('progLbl'))}</span><b id="tProg">—</b></div>
-        <div><span>${esc(t('hoursLbl'))}</span><b id="tHrs">${taskHours(plans, routes)}</b></div>
-        <div id="tFlRow" ${tk.flyers_done != null ? '' : 'style="display:none"'}><span>${esc(t('handedLbl'))} <button class="link" id="tFlEdit" style="font-size:12px">${esc(t('adjust'))}</button></span><b id="tFl">${tk.flyers_done != null ? '≈ ' + fmtN(tk.flyers_done) + (tk.flyers ? ' / ' + fmtN(tk.flyers) : '') : ''}</b>${tk.flyers_done != null ? `<small class="muted">${esc(t('flDoneManual', { d:fmtDT(tk.flyers_done_at) }))}${(A.live || []).some(r => r.task_id === tk.id) ? ' · ' + esc(t('stillWorking')) : ''}</small>` : ''}</div>
-        ${tk.notes ? `<div><span>${esc(t('note'))}</span><b>${esc(tk.notes)}</b></div>` : ''}
-      </div>
       <h2 class="sec" data-short="${esc(t('secMap'))}">${esc(t('secMapLong'))}</h2>
       <div class="mapbox" id="tMap" style="margin-top:0"></div>
       <div class="rinfo-row"><span>${statusPill(...taskState(tk))}</span><button class="btn ghost small" id="tBig">${ICONS.expand}${esc(t('rvBig'))}</button></div>
