@@ -1,6 +1,7 @@
 // UI redesign, part 2 (16.11.2026): collapsible sidebar, tab badges, sections on order and worker pages, wizard help, saving
 import { T } from './i18n.js';
 Object.assign(T.de, {
+  verNew:'Neue Version – laden', verNewTip:'{v} ist da. Tippen zum Laden.',
   sbOpen:'Menü ausklappen', sbClose:'Menü einklappen',
   bdHelp:'{n} offene Hilfeanfragen', bdLate:'{n} Termine nach der Frist freigeben', bdRep:'{n} gemeldete Stücke entscheiden',
   secIndex:'Abschnitte', secOverview:'Überblick', secData:'Daten', secMap:'Karte', secMapLong:'Karte und Gebiet', secRoutes:'Routen', secTeam:'Mitarbeiter', secDates:'Termine', secReports:'Meldungen', secOrders:'Aufträge',
@@ -18,6 +19,7 @@ Object.assign(T.de, {
   saving:'Speichert …', notSaved:'Nicht gespeichert – bitte erneut versuchen.',
 });
 Object.assign(T.ru, {
+  verNew:'Новая версия — обновить', verNewTip:'Вышла {v}. Нажми, чтобы загрузить.',
   sbOpen:'Развернуть меню', sbClose:'Свернуть меню',
   bdHelp:'Открытых обращений: {n}', bdLate:'Даты после срока ждут решения: {n}', bdRep:'Отмеченные участки ждут решения: {n}',
   secIndex:'Разделы', secOverview:'Обзор', secData:'Данные', secMap:'Карта', secMapLong:'Карта и район', secRoutes:'Маршруты', secTeam:'Работники', secDates:'Сроки', secReports:'Сообщения', secOrders:'Заказы',
@@ -35,6 +37,7 @@ Object.assign(T.ru, {
   saving:'Сохраняю …', notSaved:'Не сохранено — попробуй ещё раз.',
 });
 Object.assign(T.en, {
+  verNew:'New version – reload', verNewTip:'{v} is out. Tap to load it.',
   sbOpen:'Expand menu', sbClose:'Collapse menu',
   bdHelp:'{n} open help requests', bdLate:'{n} dates after the deadline to approve', bdRep:'{n} reported pieces to decide',
   secIndex:'Sections', secOverview:'Overview', secData:'Details', secMap:'Map', secMapLong:'Map and area', secRoutes:'Routes', secTeam:'Team', secDates:'Dates', secReports:'Reports', secOrders:'Orders',

@@ -34,7 +34,7 @@ self.addEventListener('install', e => e.waitUntil(caches.open(SHELL).then(c => c
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith('fm-shell-') && k !== SHELL).map(k => caches.delete(k)))).then(() => self.clients.claim())));
 self.addEventListener('fetch', e => {
   const r = e.request, u = new URL(r.url);
-  if(r.method !== 'GET' || u.origin !== location.origin) return;
+  if(r.method !== 'GET' || u.origin !== location.origin || u.searchParams.has('vcheck')) return;   // vcheck: the app asks for the newest build label, never from a cache
   if(r.mode === 'navigate'){
     // no-store: the browser's own 10-minute copy of the page must not hide a new release
     e.respondWith(fetch(r.url, { cache: 'no-store', credentials: 'same-origin' }).then(res => { const c = res.clone(); caches.open(SHELL).then(x => x.put('./index.html', c)); return res; })

@@ -1,6 +1,6 @@
 import L from 'leaflet';
 import { t } from './i18n.js';
-import { $, esc, css, searchPlaces, bikeRoute } from './core.js';
+import { $, esc, css, searchPlaces, bikeRoute, NATIVE } from './core.js';
 
 export const TILES = 'https://tile.openstreetmap.de/{z}/{x}/{y}.png';
 // Icons: Lucide (ISC licence, https://lucide.dev) – one family, stroke 2, 24 px grid (since 16.11.2026)
@@ -111,16 +111,48 @@ export function shell(tab, html, opts = {}){
         `<button role="tab" class="tab ${k === tab ? 'on' : ''}" data-tab="${k}" aria-selected="${k === tab}" title="${esc(lb)}">${ICONS[ic]}<span>${esc(lb)}</span>${badge(k)}</button>`).join('')}
       ${UI.role === 'admin' ? `<button class="tab sb-toggle" id="sbMini" aria-pressed="${sbMini()}" title="${esc(t(sbMini() ? 'sbOpen' : 'sbClose'))}"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="${sbMini() ? 'M13 10l2 2-2 2' : 'M15 10l-2 2 2 2'}"/></svg><span>${esc(t(sbMini() ? 'sbOpen' : 'sbClose'))}</span></button>` : ''}
       ${UI.role === 'admin' && UI.onLogout ? `<button class="tab tab-out" id="sbOut">${ICONS.logout}<span>${esc(t('logout'))}</span></button>` : ''}
+      ${verHtml()}
     </nav>${opts.fab ? `<button class="fab" id="fab" aria-label="${esc(opts.fab)}" title="${esc(opts.fab)}">${ICONS.plus}</button>` : ''}</div>`;
   UI.wmShown = true;   // the letters rise in only on the first screen after loading
   document.querySelectorAll('.tab[data-tab]').forEach(b => b.onclick = () => UI.onTab && UI.onTab(b.dataset.tab));
   const hm = document.getElementById('sbHome'); if(hm) hm.onclick = e => { e.preventDefault(); location.href = location.pathname + location.search; };   // logo: reload, start screen
   const so = document.getElementById('sbOut'); if(so) so.onclick = () => UI.onLogout();
+  bindVer();
   const mi = document.getElementById('sbMini'); if(mi) mi.onclick = () => {   // no re-render: the page (and an open order) stays
     const on = !sbMini(); try{ localStorage.setItem('fm.sbMini', on ? '1' : '0'); }catch{}
     document.querySelector('.shell').classList.toggle('sb-mini', on); mi.setAttribute('aria-pressed', on); mi.title = t(on ? 'sbOpen' : 'sbClose');
     mi.querySelector('span').textContent = t(on ? 'sbOpen' : 'sbClose'); mi.querySelector('path:last-child').setAttribute('d', on ? 'M13 10l2 2-2 2' : 'M15 10l-2 2 2 2');
     setTimeout(() => UI.maps.forEach(m => { try{ m.invalidateSize(); }catch{} }), 220); };
+}
+// Build label in the menu (24.11.2026): always visible – bottom of the tab bar on phones, under the sidebar on desktop.
+// Source is the single label stamped into index.html at build time (worker/scripts/stamp-version.mjs), so it changes with
+// every merged PR. The web app also looks for a newer release while it is open; then the label becomes a "load" button.
+export const buildVer = () => { const v = typeof document !== 'undefined' && document.getElementById('flyermap-build-version'); return v ? String(v.textContent || '').trim() : ''; };
+const verHtml = () => {
+  const v = buildVer(); if(!v) return '';
+  const [d, h] = v.split('+'), nv = UI.newVer;
+  return nv ? `<button class="tab-ver new" id="tabVer" title="${esc(t('verNewTip', { v:nv }))}">${esc(t('verNew'))}</button>`
+    : `<div class="tab-ver" id="tabVer" title="FlyerMap ${esc(v)}" aria-label="FlyerMap ${esc(v)}"><i>${esc(d)}</i><i>${h ? '+' + esc(h) : ''}</i></div>`;
+};
+const bindVer = () => { const b = document.getElementById('tabVer'); if(b && UI.newVer) b.onclick = () => location.reload(); };
+export function startVersionWatch(){
+  if(NATIVE || !/^https?:$/.test(location.protocol) || UI.verWatch) return;   // the phone app carries its files; a new release comes with the APK / TestFlight
+  UI.verWatch = true;
+  const cur = buildVer(); if(!cur) return;
+  let last = 0;
+  const check = async () => {
+    if(UI.newVer || Date.now() - last < 60000 || !navigator.onLine) return; last = Date.now();
+    try{
+      const html = await (await fetch(location.pathname + '?vcheck=' + Date.now(), { cache:'no-store', credentials:'same-origin' })).text();
+      const m = html.match(/id="flyermap-build-version"[^>]*>([^<]+)</), v = m && m[1].trim();
+      if(v && v !== cur && /^v\d{4}\.\d{2}\.\d{2}\+[0-9a-f]{7}$/.test(v)){
+        UI.newVer = v; const el = document.getElementById('tabVer');
+        if(el){ el.outerHTML = verHtml(); bindVer(); }
+      }
+    }catch{}
+  };
+  setTimeout(check, 20000); setInterval(check, 10 * 60000);
+  document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible') check(); });
 }
 // desktop sidebar: narrow (icons only) or wide; kept in this browser
 const sbMini = () => { try{ return localStorage.getItem('fm.sbMini') === '1'; }catch{ return false; } };
@@ -185,13 +217,26 @@ export async function prefetchRoute(path, key){
   if(key && ok > urls.length * 0.9){ done.push(key); try{ localStorage.setItem('fm.tilesDone', JSON.stringify(done.slice(-50))); }catch{} }
 }
 export function makeMap(el, center, zoom = 15, opts = {}){
-  const m = L.map(el, { zoomControl:false, attributionControl:true, ...opts }).setView(center || [51.2277, 6.7735], zoom);
+  const { zoomButtons = true, ...mo } = opts;
+  const m = L.map(el, { zoomControl:false, attributionControl:true, ...mo }).setView(center || [51.2277, 6.7735], zoom);
+  if(zoomButtons) addZoomButtons(m, el);
   new CachedTiles(TILES, { maxZoom:19, attribution:'© OpenStreetMap' }).addTo(m);
   UI.maps.push(m); el._map = m;
   // zoomed out (country / region): only the markers, names come back from city level on (people on the way keep theirs)
   const far = () => el.classList.toggle('map-far', m.getZoom() < 10); m.on('zoomend', far); far();
   setTimeout(() => m.invalidateSize(), 60);
   return m;
+}
+// + / − on every map (24.11.2026): one look on phone and desktop; where it sits depends on the screen (CSS .map-zoom)
+function addZoomButtons(m, el){
+  const box = document.createElement('div'); box.className = 'map-zoom'; box.setAttribute('role', 'group'); box.setAttribute('aria-label', t('lmTools'));
+  box.innerHTML = `<button type="button" class="map-tool" data-z="1" title="${esc(t('lmZoomIn'))}" aria-label="${esc(t('lmZoomIn'))}">${ICONS.plus}</button>`
+    + `<button type="button" class="map-tool" data-z="-1" title="${esc(t('lmZoomOut'))}" aria-label="${esc(t('lmZoomOut'))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button>`;
+  L.DomEvent.disableClickPropagation(box); L.DomEvent.disableScrollPropagation(box);
+  box.querySelectorAll('[data-z]').forEach(b => b.onclick = () => b.dataset.z === '1' ? m.zoomIn() : m.zoomOut());
+  const upd = () => { const z = m.getZoom(); box.querySelector('[data-z="1"]').disabled = z >= m.getMaxZoom(); box.querySelector('[data-z="-1"]').disabled = z <= m.getMinZoom(); };
+  m.on('zoomend', upd); upd();
+  el.appendChild(box);
 }
 export const dot = (cls, size = 22) => L.divIcon({ className:'', html:`<div class="${cls}"></div>`, iconSize:[size, size], iconAnchor:[size/2, size/2] });
 export const labelIcon = (cls, text) => L.divIcon({ className:'', html:`<div class="pin-wrap"><div class="${cls}"></div><span class="pin-label">${esc(text)}</span></div>`, iconSize:[24, 24], iconAnchor:[12, 12] });
