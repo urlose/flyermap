@@ -967,7 +967,7 @@ function viewCreate(edit){
   d.budget.cap = tkE ? ((edit.plans || []).map(p => p.days && p.days[0] && +p.days[0].flyer_cap).find(v => v > 0) || null) : null;
   // The order keeps its transport mode and limits when reopened.
   { const d0 = tkE ? (edit.plans || []).map(p => p.days && p.days[0]).find(x => x && ['drive', 'walk', 'auto'].includes(x.budget_mode)) : null;
-    d.budget.mode = tkE ? (d0?.budget_mode ?? null) : 'drive';
+    d.budget.mode = tkE ? (d0?.budget_mode ?? null) : 'auto';
     d.budget.driveMin = d0 && d0.budget_mode !== 'walk' ? (d0.drive_min ?? null) : 15;
     if(d0?.budget_mode === 'auto') d.budget.travelMin = d0.auto_travel_min ?? null;
     d.budget.maxFlyers = d0 ? (d0.max_flyers ?? null) : null;

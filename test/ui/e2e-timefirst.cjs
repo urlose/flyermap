@@ -154,6 +154,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       JSON.stringify(cfg));
     ok(name+': new orders: three optional maxima – drive time (15 min), hours, flyers; no km circle',
       await pg.evaluate(()=>+document.getElementById('cDriveMin')?.value===15 && document.getElementById('cMaxFly')?.value==='' && !document.getElementById('cCircle')));
+    ok(name+': new orders start in automatic mode', await pg.locator('#cBudgetMode').inputValue()==='auto');
+    await pg.locator('#cBudgetMode').selectOption('drive');
     ok(name+': no tolerance / car fields in drive mode', await pg.evaluate(()=>!document.getElementById('cBudT') && !document.getElementById('cBudgetCar')));
     await pg.evaluate(() => {
       for(const [id, value] of [['cDeadline', '2026-11-23'], ['cHours', '7,5'], ['cBudH', '6'], ['cDriveMin', '12']]){
@@ -253,6 +255,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     await until(()=>!!document.querySelector('.budget-box') && !document.getElementById('cNext').disabled,240000);
     await pg.evaluate(()=>document.querySelector('[data-step="2"]').click());
     await pg.waitForSelector('#cDriveMin');
+    ok(name+': reopening restores the selected car mode', await pg.locator('#cBudgetMode').inputValue()==='drive');
     ok(name+': reopening restores the drive time limit', await pg.evaluate(()=>+document.getElementById('cDriveMin').value===12));
     ok(name+': new order saves and reopens with 7,5 net hours', tk?.work_hours === 7.5 && tk?.work_days === 2 && await pg.locator('#cHours').inputValue() === '7.5');
     await pg.locator('#cHours').fill('8');
