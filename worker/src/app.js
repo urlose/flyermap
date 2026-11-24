@@ -7,7 +7,7 @@ import './i18n_en.js';
 import './i18n6.js';
 import './i18n7.js';
 import { store, NATIVE } from './core.js';
-import { UI, applyTheme, initOffline } from './ui.js';
+import { UI, applyTheme, initOffline, startVersionWatch } from './ui.js';
 import { W, bootWorker, workerTab, acceptToken } from './worker.js';
 import { adminHooks, loadAdmin } from './adminload.js';
 import { viewLogin, switchRole, viewJoinLink } from './auth.js';
@@ -42,6 +42,7 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener && matchMedia('(pref
   if(!NATIVE && 'serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js', { updateViaCache:'none' }).catch(() => {});
   applyTheme(await store.get('theme'));
   initOffline();
+  startVersionWatch();
   I.lang = await store.get('lang') || 'de';          // German by default
   document.documentElement.lang = I.lang;
   // invitation link of a company: …/app/?firma=CODE → remembered for the registration

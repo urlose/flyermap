@@ -1006,6 +1006,31 @@ h2.sec{scroll-margin-top:16px}
 .cov-side{display:block;width:100%;min-width:0}
 .cov-side>b{display:block;margin-bottom:4px}
 
+
+/* 24.11.2026 – build label in the menu (always visible) */
+.tab-ver{position:absolute;left:0;right:0;bottom:max(1px,calc(var(--sb) - 13px));z-index:2;text-align:center;pointer-events:none;white-space:nowrap;
+  font:500 9px/10px system-ui,sans-serif;letter-spacing:.01em;font-variant-numeric:tabular-nums;color:var(--color-text-secondary);opacity:.75}
+.tab-ver i{font-style:normal}
+.tab-ver.new{pointer-events:auto;cursor:pointer;left:50%;right:auto;bottom:calc(100% + 8px);transform:translateX(-50%);border:0;opacity:1;
+  height:32px;padding:0 14px;border-radius:16px;background:var(--color-primary);color:var(--color-on-primary);font-family:inherit;font-size:13px;font-weight:600;line-height:32px;box-shadow:var(--shadow-md)}
+@media (min-width:1100px){
+  .tabbar .tab-ver{position:static;margin-top:auto;padding:10px 14px 0;text-align:left;font-size:11px;line-height:14px;transform:none}
+  .tabbar .tab-out ~ .tab-ver{margin-top:0}
+  .tabbar .tab-ver.new{width:100%;height:auto;min-height:36px;padding:8px 12px;margin-top:8px;border-radius:var(--radius-md);text-align:center;line-height:18px;white-space:normal}
+  .shell.sb-mini .tab-ver{padding:10px 0 0;text-align:center;font-size:10px;line-height:13px}
+  .shell.sb-mini .tab-ver i{display:block}
+  .shell.sb-mini .tab-ver.new{padding:6px 4px;font-size:11px;line-height:14px}
+}
+/* 24.11.2026 – + / − on every map (the live map has its own in the tool column) */
+.map-zoom{position:absolute;z-index:640;right:10px;top:10px;display:flex;flex-direction:column;gap:2px;padding:4px;border-radius:var(--radius-md);background:var(--color-surface-elevated);box-shadow:var(--shadow-md)}
+.map-zoom .map-tool{width:40px;height:40px}
+.fullmap > .map-zoom{right:12px;top:calc(var(--st) + 12px)}
+.content:has(.map-btn) .fullmap > .map-zoom{top:calc(var(--st) + 116px)}
+.content:has(.map-top) .fullmap > .map-zoom{top:calc(var(--st) + 70px)}
+.content:has(.map-top .results:not(.hidden)) .map-zoom,.content:has(.map-top[hidden]) .map-zoom{display:none}
+.rv .fullmap > .map-zoom{top:auto;bottom:calc(var(--sb) + 120px)}
+@media (min-width:900px){.rv .fullmap > .map-zoom{top:calc(var(--st) + 12px);bottom:auto}}
+.rv.clean .fullmap > .map-zoom{display:flex}
 </style>
 </head>
 <body>

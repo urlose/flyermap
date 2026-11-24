@@ -88,7 +88,7 @@ export function viewLiveMap(H){
     </div>
     <div class="lm-over ${LM.over ? '' : 'mini'}" id="lmOver" role="status" aria-live="polite"></div>
     <aside class="lm-panel hidden" id="lmP" aria-label="${esc(t('lmDetails'))}"><button class="lm-grip" id="lmGrip" aria-label="${esc(t('lmSheetToggle'))}"></button><div class="lm-pbody" id="lmPB"></div></aside>`, { map:true });
-  m = makeMap($('#fullMap'), LM.view ? LM.view.c : (LM.place ? [LM.place.lat, LM.place.lng] : null), LM.view ? LM.view.z : 12);
+  m = makeMap($('#fullMap'), LM.view ? LM.view.c : (LM.place ? [LM.place.lat, LM.place.lng] : null), LM.view ? LM.view.z : 12, { zoomButtons:false });   // has its own + / − in the tool column
   m.on('moveend', () => { LM.view = { c:[m.getCenter().lat, m.getCenter().lng], z:m.getZoom() }; });
   m.on('dragstart zoomstart', e => { if(e.type === 'dragstart' || e.originalEvent) userMoved = true; });
   // panes: areas under routes under walked parts under pins under people
