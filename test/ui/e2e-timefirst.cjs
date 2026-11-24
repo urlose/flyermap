@@ -180,6 +180,19 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     }
     await pg.setViewportSize({ width:1440, height:900 });
     await pg.locator('#cMin').click();
+    const requestsBeforeStep = await pg.evaluate(() => window.__req.filter(q=>q.op==='plan').length);
+    await pg.locator('[data-step="3"]').click();
+    ok(name+': opening the route step reuses its pending plan',
+      await pg.evaluate(() => window.__req.filter(q=>q.op==='plan').length)===requestsBeforeStep);
+    await pg.locator('[data-step="2"]').click();
+    ok(name+': sheet header and footer stay outside the scrolling form', await pg.evaluate(() => {
+      const body=document.getElementById('cSheetContent'), head=document.querySelector('.sheet-header'), nav=document.querySelector('.wz-nav');
+      const top=head.getBoundingClientRect().top, bottom=nav.getBoundingClientRect().bottom;
+      body.scrollTop=body.scrollHeight;
+      return body.scrollTop>0 && head.getBoundingClientRect().top===top && nav.getBoundingClientRect().bottom===bottom &&
+        head.getBoundingClientRect().bottom<=body.getBoundingClientRect().top && body.getBoundingClientRect().bottom<=nav.getBoundingClientRect().top &&
+        document.querySelector('#cBudgetMode option[value="auto"]')?.textContent==='Automatisch';
+    }));
     releaseRoads();
     ok(name+': 7,5 h × 2 people × 2 working days gives a 1800 min team capacity and a 360 min active cap', !!await waitLimit(1800, 360));
     ok(name+': progress has German stage labels and elapsed seconds', await pg.evaluate(() =>

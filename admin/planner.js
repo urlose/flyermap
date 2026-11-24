@@ -290,18 +290,48 @@
     get size(){ return this.a.length; }
   }
   // from any source until isTarget(v) → list of edge ids along the path (source → target)
-  function shortestTo(g, sources, isTarget){
+  function shortestTo(g, sources, isTarget, maxMeters = Infinity){
     const d = new Float64Array(g.pts.length).fill(Infinity), pe = new Int32Array(g.pts.length).fill(-1), pv = new Int32Array(g.pts.length).fill(-1);
     const h = new Heap();
     for(const s of sources){ d[s] = 0; h.push(0, s); }
     while(h.size){
       const [k, v] = h.pop(); if(k > d[v]) continue;
+      if(k > maxMeters) break;
       if(isTarget(v)){
         const path = []; let x = v; while(pe[x] !== -1){ path.push(pe[x]); x = pv[x]; } return { target:v, edges:path.reverse() };
       }
       for(const { e, to } of g.adj[v]){ const nd = k + g.edges[e].len; if(nd < d[to]){ d[to] = nd; pe[to] = e; pv[to] = v; h.push(nd, to); } }
     }
     return null;
+  }
+
+  function walkingTransfers(g, maxMeters){
+    const attached = g.pts.map((_, i) => i).filter(i => g.adj[i].length);
+    const snaps = new Map();
+    const snap = p => {
+      const key = p.join(',');
+      if(!snaps.has(key)) snaps.set(key, nearestNode(g, p, attached));
+      return snaps.get(key);
+    };
+    return (a, b) => {
+      if(dist(a, b) > maxMeters) return null;
+      const from = snap(a), to = snap(b);
+      if(from < 0 || to < 0) return null;
+      const first = dist(a, g.pts[from]), last = dist(b, g.pts[to]);
+      if(first > 65 || last > 65 || first + last > maxMeters) return null;
+      const match = shortestTo(g, [from], v => v === to, maxMeters - first - last);
+      if(!match) return null;
+      let v = from, length = first + last;
+      const geom = [a, g.pts[from]];
+      for(const i of match.edges){
+        const edge = g.edges[i], forward = edge.a === v;
+        geom.push(...(forward ? edge.coords.slice(1) : edge.coords.slice(0, -1).reverse()));
+        v = forward ? edge.b : edge.a;
+        length += edge.len;
+      }
+      geom.push(b);
+      return { min:Math.round(walkMin(length, 0) * 10) / 10, km:length / 1000, geom, known:true, walk:true };
+    };
   }
 
   function sssp(g, src){
@@ -1401,6 +1431,6 @@
     return partition(g, start, n).map((part, k) => ({ idx:k, ...planPart(g, part, start) }));
   }
 
-  const api = { walkingTreeCache, reserveFor, censusFill, setTileStamp, setPace, denseEntry, pathRuns, emptyGap, tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, DIR_FROM, makeBoxCounter, walkRuns, DRIVE_MS, DRIVE_MIN_M, DRIVE_NET_M, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
+  const api = { walkingTransfers, walkingTreeCache, reserveFor, censusFill, setTileStamp, setPace, denseEntry, pathRuns, emptyGap, tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, DIR_FROM, makeBoxCounter, walkRuns, DRIVE_MS, DRIVE_MIN_M, DRIVE_NET_M, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
   if(typeof module !== 'undefined' && module.exports) module.exports = api; else root.Planner = api;
 })(typeof window !== 'undefined' ? window : globalThis);

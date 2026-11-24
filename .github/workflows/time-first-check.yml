@@ -27,6 +27,9 @@ on:
       - 'worker/src/drivezone.js'
       - 'worker/src/carroute.js'
       - 'test/drivefirst.mjs'
+      - 'test/drive-compact.mjs'
+      - 'test/drive-shift-limit.mjs'
+      - 'test/drive-layout-report.mjs'
       - 'test/leipheim-drive-snapshot.mjs'
       - 'test/fixtures/leipheim-drive-*'
       - 'worker/src/budgetplan.js'
@@ -72,6 +75,8 @@ jobs:
       - run: node test/circlearea.mjs
       - run: node test/flyercap.mjs
       - run: node test/drivefirst.mjs
+      - run: node test/drive-compact.mjs
+      - run: node test/drive-shift-limit.mjs
       - run: node test/leipheim-drive-snapshot.mjs   # real Leipheim data, saved snapshot, no network
         env:
           FLYERMAP_CHECK_REPLAN: 1
