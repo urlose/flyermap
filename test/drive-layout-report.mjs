@@ -11,13 +11,13 @@ globalThis.fetch = async (url, init) => { const x = snap.requests[keyOf(String(u
 const { createPlanService } = await import('../worker/src/plancore.js');
 const start = [48.460716, 10.212487], h = m => Math.round(m / 6) / 10;
 const { plan } = await createPlanService(null).plan({ start, flyers:1, n:2, days:+(process.env.DAYS || 3), hours:+(process.env.HPD || 9), quota:+(process.env.QUOTA || 2500), travel:'zones', split:'even', exact:true, must:[], zone:null, side:[], mainName:'Leipheim',
-  budget:{ strategy:'near-first', mode:'drive', tolerance:0, hours:32, driveMin:15, maxFlyers:10000 } }, () => {}, () => false);
+  budget:{ strategy:'near-first', mode:'drive', tolerance:0, hours:+(process.env.TEAM_H || 32), driveMin:15, maxFlyers:10000 } }, () => {}, () => false);
 const seg = (a, b) => 111320 * Math.hypot(b[0] - a[0], (b[1] - a[1]) * Math.cos(a[0] * Math.PI / 180));
 export function layoutStats(plan){
   const workers = plan.routes.map(r => {
     const days = (r.days || []).map((d, k) => { let walk = 0; for(let i = d.i0 + 1; i <= d.i1; i++) if(r.path[i][2] !== 1) walk += seg(r.path[i - 1], r.path[i]);
       const places = [...new Set(r.parts.filter(p => p.i1 > d.i0 && p.i0 < d.i1).map(p => p.place + ' ' + p.part))];
-      return { day:k + 1, flyers:d.mailboxes, hours:h(d.minutes), km_walk:Math.round(walk / 100) / 10, places }; });
+      return { day:k + 1, flyers:d.mailboxes, minutes:d.minutes, hours:h(d.minutes), km_walk:Math.round(walk / 100) / 10, places }; });
     // spread: mean distance of the worker's delivery points (boxes) to their centre, and the convex hull area (km²)
     const bx = r.boxes || []; const c = bx.reduce((s, b) => [s[0] + b[0] / bx.length, s[1] + b[1] / bx.length], [0, 0]);
     const spread = bx.length ? Math.round(bx.reduce((s, b) => s + seg(c, b), 0) / bx.length) : 0;
