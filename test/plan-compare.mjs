@@ -1,6 +1,7 @@
 // Plans one order on a SAVED snapshot of the real data (no network on replay) and prints metrics that compare two versions
 // of the planner on identical data: flyers, hours per person and day, rides, directions of the delivery area, duplicates, time.
-//   node test/plan-compare.mjs frankfurt --record [--snap file]   needs network (GitHub Actions): records every request
+//   node test/plan-compare.mjs frankfurt --record [--merge] [--snap file]   needs network (GitHub Actions): records every request;
+//       --merge keeps the requests (and the start) of an existing snapshot, so one snapshot serves several versions of the planner
 //   node test/plan-compare.mjs frankfurt [--snap file] [--out result.json]   replays offline
 //   node test/plan-compare.mjs leipheim  [--out result.json]      replays test/fixtures/leipheim-drive-2026-11-20.json.gz
 // The script only reads public map data (tiles, Overpass roads, census files, a geocoder) – no database, no orders, no workers.
@@ -29,6 +30,7 @@ const keyOf = (url, init) => (init && init.method || 'GET') + ' ' + url + ' ' + 
 const realFetch = globalThis.fetch, log = new Map();
 let start = sc.start || null;
 if(record){
+  if(opt('merge')){ try{ const old = JSON.parse(gunzipSync(readFileSync(snapFile)).toString()); for(const [k, v] of Object.entries(old.requests)) log.set(k, v); start = start || old.start; }catch{ /* no snapshot yet */ } }
   globalThis.fetch = async (url, init) => {
     const k = keyOf(String(url), init);
     try{ const r = await realFetch(url, init), buf = Buffer.from(await r.arrayBuffer());

@@ -2,6 +2,30 @@
 // Street edges are ranked by shortest walking-network distance from the start,
 // rather than mailbox density. A remote dead-end with almost no households can
 // be skipped, but normal residential streets are not scored by density.
+// Direction balance inside one access ring (24.11.2026). Streets are cut off at a limit of hours / flyers, so the LAST ring is only
+// partly taken. Taking its streets in plain data order (ties of the distance) can fill it from one side only. Rings stay strictly
+// nearer first; inside a ring the compass sector with the fewest mailboxes taken so far goes next (nearest street of that sector).
+// A ring that is taken completely comes out the same set; only the order inside it changes. Pure, deterministic, stable.
+export const RING_M = 200, SECTORS = 8;
+export function sectorOf(start, p, sectors = SECTORS){
+  const r = Math.PI / 180, dy = p[0] - start[0], dx = (p[1] - start[1]) * Math.cos(start[0] * r);
+  const a = (Math.atan2(dx, dy) / r + 360) % 360, w = 360 / sectors;
+  return Math.floor(((a + w / 2) % 360) / w);
+}
+export function directionOrder(items, { ring, sector, weight, sectors = SECTORS }){
+  const out = [], served = new Array(sectors).fill(0);
+  for(let i = 0, j; i < items.length; i = j){
+    const r = ring(items[i]), q = Array.from({ length:sectors }, () => []), head = new Array(sectors).fill(0);
+    for(j = i; j < items.length && ring(items[j]) === r; j++) q[sector(items[j])].push(items[j]);
+    for(let left = j - i; left > 0; left--){
+      let b = -1;
+      for(let k = 0; k < sectors; k++) if(head[k] < q[k].length && (b < 0 || served[k] < served[b])) b = k;
+      const it = q[b][head[b]++]; served[b] += Math.max(0, +weight(it) || 0); out.push(it);
+    }
+  }
+  return out;
+}
+
 export function outwardStreetOrder(g, start, { isolatedGapM = 850, sparsePerKm = 3 } = {}){
   if(!g || !Array.isArray(g.pts) || !Array.isArray(g.edges) || !Array.isArray(g.adj)) throw new Error('Invalid street graph');
   const n = g.pts.length, dist = new Float64Array(n).fill(Infinity), parent = new Int32Array(n).fill(-1);
@@ -51,7 +75,10 @@ export function outwardStreetOrder(g, start, { isolatedGapM = 850, sparsePerKm =
     streets.push({ i, distance, mailboxes:mb, length_m:e.len });
   });
   streets.sort((a,b)=>a.distance-b.distance||a.i-b.i);
-  return { root, streets, unreachable, skipped };
+  // equal access time → different directions: rings of RING_M walking metres, sectors interleaved inside a ring (see directionOrder)
+  const mid = e => { const bx = e.boxes, c = bx && bx.length ? bx[bx.length >> 1] : (e.coords?.length ? e.coords[e.coords.length >> 1] : g.pts[e.a]); return c; };
+  const ordered = directionOrder(streets, { ring:s => Math.floor(s.distance / RING_M), sector:s => sectorOf(start, mid(g.edges[s.i])), weight:s => s.mailboxes });
+  return { root, streets:ordered, unreachable, skipped };
 }
 
 // Full geometry distinguishes parallel curves and loops with the same endpoints.

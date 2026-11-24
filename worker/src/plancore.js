@@ -2,7 +2,7 @@
 // Runs inside a Web Worker (planworker.js) so the screen never freezes; the same code is the fallback on the main thread.
 // The street graph stays here between calls: changing flyers / workers / hours only re-plans, it does not reload the map.
 import Planner from '../../admin/planner.js';
-import { outwardStreetOrder, streetGeometryKey } from './nearfirst.js';
+import { outwardStreetOrder, streetGeometryKey, directionOrder, sectorOf } from './nearfirst.js';
 import { radiusKm, insideCircle, circlePolygon, clipDeliveryGraph } from './circlearea.js';
 import { capPlan, clipToKeep, droppedStreets, plannedBoxes, boxKey } from './flyercap.js';
 import { censusSource, placeMask, censusPlaces, cellOf, unlaea } from './zensus.js';
@@ -817,10 +817,13 @@ export function createPlanService(cache){
             let m=minOf(mid); if(m==null&&a.manual)m=estimate(start,mid).min;
             if(m==null)continue;
             if(limMin!=null&&m>limMin)continue;   // the same minute limit for places added by hand
-            items.push({ai,i:q.i,min:m,ring:Math.max(1,Math.ceil(m)),mb:q.mailboxes,dist:q.distance});
+            items.push({ai,i:q.i,min:m,ring:Math.max(1,Math.ceil(m)),mb:q.mailboxes,dist:q.distance,p:mid});
           }
         });
         items.sort((x,y)=>x.ring-y.ring||x.min-y.min||x.dist-y.dist);
+        // 24.11.2026: the last ring is taken only in part – inside a drive-minute ring the directions from the start take turns
+        // (nearer rings stay first, a complete ring is the same set)
+        items.splice(0,items.length,...directionOrder(items,{ring:it=>it.ring,sector:it=>sectorOf(start,it.p),weight:it=>it.mb}));
         return {areas,items,skippedMb,failed};
       }
       const layout=budget._driveLayout||await prepareLayout();
