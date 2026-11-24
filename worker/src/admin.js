@@ -1505,7 +1505,7 @@ ${d.budget.on && d.budget.strategy === 'near-first' ? '' : `      <label class="
 
       ${p && d.mainAll ? `<div class="hint">${esc(t('mainAllNote', { city:mainCity(), mb:fmtN(Math.round(p.mailboxes)) }))}</div>`
         : p && p.eco && !d.exact ? `<div class="hint">${esc(t('ecoNote', { used:fmtN(Math.round(p.mailboxes)), asked:fmtN(d.flyers) }))} <button class="link" id="cExact">${esc(t('exactBtn', { f:fmtN(d.flyers) }))}</button></div>`
-        : p && d.exact && !tkE && !p.budget ? `<p class="small muted" style="margin:6px 0 0">${esc(t('exactOn', { f:fmtN(d.flyers) }))}${d.travel !== 'zones' ? ` <button class="link" id="cEco">${esc(t('ecoBtn'))}</button>` : ''}</p>` : ''}
+        : p && d.exact && !tkE && !p.budget ? `<p class="small muted" style="margin:6px 0 0">${esc(t('exactOn', { f:fmtN(d.flyers) }))}</p>` : ''}
       ${d.budget.on && d.budget.strategy === 'near-first' ? '' : covBlock()}
       ${p && oneDay ? `<div class="hint">${esc(t('oneDayHint', { h:fmtHm(totMin) }))} <button class="link" id="cOneDay">${esc(t('applySug'))}</button></div>` : p && d.sug && d.sug !== d.n ? `<div class="hint">${esc(t('sugWorkers', { n:d.sug, d:d.days }))} <button class="link" id="cSug">${esc(t('applySug'))}</button></div>` : ''}
       ${p && p.cores && p.cores.length ? `<div class="hint">${esc(t('coresSum', { n:p.cores.length, mb:fmtN(p.mailboxes) }))}<br><span class="small">${esc(p.cores.map(c => c.name + ' ' + fmtN(c.mb)).join(' · '))}</span></div>` : ''}
@@ -1632,7 +1632,7 @@ ${d.budget.on && d.budget.strategy === 'near-first' ? '' : `      <label class="
     if($('#cCores')) $('#cCores').onchange = e => { saved = keep(); d.cores = e.target.checked; recompute(); };
     if($('#cTogether')) $('#cTogether').onchange = e => { saved = keep(); d.together = e.target.checked; recompute(); };
     if($('#cExact')) $('#cExact').onclick = () => { saved = keep(); d.exact = true; recompute(); };
-    if($('#cEco')) $('#cEco').onclick = () => { saved = keep(); d.exact = false; recompute(); };
+    // "Effizienter planen" removed (24.11.2026): for a fixed number of flyers the planner ignores it – the same plan again, ~30 s for nothing
     // whole main town: its border becomes the distribution area and every mailbox in it gets a flyer
     if($('#cMainAll')) $('#cMainAll').onclick = async () => {
       saved = keep();
@@ -1919,6 +1919,7 @@ async function viewTask(id){
       <div class="mapbox" id="tMap" style="margin-top:0"></div>
       <div class="rinfo-row"><span>${statusPill(...taskState(tk))}</span><button class="btn ghost small" id="tBig">${ICONS.expand}${esc(t('rvBig'))}</button></div>
       <h2 class="sec" data-short="${esc(t('secRoutes'))}">${esc(t('routesOf'))}</h2>
+      ${(plans || []).length > 1 ? `<p class="wz-total"><span>${esc(t('planTeamHours'))}</span><b>≈ ${esc(fmtHm((plans || []).reduce((a, p) => a + (p.minutes || 0), 0)))} ${esc(t('h'))} · ${esc(t('routesN', { n:plans.length }))}</b></p>` : ''}
       ${(() => { // joined orders: every colour appears several times – one person for all routes of a colour
         const cols = []; (plans || []).forEach(p => { if(p.color && !cols.includes(p.color)) cols.push(p.color); });
         if(!plans || cols.length === plans.length) return '';
