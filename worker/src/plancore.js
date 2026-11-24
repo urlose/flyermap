@@ -6,6 +6,7 @@ import { outwardStreetOrder, streetGeometryKey } from './nearfirst.js';
 import { radiusKm, insideCircle, circlePolygon, clipDeliveryGraph } from './circlearea.js';
 import { capPlan, clipToKeep, droppedStreets, plannedBoxes, boxKey } from './flyercap.js';
 import { censusSource, placeMask, censusPlaces, cellOf, unlaea } from './zensus.js';
+const BIG_AREA_EDGES = +(globalThis.process?.env?.BIG_AREA_EDGES) || 60000;   // walking maps bigger than this (a big city) are cut around the chosen streets for each route
 import { driveZone, driveMin, minutesTo, zoneLoadM, zoneRides, ringPolygon } from './drivezone.js';
 import { estimate, bestOrder } from './carroute.js';
 import { censusAreaIndex, splitWalkingAreas } from './driveareas.js';
@@ -682,8 +683,17 @@ export function createPlanService(cache){
       const memo=budget._memo||new Map();   // shared by the extra passes (same areas, same streets): routes of an area are planned once
       const walkTree = budget._walkTree || Planner.walkingTreeCache();
       const areaPlan=(ai,ids,workers)=>{ const k=ai+':'+workers+':'+ids.join(','); if(memo.has(k))return memo.get(k);
-        const a=areas[ai], set=new Set(ids), region={...a.g,zoned:true,edges:a.g.edges.map((e,i)=>set.has(i)?e:{...e,mb:0,boxes:[]})}, max=ids.reduce((s,i)=>s+(+a.g.edges[i].mb||0),0);
-        const p=Planner.planFlyers(region,a.st,max+1,workers,{days:maxDays,hoursPerDay:H,selectedEdgeIds:ids,walkTree}); const routes=p.routes.filter(r=>r.path?.length>1);
+        const a=areas[ai], set=new Set(ids), max=ids.reduce((s,i)=>s+(+a.g.edges[i].mb||0),0);
+        // big city (24.11.2026, Frankfurt): route only on the part of the map around the chosen streets (+1.5 km), not the whole 10 km
+        let keepE=null;
+        if(a.g.edges.length>BIG_AREA_EDGES){ let la0=90,la1=-90,lo0=180,lo1=-180; const P=a.g.pts;
+          for(const i of ids){ const e=a.g.edges[i]; for(const q of [P[e.a],P[e.b]]){ if(!q)continue; la0=Math.min(la0,q[0]);la1=Math.max(la1,q[0]);lo0=Math.min(lo0,q[1]);lo1=Math.max(lo1,q[1]); } }
+          const dLa=1500/111320, dLo=1500/(111320*Math.cos(((la0+la1)/2)*Math.PI/180)), inB=q=>q&&q[0]>=la0-dLa&&q[0]<=la1+dLa&&q[1]>=lo0-dLo&&q[1]<=lo1+dLo;
+          if(la0<=la1){ keepE=new Set(); a.g.edges.forEach((e,i)=>{ if(set.has(i)||(inB(P[e.a])&&inB(P[e.b])))keepE.add(i); }); } }
+        const region={...a.g,zoned:true,edges:keepE?a.g.edges.flatMap((e,i)=>!keepE.has(i)?[]:[set.has(i)?e:{...e,mb:0,boxes:[]}]):a.g.edges.map((e,i)=>set.has(i)?e:{...e,mb:0,boxes:[]})};
+        if(keepE){ const adj=a.g.pts.map(()=>[]); region.edges.forEach((e,i)=>{ adj[e.a].push({e:i,to:e.b}); if(e.a!==e.b)adj[e.b].push({e:i,to:e.a}); }); region.adj=adj; }
+        const selIds=keepE?(()=>{ const m=new Map(); let j=0; a.g.edges.forEach((e,i)=>{ if(keepE.has(i))m.set(i,j++); }); return ids.map(i=>m.get(i)); })():ids;
+        const p=Planner.planFlyers(region,a.st,max+1,workers,{days:maxDays,hoursPerDay:H,selectedEdgeIds:selIds,walkTree:keepE?undefined:walkTree}); const routes=p.routes.filter(r=>r.path?.length>1);
         const res={routes,minutes:routes.reduce((s,r)=>s+(r.minutes||0),0),mb:routes.reduce((s,r)=>s+(r.mailboxes||0),0)}; memo.set(k,res); return res; };
       const rideTo=a=>manualRide??(minOf(a.st)!=null?Math.round(minOf(a.st)+2):estimate(start,a.st).min);
       const evalPrefix=(c,extra=[])=>{
@@ -696,8 +706,14 @@ export function createPlanService(cache){
       const fits=e=>e.total*calib<=limH+.01&&e.mb<=limF+.01;
       const maxC=Math.min(items.length,budget._maxItems??items.length);   // after a re-plan with longer real rides: fewer streets
       stage('calculating');
-      let lo=0,hi=maxC,best=evalPrefix(0);
-      if(maxC&&fits(evalPrefix(maxC)))best=evalPrefix(maxC);
+      // 24.11.2026 (Frankfurt): planning a prefix is expensive (a whole city in the zone = minutes per try). A cheap lower bound
+      // first – every street walked once (with slack: routes may drop a street) + 5 s per mailbox – rules out prefixes that cannot fit,
+      // so the search only plans prefixes near the answer. The result is the same, only without the hopeless tries.
+      let maxFit=maxC;
+      { let len=0,mbs=0; for(let c=0;c<maxC;c++){ const it=items[c]; len+=+areas[it.ai].g.edges[it.i].len||0; mbs+=+it.mb||0;
+          if((mbs*.9>limF+.01)||Planner.routeMinutes(len*.6,mbs*.9)*calib>limH+.01){ maxFit=c; break; } } }
+      let lo=0,hi=maxFit,best=evalPrefix(0);
+      if(maxFit===maxC&&maxC&&fits(evalPrefix(maxC)))best=evalPrefix(maxC);
       else for(let it=0;it<18&&lo<hi;it++){ const mid=Math.ceil((lo+hi)/2), e=evalPrefix(mid); if(fits(e)){best=e;lo=mid;}else hi=mid-1; }
       // the rest of the budget by nearness: later streets that still fit are added one by one (Cem: fill until it is really used up)
       const firstOut=best.c;
