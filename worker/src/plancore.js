@@ -6,6 +6,11 @@ import { outwardStreetOrder, streetGeometryKey } from './nearfirst.js';
 import { radiusKm, insideCircle, circlePolygon, clipDeliveryGraph } from './circlearea.js';
 import { capPlan, clipToKeep, droppedStreets, plannedBoxes, boxKey } from './flyercap.js';
 import { censusSource, placeMask, censusPlaces, cellOf, unlaea } from './zensus.js';
+const SPREAD_MIN = 10;   // drive-time planner: minutes counted per km a piece lies from the middle of its worker's pieces (compact areas)
+const BOX_W = 25;   // compact split: one mailbox weighs like 25 m of street (≈ 5 s + walking)
+const DAY_WASTE = .35;   // a day may end up to 35 % early at a place border (instead of cutting the next place)
+const SKEW_MIN = 8;   // minutes per % of unevenness between the workers (above 8 %)
+const DAY_PART = .95;   // a place longer than this share of a shift is cut into day-sized parts
 const BIG_AREA_EDGES = +(globalThis.process?.env?.BIG_AREA_EDGES) || 60000;   // walking maps bigger than this (a big city) are cut around the chosen streets for each route
 import { driveZone, driveMin, minutesTo, zoneLoadM, zoneRides, ringPolygon } from './drivezone.js';
 import { estimate, bestOrder } from './carroute.js';
@@ -750,13 +755,20 @@ export function createPlanService(cache){
         const actual=bins.reduce((s,b)=>s+b.exactMinutes,0);
         const personOver=bins.reduce((s,b)=>s+Math.max(0,Math.max(b.exactMinutes,b.minutes)-personCap),0);
         const teamOver=Math.max(0,Math.max(actual,total)-limH);
-        return {total,personOver,teamOver,over:personOver+teamOver,skew:max ? (max-Math.min(...totals))/max : 0};
+        // 24.11.2026: compact areas – every piece counts its distance to the middle of its worker's pieces (SPREAD_MIN per km),
+        // so neighbouring pieces end up with the same person (only after hours and balance)
+        let spread=0;
+        for(const b of bins){ const its=b.its||[]; if(its.length<2)continue; let w=0,la=0,lo=0;
+          for(const it of its){ const m=Math.max(1,it.r.minutes||0); w+=m; la+=it.c[0]*m; lo+=it.c[1]*m; }
+          const ctr=[la/w,lo/w]; for(const it of its)spread+=segLen(ctr,it.c)/1000*SPREAD_MIN; }
+        return {total,personOver,teamOver,over:personOver+teamOver,skew:max ? (max-Math.min(...totals))/max : 0,spread};
       };
       // Explore a balanced allocation even if it would need a small prefix
       // trim. The final check still enforces both ceilings without a margin.
       const balanceSlack=Math.min(20,limH*.015);
-      const rank=({total,personOver,teamOver,skew})=>[personOver,Math.max(0,teamOver-balanceSlack),
-        Math.max(0,skew-.15),teamOver,total,skew];
+      // hours first; then one cost: minutes (with rides) + spread of the areas + unevenness (SKEW_MIN per 1 % above 8 %)
+      const rank=({total,personOver,teamOver,skew,spread})=>[personOver,Math.max(0,teamOver-balanceSlack),Math.max(0,skew-.25),
+        teamOver,total+(spread||0)+Math.max(0,skew-.08)*100*SKEW_MIN,skew];
       const better=(a,b)=>{
         const x=rank(a),y=rank(b),k=x.findIndex((v,i)=>Math.abs(v-y[i])>1e-8);
         return k>=0&&x[k]<y[k];
@@ -764,7 +776,10 @@ export function createPlanService(cache){
       const counts=best.res.map(r=>{
         const a=areas[r.ai], extra=best.res.length>1&&a.isMain?N*2:1;
         const needed=Math.ceil((r.minutes+(a.isMain?0:rideTo(a)))/Math.max(1,personCap*.9));
-        return Math.min(r.ids.length,Math.max(r.routes.length,extra,N>1?Math.min(N,needed):1));
+        // 24.11.2026: a place bigger than a shift is cut into day-sized parts (compact, one per shift) – they can go to the same
+        // person on consecutive days or, if the hours need it, to two people
+        const dayParts=Math.ceil(r.minutes/Math.max(60,H*60*DAY_PART));
+        return Math.min(r.ids.length,Math.max(r.routes.length,extra,dayParts,N>1?Math.min(N,needed):1));
       });
       function assign(counts){
         const planned=best.res.map((r,i)=>{
@@ -780,7 +795,7 @@ export function createPlanService(cache){
         const all=planned.flatMap(pl=>pl.routes.map((r,i)=>({r,name:pl.name,part:i+1,ai:pl.ai,placeId:pl.placeId,
           cost:r.minutes+(pl.isMain?0:rideTo(pl)),a:P(r.path[0]),b:P(r.path.at(-1))})));
         all.sort((a,b)=>b.cost-a.cost);
-        all.forEach((it,id)=>{it.id=id;});
+        all.forEach((it,id)=>{ it.id=id; const bx=it.r.boxes?.length?it.r.boxes:it.r.path; let la=0,lo=0; for(const q of bx){ la+=+q[0]; lo+=+q[1]; } it.c=[la/bx.length,lo/bx.length]; });
         const matrix=zoneRides(roads,ends,{shortWalk:false,alternateAccess:true});
         const transfer=(from,to)=>{
           const i=from.b,j=to.a,d=segLen(ends[i],ends[j]);
@@ -810,7 +825,18 @@ export function createPlanService(cache){
           b.items.push(it); b.minutes+=it.cost;
         }
         let bins=estimated.map(b=>tour(b.items)), result=score(bins);
-        if(N>1&&(result.over||result.skew>.15)){
+
+        // seeds by direction from the start (pieces sorted by angle, cut into N arcs): neighbouring pieces together
+        if(N>1&&all.length>N){
+          const ang=it=>Math.atan2(it.c[0]-start[0],(it.c[1]-start[1])*Math.cos(start[0]*Math.PI/180));
+          const ring=all.slice().sort((x,y)=>ang(x)-ang(y)), K=ring.length;
+          const cand=[];
+          if(N===2){ for(let i=0;i<K;i++)for(let j=i+1;j<K;j++){ const A=[],B=[]; ring.forEach((it,k)=>(k>=i&&k<j?A:B).push(it)); cand.push([A,B]); } }
+          else for(let off=0;off<K;off++){ const rot=[...ring.slice(off),...ring.slice(0,off)], tot=rot.reduce((t,it)=>t+it.cost,0), g=Array.from({length:N},()=>[]); let acc=0;
+            for(const it of rot){ const k=Math.min(N-1,Math.floor(acc/tot*N+1e-9)); g[k].push(it); acc+=it.cost; } cand.push(g); }
+          for(const g of cand.slice(0,400)){ if(g.some(x=>!x.length))continue; const trial=g.map(x=>tour(x)), sc=score(trial); if(better(sc,result)){ bins=trial; result=sc; } }
+        }
+        if(N>1){
           // Try moving or swapping complete tours before splitting another
           // area. Bound the search for large orders.
           for(let pass=0;pass<4;pass++){
@@ -831,13 +857,83 @@ export function createPlanService(cache){
             }
             if(next===bins)break;
             bins=next; result=nextScore;
-            if(!result.over&&result.skew<=.15)break;
           }
         }
         return {bins,planned,...result};
       }
+      // 24.11.2026: compact areas by direction. The planned places, sorted by their direction from the start, are dealt out
+      // in turn; the place where a person's share is full is cut along the same direction (its streets by angle), so every
+      // person gets one connected sector – neighbouring streets stay together, a place is only shared at the border.
+      function sweepAssign(){
+        if(N<2)return null;
+        const cosS=Math.cos(start[0]*Math.PI/180), angOf=q=>Math.atan2(q[0]-start[0],(q[1]-start[1])*cosS);
+        const mid=(g,i)=>{ const e=g.edges[i], bx=e.boxes||[]; return bx.length?bx[Math.floor(bx.length/2)]:(e.coords?.[Math.floor(e.coords.length/2)]||g.pts[e.a]); };
+        const units=best.res.map(r=>{ const a=areas[r.ai], ids=r.ids.map(i=>({i,q:mid(a.g,i),mb:+a.g.edges[i].mb||0,len:+a.g.edges[i].len||0}));
+          let la=0,lo=0,w=0; for(const x of ids){ const k=Math.max(1,x.mb); la+=x.q[0]*k; lo+=x.q[1]*k; w+=k; }
+          const c=[la/w,lo/w]; return {ai:r.ai,a,ids,c,ang:angOf(c),minutes:r.minutes+(a.isMain?0:rideTo(a))}; });
+        const total=units.reduce((t,u)=>t+u.minutes,0);
+        if(!(total>0))return null;
+        // unwrap the angles at the largest empty gap, so a sector never wraps around a place
+        units.sort((x,y)=>x.ang-y.ang);
+        let gi=0,gap=-1; units.forEach((u,k)=>{ const nx=k+1<units.length?units[k+1].ang:units[0].ang+2*Math.PI; if(nx-u.ang>gap){gap=nx-u.ang;gi=k+1;} });
+        const ring=[...units.slice(gi),...units.slice(0,gi)];
+        const weight=x=>x.mb*BOX_W+x.len;   // share of a street in the place's minutes (mailboxes + length)
+        const build=fr=>{   // fr: share of the total for persons 1..N-1 (cuts), returns groups of {ai, ids}
+          const groups=Array.from({length:N},()=>[]); let w=0, acc=0; const target=k=>total*fr[k];
+          for(const u of ring){
+            let rest=u.ids.slice(), um=u.minutes;
+            while(rest.length){
+              if(w>=N-1||acc+um<=target(w)+.01){ groups[w].push({ai:u.ai,ids:rest.map(x=>x.i)}); acc+=um; rest=[]; break; }
+              // cut this place: its streets by direction from the start, the first part fills person w
+              const need=target(w)-acc, sum=rest.reduce((t,x)=>t+weight(x),0);
+              const byAng=rest.slice().sort((x,y)=>angOf(x.q)-angOf(y.q)); let take=0,cut=0;
+              while(cut<byAng.length&&(take+weight(byAng[cut]))/sum*um<=need){ take+=weight(byAng[cut]); cut++; }
+              if(cut>0){ groups[w].push({ai:u.ai,ids:byAng.slice(0,cut).map(x=>x.i)}); acc+=take/sum*um; um-=take/sum*um; rest=byAng.slice(cut); }
+              w++;
+            }
+          }
+          return groups;
+        };
+        // pieces of a group: one route per place part, planned like any place
+        const toPlanned=groups=>{
+          const byArea=new Map(); const pieces=groups.map((g,w)=>g.map(x=>{ const a=areas[x.ai], r=areaPlan(x.ai,x.ids,1);
+            const pl=byArea.get(x.ai)||{...a,ai:x.ai,mb:0,minutes:0,routes:[]}; pl.mb+=r.mb; pl.minutes+=r.minutes; pl.routes.push(...r.routes); byArea.set(x.ai,pl);
+            return {w,ai:x.ai,a,r}; }));
+          return {pieces,planned:[...byArea.values()].sort((a,b)=>Number(!!b.isMain)-Number(!!a.isMain))};
+        };
+        const evalCuts=fr=>{
+          const {pieces,planned}=toPlanned(build(fr));
+          const ends=[start], ix=new Map([[keyOf(start),0]]);
+          const P=q=>{ const k=keyOf(q); if(!ix.has(k)){ ix.set(k,ends.length); ends.push([q[0],q[1]]); } return ix.get(k); };
+          const parts=new Map(); let id=0;
+          const its=pieces.map(list=>list.flatMap(({ai,a,r})=>r.routes.map(rt=>{ const n=(parts.get(ai)||0)+1; parts.set(ai,n);
+            const bx=rt.boxes?.length?rt.boxes:rt.path; let la=0,lo=0; for(const q of bx){ la+=+q[0]; lo+=+q[1]; }
+            return {r:rt,name:a.name,part:n,ai,placeId:a.placeId,cost:rt.minutes+(a.isMain?0:rideTo(a)),a:P(rt.path[0]),b:P(rt.path.at(-1)),id:id++,c:[la/bx.length,lo/bx.length]}; })));
+          const matrix=zoneRides(roads,ends,{shortWalk:false,alternateAccess:true});
+          const transfer=(from,to)=>{ const i=from.b,j=to.a,d=segLen(ends[i],ends[j]); if(i===j||d<=30)return null;
+            if(from.placeId===to.placeId&&d<400)return {min:Math.round(d/(5000/60)*10)/10,km:d/1000,known:true,walk:true};
+            const r=matrix[i][j]; return manualRide!=null?{...r,km:r.km,min:manualRide,known:true,manual:true}:r; };
+          const bins=its.map(list=>{
+            const order=bestOrder(list.length,(i,j)=>transfer(i<0?origin:list[i],list[j])?.min||0), o=order.map(i=>list[i]), jumps=o.map((it,i)=>transfer(i?o[i-1]:origin,it));
+            const walk=o.reduce((t,it)=>t+it.r.minutes,0)+jumps.reduce((t,j)=>t+(j?.walk?j.min:0),0), ride=jumps.reduce((t,j)=>t+(j&&!j.walk?j.min:0),0);
+            const minutes=Math.round(walk+ride), rm=Math.round(ride); return {its:o,jumps,minutes,exactMinutes:walk+ride,walk:minutes-rm,ride:rm}; });
+          return {bins,planned,...score(bins),fr};
+        };
+        // even shares first; then the cuts are moved by what the real routes cost (a few corrections)
+        let fr=Array.from({length:N-1},(_,k)=>(k+1)/N), bestS=null;
+        for(let it=0;it<6;it++){
+          const e=evalCuts(fr); if(!bestS||better(e,bestS))bestS=e;
+          const m=e.bins.map(b=>b.minutes), tot=m.reduce((t,v)=>t+v,0); if(!(tot>0))break;
+          const dev=Math.max(...m.map(v=>Math.abs(v-tot/N)));
+          if(dev<=Math.max(5,tot*.005)&&!e.over)break;
+          // person k's share is too big by (m[k] - avg): move cut k back by that share (cumulative)
+          let cum=0; fr=fr.map((f,k)=>{ cum+=m[k]-tot/N; return Math.min(.98,Math.max(.02,f-cum/tot*.9)); });
+        }
+        return bestS;
+      }
       stage('rides');
       let assigned=assign(counts);
+      if(N>1){ const sw=sweepAssign(); if(sw&&better(sw,assigned))assigned=sw; }
       for(let attempt=0;attempt<4&&N>1&&(assigned.over||assigned.skew>.15);attempt++){
         const heaviest=[...assigned.bins].sort((a,b)=>b.minutes-a.minutes)[0];
         const part=heaviest.its.slice().sort((a,b)=>b.r.minutes-a.r.minutes).find(it=>{
@@ -854,7 +950,16 @@ export function createPlanService(cache){
       for(const [w,bin] of bins.entries()){
         const {its,jumps}=bin;
         if(!its.length)continue;
-        const line=buildLine(its.map(x=>({r:x.r,name:x.name||'·'})),H,(_a,_b,i)=>jumps[i]?.min||0,undefined,start,false);
+        const pcs=its.map(x=>({r:x.r,name:x.name||'·'})), rideOf=(_a,_b,i)=>jumps[i]?.min||0;
+        // 24.11.2026: days end at the border of a place part when it is close (a part that fits into one day starts a new day
+        // instead of being cut), as long as the shifts are enough; otherwise the days are cut where the hours are full
+        let line=buildLine(pcs,H,rideOf,undefined,start,false);
+        { const lim=H*60, br=new Set(); let t=0;
+          its.forEach((x,i)=>{ const c=(jumps[i]?.min||0)+(x.r.minutes||0);
+            if(t>0&&t+c>lim+.5&&c<=lim&&lim-t<=lim*DAY_WASTE){ br.add(i); t=0; }
+            t+=c; while(t>lim+.5)t-=lim; });
+          if(br.size){ const alt=buildLine(pcs,H,rideOf,br,start,true);
+            if(alt.days.length<=Math.max(maxDays,line.days.length)&&alt.days.every(d=>d.minutes<=lim+15))line=alt; } }
         let off=segLen(start,its[0].r.path[0])>30?1:0;
         const parts=its.map(x=>{
           const z={place:x.name,part:x.part,i0:off,i1:off+x.r.path.length-1,mailboxes:Math.round(x.r.mailboxes||0),minutes:Math.round(x.r.minutes||0)};
@@ -891,6 +996,7 @@ export function createPlanService(cache){
         // the real routes say no: keep this plan and report what the check found
         topup={tried:(budget._topup||0)+1,street:nextCost,real_minutes:again&&again.plan?again.plan.budget.actual_minutes:null,real_flyers:again&&again.plan?again.plan.mailboxes:null,fits:false};
       }
+      else if((budget._topup||0)>=3&&nextCost&&nextCost.add_min<=limH-actual)topup={tried:budget._topup,street:nextCost,stopped:'passes',fits:false};   // after 3 extra passes: stop (time)
       const per_worker=Array.from({length:N},(_,w)=>routes.filter(r=>r.w===w).reduce((s,r)=>s+r.minutes,0));
       const villages=areas.filter(a=>a.village&&planned.some(p=>p.name===a.name)).map(a=>({name:a.name,lat:a.st[0],lng:a.st[1],cid:a.cand.cid,households:a.cand.households,min:Math.round(a.cand.min)}));
       const plan={routes,mailboxes,zone:[],zones:true,merged:true,per_worker,
