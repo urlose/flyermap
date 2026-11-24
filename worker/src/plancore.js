@@ -572,6 +572,8 @@ export function createPlanService(cache){
     // the admin). Three independent, optional maxima: drive minutes, person-hours incl. rides, flyers; the first one reached
     // stops the growth, the last ring is filled by nearness up to it. Rides between work areas: car on the roads, every ride once.
     async driveFirstCore({ start, n, days, hours, budget, side = [], must = [], zone = null, mainName = '' }, stage, stale){
+      // per-calculation state of the sector search (shared by its own extra passes, never by a new calculation of the caller)
+      if(!budget._pass)budget={...budget,_pass:true,_sweep:{}};
       const N=Math.max(1,Math.round(n||1)), H=hours||7, maxDays=Math.max(1,Math.min(14,days||1)), personCap=H*60*maxDays, teamCap=N*personCap;
       const askH=+budget.hours>0?+budget.hours*60:null, limH=askH!=null?Math.min(askH,teamCap):teamCap;
       const limF=+budget.maxFlyers>0?Math.round(+budget.maxFlyers):Infinity;
@@ -914,7 +916,7 @@ export function createPlanService(cache){
           return {bins,planned,...score(bins),fr};
         };
         // even shares first; then the cuts are moved by what the real routes cost (a few corrections)
-        const st=budget._sweep||(budget._sweep={});   // shared by the extra passes (shrink, top-up): their cuts are nearly the same
+        const st=budget._sweep||{};   // shared by the extra passes (shrink, top-up): their cuts are nearly the same
         let fr=st.fr&&st.fr.length===N-1?st.fr.slice():Array.from({length:N-1},(_,k)=>(k+1)/N), bestS=null;
         for(let it=0;it<(st.fr?2:4);it++){
           const e=evalCuts(fr); if(!bestS||better(e,bestS))bestS=e;
