@@ -52,7 +52,7 @@ T.en = {
   demoWorking:'Creating… (calculating routes)', demoCreated:'Done: 6 team members and one order with routes.', demoExists:'Test data already exists.', demoNeed:'Create the test data first.',
   demoProgress:'On the way: {p} %', demoDone:'Demo finished.', demoCleaned:'Test data deleted.',
   flyers:'Flyers', mailboxes:'Mailboxes', loadingArea:'Loading streets and buildings…', loadingMore:'Extending the area…', calculating:'Calculating routes…',
-  planSum:'≈ {mb} mailboxes · {km} walk · ≈ {h} h in total', areaSmall:'There are only ≈ {mb} mailboxes around.',
+  planSum:'≈ {mb} mailboxes · {km} walk', planTeamHours:'Total team working time', areaSmall:'There are only ≈ {mb} mailboxes around.',
   tooBig:'Too big: longest route ≈ {h} h, available {lim} h ({d} days).', reduceTo:'Reduce to {f} flyers', moreWorkers:'Or assign more people.', fitsOk:'Fits into {d} days.',
   startDate:'Start', hoursDay:'Working day, net (h)', quota:'Quota: metres per 30 min', flyersCount:'Number of flyers', routeLine:'{km} · ≈ {h} h · {mb} mailboxes', daysN:'{n} day(s)',
   startLoc:'Start point', dist2:'Distance', mbShort:'boxes', assigned:'Order assigned',

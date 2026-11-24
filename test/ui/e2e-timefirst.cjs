@@ -120,8 +120,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
         if(!seen.has(this)){
           seen.add(this);
           this.addEventListener('message', ({data}) => {
-            const b = data?.result?.plan?.budget;
+            const plan = data?.result?.plan;
+            const b = plan?.budget;
             if(b?.drive) window.__limits.push({ team:b.drive.team_cap_minutes, max:b.drive.max_minutes, actual:b.actual_minutes });
+            if(plan && !b) window.__fixedMinutes = plan.routes.reduce((sum, route) => sum + route.minutes, 0);
           });
         }
         return post.call(this, message, ...rest);
@@ -214,12 +216,38 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(name+': result says complete up to N min and what stopped it', /Vollständig bis \d+ Min\./.test(df) && /Gestoppt durch|Alle erreichbaren/.test(df), df);
     const ht=await pg.evaluate(()=>[...document.querySelectorAll('#hrsTable tr')].map(r=>r.innerText.replace(/\s+/g,' ')));
     ok(name+': hours per person and team: handing out + walking, rides, total; maximum 6 h kept', ht.length>=3 && /Team/.test(ht.at(-1)) && /Höchstens 6:00|Höchstens 6 Std|Höchstens/.test(await pg.evaluate(()=>document.getElementById('hrsTable').nextElementSibling.innerText)), JSON.stringify(ht));
+    ok(name+': total above the route form matches the driving plan', await pg.evaluate(() =>
+      document.querySelector('#cPlanHours:not([hidden]) b')?.textContent === '≈ ' + document.querySelector('#hrsSum').textContent + ' Std.'));
     await shot('timefirst-plan');
+
+    await pg.locator('[data-step="2"]').click();
+    await pg.locator('#cBudget').uncheck();
+    await pg.locator('[data-step="3"]').click();
+    const fixedReady = await until(() => window.__fixedMinutes > 0 && document.getElementById('cFly') &&
+      document.querySelector('#cPlanHours:not([hidden])'), 120000);
+    ok(name+': fixed flyer count has a total and no ineffective optimization button', !!fixedReady && await pg.evaluate(() =>
+      !document.getElementById('cEco') &&
+      document.querySelector('#cPlanHours b').textContent === '≈ ' + (window.__fixedMinutes / 60).toFixed(1).replace('.', ',') + ' Std.'));
+    await pg.setViewportSize({ width:375, height:812 });
+    ok(name+': fixed-count total stays visible above the scrolling form on a phone', await pg.evaluate(() => {
+      const total = document.getElementById('cPlanHours'), form = document.getElementById('cSheetContent');
+      const before = total.getBoundingClientRect();
+      form.scrollTop = form.scrollHeight;
+      return form.scrollTop > 0 && before.height > 0 && before.top >= 0 && before.bottom <= form.getBoundingClientRect().top &&
+        total.getBoundingClientRect().top === before.top;
+    }));
+    await pg.setViewportSize({ width:1440, height:900 });
+    await pg.locator('[data-step="2"]').click();
+    await pg.locator('#cBudget').check();
+    await pg.locator('[data-step="3"]').click();
+    await until(() => document.querySelector('.budget-box') && !document.getElementById('cNext').disabled, 240000);
+
     await pg.evaluate(()=>{const b=document.getElementById('cNext');if(b&&!b.disabled)b.click();});
     await until(()=>document.querySelectorAll('select[data-wsel]').length>=2,30000);
     const opts=await pg.evaluate(()=>[...document.querySelectorAll('select[data-wsel]')].map(s=>
       [...s.options].map(o=>o.value).filter(Boolean)));
     ok(name+': two routes can be assigned to two workers',opts.length===2);
+    ok(name+': team step shows the total above the worker list', await pg.locator('#cPlanHours').isVisible());
     const pick=opts.map((o,i)=>o[i]||o[0]);
     await pg.evaluate(p=>{document.querySelectorAll('select[data-wsel]').forEach((s,i)=>{
       s.value=p[i];s.dispatchEvent(new Event('change'));

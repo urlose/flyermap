@@ -2,7 +2,7 @@
 import { T } from './i18n.js';
 Object.assign(T.de, {
   flyers:'Flyer', mailboxes:'Briefkästen', loadingArea:'Lade Straßen und Gebäude…', loadingMore:'Gebiet wird erweitert…', calculating:'Berechne Routen…',
-  planSum:'≈ {mb} Briefkästen · {km} Weg · ≈ {h} Std. gesamt', areaSmall:'Im Umkreis gibt es nur ≈ {mb} Briefkästen.',
+  planSum:'≈ {mb} Briefkästen · {km} Weg', planTeamHours:'Gesamtarbeitszeit des Teams', areaSmall:'Im Umkreis gibt es nur ≈ {mb} Briefkästen.',
   tooBig:'Zu groß: längste Route ≈ {h} Std., verfügbar {lim} Std. ({d} Tage).', reduceTo:'Auf {f} Flyer reduzieren', moreWorkers:'Oder mehr Mitarbeiter einteilen.',
   fitsOk:'Passt in {d} Tage.', startDate:'Beginn', hoursDay:'Arbeitstag netto (Std.)', quota:'Quote: Meter pro 30 Min.', flyersCount:'Anzahl Flyer',
   routeLine:'{km} · ≈ {h} Std. · {mb} Briefkästen', daysN:'{n} Tag(e)', startLoc:'Startpunkt', dist2:'Strecke', mbShort:'Kästen',
@@ -13,7 +13,7 @@ Object.assign(T.de, {
 });
 Object.assign(T.ru, {
   flyers:'Флаеры', mailboxes:'Ящики', loadingArea:'Загружаю улицы и здания…', loadingMore:'Расширяю район…', calculating:'Считаю маршруты…',
-  planSum:'≈ {mb} ящиков · {km} пути · ≈ {h} ч всего', areaSmall:'В радиусе только ≈ {mb} ящиков.',
+  planSum:'≈ {mb} ящиков · {km} пути', planTeamHours:'Общее рабочее время команды', areaSmall:'В радиусе только ≈ {mb} ящиков.',
   tooBig:'Слишком много: самый длинный маршрут ≈ {h} ч, доступно {lim} ч ({d} дн.).', reduceTo:'Уменьшить до {f} флаеров', moreWorkers:'Или назначьте больше работников.',
   fitsOk:'Укладывается в {d} дн.', startDate:'Начало', hoursDay:'Рабочий день чистыми (ч)', quota:'Квота: метров за 30 мин', flyersCount:'Количество флаеров',
   routeLine:'{km} · ≈ {h} ч · {mb} ящиков', daysN:'{n} дн.', startLoc:'Точка старта', dist2:'Путь', mbShort:'ящ.',
