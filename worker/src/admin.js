@@ -599,19 +599,13 @@ const workDaysTo = dl => { if(!dl) return null; let n = 0; for(let x = plusDays(
 const DRIVE_C = () => css('--color-drive') || '#7C3AED';   // driving (> 14 km/h): violet, dashed (token)
 const driveLine = (g, ll, w = 3) => ll.length > 1 ? L.polyline(ll, { color:DRIVE_C(), weight:w, opacity:.95, dashArray:'8 6', lineJoin:'round' }).bindTooltip(t('driveTip', { km:fmtDist(ll.reduce((x, q, k) => x + (k ? hav(ll[k-1][0], ll[k-1][1], q[0], q[1]) : 0), 0)) }), { sticky:true }).addTo(g) : null;
 const gpsLine = (g, ll, w = 3) => { const parts = splitJumps(ll); if(!parts.length) return null; L.polyline(parts, { color:'#111827', weight:w + 3, opacity:.45, lineJoin:'round' }).addTo(g); return L.polyline(parts, { color:GPS, weight:w, opacity:1, lineJoin:'round' }).addTo(g); };
-// colour of a planned working day: day 1 = route colour, day 2 = a clearly different partner colour, day 3+ = hue turned further
-const DAY2 = { '#2563EB':'#06B6D4', '#C2185B':'#F97316', '#D97706':'#78350F', '#7C3AED':'#E11D48', '#059669':'#0EA5E9', '#0891B2':'#9333EA', '#DC2626':'#0D9488', '#4D7C0F':'#6D28D9', '#DB2777':'#0284C7', '#EA580C':'#4F46E5' };
-function hueShift(hex, deg){
-  const n = parseInt(hex.slice(1), 16), r = (n >> 16 & 255) / 255, g = (n >> 8 & 255) / 255, b = (n & 255) / 255;
-  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2, d = mx - mn;
-  let h = 0, s = 0;
-  if(d){ s = d / (1 - Math.abs(2 * l - 1)); h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h *= 60; }
-  h = (h + deg + 360) % 360;
-  const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2;
-  const [a, bb, cc] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
-  return '#' + [a, bb, cc].map(v => Math.round((v + m) * 255).toString(16).padStart(2, '0')).join('');
-}
-export const dayColor = (c, k) => { c = String(c || '#2563EB').toUpperCase(); return !k ? c : k === 1 ? (DAY2[c] || hueShift(c, 150)) : ['#7C3AED', '#78350F', '#0F766E', '#BE185D'][(k - 2) % 4]; };
+// Keep the same route colour across days. Patterns distinguish the day layers.
+const routeColor = color => color || '#2563EB';
+const dayPatterns = [
+  { dash:null, symbol:'━' }, { dash:'10 8', symbol:'╍' }, { dash:'2 8', symbol:'┈' },
+  { dash:'10 5 2 5', symbol:'╍┈' }
+];
+const dayPattern = day => dayPatterns[day === 0 ? 0 : 1 + (day - 1) % (dayPatterns.length - 1)];
 const nameOf = id => (wById(id) || {}).name || '—';
 // one working day of one worker: walked GPS track, planned route, the planned streets covered that day
 async function viewDayMap(routeId, back, keep){
@@ -662,7 +656,7 @@ async function viewDayMap(routeId, back, keep){
     layers:[
       { key:'plan', label:pl ? t('rvPlan') : '', on:!!pl, add:g => { if(!pl || !pl.path || pl.path.length < 2) return;
         const ds = (pl.days || []).length > 1 ? pl.days : [{ i0:0, i1:pl.path.length - 1 }];
-        ds.forEach((d, k) => L.polyline(Planner.pathRuns(pl.path.slice(d.i0, d.i1 + 1)), { color:dayColor(col, k), weight:4, opacity:.6, dashArray:'6 7', lineJoin:'round' }).addTo(g)); } },
+        ds.forEach((d, k) => L.polyline(Planner.pathRuns(pl.path.slice(d.i0, d.i1 + 1)), { color:routeColor(col), weight:4, opacity:.6, dashArray:dayPattern(k).dash, lineJoin:'round' }).addTo(g)); } },
       // one layer: everything done on this route – this day, earlier days and colleagues alike
       { key:'done', label:runs.length || runsPrev.length || ll.length > 1 ? t('rvDone') : '', add:g => { [...runsPrev, ...runs, ...(pl ? offRoute(wr, [pl]) : [])].forEach(x => L.polyline(x, { color:GREEN_C(), weight:8, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g));
         // the GPS track belongs to it (one switch)
@@ -670,7 +664,7 @@ async function viewDayMap(routeId, back, keep){
         wr.forEach(a => { if(a.length > 1) gpsLine(g, a); }); sp.drive.forEach(a => driveLine(g, a));
         L.marker(ll[0], { icon:dot('start-dot', 16) }).addTo(g); L.marker(ll[ll.length - 1], { icon:dot(r.ended_at ? 'end-dot' : 'me-dot', r.ended_at ? 16 : 20) }).addTo(g); } },
       { key:'skip', label:workerSkips(pl).length ? t('rvSkipped') : '', add:g => drawSkips(g, [pl], pl ? () => viewDayMap(routeId, back, dm.rvState()) : null) },
-      { key:'cp', label:cps.length ? t('checkpoints') : '', on:false, add:g => cps.forEach(c => cpAdmin(c, dayColor(col, c.day), (pl.days || []).length > 1, pl, () => viewDayMap(routeId, back, dm.rvState())).addTo(g)) },
+      { key:'cp', label:cps.length ? t('checkpoints') : '', on:false, add:g => cps.forEach(c => cpAdmin(c, routeColor(col), (pl.days || []).length > 1, pl, () => viewDayMap(routeId, back, dm.rvState())).addTo(g)) },
     ],
     back,
   });
@@ -808,9 +802,9 @@ async function viewTaskMap(id, back, keep){
       ...(() => {
         const nd = Math.max(1, ...(plans || []).map(p => (p.days || []).length));
         const drawDay = (g, k) => (plans || []).forEach(p => { if(!p.path || p.path.length < 2) return; const d = nd > 1 ? (p.days || [])[k] : null; if(nd > 1 && !d) return;
-          L.polyline(Planner.pathRuns(d ? p.path.slice(d.i0, d.i1 + 1) : p.path), { color:dayColor(p.color, k), weight:k ? 4 : 5, opacity:.8, dashArray:k ? (k % 2 ? '10 8' : '2 8') : null, lineJoin:'round', lineCap:'round' }).addTo(g); });
+          L.polyline(Planner.pathRuns(d ? p.path.slice(d.i0, d.i1 + 1) : p.path), { color:routeColor(p.color), weight:5, opacity:.85, dashArray:dayPattern(k).dash, className:'order-day-route', lineJoin:'round', lineCap:'round' }).addTo(g); });
         const start = g => L.marker([tk.start_lat, tk.start_lng], { icon:dot('pin-start', 24) }).addTo(g);
-        return nd > 1 ? [...Array.from({ length:nd }, (_, k) => ({ key:'day' + k, label:t('dayN', { n:k + 1 }) + (k ? ' ┄' : ' ━'), add:g => drawDay(g, k) })), { key:'start', add:start }]
+        return nd > 1 ? [...Array.from({ length:nd }, (_, k) => ({ key:'day' + k, label:t('dayN', { n:k + 1 }) + ' ' + dayPattern(k).symbol, add:g => drawDay(g, k) })), { key:'start', add:start }]
           : [{ key:'plan', label:t('rvPlan'), add:g => { drawDay(g, 0); start(g); } }];
       })(),
       // one switch: what is done (green) together with the GPS tracks it comes from
@@ -818,7 +812,7 @@ async function viewTaskMap(id, back, keep){
         tracks.forEach(ll => { if(ll.length > 1) gpsLine(g, ll, 2.5); }); drives.forEach(ll => driveLine(g, ll, 2.5)); } },
       ...((plans || []).some(p => (p.path || []).some(q => q[2] === 1)) ? [{ key:'jumps', label:(tk.travel === 'zones' && rideMinOf(plans)) ? t('tripsPlan', { min:rideMinOf(plans) }) : t({ car:'tripsCar', bike:'tripsBike', bus:'tripsBus', zones:'tripsUnknown' }[(tk.travel || (tk.bike ? 'bike' : 'bus'))]), add:g => (plans || []).forEach(p => drawJumps(g, p.path, (tk.travel || (tk.bike ? 'bike' : 'bus')), rideMinOf(plans), ridesOf([p]))) }] : []),
       ...((plans || []).some(p => workerSkips(p).length) ? [{ key:'skip', label:t('rvSkipped'), add:g => drawSkips(g, plans, () => viewTaskMap(id, back, m && m.rvState())) }] : []),
-      { key:'cp', label:t('checkpoints'), on:false, add:g => res.forEach(({ p, cps }) => cps.forEach(c => cpAdmin(c, dayColor(p.color, c.day), (p.days || []).length > 1, p, () => viewTaskMap(id, back, m && m.rvState())).addTo(g))) },
+      { key:'cp', label:t('checkpoints'), on:false, add:g => res.forEach(({ p, cps }) => cps.forEach(c => cpAdmin(c, routeColor(p.color), (p.days || []).length > 1, p, () => viewTaskMap(id, back, m && m.rvState())).addTo(g))) },
       // a tap on "Wo gerade" moves the map to the people: the ones walking right now, else the last known positions
       { key:'live', label:t('rvLive'), add:g => { redrawLive = liveWorkers(g, tk, plans, () => names); },
         focus:mp => { const all = (redrawLive && redrawLive.pts) || [], pts = (all.some(x => x.live) ? all.filter(x => x.live) : all).map(x => x.at); if(!pts.length) return false;
@@ -971,10 +965,10 @@ function viewCreate(edit){
   d.budget.radiusKm = tkE ? radiusFromPlans(edit.plans) : DEFAULT_RADIUS_KM;
   // smaller print run (18.11.2026): saved with the order, null = as many as the hours allow
   d.budget.cap = tkE ? ((edit.plans || []).map(p => p.days && p.days[0] && +p.days[0].flyer_cap).find(v => v > 0) || null) : null;
-  // drive-time planner (19.11.2026): new time-first orders grow by minutes by car; reopened ones keep their settings and area
-  { const d0 = tkE ? (edit.plans || []).map(p => p.days && p.days[0]).find(x => x && x.budget_mode === 'drive') : null;
-    d.budget.mode = tkE ? (d0 ? 'drive' : null) : 'drive';
-    d.budget.driveMin = d0 ? (d0.drive_min ?? null) : tkE ? null : 15;
+  // The order keeps its transport mode and limits when reopened.
+  { const d0 = tkE ? (edit.plans || []).map(p => p.days && p.days[0]).find(x => x && ['drive', 'walk'].includes(x.budget_mode)) : null;
+    d.budget.mode = tkE ? (d0?.budget_mode ?? null) : 'drive';
+    d.budget.driveMin = d0?.budget_mode === 'drive' ? (d0.drive_min ?? null) : 15;
     d.budget.maxFlyers = d0 ? (d0.max_flyers ?? null) : null;
     d.budget.outlierM = d0 && d0.outlier_m != null ? d0.outlier_m : 850; d.budget.outlierPerKm = d0 && d0.outlier_per_km != null ? d0.outlier_per_km : 3;
     d.budget.grid = d0 && d0.delivery_zone && Array.isArray(d0.delivery_zone.runs) ? d0.delivery_zone : null; d.budget.gridFor = d.budget.grid ? 'saved' : null;
@@ -1167,7 +1161,8 @@ function viewCreate(edit){
       try{ const r = await reversePlace(x.lat, x.lng), ps = r ? r.split(', ') : []; const n = ps.length > 1 && x.households < 5000 ? ps[0] + ' (' + ps[1] + ')' : ps[ps.length - 1]; if(n){ d.sugNames.set(x.id, n); if(d.plan?.budget?.cap?.cut) renderSheet(); } }catch{} }
   }
   const driveOn = () => d.budget.on && d.budget.strategy === 'near-first' && d.budget.mode === 'drive';
-  const circleKm = () => d.budget.on && d.budget.strategy === 'near-first' && d.travel === 'zones' && !d.mainAll && !driveOn() ? d.budget.radiusKm : null;
+  const walkOn = () => d.budget.on && d.budget.strategy === 'near-first' && d.budget.mode === 'walk';
+  const circleKm = () => d.budget.on && d.budget.strategy === 'near-first' && d.travel === 'zones' && !d.mainAll && !driveOn() && !walkOn() ? d.budget.radiusKm : null;
   const drawCircle = () => circleKm() != null && d.start ? L.circle(startArr(), { radius:circleKm()*1000, color:css('--brand'), weight:2, fillOpacity:.04, interactive:false }).addTo(zoneLayer) : null;
   const outsideManual = () => d.start && (manualOutsideCircle(startArr(), circleKm(), d.side, d.must, d.zone) || !!d.plan?.budget?.manualOutside);
   const errText2 = e => /abort|overpass|fetch/i.test((e && e.message) || '') ? t('mapSlow') : ((e && e.message) || 'net');
@@ -1203,7 +1198,7 @@ function viewCreate(edit){
     if(capOn() && !d.capPlaces) await loadCapPlaces();
     const tok = ++d.token, pr = progress(tok);
     let res = null;
-    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, quota:Math.max(200, Math.round(+saved.quota || NEW_QUOTA)), bike:d.bike, travel:d.travel, split:d.split, exact:d.exact, mainAll:d.mainAll, cores:d.cores && (d.travel === 'car' || d.travel === 'zones'), mainName:mainCity() || '', together:d.cores && d.travel === 'car' && d.together, first:d.cores && d.travel === 'car' ? d.first : null, near:d.side.length > 0 && d.side.every(x => x.auto), budget:d.budget && d.budget.on && d.travel === 'zones' ? { hours:+d.budget.hours || 32, tolerance:(+d.budget.tol >= 0 ? +d.budget.tol : 5) / 100, strategy:d.budget.strategy, travelMin:d.budget.travelMin, car:d.budget.car, radiusKm:circleKm(), ...(driveOn() ? { mode:'drive', placeLabel:t('sugUnnamed', { km:'{km}' }), driveMin:d.budget.driveMin, maxFlyers:d.budget.maxFlyers, outlierM:d.budget.outlierM, outlierPerKm:d.budget.outlierPerKm, ...(d.budget.grid && d.budget.gridFor === (d.start ? d.start.lat.toFixed(5) + ',' + d.start.lng.toFixed(5) : '') ? { _grid:d.budget.grid } : {}) } : {}), ...(capOn() ? { cap:{ target:d.budget.cap, places:(d.capPlaces || []).map(x => ({ id:x.id, lat:x.lat, lng:x.lng, cells:x.cells })) } } : {}) } : null, must:d.must, zone:d.zone, side:d.side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers, zone:x.p && x.p.length > 2 ? x.p : null, all:!!x.all, ...(x.cid ? { cid:x.cid } : {}), auto:!!x.auto })) }, pr.stage); }
+    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, quota:Math.max(200, Math.round(+saved.quota || NEW_QUOTA)), bike:d.bike, travel:d.travel, split:d.split, exact:d.exact, mainAll:d.mainAll, cores:d.cores && (d.travel === 'car' || d.travel === 'zones'), mainName:mainCity() || '', together:d.cores && d.travel === 'car' && d.together, first:d.cores && d.travel === 'car' ? d.first : null, near:d.side.length > 0 && d.side.every(x => x.auto), budget:d.budget && d.budget.on && d.travel === 'zones' ? { hours:+d.budget.hours || 32, tolerance:(+d.budget.tol >= 0 ? +d.budget.tol : 5) / 100, strategy:d.budget.strategy, travelMin:d.budget.travelMin, car:d.budget.car, radiusKm:circleKm(), ...(walkOn() ? { mode:'walk', maxFlyers:d.budget.maxFlyers } : {}), ...(driveOn() ? { mode:'drive', placeLabel:t('sugUnnamed', { km:'{km}' }), driveMin:d.budget.driveMin, maxFlyers:d.budget.maxFlyers, outlierM:d.budget.outlierM, outlierPerKm:d.budget.outlierPerKm, ...(d.budget.grid && d.budget.gridFor === (d.start ? d.start.lat.toFixed(5) + ',' + d.start.lng.toFixed(5) : '') ? { _grid:d.budget.grid } : {}) } : {}), ...(capOn() ? { cap:{ target:d.budget.cap, places:(d.capPlaces || []).map(x => ({ id:x.id, lat:x.lat, lng:x.lng, cells:x.cells })) } } : {}) } : null, must:d.must, zone:d.zone, side:d.side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers, zone:x.p && x.p.length > 2 ? x.p : null, all:!!x.all, ...(x.cid ? { cid:x.cid } : {}), auto:!!x.auto })) }, pr.stage); }
     catch(e){ pr.stop(); if(tok !== d.token || !alive()) return; d.err = errText2(e); d.busy = false; toast(t('streetsFail', { e:d.err })); renderSheet(); return; }
     pr.stop();
     if(tok !== d.token || !alive() || !res || res.skipped) return;
@@ -1451,10 +1446,10 @@ function viewCreate(edit){
       const hh = m => fmtHm(Math.round(m || 0)), ws = b.workers || [], tw = ws.reduce((a, w) => a + (w.walk || 0), 0), tr = ws.reduce((a, w) => a + (w.ride || 0), 0);
       const sf = b.shortfall, lo = b.target_minutes * (1 - b.tolerance), hi = b.target_minutes * (1 + b.tolerance);
       const why = sf ? t('hrsWhy_' + sf.reason, { left:hh(sf.left_min), cap:hh(sf.team_cap_min), asked:hh(sf.asked_min) }) : '';
-      return `<table class="cap-table" id="hrsTable"><thead><tr><th></th><th>${esc(t('hrsWalk'))}</th><th>${esc(t('hrsRide'))}</th><th>${esc(t('hrsTotal'))}</th></tr></thead><tbody>
-        ${ws.map(w => `<tr><td>${esc(t('personN', { n:w.w + 1 }))}</td><td>${hh(w.walk)}</td><td>${hh(w.ride)}</td><td><b>${hh(w.minutes)}</b></td></tr>`).join('')}</tbody>
-        <tfoot><tr><td>${esc(t('hrsTeam'))}</td><td>${hh(tw)}</td><td>${hh(tr)}</td><td><b id="hrsSum">${hh(b.actual_minutes)}</b></td></tr></tfoot></table>
-        <p class="small muted" style="margin:4px 0 0">${esc(b.drive ? t('dfMax', { h:hh(b.max_minutes) }) : t('hrsTarget', { lo:hh(lo), hi:hh(hi) }))}${(b.villages || []).length ? ' ' + esc(t('hrsVillages', { list:b.villages.map(v => v.name).join(', ') })) : ''}</p>
+      return `<table class="cap-table" id="hrsTable"><thead><tr><th></th><th>${esc(t('hrsWalk'))}</th>${b.walk ? '' : `<th>${esc(t('hrsRide'))}</th>`}<th>${esc(t('hrsTotal'))}</th></tr></thead><tbody>
+        ${ws.map(w => `<tr><td>${esc(t('personN', { n:w.w + 1 }))}</td><td>${hh(w.walk)}</td>${b.walk ? '' : `<td>${hh(w.ride)}</td>`}<td><b>${hh(w.minutes)}</b></td></tr>`).join('')}</tbody>
+        <tfoot><tr><td>${esc(t('hrsTeam'))}</td><td>${hh(tw)}</td>${b.walk ? '' : `<td>${hh(tr)}</td>`}<td><b id="hrsSum">${hh(b.actual_minutes)}</b></td></tr></tfoot></table>
+        <p class="small muted" style="margin:4px 0 0">${esc(b.walk ? t('walkMax', { h:hh(b.max_minutes) }) : b.drive ? t('dfMax', { h:hh(b.max_minutes) }) : t('hrsTarget', { lo:hh(lo), hi:hh(hi) }))}${(b.villages || []).length ? ' ' + esc(t('hrsVillages', { list:b.villages.map(v => v.name).join(', ') })) : ''}</p>
         ${sf ? `<div class="warnbox" id="hrsShort">${esc(why)}</div>` : ''}
         ${b.travel && b.travel.moves && (!b.travel.known || b.travel.manual) ? `<div class="${b.travel.manual ? 'hint' : 'warnbox'}" id="hrsRideBox">${esc(t(b.travel.manual ? 'hrsRideManual' : 'hrsRideEst'))}
           <div class="cap-in" style="margin-top:6px"><input class="in" type="number" id="cRideMan" min="1" max="240" step="1" placeholder="${esc(t('hrsRidePh'))}" value="${+d.budget.travelMin > 0 ? +d.budget.travelMin : ''}">${+d.budget.travelMin > 0 ? `<button class="btn ghost small" id="cRideAuto">${esc(t('hrsRideAuto'))}</button>` : ''}</div></div>` : ''}`;
@@ -1469,6 +1464,7 @@ function viewCreate(edit){
         ${b.workers.map(w => `<div class="route-row"><span class="swatch" style="background:${Planner.COLORS[w.w % 10]}"></span><div class="grow"><b>${esc(t('personN', { n:w.w + 1 }))}</b><span class="small muted">${esc(hh(w.minutes))} · ≈ ${fmtN(w.mailboxes)} · ${esc(f1(w.km))} km</span></div></div>`).join('')}
         <p class="small muted" style="margin:6px 0 0">${esc(t('budDist', { km:f1(Math.round(b.length_m / 100) / 10) }))}</p>
         ${b.drive ? driveHtml(b) : ''}
+        ${b.walk ? `<p class="small" id="cWalkResult">${esc(t('walkStop_' + b.walk.stop, { f:fmtN(b.walk.max_flyers || 0), left:hh(b.walk.left_minutes) }))}</p>` : ''}
         ${b.strategy === 'near-first' ? hoursHtml(b) : ''}
         ${b.travel.moves ? `<div class="${b.travel.known && !b.travel.far ? 'hint' : 'warnbox'}">${esc(b.travel.known ? t('budTravelKnown', { n:b.travel.moves, min:b.travel.minutes }) : t('budTravelUnknown', { n:b.travel.moves }))}${b.travel.far ? ' ' + esc(t('budTravelFar', { n:b.travel.far, km:b.travel.far_km })) : ''}</div>` : ''}
         ${b.main && b.main.empty ? `<div class="warnbox">${esc(t('budMainEmpty'))}</div>` : b.main && b.main.short ? `<div class="warnbox">${esc(t('budMainShort'))}</div>` : ''}
@@ -1528,15 +1524,20 @@ ${d.budget.on && d.budget.strategy === 'near-first' ? '' : `      <label class="
       ${d.travel === 'zones' && !d.cores && !d.mainAll ? `<label class="check" style="margin-top:8px"><input type="checkbox" id="cBudget" ${d.budget.on ? 'checked' : ''}><span><b>${esc(t('budTitle'))}</b></span></label>
         ${d.budget.on ? `<label class="f" for="cBudH">${esc(t('budHours'))}</label><input class="in" type="number" id="cBudH" min="1" max="2000" step="1" value="${esc(d.budget.hours)}"><p class="small muted">${esc(t('budHoursHint', { n:d.n, each:fmtHm(Math.round(d.budget.hours * 60 / Math.max(1, d.n))) }))}</p>
           <label class="f" for="cBudgetStrategy">${esc(t('budStrategyLabel'))}</label><select class="in" id="cBudgetStrategy"><option value="near-first" ${d.budget.strategy === 'near-first' ? 'selected' : ''}>${esc(t('budNearFirst'))}</option><option value="density" ${d.budget.strategy !== 'near-first' ? 'selected' : ''}>${esc(t('budDensity'))}</option></select>
+          ${d.budget.strategy === 'near-first' ? `<label class="f" for="cBudgetMode">${esc(t('budgetModeLabel'))}</label><select class="in" id="cBudgetMode">
+            ${d.budget.mode == null ? `<option value="" selected>${esc(t('budgetModeLegacy'))}</option>` : ''}
+            <option value="walk" ${walkOn() ? 'selected' : ''}>${esc(t('budgetModeWalk'))}</option>
+            <option value="drive" ${driveOn() ? 'selected' : ''}>${esc(t('budgetModeCar'))}</option>
+          </select>` : ''}
+          ${walkOn() || driveOn() ? `<label class="f" for="cMaxFly">${esc(t('dfFly'))}</label><input class="in" type="number" id="cMaxFly" min="1" step="100" inputmode="numeric" placeholder="${esc(t('dfNone'))}" value="${d.budget.maxFlyers ?? ''}">` : ''}
           ${driveOn() ? `<label class="f" for="cDriveMin">${esc(t('dfMin'))}</label><input class="in" type="number" id="cDriveMin" min="5" max="30" step="1" inputmode="numeric" placeholder="${esc(t('dfNone'))}" value="${d.budget.driveMin ?? ''}">
-            <label class="f" for="cMaxFly">${esc(t('dfFly'))}</label><input class="in" type="number" id="cMaxFly" min="1" step="100" inputmode="numeric" placeholder="${esc(t('dfNone'))}" value="${d.budget.maxFlyers ?? ''}">
             <p class="small muted">${esc(t('dfHint'))}</p>
             <details class="small" id="cOutl"><summary>${esc(t('dfOutl'))}</summary><div class="cap-in" style="margin-top:6px"><label class="small" for="cOutM">${esc(t('dfOutM'))}</label><input class="in" type="number" id="cOutM" min="100" max="20000" step="50" value="${d.budget.outlierM}"></div>
               <div class="cap-in" style="margin-top:6px"><label class="small" for="cOutK">${esc(t('dfOutK'))}</label><input class="in" type="number" id="cOutK" min="0" max="50" step="0.5" value="${d.budget.outlierPerKm}"></div></details>` : ''}
-          ${d.budget.strategy === 'near-first' && !driveOn() ? `<label class="check"><input id="cCircle" type="checkbox" ${d.budget.radiusKm != null ? 'checked' : ''}><span>${esc(t('circleArea'))}</span></label>${d.budget.radiusKm != null ? `<label class="f" for="cRadiusKm">${esc(t('circleRadius'))}</label><input class="in" type="number" id="cRadiusKm" min="${MIN_RADIUS_KM}" max="${MAX_RADIUS_KM}" step="0.5" value="${esc(d.budget.radiusKm)}"><p class="small muted">${esc(t('circleHint'))}</p>` : ''}` : ''}
-          ${driveOn() ? '' : `<label class="check" style="margin-top:8px"><input id="cBudgetCar" type="checkbox" ${d.budget.car ? 'checked' : ''}><span>${esc(t('budCar'))}</span></label>
+          ${d.budget.strategy === 'near-first' && !driveOn() && !walkOn() ? `<label class="check"><input id="cCircle" type="checkbox" ${d.budget.radiusKm != null ? 'checked' : ''}><span>${esc(t('circleArea'))}</span></label>${d.budget.radiusKm != null ? `<label class="f" for="cRadiusKm">${esc(t('circleRadius'))}</label><input class="in" type="number" id="cRadiusKm" min="${MIN_RADIUS_KM}" max="${MAX_RADIUS_KM}" step="0.5" value="${esc(d.budget.radiusKm)}"><p class="small muted">${esc(t('circleHint'))}</p>` : ''}` : ''}
+          ${driveOn() || walkOn() ? '' : `<label class="check" style="margin-top:8px"><input id="cBudgetCar" type="checkbox" ${d.budget.car ? 'checked' : ''}><span>${esc(t('budCar'))}</span></label>
           <label class="f" for="cBudT">${esc(t('budTol'))}</label><input class="in" type="number" id="cBudT" min="0" max="25" step="1" value="${esc(d.budget.tol)}">`}
-          ${(d.side.length || d.must.some(a => a.p?.length > 2) || d.zone?.length > 2) && d.budget.strategy === 'near-first' ? driveOn() ? `<details class="small" id="cRideOpt" ${+d.budget.travelMin > 0 ? 'open' : ''}><summary>${esc(t('dfRideOpt'))}</summary><input class="in" type="number" id="cBudTravel" min="1" max="480" step="1" inputmode="numeric" value="${esc(d.budget.travelMin || '')}" placeholder="${esc(t('dfRideAuto'))}" style="margin-top:6px"><p class="small muted">${esc(t('dfRideHint'))}</p></details>` : `<label class="f" for="cBudTravel">${esc(t('budTravelInput'))}</label><input class="in" type="number" id="cBudTravel" min="1" max="480" step="1" value="${esc(d.budget.travelMin || '')}" placeholder="z. B. 20"><p class="small muted">${esc(t('budTravelInputHint'))}</p>` : ''}` : ''}` : ''}
+          ${(d.side.length || d.must.some(a => a.p?.length > 2) || d.zone?.length > 2) && d.budget.strategy === 'near-first' && !walkOn() ? driveOn() ? `<details class="small" id="cRideOpt" ${+d.budget.travelMin > 0 ? 'open' : ''}><summary>${esc(t('dfRideOpt'))}</summary><input class="in" type="number" id="cBudTravel" min="1" max="480" step="1" inputmode="numeric" value="${esc(d.budget.travelMin || '')}" placeholder="${esc(t('dfRideAuto'))}" style="margin-top:6px"><p class="small muted">${esc(t('dfRideHint'))}</p></details>` : `<label class="f" for="cBudTravel">${esc(t('budTravelInput'))}</label><input class="in" type="number" id="cBudTravel" min="1" max="480" step="1" value="${esc(d.budget.travelMin || '')}" placeholder="z. B. 20"><p class="small muted">${esc(t('budTravelInputHint'))}</p>` : ''}` : ''}` : ''}
       <label class="f" for="cNotes">${esc(t('note'))}</label><textarea class="in" id="cNotes" placeholder="${esc(t('notesPh'))}"></textarea>
       <p class="small muted" style="margin:6px 0 0">${esc(saved.deadline ? t('deadlineDays', { d:d.days }) : t('deadlineNone'))}</p>
       ${p ? `<div class="${cap.ok ? 'hint' : 'warnbox'}">${cap.ok ? esc(needDays === 1 ? t('fitsOne') : t('fitsOk', { d:needDays })) : esc(t('tooBig', { h:cap.slowest.toFixed(1).replace('.', ','), lim:cap.limit, d:d.days }))}</div>` : ''}`;
@@ -1600,6 +1601,12 @@ ${d.budget.on && d.budget.strategy === 'near-first' ? '' : `      <label class="
     if($('#cRideMan')) $('#cRideMan').onchange = e => { saved = keep(); const v = Math.round(Number(e.target.value)); d.budget.travelMin = v > 0 ? v : null; d.assign = {}; recompute(); };
     if($('#cRideAuto')) $('#cRideAuto').onclick = () => { saved = keep(); d.budget.travelMin = null; d.assign = {}; recompute(); };
     const boundedNumber = (v, lo, hi) => { const x = Number(v); return v === '' || v == null || !Number.isFinite(x) ? null : Math.min(hi, Math.max(lo, x)); };
+    if($('#cBudgetMode')) $('#cBudgetMode').onchange = e => {
+      saved = keep(); d.budget.mode = e.target.value || null; d.assign = {}; d.plan = null; d.err = null;
+      planLayer.clearLayers(); zoneLayer.clearLayers();
+      L.marker(startArr(), { icon:dot('pin-start', 26) }).addTo(zoneLayer);
+      renderSheet(); recompute();
+    };
     if($('#cDriveMin')) $('#cDriveMin').onchange = e => { saved = keep(); const v = boundedNumber(e.target.value, 5, 30); d.budget.driveMin = v == null ? null : Math.round(v); d.budget.grid = null; d.assign = {}; recompute(); };
     if($('#cMaxFly')) $('#cMaxFly').onchange = e => { saved = keep(); const v = boundedNumber(e.target.value, 1, 1e7); d.budget.maxFlyers = v == null ? null : Math.round(v); d.assign = {}; recompute(); };
     if($('#cOutM')) $('#cOutM').onchange = e => { saved = keep(); d.budget.outlierM = boundedNumber(e.target.value, 100, 20000) ?? 850; d.assign = {}; recompute(); };
@@ -1821,7 +1828,7 @@ function editTaskSheet(tk, plans, routes){
   const rp = mo.querySelector('#eReplan'); if(rp) rp.onclick = () => { mo.remove(); viewCreate({ tk, plans }); };
 }
 /* task detail: info + map + routes with status, worker assignment and progress */
-const dayLines = (days, col, pid) => (days && days.length > 1) ? days.map((x, k) => `<span class="small day-line"><b><i class="dsw" style="background:${esc(dayColor(col, k))}"></i>${esc(t('dayN', { n:k + 1 }) + (x.place ? ' · ' + x.place : ''))}</b> ${esc(t('routeLine', { km:fmtDist(x.length_m), h:fmtHm(x.minutes), mb:fmtN(x.mailboxes) }))}${pid ? `<em class="day-pct" id="dp${pid}_${k}"></em>` : ''}</span>`).join('') : '';
+const dayLines = (days, col, pid) => (days && days.length > 1) ? days.map((x, k) => `<span class="small day-line"><b><i class="dsw" style="background:${esc(routeColor(col))}"></i>${esc(t('dayN', { n:k + 1 }) + (x.place ? ' · ' + x.place : ''))}</b> ${esc(t('routeLine', { km:fmtDist(x.length_m), h:fmtHm(x.minutes), mb:fmtN(x.mailboxes) }))}${pid ? `<em class="day-pct" id="dp${pid}_${k}"></em>` : ''}</span>`).join('') : '';
 const stText = p => p.status === 'accepted' ? t('stAccepted') : p.status === 'declined' ? t('stDeclined') : p.status === 'done' ? t('stDone') : t('stOffered');
 const stCls = p => p.status === 'done' ? 'ok' : p.status === 'accepted' ? '' : p.status === 'declined' ? 'bad' : 'neutral';   // angeboten = neutral, angenommen = blau, erledigt = grün, abgelehnt = rot
 // walked so far on one route (all sessions, also the running one; a session lying inside another one counts once)
@@ -1957,7 +1964,7 @@ async function viewTask(id){
   drawTowns(m, tk, 2);
   if(tk.work_area) L.polygon(tk.work_area, { color:'#7C3AED', weight:2, dashArray:'10 6', fillOpacity:.03, interactive:false }).addTo(m);
   (plans || []).forEach(p => { if(!(p.path?.length > 1)) return; const ds = (p.days || []).length > 1 ? p.days : [{ i0:0, i1:p.path.length - 1 }];
-    ds.forEach((d, k) => L.polyline(Planner.pathRuns(p.path.slice(d.i0, d.i1 + 1)), { color:dayColor(p.color, k), weight:4, opacity:.7, dashArray:k ? '10 8' : null }).addTo(m)); });
+    ds.forEach((d, k) => L.polyline(Planner.pathRuns(p.path.slice(d.i0, d.i1 + 1)), { color:routeColor(p.color), weight:4, opacity:.7, dashArray:dayPattern(k).dash }).addTo(m)); });
   drawSkips(m, plans);
   (plans || []).forEach(p => drawJumps(m, p.path, (tk.travel || (tk.bike ? 'bike' : 'bus')), rideMinOf(plans), ridesOf([p])));
   const doneLayer = L.layerGroup().addTo(m);

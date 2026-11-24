@@ -542,7 +542,11 @@ export function createPlanService(cache){
     // are chosen place by place and the routes are planned again for them only (same circle, no wider map).
     async planNearFirst(args, stage, stale){
       const cap = args.budget && args.budget.cap, target = cap && Math.round(+cap.target);
-      const core = (a, st, sl) => a.budget && a.budget.mode === 'drive' ? this.driveFirstCore(a, st, sl) : this.nearFirstCore(a, st, sl);
+      const core = (a, st, sl) => {
+        if(a.budget.mode === 'walk') return this.walkFirstCore(a, st, sl);
+        if(a.budget.mode === 'drive') return this.driveFirstCore(a, st, sl);
+        return this.nearFirstCore(a, st, sl);
+      };
       if(!(target > 0) || args.budget._capKeep) return core(args, stage, stale);
       const full = await core({ ...args, budget:{ ...args.budget, cap:null } }, stage, stale);
       if(!full || full.skipped || !full.plan) return full;
@@ -559,6 +563,97 @@ export function createPlanService(cache){
       ap.dropped = droppedStreets(G, res.keep, new Set(plannedBoxes(fp.routes).map(b => b.k)));
       return again;
     },
+    // A single connected walking map keeps both the selection and every worker's
+    // route anchored at the order address. Empty streets can connect delivery streets.
+    async walkFirstCore({ start, n, days, hours, budget, side = [], must = [], zone = null, mainName = '' }, stage, stale){
+      const people = Math.max(1, Math.round(n || 1)), maxDays = Math.max(1, Math.min(14, days || 1));
+      const dayHours = hours || 7, personMinutes = dayHours * 60 * maxDays;
+      const maxMinutes = Math.min(+budget.hours > 0 ? +budget.hours * 60 : Infinity, people * personMinutes);
+      const flyerLimit = +budget.maxFlyers > 0 ? Math.round(+budget.maxFlyers) : null;
+      const shapes = [...must, ...side.filter(c => !c.auto && c.zone?.length > 2).map(c => ({ name:c.name, p:c.zone }))];
+      const areaRadius = Math.min(Planner.MUST_MAX_R, Planner.mustRadius(start, zone?.length > 2 ? [...shapes, zone] : shapes));
+      const mapTarget = Math.max(1, Math.ceil(Math.min(flyerLimit ?? Infinity, maxMinutes / 60 * 260)));
+      if(!G || gKey !== keyOf(start) || G.radius < areaRadius){
+        stage('loadingArea');
+        await load(start, mapTarget, undefined, shapes, stage, stale, 'loadingArea', zone);
+      }
+
+      let best, ordered;
+      do {
+        if(stale()) return { skipped:true };
+        let graph = Planner.zoneView(G, zone, shapes);
+        if(budget._capKeep) graph = clipToKeep(graph, budget._capKeep);
+        ordered = outwardStreetOrder(graph, start, budget._capKeep ? { isolatedGapM:Infinity } : undefined).streets;
+        const walkTree = Planner.walkingTreeCache();
+        let len = 0, boxes = 0, upper = ordered.length;
+        for(const [i, street] of ordered.entries()){
+          len += street.length_m;
+          boxes += street.mailboxes;
+          // Every selected street is walked at least once. Allow for rounding
+          // each day's route separately when bounding the search.
+          const rejectedByFlyers = flyerLimit != null && Math.round(boxes) > flyerLimit;
+          if(rejectedByFlyers || Planner.routeMinutes(len, boxes) > maxMinutes + people * maxDays){ upper = i; break; }
+        }
+        best = { count:0, routes:[], minutes:0 };
+        stage('calculating');
+        let lo = 1, hi = upper;
+        while(lo <= hi){
+          if(stale()) return { skipped:true };
+          const count = Math.floor((lo + hi) / 2), ids = ordered.slice(0, count).map(street => street.i);
+          const plan = Planner.planFlyers(graph, start, Infinity, people, {
+            days:maxDays, hoursPerDay:dayHours, selectedEdgeIds:ids, walkTree, compact:true
+          });
+          const routes = plan.routes.filter(r => r.path.length > 1), minutes = routes.reduce((sum, r) => sum + r.minutes, 0);
+          const fits = routes.every(r => r.covered && r.days.every(day => day.minutes <= dayHours * 60));
+          if(minutes <= maxMinutes && fits){
+            best = { count, routes, minutes };
+            lo = count + 1;
+          }else hi = count - 1;
+        }
+        if(best.count < ordered.length || zone?.length > 2 || budget._capKeep || G.radius >= Planner.MAX_R ||
+           best.minutes >= maxMinutes * .95 || (flyerLimit != null && best.routes.reduce((sum, r) => sum + r.mailboxes, 0) >= flyerLimit)) break;
+        const next = Planner.nextRadius(G, Math.max(mapTarget, G.usable * 1.25));
+        if(next <= G.radius) break;
+        stage('loadingMore');
+        await load(start, mapTarget, next, shapes, stage, stale, 'loadingMore');
+      } while(true);
+      if(stale()) return { skipped:true };
+
+      const routes = best.routes.map((r, idx) => ({
+        ...r, idx, w:r.idx, place:mainName, work_minutes:r.minutes, ride_minutes:0, jumps:[],
+        parts:[{ place:mainName, part:1, i0:0, i1:r.path.length - 1, mailboxes:Math.round(r.mailboxes), minutes:r.minutes }]
+      }));
+      const selectedBoxes = routes.reduce((sum, r) => sum + r.mailboxes, 0);
+      const mailboxes = Math.round(selectedBoxes);
+      const length = routes.reduce((sum, r) => sum + r.length_m, 0);
+      const per_worker = Array.from({length:people}, (_, w) => routes.find(r => r.w === w)?.minutes || 0);
+      const fitsAll = best.count === ordered.length;
+      const next = ordered[best.count];
+      const constrainedByFlyers = flyerLimit != null && next && Math.round(selectedBoxes + next.mailboxes) > flyerLimit;
+      const stop = fitsAll ? 'all' : constrainedByFlyers ? 'flyers' : 'hours';
+      const unplanned = [...shapes, ...side.filter(c => !c.auto && !c.zone?.length)].filter(area => {
+        return !routes.some(r => r.boxes.some(box => area.p?.length > 2
+          ? Planner.inPoly(box, area.p)
+          : Number.isFinite(area.lat) && Number.isFinite(area.lng) && segLen(box, [area.lat, area.lng]) <= 500));
+      }).map(area => area.name).filter(Boolean);
+      const plan = {
+        routes, mailboxes, zone:[], zones:true, merged:true, per_worker, split:[{ name:mainName, flyers:mailboxes, cap:null }],
+        side_failed:[], side_dropped:[], side_info:[], must_mb:0, must_info:[],
+        budget:{
+          strategy:'near-first', mode:'walk', hours:budget.hours, tolerance:0, car:false,
+          minutes:maxMinutes, effective_minutes:maxMinutes, target_minutes:maxMinutes, max_minutes:maxMinutes,
+          actual_minutes:best.minutes, work_minutes:best.minutes, planned:mailboxes, flyers_max:mailboxes,
+          uncovered:0, over_target:false, over:false, fits_all:fitsAll, limit:stop, estimate:true, unplanned,
+          main:{ reserved:mailboxes, empty:!routes.length, short:false }, length_m:length,
+          workers:routes.map(r => ({ w:r.w, minutes:r.minutes, walk:r.minutes, ride:0, mailboxes:Math.round(r.mailboxes), km:Math.round(r.length_m / 100) / 10 })),
+          walk:{ max_flyers:flyerLimit, stop, left_minutes:Math.max(0, maxMinutes - best.minutes) },
+          travel:{ known:true, moves:0, minutes:0, far:0, jumps:[] }
+        }
+      };
+      plan.capacity = Planner.capacity(per_worker.map((minutes, idx) => ({ idx, minutes })), mailboxes, { hoursPerDay:dayHours, days:maxDays });
+      return { plan, sug:people, street_m:G.street_m };
+    },
+
     // ---- Drive-time planner (19.11.2026, Cem's rules) ----------------------------------------------------------------------
     // Every street gets the minutes a car needs from the start address (real roads, drivezone.js). Streets go into the plan
     // ring by ring – first everything at 1 min, then 2 min … – in the main town, the neighbouring villages (found automatically)

@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import Planner from '../admin/planner.js';
 import { createPlanService } from '../worker/src/plancore.js';
 import { cellOf } from '../worker/src/zensus.js';
+import { budgetDays } from '../worker/src/budgetplan.js';
 globalThis.fetch = async url => {
   if(/overpass|maps\.mail\.ru/.test(new URL(url).hostname)) return Response.json({ elements:[] });
   throw new Error('No network in synthetic tests');
@@ -138,3 +139,33 @@ console.log('all ok');
   assert.equal(disabled.mailboxes,102);
 }
 console.log('fixes ok');
+
+// On foot, the two sides of a walking connection belong to one map, while
+// a physically disconnected street does not enter the plan. No car data is read.
+{
+  const local = street(0, 40, 65, 20, 2, 'Start'),
+    neighbour = street(0, 310, 80, 20, 2, 'Nearby district'),
+    detached = street(0, 410, 45, 20, 2, 'Disconnected');
+  const map = join(local, neighbour, detached);
+  const disconnectedLink = map.edges.length - 1;
+  map.adj = map.adj.map(arcs => arcs.filter(arc => arc.e !== disconnectedLink));
+  Planner.loadForFlyers = async () => structuredClone(map);
+  const calls = [];
+  globalThis.fetch = async url => { calls.push(url); throw new Error('Offline walking test'); };
+  const walking = maxFlyers => run({ mode:'walk', hours:2, maxFlyers, driveMin:5, travelMin:6 });
+  const plan = await walking(null);
+  assert.equal(plan.mailboxes, 80);
+  assert.equal(plan.budget.travel.moves, 0);
+  assert.equal(plan.budget.actual_minutes, plan.budget.work_minutes);
+  assert.ok(plan.routes.every(r => r.covered && r.path.every(p => p[2] == null) && !r.jumps.length));
+  assert.ok(plan.routes[0].steps.some(s => s[2] === 'Nearby district'));
+  const limited = await walking(45);
+  assert.equal(limited.mailboxes, 40);
+  assert.equal(limited.budget.walk.stop, 'flyers');
+  const days = budgetDays(limited.routes[0], limited);
+  assert.equal(days[0].budget_mode, 'walk');
+  assert.equal(days[0].max_flyers, 45);
+  assert.ok(days.every(day => !day.rides));
+  assert.deepEqual(calls, []);
+}
+console.log('walking orders ok');
