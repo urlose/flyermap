@@ -87,6 +87,16 @@
     const ps = poly.map(p => p[0].toFixed(6) + ' ' + p[1].toFixed(6)).join(' ');
     return overpass(`[out:json][timeout:110];way${HW_FILTER}(poly:"${ps}");out body;>;out skel qt;`, fetchImpl, 110000);
   }
+  // Pedestrian connectors (24.11.2026, Frankfurt Rödelheim): footbridges, underpasses and paths over rivers / railways are not in the
+  // street map above (NO_WAY lists footway, path, steps, cycleway), so a river or a railway looked like a wall and whole directions
+  // looked far away. Connectors are only walked THROUGH: they get no mailboxes (attachBuildings skips them) and no flyers.
+  // Sidewalks and crossings are left out (they run next to streets that are in the map anyway). Off unless the caller asks for it.
+  const CONN_FILTER = `["highway"~"^(footway|path|steps|cycleway|pedestrian)$"]["footway"!~"^(sidewalk|crossing|traffic_island)$"]["area"!="yes"]["access"!~"^(private|no)$"]["foot"!~"^(no|private)$"]`;
+  async function fetchConnectors(box, fetchImpl){
+    const la = box.map(p => p[0]), lo = box.map(p => p[1]), bb = [Math.min(...la), Math.min(...lo), Math.max(...la), Math.max(...lo)].map(v => v.toFixed(4)).join(',');
+    const j = await overpass(`[out:json][timeout:110];way${CONN_FILTER}(${bb});out body qt;>;out skel qt;/*conn*/`, fetchImpl, 110000);
+    return ((j && j.elements) || []).map(e => e.type === 'way' ? { ...e, tags:{ name:(e.tags && (e.tags.name || e.tags.ref)) || '', conn:1 } } : e);
+  }
   // the centre is rounded to ~100 m so that repeated plans for the same place hit the server-side cache
   const rc = c => [Math.round(c[0] * 1000) / 1000, Math.round(c[1] * 1000) / 1000];
   // bounding-box filters use the index and are far faster on busy Overpass servers than "around" (which checks every node)
@@ -220,12 +230,12 @@
     const addAdj = (n, i) => { if(!adjSeg.has(n)) adjSeg.set(n, []); adjSeg.get(n).push(i); deg.set(n, (deg.get(n) || 0) + 1); };
     for(const w of osm.elements){
       if(w.type !== 'way' || !w.nodes) continue;
-      const name = (w.tags && (w.tags.name || w.tags.ref)) || '';
+      const name = (w.tags && (w.tags.name || w.tags.ref)) || '', conn = !!(w.tags && w.tags.conn);
       for(let i = 1; i < w.nodes.length; i++){
         const u = w.nodes[i-1], v = w.nodes[i], a = nodes.get(u), b = nodes.get(v);
         if(!a || !b || u === v) continue;
         if(poly && !inPoly([(a[0]+b[0])/2, (a[1]+b[1])/2], poly)) continue;
-        const id = segs.length; segs.push({ u, v, name, used:false });
+        const id = segs.length; segs.push({ u, v, name, conn, used:false });
         addAdj(u, id); addAdj(v, id);
       }
     }
@@ -242,11 +252,11 @@
         cur = nxt;
         if(deg.get(cur) !== 2 || cur === start) break;
         const ns = adjSeg.get(cur).find(i => !segs[i].used);
-        if(ns === undefined) break;
+        if(ns === undefined || segs[ns].conn !== segs[firstSeg].conn) break;
         sid = ns;
       }
       if(cur === start && coords.length < 3) return;  // degenerate loop
-      edges.push({ a:jid(start), b:jid(cur), coords, len:lineLen(coords), name });
+      edges.push({ a:jid(start), b:jid(cur), coords, len:lineLen(coords), name, ...(segs[firstSeg].conn ? { conn:true } : {}) });
     };
     for(const [n, d] of deg) if(d !== 2) for(const sid of adjSeg.get(n)) if(!segs[sid].used) walk(n, sid);
     for(let i = 0; i < segs.length; i++) if(!segs[i].used) walk(segs[i].u, i);   // isolated loops
@@ -808,6 +818,7 @@
     const add = (k, v) => { let l = grid.get(k); if(!l) grid.set(k, l = []); l.push(v); };
     g.edges.forEach((e, ei) => {
       e.mb = 0; e.boxes = [];
+      if(e.conn) return;   // pedestrian connector: walked through, never delivered to
       for(let i = 1; i < e.coords.length; i++){
         const ax = e.coords[i-1][1] * kx, ay = e.coords[i-1][0] * ky, bx = e.coords[i][1] * kx, by = e.coords[i][0] * ky;
         const L = Math.hypot(bx - ax, by - ay), steps = Math.max(1, Math.ceil(L / 30)), seen = new Set();
@@ -1166,6 +1177,7 @@
       const m = mergeTiles(keys.map(k => store.get(k)));
       // squares reach beyond the radius: only the square around the start is used (keeps planning fast and the radius logic exact)
       const dLat = r / 111320, dLng = r / (111320 * Math.cos(start[0] * RAD)), box = [[start[0] - dLat, start[1] - dLng], [start[0] - dLat, start[1] + dLng], [start[0] + dLat, start[1] + dLng], [start[0] + dLat, start[1] - dLng]];
+      if(opt.connectors){ try{ m.osm.elements.push(...await fetchConnectors(box, opt.fetchImpl)); }catch(e){ /* optional: without them the map is as before */ } }
       const g = largestComponent(buildGraph(m.osm, box), start);
       let bl = m.buildings.filter(b => Math.abs(b.lat - start[0]) <= dLat && Math.abs(b.lng - start[1]) <= dLng);
       if(opt.census){ try{ bl = await censusFill(bl, box, opt.census); }catch(e){ /* census is optional: keep our own estimate */ } }

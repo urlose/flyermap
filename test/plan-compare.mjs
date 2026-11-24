@@ -1,6 +1,7 @@
 // Plans one order on a SAVED snapshot of the real data (no network on replay) and prints metrics that compare two versions
 // of the planner on identical data: flyers, hours per person and day, rides, directions of the delivery area, duplicates, time.
 //   node test/plan-compare.mjs frankfurt --record [--merge] [--snap file]   needs network (GitHub Actions): records every request;
+//       --connectors plans with pedestrian connectors (experiment, off in the app)
 //       --merge keeps the requests (and the start) of an existing snapshot, so one snapshot serves several versions of the planner
 //   node test/plan-compare.mjs frankfurt [--snap file] [--out result.json]   replays offline
 //   node test/plan-compare.mjs leipheim  [--out result.json]      replays test/fixtures/leipheim-drive-2026-11-20.json.gz
@@ -54,6 +55,7 @@ if(record){
   };
 }
 
+if(opt('connectors')) process.env.FM_CONNECTORS = '1';   // experiment: pedestrian bridges / underpasses / paths as walking connectors (planner.js fetchConnectors)
 const root = process.env.PLAN_ROOT ? new URL('file://' + process.env.PLAN_ROOT.replace(/\/?$/, '/')) : new URL('../', import.meta.url);   // PLAN_ROOT: another checkout (e.g. main) planned on the same data
 const { createPlanService } = await import(new URL('worker/src/plancore.js', root));
 const { boxKey } = await import(new URL('worker/src/flyercap.js', root));

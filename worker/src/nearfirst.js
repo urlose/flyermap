@@ -6,7 +6,7 @@
 // partly taken. Taking its streets in plain data order (ties of the distance) can fill it from one side only. Rings stay strictly
 // nearer first; inside a ring the compass sector with the fewest mailboxes taken so far goes next (nearest street of that sector).
 // A ring that is taken completely comes out the same set; only the order inside it changes. Pure, deterministic, stable.
-export const RING_M = 200, SECTORS = 8;
+export const RING_M = 100, SECTORS = 8;   // ≈ 1 minute of walking per ring
 export function sectorOf(start, p, sectors = SECTORS){
   const r = Math.PI / 180, dy = p[0] - start[0], dx = (p[1] - start[1]) * Math.cos(start[0] * r);
   const a = (Math.atan2(dx, dy) / r + 360) % 360, w = 360 / sectors;

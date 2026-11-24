@@ -24,11 +24,13 @@ jobs:
           rm -f test/fixtures/frankfurt-westerbachstrasse-2026-11-24.json.gz
           for i in 1 2 3; do PLAN_ROOT=$PWD/base node test/plan-compare.mjs frankfurt --record --merge > /tmp/rec-main.txt && break; sleep 60; done
           for i in 1 2 3; do node test/plan-compare.mjs frankfurt --record --merge > /tmp/rec-pr.txt && break; sleep 60; done
+          for i in 1 2 3; do node test/plan-compare.mjs frankfurt --record --merge --connectors > /tmp/rec-conn.txt && break; sleep 60; done
           ls -la test/fixtures/frankfurt-westerbachstrasse-2026-11-24.json.gz
-      - name: Replay offline (main planner, then this branch)
+      - name: Replay offline (main planner, this branch, this branch with connectors)
         run: |
           PLAN_ROOT=$PWD/base node test/plan-compare.mjs frankfurt | head -50
           node test/plan-compare.mjs frankfurt | head -50
+          node test/plan-compare.mjs frankfurt --connectors | head -50
       - name: Commit the snapshot
         run: |
           git config user.name "github-actions[bot]"; git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
