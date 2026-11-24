@@ -11,7 +11,6 @@ const BOX_W = 25;   // compact split: one mailbox weighs like 25 m of street (â‰
 const DAY_WASTE = .35;   // a day may end up to 35 % early at a place border (instead of cutting the next place)
 const SKEW_MIN = 8;   // minutes per % of unevenness between the workers (above 8 %)
 const DAY_PART = .95;   // a place longer than this share of a shift is cut into day-sized parts
-const CONNECTORS = !!(+(globalThis.process?.env?.FM_CONNECTORS));   // experiment: pedestrian bridges / underpasses / paths as walking connectors (see planner.js fetchConnectors); off by default
 const BIG_AREA_EDGES = +(globalThis.process?.env?.BIG_AREA_EDGES) || 60000;   // walking maps bigger than this (a big city) are cut around the chosen streets for each route
 import { driveZone, driveMin, minutesTo, zoneLoadM, zoneRides, ringPolygon } from './drivezone.js';
 import { estimate, bestOrder } from './carroute.js';
@@ -26,7 +25,7 @@ export function createPlanService(cache){
   const info = () => G ? { radius:G.radius, usable:G.usable, mailboxes:G.mailboxes, street_m:G.street_m } : null;
   const load = async (start, flyers, radius, must, stage, stale, key, zone) => {
     if(tiles.size > 150) tiles.clear();
-    G = await Planner.loadForFlyers(start, flyers, { cache, radius, must, zone, tiles, stale, census, connectors:CONNECTORS,
+    G = await Planner.loadForFlyers(start, flyers, { cache, radius, must, zone, tiles, stale, census,
       progress:(done, total) => { if(stage && total > 1) stage((key || 'loadingArea') + '|' + done + '|' + total); } });
     gKey = keyOf(start);
   };

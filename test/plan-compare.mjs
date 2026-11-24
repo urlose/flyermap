@@ -1,15 +1,16 @@
 // Plans one order on a SAVED snapshot of the real data (no network on replay) and prints metrics that compare two versions
 // of the planner on identical data: flyers, hours per person and day, rides, directions of the delivery area, duplicates, time.
 //   node test/plan-compare.mjs frankfurt --record [--merge] [--snap file]   needs network (GitHub Actions): records every request;
-//       --connectors plans with pedestrian connectors (experiment, off in the app)
 //       --merge keeps the requests (and the start) of an existing snapshot, so one snapshot serves several versions of the planner
 //   node test/plan-compare.mjs frankfurt [--snap file] [--out result.json]   replays offline
+//   node test/plan-compare.mjs <frankfurt|leipheim> --check      replays and asserts the invariants (CI)
 //   node test/plan-compare.mjs leipheim  [--out result.json]      replays test/fixtures/leipheim-drive-2026-11-20.json.gz
 // The script only reads public map data (tiles, Overpass roads, census files, a geocoder) – no database, no orders, no workers.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import assert from 'node:assert/strict';
 
 const argv = process.argv.slice(2), opt = n => { const i = argv.indexOf('--' + n); return i < 0 ? null : (argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[i + 1] : true); };
 const name = argv[0] && !argv[0].startsWith('--') ? argv[0] : 'frankfurt';
@@ -18,10 +19,12 @@ const here = p => fileURLToPath(new URL(p, import.meta.url));
 const SCEN = {
   // Order of the report: Westerbachstraße 29, 60489 Frankfurt, 2 people, 10 000 flyers, mode "Automatisch" (defaults of a new order: 7 h, 2 days)
   frankfurt:{ snap:'./fixtures/frankfurt-westerbachstrasse-2026-11-24.json.gz', address:'Westerbachstraße 29, 60489 Frankfurt am Main', mainName:'Frankfurt', n:2, days:2, hours:7, flyers:10000,
-    budget:{ hours:32, tolerance:.05, strategy:'near-first', mode:'auto', driveMin:15, maxFlyers:null, travelMin:null, car:false, radiusKm:null, outlierM:850, outlierPerKm:3, placeLabel:'Ort in {km} km' } },
+    budget:{ hours:32, tolerance:.05, strategy:'near-first', mode:'auto', driveMin:15, maxFlyers:null, travelMin:null, car:false, radiusKm:null, outlierM:850, outlierPerKm:3, placeLabel:'Ort in {km} km' },
+    minFlyers:10500, maxSectorPct:52 },   // main: 10 819 flyers, 47.9 % in the busiest direction (housing is in the north-east)
   // Leipheim snapshot of 20.11.2026 (test/leipheim-drive-snapshot.mjs): 2 people, 9 h, 3 days, 32 h, 15 min, 10 000 flyers
   leipheim:{ snap:'./fixtures/leipheim-drive-2026-11-20.json.gz', start:[48.460716, 10.212487], mainName:'Leipheim', n:2, days:3, hours:9, flyers:1,
-    budget:{ strategy:'near-first', mode:'drive', tolerance:0, hours:32, driveMin:15, maxFlyers:10000 } }
+    budget:{ strategy:'near-first', mode:'drive', tolerance:0, hours:32, driveMin:15, maxFlyers:10000 },
+    minFlyers:5800, maxSectorPct:50 }   // main: 5 851 flyers, 43 % in the busiest direction
 };
 const sc = SCEN[name]; if(!sc){ console.error('scenario: ' + Object.keys(SCEN).join(' | ')); process.exit(2); }
 const snapFile = typeof opt('snap') === 'string' ? opt('snap') : here(sc.snap);
@@ -55,7 +58,6 @@ if(record){
   };
 }
 
-if(opt('connectors')) process.env.FM_CONNECTORS = '1';   // experiment: pedestrian bridges / underpasses / paths as walking connectors (planner.js fetchConnectors)
 const root = process.env.PLAN_ROOT ? new URL('file://' + process.env.PLAN_ROOT.replace(/\/?$/, '/')) : new URL('../', import.meta.url);   // PLAN_ROOT: another checkout (e.g. main) planned on the same data
 const { createPlanService } = await import(new URL('worker/src/plancore.js', root));
 const { boxKey } = await import(new URL('worker/src/flyercap.js', root));
@@ -118,4 +120,19 @@ if(record){
   if(!plan.budget.drive?.real_roads && !plan.mailboxes){ console.log('nothing planned – snapshot not written'); process.exit(3); }
   writeFileSync(snapFile, gzipSync(JSON.stringify({ taken:new Date().toISOString(), scenario:name, start, requests:Object.fromEntries(log) })));
   console.log('snapshot written: ' + log.size + ' requests → ' + snapFile);
+}
+
+if(opt('check')){
+  const personCap = sc.hours * 60 * sc.days, ceilingMin = (plan.budget.drive?.max_minutes ?? plan.budget.max_minutes);
+  assert.equal(out.duplicate_addresses, 0, 'no address is delivered twice');
+  assert.ok(plan.budget.actual_minutes <= ceilingMin + .5, 'the hours of the order are a ceiling: ' + plan.budget.actual_minutes + ' <= ' + ceilingMin);
+  for(const r of plan.routes){
+    assert.ok(r.minutes <= personCap + .5, 'person ' + (r.w + 1) + ' within days x hours');
+    for(const d of r.days || []) assert.ok(d.minutes <= sc.hours * 60 + 1, 'every day within one shift: ' + d.minutes);
+  }
+  const m = plan.per_worker.filter(x => x > 0);
+  assert.ok(m.length === sc.n && Math.min(...m) >= .85 * Math.max(...m), 'the workers get about the same time: ' + m.map(Math.round));
+  assert.ok(out.flyers >= sc.minFlyers, 'keep the print run: ' + out.flyers + ' >= ' + sc.minFlyers);
+  assert.ok(out.area.max_sector_pct <= sc.maxSectorPct, 'no direction takes over the whole area: ' + out.area.max_sector_pct + ' % <= ' + sc.maxSectorPct);
+  console.log('plan-compare ' + name + ': all ok');
 }

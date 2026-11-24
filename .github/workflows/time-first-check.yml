@@ -12,6 +12,9 @@ on:
       - 'worker/src/budgetplan.js'
       - 'worker/src/i18n6.js'
       - 'test/nearfirst.mjs'
+      - 'test/nearfirst-direction.mjs'
+      - 'test/plan-compare.mjs'
+      - 'test/fixtures/frankfurt-*'
       - 'test/nearfirst-overlap.mjs'
       - 'test/nearfirst-zone-boundary.mjs'
       - 'test/routing-quality.mjs'
@@ -71,6 +74,7 @@ jobs:
             node test/$suite.mjs || exit 1
           done
       - run: node test/nearfirst.mjs
+      - run: node test/nearfirst-direction.mjs   # direction balance inside an access ring
       - run: node test/nearfirst-service.mjs
       - run: node test/circlearea.mjs
       - run: node test/flyercap.mjs
@@ -78,6 +82,8 @@ jobs:
       - run: node test/drive-compact.mjs
       - run: node test/drive-shift-limit.mjs
       - run: node test/leipheim-drive-snapshot.mjs   # real Leipheim data, saved snapshot, no network
+      - run: node test/plan-compare.mjs leipheim --check   # same snapshot: no duplicates, hours, balance, no one-sided area
+      - run: node test/plan-compare.mjs frankfurt --check   # Westerbachstraße 29, saved public map data, no network
         env:
           FLYERMAP_CHECK_REPLAN: 1
       - run: node test/save-integers.mjs

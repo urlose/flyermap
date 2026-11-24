@@ -42,7 +42,8 @@ try {
     connected.adj[a].push({e:i,to:b});connected.adj[b].push({e:i,to:a});
   }
   const ranked=outwardStreetOrder(connected,start);
-  assert.deepEqual(ranked.streets.map(x=>x.i),[1,2]);
+  // streets 1 and 2 are equally far: their order inside the ring is by direction now (nearfirst-direction.mjs), the set is what matters
+  assert.deepEqual(ranked.streets.map(x=>x.i).sort(),[1,2]);
   assert.deepEqual(ranked.unreachable,[3]);
   const legacy=Planner.selectForFlyers(connected,start,1000);
   assert.ok(!legacy.ids.includes(3),'Legacy selector must not count an unreachable component');
