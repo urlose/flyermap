@@ -68,3 +68,16 @@ Object.assign(T.en, {
   walkMax:'At most {h} for all workers.', walkStop_all:'All reachable addresses are planned. Time left: {left}.',
   walkStop_hours:'Limited by work hours. Time left: {left}.', walkStop_flyers:'Limited by the flyer count ({f}).'
 });
+
+Object.assign(T.de, {
+  budgetModeAuto:'Automatisch', budgetAutoHint:'Nahe Straßen zu Fuß. Für weiter entfernte Bereiche wird ein Auto eingeplant, wenn es Zeit spart. Die maximale Fahrzeit begrenzt den Bereich für Autofahrten.',
+  budgetAutoWalk:'Automatisch: Dieser Auftrag ist zu Fuß möglich.', budgetAutoMixed:'Automatisch: {n} Autofahrt(en) eingeplant.'
+});
+Object.assign(T.ru, {
+  budgetModeAuto:'Автоматически', budgetAutoHint:'Ближайшие улицы планируются пешком. Для дальних районов машина используется, если экономит время. Лимит езды ограничивает зону автопереездов.',
+  budgetAutoWalk:'Автоматически: этот заказ можно выполнить пешком.', budgetAutoMixed:'Автоматически: запланировано автопереездов — {n}.'
+});
+Object.assign(T.en, {
+  budgetModeAuto:'Automatic', budgetAutoHint:'Walk the nearby streets. Use a car for farther areas when it saves time. The drive-time limit applies to the area reached by car.',
+  budgetAutoWalk:'Automatic: this order can be completed on foot.', budgetAutoMixed:'Automatic: {n} car trip(s) planned.'
+});

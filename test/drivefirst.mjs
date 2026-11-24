@@ -169,3 +169,42 @@ console.log('fixes ok');
   assert.deepEqual(calls, []);
 }
 console.log('walking orders ok');
+
+// Automatic mode keeps a local order on foot, then combines real walking
+// links and a car leg when the outlying area is needed for more addresses.
+{
+  const local=street(0,40,65,20,2,'Main'),
+    nearby=street(0,310,80,20,2,'Nearby'),
+    far=street(2500,0,300,20,2,'Far');
+  const graph=join(local,nearby,far);
+  const disconnected=graph.edges.length-1;
+  graph.adj=graph.adj.map(arcs=>arcs.filter(arc=>arc.e!==disconnected));
+  const cells=g=>[...new Set(g.edges[0].boxes.map(b=>cellOf(b[0],b[1]).join(',')))].flatMap(k=>k.split(',').map(Number));
+  const areas=[local,nearby,far].map((g,i)=>({
+    id:String(i), name:g.edges[0].name, lat:g.pts[0][0], lng:g.pts[0][1], households:40,cells:cells(g)
+  }));
+  Planner.loadForFlyers=async()=>structuredClone(graph);
+  const calls=[];
+  globalThis.fetch=async url=>{
+    calls.push(url);
+    if(/overpass|maps\.mail\.ru/.test(url))return Response.json({elements:[]});
+    throw new Error('Offline routing fixture');
+  };
+  const localOrder=await run({mode:'auto', hours:2, maxFlyers:75, driveMin:15, _villages:areas});
+  assert.equal(localOrder.budget.mode,'auto');
+  assert.equal(localOrder.budget.travel.moves,0);
+  assert.deepEqual(calls,[], 'walk-only order must not request the car network');
+  const mixed=await run({mode:'auto', hours:2, driveMin:15, _villages:areas});
+  assert.equal(mixed.mailboxes,120);
+  assert.equal(mixed.budget.mode,'auto');
+  assert.ok(mixed.budget.travel.moves>0);
+  const link=mixed.budget.travel.jumps.find(j=>j.walk && j.geom.length>2);
+  assert.ok(link, 'a nearby district is connected on the actual walking graph');
+  assert.equal(mixed.routes[link.w].path[link.idx][2],undefined);
+  assert.ok(mixed.routes[0].days.length<=base.days && mixed.routes[0].days.every(d=>d.minutes<=base.hours*60));
+  const days=budgetDays(mixed.routes[0],mixed);
+  assert.equal(days[0].budget_mode,'auto');
+  assert.equal(days[0].drive_min,15);
+  assert.ok(days.some(d=>d.rides?.some(r=>r.walk)));
+}
+console.log('automatic travel ok');

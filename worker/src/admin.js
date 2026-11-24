@@ -966,9 +966,10 @@ function viewCreate(edit){
   // smaller print run (18.11.2026): saved with the order, null = as many as the hours allow
   d.budget.cap = tkE ? ((edit.plans || []).map(p => p.days && p.days[0] && +p.days[0].flyer_cap).find(v => v > 0) || null) : null;
   // The order keeps its transport mode and limits when reopened.
-  { const d0 = tkE ? (edit.plans || []).map(p => p.days && p.days[0]).find(x => x && ['drive', 'walk'].includes(x.budget_mode)) : null;
+  { const d0 = tkE ? (edit.plans || []).map(p => p.days && p.days[0]).find(x => x && ['drive', 'walk', 'auto'].includes(x.budget_mode)) : null;
     d.budget.mode = tkE ? (d0?.budget_mode ?? null) : 'drive';
-    d.budget.driveMin = d0?.budget_mode === 'drive' ? (d0.drive_min ?? null) : 15;
+    d.budget.driveMin = d0 && d0.budget_mode !== 'walk' ? (d0.drive_min ?? null) : 15;
+    if(d0?.budget_mode === 'auto') d.budget.travelMin = d0.auto_travel_min ?? null;
     d.budget.maxFlyers = d0 ? (d0.max_flyers ?? null) : null;
     d.budget.outlierM = d0 && d0.outlier_m != null ? d0.outlier_m : 850; d.budget.outlierPerKm = d0 && d0.outlier_per_km != null ? d0.outlier_per_km : 3;
     d.budget.grid = d0 && d0.delivery_zone && Array.isArray(d0.delivery_zone.runs) ? d0.delivery_zone : null; d.budget.gridFor = d.budget.grid ? 'saved' : null;
@@ -1121,14 +1122,14 @@ function viewCreate(edit){
   const createSheet = $('#cSheet');
   const alive = () => createSheet.isConnected;
   const sheet = html => { const el = $('#cSheet'); if(el) el.innerHTML = html; };
-  function progress(tok){
+  function progress(tok, mode = ''){
     const started = Date.now();
     let stage = 'calculating';
     let count = '';
     const show = () => {
       if(tok !== d.token || !alive()){ clearInterval(timer); return; }
       d.busy = true;
-      d.status = [t(stage), count, t('planElapsed', { n:Math.floor((Date.now() - started) / 1000) })].filter(Boolean).join(' · ');
+      d.status = [t(stage), count, mode, t('planElapsed', { n:Math.floor((Date.now() - started) / 1000) })].filter(Boolean).join(' · ');
       const status = $('#cBusy');
       if(status){ status.hidden = false; status.textContent = d.status; }
       const next = $('#cNext') || $('#cSave');
@@ -1161,8 +1162,10 @@ function viewCreate(edit){
       try{ const r = await reversePlace(x.lat, x.lng), ps = r ? r.split(', ') : []; const n = ps.length > 1 && x.households < 5000 ? ps[0] + ' (' + ps[1] + ')' : ps[ps.length - 1]; if(n){ d.sugNames.set(x.id, n); if(d.plan?.budget?.cap?.cut) renderSheet(); } }catch{} }
   }
   const driveOn = () => d.budget.on && d.budget.strategy === 'near-first' && d.budget.mode === 'drive';
+  const autoOn = () => d.budget.on && d.budget.strategy === 'near-first' && d.budget.mode === 'auto';
+  const roadModeOn = () => driveOn() || autoOn();
   const walkOn = () => d.budget.on && d.budget.strategy === 'near-first' && d.budget.mode === 'walk';
-  const circleKm = () => d.budget.on && d.budget.strategy === 'near-first' && d.travel === 'zones' && !d.mainAll && !driveOn() && !walkOn() ? d.budget.radiusKm : null;
+  const circleKm = () => d.budget.on && d.budget.strategy === 'near-first' && d.travel === 'zones' && !d.mainAll && !roadModeOn() && !walkOn() ? d.budget.radiusKm : null;
   const drawCircle = () => circleKm() != null && d.start ? L.circle(startArr(), { radius:circleKm()*1000, color:css('--brand'), weight:2, fillOpacity:.04, interactive:false }).addTo(zoneLayer) : null;
   const outsideManual = () => d.start && (manualOutsideCircle(startArr(), circleKm(), d.side, d.must, d.zone) || !!d.plan?.budget?.manualOutside);
   const errText2 = e => /abort|overpass|fetch/i.test((e && e.message) || '') ? t('mapSlow') : ((e && e.message) || 'net');
@@ -1196,9 +1199,10 @@ function viewCreate(edit){
     d.dirty = false;
     if(!d.loaded){ renderSheet(); return; }
     if(capOn() && !d.capPlaces) await loadCapPlaces();
-    const tok = ++d.token, pr = progress(tok);
+    const mode = autoOn() ? t('budgetModeAuto') : walkOn() ? t('budgetModeWalk') : driveOn() ? t('budgetModeCar') : '';
+    const tok = ++d.token, pr = progress(tok, mode);
     let res = null;
-    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, quota:Math.max(200, Math.round(+saved.quota || NEW_QUOTA)), bike:d.bike, travel:d.travel, split:d.split, exact:d.exact, mainAll:d.mainAll, cores:d.cores && (d.travel === 'car' || d.travel === 'zones'), mainName:mainCity() || '', together:d.cores && d.travel === 'car' && d.together, first:d.cores && d.travel === 'car' ? d.first : null, near:d.side.length > 0 && d.side.every(x => x.auto), budget:d.budget && d.budget.on && d.travel === 'zones' ? { hours:+d.budget.hours || 32, tolerance:(+d.budget.tol >= 0 ? +d.budget.tol : 5) / 100, strategy:d.budget.strategy, travelMin:d.budget.travelMin, car:d.budget.car, radiusKm:circleKm(), ...(walkOn() ? { mode:'walk', maxFlyers:d.budget.maxFlyers } : {}), ...(driveOn() ? { mode:'drive', placeLabel:t('sugUnnamed', { km:'{km}' }), driveMin:d.budget.driveMin, maxFlyers:d.budget.maxFlyers, outlierM:d.budget.outlierM, outlierPerKm:d.budget.outlierPerKm, ...(d.budget.grid && d.budget.gridFor === (d.start ? d.start.lat.toFixed(5) + ',' + d.start.lng.toFixed(5) : '') ? { _grid:d.budget.grid } : {}) } : {}), ...(capOn() ? { cap:{ target:d.budget.cap, places:(d.capPlaces || []).map(x => ({ id:x.id, lat:x.lat, lng:x.lng, cells:x.cells })) } } : {}) } : null, must:d.must, zone:d.zone, side:d.side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers, zone:x.p && x.p.length > 2 ? x.p : null, all:!!x.all, ...(x.cid ? { cid:x.cid } : {}), auto:!!x.auto })) }, pr.stage); }
+    try{ res = await planEngine().run('plan', { start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, quota:Math.max(200, Math.round(+saved.quota || NEW_QUOTA)), bike:d.bike, travel:d.travel, split:d.split, exact:d.exact, mainAll:d.mainAll, cores:d.cores && (d.travel === 'car' || d.travel === 'zones'), mainName:mainCity() || '', together:d.cores && d.travel === 'car' && d.together, first:d.cores && d.travel === 'car' ? d.first : null, near:d.side.length > 0 && d.side.every(x => x.auto), budget:d.budget && d.budget.on && d.travel === 'zones' ? { hours:+d.budget.hours || 32, tolerance:(+d.budget.tol >= 0 ? +d.budget.tol : 5) / 100, strategy:d.budget.strategy, travelMin:d.budget.travelMin, car:d.budget.car, radiusKm:circleKm(), ...(walkOn() ? { mode:'walk', maxFlyers:d.budget.maxFlyers } : {}), ...(roadModeOn() ? { mode:d.budget.mode, placeLabel:t('sugUnnamed', { km:'{km}' }), driveMin:d.budget.driveMin, maxFlyers:d.budget.maxFlyers, outlierM:d.budget.outlierM, outlierPerKm:d.budget.outlierPerKm, ...(d.budget.grid && d.budget.gridFor === (d.start ? d.start.lat.toFixed(5) + ',' + d.start.lng.toFixed(5) : '') ? { _grid:d.budget.grid } : {}) } : {}), ...(capOn() ? { cap:{ target:d.budget.cap, places:(d.capPlaces || []).map(x => ({ id:x.id, lat:x.lat, lng:x.lng, cells:x.cells })) } } : {}) } : null, must:d.must, zone:d.zone, side:d.side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers, zone:x.p && x.p.length > 2 ? x.p : null, all:!!x.all, ...(x.cid ? { cid:x.cid } : {}), auto:!!x.auto })) }, pr.stage); }
     catch(e){ pr.stop(); if(tok !== d.token || !alive()) return; d.err = errText2(e); d.busy = false; toast(t('streetsFail', { e:d.err })); renderSheet(); return; }
     pr.stop();
     if(tok !== d.token || !alive() || !res || res.skipped) return;
@@ -1351,13 +1355,13 @@ function viewCreate(edit){
   d.step = tkE ? 3 : 1;
   if(saved.deadline) d.days = workDaysTo(saved.deadline);
   const canReach = k => k === 1 || (!!d.start && (k <= 3 || (!!d.plan && !d.busy)));
-  const goStep = k => { if(!canReach(k)) return; saved = keep(); d.step = k; const sh = $('#cSheet'); if(sh){ sh.scrollTop = 0; if(k >= 2) sh.classList.add('tall'); } renderSheet();
-    if(k >= 2 && d.start){ if(!d.loaded) loadArea(); else if(!d.plan || d.dirty) recompute(); } };
+  const goStep = k => { if(!canReach(k)) return; saved = keep(); d.step = k; const sh = $('#cSheet'); if(sh && k >= 2) sh.classList.add('tall'); renderSheet();
+    if(k >= 2 && d.start){ if(!d.loaded) loadArea(); else if(!d.busy && (!d.plan || d.dirty)) recompute(); } };
   function renderSheet(){
     if(!alive()) return;
     if($('#cWz')) saved = keep();
     saveDraft();
-    const sc = d.step === d.lastStep ? (($('#cSheet') || {}).scrollTop || 0) : 0; d.lastStep = d.step;
+    const sc = d.step === d.lastStep ? (($('#cSheetContent') || {}).scrollTop || 0) : 0; d.lastStep = d.step;
     const p = d.plan, title = saved.title || (d.place ? d.place.name : '');
     // a place's share of the flyers and how many mailboxes it has (from the last plan); button: take all of them
     const spOf = name => name && p && p.split && p.split.find(y => y.name === name);
@@ -1463,6 +1467,7 @@ function viewCreate(edit){
         <p class="small">${b.strategy === 'near-first' ? esc(t('budNearFirstResult', { h:effH, mb:fmtN(b.planned) })) : esc(t(b.fits_all ? 'budFitsAll' : b.limit === 'time' ? 'budLimitTime' : 'budLimitCap', { h:b.hours, mb:fmtN(b.planned), f:fmtN(b.flyers_max) }))}</p>${capped ? `<p class="small warn">${esc(t('budCappedDays', { h:b.hours, eff:effH, days:d.days, hpd:d.hours, n:d.n }))}</p>` : ''}
         ${b.workers.map(w => `<div class="route-row"><span class="swatch" style="background:${Planner.COLORS[w.w % 10]}"></span><div class="grow"><b>${esc(t('personN', { n:w.w + 1 }))}</b><span class="small muted">${esc(hh(w.minutes))} · ≈ ${fmtN(w.mailboxes)} · ${esc(f1(w.km))} km</span></div></div>`).join('')}
         <p class="small muted" style="margin:6px 0 0">${esc(t('budDist', { km:f1(Math.round(b.length_m / 100) / 10) }))}</p>
+        ${b.auto ? `<p class="small" id="cAutoResult">${esc(t(b.travel.moves ? 'budgetAutoMixed' : 'budgetAutoWalk', { n:b.travel.moves }))}</p>` : ''}
         ${b.drive ? driveHtml(b) : ''}
         ${b.walk ? `<p class="small" id="cWalkResult">${esc(t('walkStop_' + b.walk.stop, { f:fmtN(b.walk.max_flyers || 0), left:hh(b.walk.left_minutes) }))}</p>` : ''}
         ${b.strategy === 'near-first' ? hoursHtml(b) : ''}
@@ -1528,16 +1533,17 @@ ${d.budget.on && d.budget.strategy === 'near-first' ? '' : `      <label class="
             ${d.budget.mode == null ? `<option value="" selected>${esc(t('budgetModeLegacy'))}</option>` : ''}
             <option value="walk" ${walkOn() ? 'selected' : ''}>${esc(t('budgetModeWalk'))}</option>
             <option value="drive" ${driveOn() ? 'selected' : ''}>${esc(t('budgetModeCar'))}</option>
+            <option value="auto" ${autoOn() ? 'selected' : ''}>${esc(t('budgetModeAuto'))}</option>
           </select>` : ''}
-          ${walkOn() || driveOn() ? `<label class="f" for="cMaxFly">${esc(t('dfFly'))}</label><input class="in" type="number" id="cMaxFly" min="1" step="100" inputmode="numeric" placeholder="${esc(t('dfNone'))}" value="${d.budget.maxFlyers ?? ''}">` : ''}
-          ${driveOn() ? `<label class="f" for="cDriveMin">${esc(t('dfMin'))}</label><input class="in" type="number" id="cDriveMin" min="5" max="30" step="1" inputmode="numeric" placeholder="${esc(t('dfNone'))}" value="${d.budget.driveMin ?? ''}">
-            <p class="small muted">${esc(t('dfHint'))}</p>
+          ${walkOn() || roadModeOn() ? `<label class="f" for="cMaxFly">${esc(t('dfFly'))}</label><input class="in" type="number" id="cMaxFly" min="1" step="100" inputmode="numeric" placeholder="${esc(t('dfNone'))}" value="${d.budget.maxFlyers ?? ''}">` : ''}
+          ${roadModeOn() ? `<label class="f" for="cDriveMin">${esc(t('dfMin'))}</label><input class="in" type="number" id="cDriveMin" min="5" max="30" step="1" inputmode="numeric" placeholder="${esc(t('dfNone'))}" value="${d.budget.driveMin ?? ''}">
+            <p class="small muted">${esc(t(autoOn() ? 'budgetAutoHint' : 'dfHint'))}</p>
             <details class="small" id="cOutl"><summary>${esc(t('dfOutl'))}</summary><div class="cap-in" style="margin-top:6px"><label class="small" for="cOutM">${esc(t('dfOutM'))}</label><input class="in" type="number" id="cOutM" min="100" max="20000" step="50" value="${d.budget.outlierM}"></div>
               <div class="cap-in" style="margin-top:6px"><label class="small" for="cOutK">${esc(t('dfOutK'))}</label><input class="in" type="number" id="cOutK" min="0" max="50" step="0.5" value="${d.budget.outlierPerKm}"></div></details>` : ''}
-          ${d.budget.strategy === 'near-first' && !driveOn() && !walkOn() ? `<label class="check"><input id="cCircle" type="checkbox" ${d.budget.radiusKm != null ? 'checked' : ''}><span>${esc(t('circleArea'))}</span></label>${d.budget.radiusKm != null ? `<label class="f" for="cRadiusKm">${esc(t('circleRadius'))}</label><input class="in" type="number" id="cRadiusKm" min="${MIN_RADIUS_KM}" max="${MAX_RADIUS_KM}" step="0.5" value="${esc(d.budget.radiusKm)}"><p class="small muted">${esc(t('circleHint'))}</p>` : ''}` : ''}
-          ${driveOn() || walkOn() ? '' : `<label class="check" style="margin-top:8px"><input id="cBudgetCar" type="checkbox" ${d.budget.car ? 'checked' : ''}><span>${esc(t('budCar'))}</span></label>
+          ${d.budget.strategy === 'near-first' && !roadModeOn() && !walkOn() ? `<label class="check"><input id="cCircle" type="checkbox" ${d.budget.radiusKm != null ? 'checked' : ''}><span>${esc(t('circleArea'))}</span></label>${d.budget.radiusKm != null ? `<label class="f" for="cRadiusKm">${esc(t('circleRadius'))}</label><input class="in" type="number" id="cRadiusKm" min="${MIN_RADIUS_KM}" max="${MAX_RADIUS_KM}" step="0.5" value="${esc(d.budget.radiusKm)}"><p class="small muted">${esc(t('circleHint'))}</p>` : ''}` : ''}
+          ${roadModeOn() || walkOn() ? '' : `<label class="check" style="margin-top:8px"><input id="cBudgetCar" type="checkbox" ${d.budget.car ? 'checked' : ''}><span>${esc(t('budCar'))}</span></label>
           <label class="f" for="cBudT">${esc(t('budTol'))}</label><input class="in" type="number" id="cBudT" min="0" max="25" step="1" value="${esc(d.budget.tol)}">`}
-          ${(d.side.length || d.must.some(a => a.p?.length > 2) || d.zone?.length > 2) && d.budget.strategy === 'near-first' && !walkOn() ? driveOn() ? `<details class="small" id="cRideOpt" ${+d.budget.travelMin > 0 ? 'open' : ''}><summary>${esc(t('dfRideOpt'))}</summary><input class="in" type="number" id="cBudTravel" min="1" max="480" step="1" inputmode="numeric" value="${esc(d.budget.travelMin || '')}" placeholder="${esc(t('dfRideAuto'))}" style="margin-top:6px"><p class="small muted">${esc(t('dfRideHint'))}</p></details>` : `<label class="f" for="cBudTravel">${esc(t('budTravelInput'))}</label><input class="in" type="number" id="cBudTravel" min="1" max="480" step="1" value="${esc(d.budget.travelMin || '')}" placeholder="z. B. 20"><p class="small muted">${esc(t('budTravelInputHint'))}</p>` : ''}` : ''}` : ''}
+          ${(d.side.length || d.must.some(a => a.p?.length > 2) || d.zone?.length > 2) && d.budget.strategy === 'near-first' && !walkOn() ? roadModeOn() ? `<details class="small" id="cRideOpt" ${+d.budget.travelMin > 0 ? 'open' : ''}><summary>${esc(t('dfRideOpt'))}</summary><input class="in" type="number" id="cBudTravel" min="1" max="480" step="1" inputmode="numeric" value="${esc(d.budget.travelMin || '')}" placeholder="${esc(t('dfRideAuto'))}" style="margin-top:6px"><p class="small muted">${esc(t('dfRideHint'))}</p></details>` : `<label class="f" for="cBudTravel">${esc(t('budTravelInput'))}</label><input class="in" type="number" id="cBudTravel" min="1" max="480" step="1" value="${esc(d.budget.travelMin || '')}" placeholder="z. B. 20"><p class="small muted">${esc(t('budTravelInputHint'))}</p>` : ''}` : ''}` : ''}
       <label class="f" for="cNotes">${esc(t('note'))}</label><textarea class="in" id="cNotes" placeholder="${esc(t('notesPh'))}"></textarea>
       <p class="small muted" style="margin:6px 0 0">${esc(saved.deadline ? t('deadlineDays', { d:d.days }) : t('deadlineNone'))}</p>
       ${p ? `<div class="${cap.ok ? 'hint' : 'warnbox'}">${cap.ok ? esc(needDays === 1 ? t('fitsOne') : t('fitsOk', { d:needDays })) : esc(t('tooBig', { h:cap.slowest.toFixed(1).replace('.', ','), lim:cap.limit, d:d.days }))}</div>` : ''}`;
@@ -1569,15 +1575,15 @@ ${d.budget.on && d.budget.strategy === 'near-first' ? '' : `      <label class="
     sheet(`<div class="sheet-header"><button class="sheet-grip" id="grip" aria-label="${esc(t('panel'))}"></button><button class="sheet-min" id="cMin" aria-expanded="${isMini ? 'false' : 'true'}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg><span>${esc(t(isMini ? 'panelShow' : 'panelHide'))}</span></button>
       <div class="cbusy" id="cBusy" role="status" ${d.busy ? '' : 'hidden'}>${d.busy ? esc(d.status || '') : ''}</div></div>
       <div class="wz" id="cWz">${STEPS.map((k, i) => `<button class="${i + 1 === d.step ? 'on' : i + 1 < d.step ? 'done' : ''}" data-step="${i + 1}" ${canReach(i + 1) ? '' : 'disabled'} aria-current="${i + 1 === d.step ? 'step' : 'false'}"><i></i><span>${i + 1} ${esc(t(k))}</span></button>`).join('')}</div>
-      <div class="wz-head"><small>${esc(t('wzStepOf', { n:d.step, of:STEPS.length }))} · <b>${esc(t(STEPS[d.step - 1]))}</b></small><p>${esc(t('wzDesc' + d.step))}</p></div>
+      <div class="sheet-content" id="cSheetContent"><div class="wz-head"><small>${esc(t('wzStepOf', { n:d.step, of:STEPS.length }))} · <b>${esc(t(STEPS[d.step - 1]))}</b></small><p>${esc(t('wzDesc' + d.step))}</p></div>
       ${outsideManual() ? `<div class="warnbox" id="cCircleWarning">${esc(t('circleManualOutside'))}</div>` : ''}
       ${body}
       ${!nextOk ? `<p class="wz-why" role="status">${ICONS.alert}<span>${esc(!d.start ? t('wzNeedStart') : d.busy || !p ? t('wzCalc') : t('wzFix'))}</span></p>` : ''}
-      <div class="wz-nav">${d.step > 1 ? `<button class="btn ghost" id="cPrev">${esc(t('back'))}</button>` : ''}
+      </div><div class="wz-nav">${d.step > 1 ? `<button class="btn ghost" id="cPrev">${esc(t('back'))}</button>` : ''}
         <button class="btn primary" id="${last ? 'cSave' : 'cNext'}" ${nextOk ? '' : 'disabled'}>${esc(last ? t('saveTask') : t('next'))}</button></div>`);
-    restore(saved); $('#cSheet').scrollTop = sc;
+    restore(saved); $('#cSheetContent').scrollTop = sc;
     $('#grip').onclick = () => $('#cSheet').classList.toggle('tall');
-    $('#cMin').onclick = () => { const sh = $('#cSheet'), mini = sh.classList.toggle('mini'); sh.scrollTop = 0; const bt = $('#cMin'); bt.setAttribute('aria-expanded', mini ? 'false' : 'true'); bt.querySelector('span').textContent = t(mini ? 'panelShow' : 'panelHide'); setTimeout(() => m.invalidateSize(), 250); };
+    $('#cMin').onclick = () => { const sh = $('#cSheet'), mini = sh.classList.toggle('mini'); $('#cSheetContent').scrollTop = 0; const bt = $('#cMin'); bt.setAttribute('aria-expanded', mini ? 'false' : 'true'); bt.querySelector('span').textContent = t(mini ? 'panelShow' : 'panelHide'); setTimeout(() => m.invalidateSize(), 250); };
     document.querySelectorAll('[data-step]').forEach(b => b.onclick = () => goStep(+b.dataset.step));
     if($('#cPrev')) $('#cPrev').onclick = () => goStep(d.step - 1);
     if($('#cNext')) $('#cNext').onclick = () => {
