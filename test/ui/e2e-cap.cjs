@@ -129,6 +129,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
       JSON.stringify(cfg));
     ok(name+': new orders: three optional maxima – drive time (15 min), hours, flyers; no km circle',
       await pg.evaluate(()=>+document.getElementById('cDriveMin')?.value===15 && document.getElementById('cMaxFly')?.value==='' && !document.getElementById('cCircle')));
+    await pg.locator('#cBudgetMode').selectOption('drive');
     await pg.evaluate(()=>{ const r=document.getElementById('cDriveMin'); r.value=12; r.dispatchEvent(new Event('change')); });
     await pg.evaluate(H=>{
       const h=document.getElementById('cBudH');h.value=H;h.dispatchEvent(new Event('change'));
