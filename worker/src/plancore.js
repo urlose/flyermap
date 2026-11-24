@@ -696,8 +696,14 @@ export function createPlanService(cache){
       const fits=e=>e.total*calib<=limH+.01&&e.mb<=limF+.01;
       const maxC=Math.min(items.length,budget._maxItems??items.length);   // after a re-plan with longer real rides: fewer streets
       stage('calculating');
-      let lo=0,hi=maxC,best=evalPrefix(0);
-      if(maxC&&fits(evalPrefix(maxC)))best=evalPrefix(maxC);
+      // 24.11.2026 (Frankfurt): planning a prefix is expensive (a whole city in the zone = minutes per try). A cheap lower bound
+      // first – every street walked once (with slack: routes may drop a street) + 5 s per mailbox – rules out prefixes that cannot fit,
+      // so the search only plans prefixes near the answer. The result is the same, only without the hopeless tries.
+      let maxFit=maxC;
+      { let len=0,mbs=0; for(let c=0;c<maxC;c++){ const it=items[c]; len+=+areas[it.ai].g.edges[it.i].len||0; mbs+=+it.mb||0;
+          if((mbs*.9>limF+.01)||Planner.routeMinutes(len*.6,mbs*.9)*calib>limH+.01){ maxFit=c; break; } } }
+      let lo=0,hi=maxFit,best=evalPrefix(0);
+      if(maxFit===maxC&&maxC&&fits(evalPrefix(maxC)))best=evalPrefix(maxC);
       else for(let it=0;it<18&&lo<hi;it++){ const mid=Math.ceil((lo+hi)/2), e=evalPrefix(mid); if(fits(e)){best=e;lo=mid;}else hi=mid-1; }
       // the rest of the budget by nearness: later streets that still fit are added one by one (Cem: fill until it is really used up)
       const firstOut=best.c;
