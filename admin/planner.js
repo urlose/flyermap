@@ -1327,10 +1327,12 @@
     // along the borders, routed for real, and scored: the slowest worker first, total walking second.
     const score = rs => { const m = rs.map(r => r.minutes), mx = Math.max(...m), sum = m.reduce((a, b) => a + b, 0); return mx + 0.3 * sum / m.length + 0.01 * (mx - Math.min(...m)); };
     let bestParts = null, routes = null, builds = 0;
-    const tryParts = parts => { const rs = build(parts); builds++; if(!routes || score(rs) < score(routes)){ routes = rs; bestParts = parts; return true; } return false; };
+    const splitScore = (rs, parts) => score(rs) + (opt.compact ? 250 * mixShare(g, parts) : 0);
+    const tryParts = parts => { const rs = build(parts); builds++; if(!routes || splitScore(rs, parts) < splitScore(routes, bestParts)){ routes = rs; bestParts = parts; return true; } return false; };
     // every candidate with its stray bits handed over; the three best are also evened out along the borders
     const cands = [partition(g, start, N, sel.ids, w), ...(N > 1 ? balancedSplits(g, start, N, sel.ids, 8) : [])];
-    const tried = cands.map(raw => { const t = tidyParts(g, raw), rs = build(t); builds++; if(!routes || score(rs) < score(routes)){ routes = rs; bestParts = t; } return { t, sc:score(rs) }; });
+    if(opt.compact) cands.push(...centreSplits(g, N, sel.ids, w, 4));
+    const tried = cands.map(raw => { const t = tidyParts(g, raw), rs = build(t), sc = splitScore(rs, t); builds++; if(!routes || sc < splitScore(routes, bestParts)){ routes = rs; bestParts = t; } return { t, sc }; });
     if(N > 1) for(const { t } of tried.sort((a, b) => a.sc - b.sc).slice(0, 3)) tryParts(balanceParts(g, t));
     if(N > 1){
       // fine tuning with the real routes: the slowest worker hands streets at the border to a faster neighbour
@@ -1358,20 +1360,24 @@
     const hpd = opt.hoursPerDay || WORK_HOURS, maxDays = opt.days || 1;
     const dayInfo = r => ({ length_m:r.length_m, street_m:r.street_m, minutes:r.minutes, mailboxes:r.mailboxes });
     const withDays = (part, k, base) => {
-      const nd = Math.min(maxDays, Math.max(1, Math.ceil(base.minutes / 60 / hpd)));
-      if(nd < 2 || part.length < nd) return { ...base, days:[{ i0:0, i1:Math.max(0, base.path.length - 1), ...dayInfo(base) }] };
-      // Sectors around the start alone give long thin wedges when the whole area lies on one side of the start: the days
-      // then run side by side through the same streets. So compact candidates are added too (near/far bands along the walking
-      // distance, sectors around the area's own centre), and a split whose days interleave is penalised.
-      const raw = [partition(g, start, nd, part, w), ...balancedSplits(g, start, nd, part, 4), ...bandSplits(g, start, nd, part, w), ...centreSplits(g, nd, part, w, 4)];
-      const cands = raw.flatMap(ps => { const t = tidyParts(g, ps); return [ps, t, balanceParts(g, t)]; });
+      const minDays = Math.min(maxDays, Math.max(1, Math.ceil(base.minutes / 60 / hpd)));
+      if(minDays < 2 || part.length < minDays) return { ...base, days:[{ i0:0, i1:Math.max(0, base.path.length - 1), ...dayInfo(base) }] };
+      // Compact cuts may add enough walking that a shift no longer fits.
+      // In walking mode, try the next available work day before dropping streets.
+      const lastDayCount = opt.compact ? Math.min(maxDays, part.length) : minDays;
       let best = null;
-      for(const ps of cands){
-        const rs = build(ps.filter(x => x.length), base.root);
-        if(rs.length < 2) continue;
-        const mx = Math.max(...rs.map(r => r.minutes)), mn = Math.min(...rs.map(r => r.minutes));
-        const sc = mx + 0.3 * rs.reduce((a, r) => a + r.minutes, 0) / rs.length + 0.01 * (mx - mn) + 250 * mixShare(g, ps.filter(x => x.length));
-        if(!best || sc < best.sc){ best = { rs, sc }; }
+      for(let nd = minDays; nd <= lastDayCount; nd++){
+        const raw = [partition(g, start, nd, part, w), ...balancedSplits(g, start, nd, part, 4), ...bandSplits(g, start, nd, part, w), ...centreSplits(g, nd, part, w, 4)];
+        const cands = raw.flatMap(ps => { const t = tidyParts(g, ps); return [ps, t, balanceParts(g, t)]; });
+        for(const ps of cands){
+          const nonempty = ps.filter(x => x.length), rs = build(nonempty, base.root);
+          if(rs.length < 2) continue;
+          const mx = Math.max(...rs.map(r => r.minutes)), mn = Math.min(...rs.map(r => r.minutes));
+          const overflow = opt.compact ? Math.max(0, mx - hpd * 60) : 0;
+          const sc = mx + 0.3 * rs.reduce((a, r) => a + r.minutes, 0) / rs.length + 0.01 * (mx - mn) + 250 * mixShare(g, nonempty);
+          if(!best || overflow < best.overflow || (overflow === best.overflow && sc < best.sc)) best = { rs, sc, overflow };
+        }
+        if(best?.overflow === 0) break;
       }
       if(!best) return { ...base, days:[{ i0:0, i1:Math.max(0, base.path.length - 1), ...dayInfo(base) }] };
       const path = [], steps = [], boxes = [], days = [];

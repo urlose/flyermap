@@ -52,3 +52,19 @@ Object.assign(T.de, { driveZone:'Warte auf Straßendaten…', loadingVillages:'L
 Object.assign(T.ru, { driveZone:'Жду данные о дорогах…', loadingVillages:'Загружаю ближайшие населённые пункты…', rides:'Рассчитываю переезды между населёнными пунктами…', checkingLimits:'Проверяю лимиты времени и флаеров…', planElapsed:'{n} с' });
 
 Object.assign(T.en, { driveZone:'Waiting for road data…', loadingVillages:'Loading places within reach…', rides:'Calculating drives between places…', checkingLimits:'Checking time and flyer limits…', planElapsed:'{n} s' });
+
+Object.assign(T.de, {
+  budgetModeLabel:'Fortbewegung', budgetModeLegacy:'Bisherige Einstellung', budgetModeWalk:'Zu Fuß', budgetModeCar:'Auto verfügbar',
+  walkMax:'Höchstens {h} für alle Mitarbeiter.', walkStop_all:'Alle erreichbaren Adressen eingeplant. Frei: {left}.',
+  walkStop_hours:'Gestoppt durch die Arbeitszeit. Frei: {left}.', walkStop_flyers:'Gestoppt durch das Flyerlimit ({f}).'
+});
+Object.assign(T.ru, {
+  budgetModeLabel:'Способ передвижения', budgetModeLegacy:'Прежняя настройка', budgetModeWalk:'Пешком', budgetModeCar:'Машина доступна',
+  walkMax:'Не больше {h} на всех сотрудников.', walkStop_all:'Все доступные адреса в плане. Осталось: {left}.',
+  walkStop_hours:'Достигнут лимит рабочего времени. Осталось: {left}.', walkStop_flyers:'План ограничен тиражом ({f}).'
+});
+Object.assign(T.en, {
+  budgetModeLabel:'Travel mode', budgetModeLegacy:'Previous setting', budgetModeWalk:'On foot', budgetModeCar:'Car available',
+  walkMax:'At most {h} for all workers.', walkStop_all:'All reachable addresses are planned. Time left: {left}.',
+  walkStop_hours:'Limited by work hours. Time left: {left}.', walkStop_flyers:'Limited by the flyer count ({f}).'
+});
