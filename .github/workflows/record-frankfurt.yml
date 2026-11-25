@@ -1,0 +1,36 @@
+name: Record Frankfurt snapshot (read-only public data)
+# Westerbachstraße 29, 60489 Frankfurt: 2 people, 10 000 flyers, mode Automatisch. Records every public map request of the planner
+# (tiles, Overpass roads, census files, geocoder) so before/after comparisons run offline on identical data. The snapshot holds the
+# requests of the main planner AND of this branch's planner (a different selection can ask for a different map section).
+on:
+  workflow_dispatch:
+  push:
+    branches: [fix/radial-street-selection]
+    paths: ['.github/workflows/record-frankfurt.yml']
+permissions:
+  contents: write
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with: { ref: main, path: base }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Record (main planner first, then this branch; up to 3 tries each)
+        run: |
+          rm -f test/fixtures/frankfurt-westerbachstrasse-2026-11-24.json.gz
+          for i in 1 2 3; do PLAN_ROOT=$PWD/base node test/plan-compare.mjs frankfurt --record --merge > /tmp/rec-main.txt && break; sleep 60; done
+          for i in 1 2 3; do node test/plan-compare.mjs frankfurt --record --merge > /tmp/rec-pr.txt && break; sleep 60; done
+          ls -la test/fixtures/frankfurt-westerbachstrasse-2026-11-24.json.gz
+      - name: Replay offline (main planner, then this branch)
+        run: |
+          PLAN_ROOT=$PWD/base node test/plan-compare.mjs frankfurt | head -50
+          node test/plan-compare.mjs frankfurt | head -50
+      - name: Commit the snapshot
+        run: |
+          git config user.name "github-actions[bot]"; git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add test/fixtures/frankfurt-westerbachstrasse-2026-11-24.json.gz
+          git commit -m "Frankfurt snapshot of the public map data (recorded in CI)" && git push
