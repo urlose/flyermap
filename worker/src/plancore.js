@@ -5,7 +5,8 @@ import Planner from '../../admin/planner.js';
 import { outwardStreetOrder, streetGeometryKey } from './nearfirst.js';
 import { radiusKm, insideCircle, circlePolygon, clipDeliveryGraph } from './circlearea.js';
 import { capPlan, clipToKeep, droppedStreets, plannedBoxes, boxKey } from './flyercap.js';
-import { censusSource, placeMask, censusPlaces, cellOf, unlaea } from './zensus.js';
+import { censusSource, placeMask, placeMasks, chooseMainPlace, censusPlaces, cellOf, unlaea } from './zensus.js';
+const LEGACY_MAIN_PLACE = !!globalThis.process?.env?.FM_LEGACY_MAIN_PLACE;   // tests: the old choice (biggest area within 1.5 km) for comparison
 const SPREAD_MIN = 10;   // drive-time planner: minutes counted per km a piece lies from the middle of its worker's pieces (compact areas)
 const BOX_W = 25;   // compact split: one mailbox weighs like 25 m of street (≈ 5 s + walking)
 const DAY_WASTE = .35;   // a day may end up to 35 % early at a place border (instead of cutting the next place)
@@ -521,13 +522,24 @@ export function createPlanService(cache){
       if(!G || gKey !== keyOf(start)){ stage('loadingArea'); await load(start, Math.max(flyers, 2000), undefined, must, stage, stale, 'loadingArea', zone); }
       if(stale()) return { skipped:true };
       const hasZone = !!(zone && zone.length > 2);
-      const mMask = hasZone ? null : await maskOf(start[0], start[1]);
+      // the main place: the built-up area at the flag, measured on foot (zensus.js chooseMainPlace); before 27.11.2026 the biggest
+      // area within 1.5 km, which in Löhne was the neighbouring town and left every street around the flag out
+      let mMask = null, mainInfo = null;
+      if(!hasZone){
+        if(LEGACY_MAIN_PLACE) mMask = await maskOf(start[0], start[1]);
+        else{
+          const masks = await placeMasks(start[0], start[1]).catch(() => []);
+          const streets = outwardStreetOrder(G, start, { isolatedGapM:Infinity }).streets.map(q => { const c = G.edges[q.i].coords; return { distance:q.distance, mid:c[Math.floor(c.length / 2)] }; });
+          mainInfo = chooseMainPlace(masks, streets); mMask = mainInfo ? mainInfo.mask : null;
+        }
+      }
       const gm = view(G, mMask);
-      // where the walking starts: at the start when the town is all around it, else in the town's centre (a start in an industrial
-      // estate or at the edge would only reach the few streets next to it)
+      // where the walking starts: at the flag when the place is around it; a flag away from the houses (warehouse, industrial
+      // estate, railway in between) walks from the nearest street of the place on foot
       let st0 = start;
-      if(mMask){ const at = s0 => Planner.selectWithMust(gm, s0, 1e9, must, null).mailboxes || 0, a = at(start);
+      if(mMask && (LEGACY_MAIN_PLACE || !mainInfo || mainInfo.rule === 'biggest')){ const at = s0 => Planner.selectWithMust(gm, s0, 1e9, must, null).mailboxes || 0, a = at(start);
         const c0 = Planner.denseEntry(gm, mMask.centre, null, 150) || mMask.centre; if(at(c0) > a * 1.3) st0 = c0; }
+      else if(mainInfo && mainInfo.walkFrom) st0 = mainInfo.walkFrom;
       // When the admin manually changes a chosen village's flyer count, reserve that many
       // from the order before planning the main town. Automatic choices keep the old distribution.
       const reserved = (side || []).filter(c => c.cid && c.auto === false && !c.all)
@@ -551,6 +563,7 @@ export function createPlanService(cache){
       routes.forEach((r, i) => { r.idx = i; });
       const perW = Array.from({ length:n }, (_, k) => load0(k));
       const plan = { routes, mailboxes:Math.round(mb), zone:[], zones:true, split, side_failed:failed, side_info:[], must_mb:0, must_info:[], per_worker:perW };
+      Object.defineProperty(plan, 'mainPlace', { value:{ start:st0, mask:mMask, rule:mainInfo ? mainInfo.rule : (mMask ? 'biggest' : null), walk_m:mainInfo ? mainInfo.walk_m : null }, enumerable:false });   // tests / diagnosis only, not saved
       plan.capacity = Planner.capacity(perW.map((m, k) => ({ idx:k, minutes:m })), flyers, { hoursPerDay:hours, days });
       const sug = Math.min(20, Planner.suggestWorkers(perW.reduce((a, b) => a + b, 0), hours, days));
       return { plan, sug, street_m:G.street_m };
