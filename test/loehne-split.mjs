@@ -50,13 +50,8 @@ const before = run(true), after = run(false);
 
 // ---- measures: delivery streets per worker, connected pieces, transit through the other's area ----
 const ownerOf = rs => { const m = new Map(); rs.forEach((r, k) => (r.part || []).forEach(i => m.set(i, k))); return m; };
-const pieces = part => {   // connected pieces of a worker's delivery streets (streets touching at a junction = one piece)
-  const set = new Set(part), node = new Map(), seen = new Set(); let n = 0;
-  for(const i of part){ const e = G.edges[i]; for(const v of [e.a, e.b]){ if(!node.has(v)) node.set(v, []); node.get(v).push(i); } }
-  for(const i of part){ if(seen.has(i)) continue; n++; const st = [i]; seen.add(i);
-    while(st.length){ const e = G.edges[st.pop()]; for(const v of [e.a, e.b]) for(const j of node.get(v)) if(set.has(j) && !seen.has(j)){ seen.add(j); st.push(j); } } }
-  return n;
-};
+// connected pieces of a worker's delivery streets – the planner's own rule (junction, or a way over roads the other one does not deliver)
+const pieces = (part, foreign) => Planner.linkedPieces(G, part, foreign).length;
 const near = (p, q) => Math.abs(p[0] - q[0]) < 2e-6 && Math.abs(p[1] - q[1]) < 2e-6;
 const segLen = (a, b) => 111320 * Math.hypot(b[0] - a[0], (b[1] - a[1]) * Math.cos(a[0] * Math.PI / 180));
 // walked metres on streets that the OTHER worker delivers (transit through a foreign area), from the real route path
@@ -71,7 +66,7 @@ const report = (name, { p, ms }) => {
   const rs = p.routes, own = ownerOf(rs), tr = transit(rs, own), mins = rs.map(r => r.minutes), avg = mins.reduce((a, b) => a + b, 0) / rs.length;
   const mahnen = rs.map(r => (r.part || []).filter(inMahnen).reduce((a, i) => a + G.edges[i].mb, 0));
   return { name, ms, spread_pct:Math.round((Math.max(...mins) - Math.min(...mins)) / avg * 1000) / 10,
-    workers:rs.map((r, k) => ({ k, hours:Math.round(r.minutes / 6) / 10, mailboxes:Math.round(r.mailboxes), km:Math.round(r.length_m / 100) / 10, pieces:pieces(r.part || []), mahnen_mb:Math.round(mahnen[k]), ...tr[k] })) };
+    workers:rs.map((r, k) => ({ k, hours:Math.round(r.minutes / 6) / 10, mailboxes:Math.round(r.mailboxes), km:Math.round(r.length_m / 100) / 10, pieces:pieces(r.part || [], new Set(rs.filter((_, q) => q !== k).flatMap(x => x.part || []))), mahnen_mb:Math.round(mahnen[k]), ...tr[k] })) };
 };
 const R = { selection:{ streets:ids.length, mailboxes:Math.round(ids.reduce((a, i) => a + G.edges[i].mb, 0)), plan_ms:planMs }, before:report('before', before), after:report('after', after) };
 console.log(JSON.stringify(R, null, 1));
