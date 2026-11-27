@@ -90,6 +90,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const label = await until(() => { const e = [...document.querySelectorAll('.reach-tip')].find(x => /Verteilradius/.test(x.textContent)); return e ? e.textContent : null; }, 20000);
   ok('radius label on the map', !!label && /^Verteilradius ≈ \d+,\d km \(Luftlinie\)$/.test(label), label);
   ok('dashed radius circle drawn', await pg.evaluate(() => !!document.querySelector('path.reach-circle')));
+  const lines = await pg.evaluate(() => ({ deliver:document.querySelectorAll('path.route-deliver').length, transit:document.querySelectorAll('path.route-transit').length,
+    dash:getComputedStyle(document.querySelector('path.route-transit') || document.body).strokeDasharray }));
+  ok('route: handing out solid, walking without handing out thin dashed', lines.deliver > 0 && lines.transit > 0 && /\d/.test(lines.dash), JSON.stringify(lines));
   const inView = await pg.evaluate(() => { const e = document.querySelector('.reach-ctl .reach-tip'); if(!e) return false; const r = e.getBoundingClientRect(); return r.width > 0 && r.top >= 0 && r.bottom <= innerHeight; });
   ok('label visible in the map view', inView);
   await pg.screenshot({ path:path.join(OUT, 'wizard-desktop.png') });

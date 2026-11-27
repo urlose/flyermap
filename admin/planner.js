@@ -654,7 +654,7 @@
       }else circuit.push(stack.pop());
     }
     circuit.reverse();
-    const path = []; let length = 0, street = 0;
+    const path = [], transit = []; let length = 0, street = 0;
     // turn-by-turn steps: [path index, turn code (S SL SR L R U), street name]
     const steps = []; let prevB = null, prevName = null;
     for(const step of circuit){
@@ -670,13 +670,17 @@
       else if(Math.abs(turn) >= 25 || (nm && nm !== prevName)) steps.push([at, turnCode(turn), nm]);
       let k = c.length - 2; while(k > 0 && dist(c[c.length - 1], c[k]) < 4) k--;
       prevB = bearing(c[k], c[c.length - 1]); prevName = nm || prevName;
+      const from = path.length ? path.length - 1 : 0;
       for(const p of (path.length ? c.slice(1) : c)) path.push([+p[0].toFixed(6), +p[1].toFixed(6)]);
       length += ed.len; if(!inst[step.i].dead) street += ed.len;
+      // walking without handing out (way there and back, connections, a street the second time): path ranges, merged
+      if(inst[step.i].dead){ const last = transit[transit.length - 1]; if(last && last[1] === from) last[1] = path.length - 1; else transit.push([from, path.length - 1]); }
     }
     if(path.length) steps.push([path.length - 1, 'end', '']);
     const walked = circuit.filter(st => st.i >= 0).map(st => inst[st.i].e);   // edges in walking order (repeats = walked twice)
     const res = { path, steps, root, length_m:Math.round(length), street_m:Math.round(street), edges:req.length, covered:used.reduce((s, x) => s + x, 0) === inst.length };
     Object.defineProperty(res, 'walked', { value:walked, enumerable:false });   // not saved with a route
+    Object.defineProperty(res, 'transit', { value:{ n:path.length, ranges:transit }, enumerable:false });
     return res;
   }
 
@@ -1418,11 +1422,11 @@
     const w = e => 0.5 * e.len / (total || 1) + 0.5 * e.mb / mbTotal;
     const N = n || 1, build = (parts, rootNode) => { const own = new Map(); parts.forEach((p, k) => p.forEach(e => own.set(e, k)));
       return parts.map((part, k) => {
-        const { walked, ...r } = planPart(g, part, start, rootNode, opt.walkTree);
+        const rr = planPart(g, part, start, rootNode, opt.walkTree), { walked, ...r } = rr;
         const boxes = []; let mb = 0; for(const i of part){ mb += g.edges[i].mb; for(const b of g.edges[i].boxes) boxes.push(b); }
         // metres walked on streets that another worker delivers (crossing his area); not saved with the route
         let foreign = 0; for(const e of walked || []){ const o = own.get(e); if(o != null && o !== k) foreign += g.edges[e].len; }
-        const out = { idx:k, ...r, part, mailboxes:mb, boxes, minutes:routeMinutes(r.length_m, mb) };
+        const out = { idx:k, ...r, part, mailboxes:mb, boxes, minutes:routeMinutes(r.length_m, mb), transit:rr.transit };   // transit: for drawing only (not saved)
         Object.defineProperty(out, 'foreign_m', { value:Math.round(foreign), enumerable:false });
         return out;
       }); };

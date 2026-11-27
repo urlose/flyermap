@@ -127,6 +127,15 @@ function setBadges(){
 }
 // open an order or a person on the map (selected, panel open)
 const showOnMap = sel => { LM.sel = sel; LM.focus = true; if(sel.kind === 'task'){ const tk = A.tasks.find(x => x.id === sel.id); if(tk) LM.f[tk.status === 'done' ? 'done' : 'open'] = true; } adminTab('map'); };
+// a planned route: handing out as a solid line, walking without handing out (there and back, connections, a street a second
+// time) thin and dashed – when the planner marked it (transit, not saved; older routes stay solid)
+const drawRoutePath = (g, r, color) => {
+  const tr = r.transit, p = r.path || [];
+  if(!tr || tr.n !== p.length || !(tr.ranges || []).length){ L.polyline(Planner.pathRuns(p), { color, weight:4, opacity:.85 }).addTo(g); return; }
+  const flag = new Uint8Array(p.length); for(const [a, b] of tr.ranges) for(let i = a + 1; i <= b; i++) flag[i] = 1;
+  let run = [p[0]], f = null; const flush = () => { if(run.length > 1) L.polyline(run.map(q => [q[0], q[1]]), f ? { color, weight:2, opacity:.9, dashArray:'4 6', className:'route-transit' } : { color, weight:4, opacity:.85, className:'route-deliver' }).addTo(g); };
+  for(let i = 1; i < p.length; i++){ if(p[i][2] === 1){ flush(); run = [p[i]]; f = null; continue; } const fi = !!flag[i]; if(f !== null && fi !== f){ flush(); run = [p[i - 1]]; } f = fi; run.push(p[i]); }
+  flush(); };
 // the area where flyers are delivered (27.11.2026): circle around the flag through the farthest planned mailbox (or route point)
 const reachM = (st, routes) => { let R = 0; const k = Math.cos(st[0] * Math.PI / 180);
   for(const r of routes || []) for(const q of (r.boxes && r.boxes.length ? r.boxes : (r.path || []).filter(x => x[2] !== 1))) R = Math.max(R, 111320 * Math.hypot(q[0] - st[0], (q[1] - st[1]) * k));
@@ -1392,7 +1401,7 @@ function viewCreate(edit){
     if(!z && d.plan.zone.length > 2) z = L.polygon(d.plan.zone, { color:css('--brand'), weight:2, fillOpacity:.06, interactive:false }).addTo(zoneLayer);
     L.marker(startArr(), { icon:dot('pin-start', 26) }).addTo(zoneLayer); drawMust();
     (d.plan.dropped || []).forEach(l => L.polyline(l, { color:'#94A3B8', weight:4, opacity:.9, dashArray:'4 6', interactive:false, className:'dropped-street' }).addTo(planLayer));   // taken out for the smaller print run
-    d.plan.routes.forEach((r, i) => { if(r.path.length > 1) L.polyline(Planner.pathRuns(r.path), { color:Planner.COLORS[(r.w != null ? r.w : i) % 10], weight:4, opacity:.85 }).addTo(planLayer); });
+    d.plan.routes.forEach((r, i) => { if(r.path.length > 1) drawRoutePath(planLayer, r, Planner.COLORS[(r.w != null ? r.w : i) % 10]); });
     if(d.plan.budget && d.plan.budget.driveZone && d.plan.budget.drive){   // reached area: fully covered rings darker, the next ring lighter
       const g = d.plan.budget.driveZone, v = d.plan.budget.drive;
       L.polygon(gridRectsUpTo(g, v.next ? v.next.min : v.full_min), { stroke:false, fillColor:css('--brand'), fillOpacity:.06, interactive:false, className:'drive-next' }).addTo(planLayer);
