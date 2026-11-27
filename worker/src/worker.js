@@ -2,7 +2,7 @@ import L from 'leaflet';
 import { registerPlugin } from '@capacitor/core';
 import { App } from '@capacitor/app';
 import Planner from '../../admin/planner.js';
-import { makeNav, dayProgress, nearestOpen, rerouteDay, stepsFromPath, checkpoints, addSkips, openStraight, pieceAt, piecesBoxes, pickReserve, insertDetour } from './nav.js';
+import { makeNav, dayProgress, nearestOpen, rerouteDay, stepsFromPath, checkpoints, addSkips, openStraight, pieceAt, piecesBoxes, pickReserve, insertDetour, cutRemoved } from './nav.js';
 import { REASONS, faqFor } from './help.js';
 import { drawPieces, legendHtml, arrowsAlong, drawCps, showCp, ROUTE_C } from './routedraw.js';
 import { openMapView } from './routeview.js';
@@ -804,8 +804,8 @@ const DAY_COLORS = ['#2563EB', '#EA580C', '#16A34A', '#9333EA', '#DC2626', '#089
 function bigRouteMap(task, dayIdx){
   const pl = task.plan, days = pl.days && pl.days.length > 1 ? pl.days : null, dates = dayList(pl);
   const layers = days ? days.map((d, k) => ({ key:'d' + k, label:t('dayN', { n:k + 1 }) + (d.place ? ' · ' + d.place : ''), on:dayIdx == null || dayIdx === k,
-      add:g => { L.polyline(Planner.pathRuns(pl.path.slice(d.i0, d.i1 + 1)), { color:'#fff', weight:9, opacity:.9, lineJoin:'round' }).addTo(g); L.polyline(Planner.pathRuns(pl.path.slice(d.i0, d.i1 + 1)), { color:DAY_COLORS[k % DAY_COLORS.length], weight:5, opacity:.95, lineJoin:'round' }).addTo(g); } }))
-    : [{ key:'route', label:t('route'), add:g => L.polyline(pl.path, { color:pl.color || '#2563EB', weight:5, opacity:.9, lineJoin:'round' }).addTo(g) }];
+      add:g => { L.polyline(cutRemoved(Planner.pathRuns(pl.path.slice(d.i0, d.i1 + 1)), pl), { color:'#fff', weight:9, opacity:.9, lineJoin:'round' }).addTo(g); L.polyline(cutRemoved(Planner.pathRuns(pl.path.slice(d.i0, d.i1 + 1)), pl), { color:DAY_COLORS[k % DAY_COLORS.length], weight:5, opacity:.95, lineJoin:'round' }).addTo(g); } }))
+    : [{ key:'route', label:t('route'), add:g => L.polyline(cutRemoved(Planner.pathRuns(pl.path), pl), { color:pl.color || '#2563EB', weight:5, opacity:.9, lineJoin:'round' }).addTo(g) }];
   if(task.zone_polygon) layers.unshift({ key:'zone', label:t('area'), on:false, add:g => L.polygon(task.zone_polygon, { color:css('--brand'), weight:2, fillOpacity:.05, interactive:false }).addTo(g) });
   layers.push({ key:'start', add:g => L.marker([task.start_lat, task.start_lng], { icon:dot('pin-start', 26) }).addTo(g) });
   const sel = days && dayIdx != null ? days[dayIdx] : null;

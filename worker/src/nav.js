@@ -219,7 +219,9 @@ export function checkpoints(plan, isDone, every){
       out.push({ day:k, n:s + 1, at:[a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f], pct, done:pct >= 80, runs });
     }
   });
-  return out;
+  // a checkpoint the admin removed is gone (no marker, for the walker neither); the numbers of the others stay
+  const rm = new Set(((plan && plan.skipped) || []).filter(x => x && x.removed && x.cp).map(x => x.cp));
+  return rm.size ? out.filter(c => !rm.has((c.day + 1) + '.' + c.n)) : out;
 }
 
 // 23.11.2026: sections the admin REMOVED from the order (farms, nothing to deliver): skipped entries with removed:true.
@@ -236,6 +238,19 @@ export function keptBoxes(plan, extra){
   return boxes.filter(b => !nearAny(g, b, 30 + Math.min(25, 4 * Math.sqrt(Math.max(1, b[2] || 1)))));
 }
 const lenOf = pts => { let m = 0; for(let i = 1; i < pts.length; i++){ const a = pts[i - 1], b = pts[i]; m += Math.hypot((b[0] - a[0]) * 111320, (b[1] - a[1]) * 111320 * Math.cos(a[0] * Math.PI / 180)); } return m; };
+// 27.11.2026: removed sections are not drawn at all – cut them out of lines that are drawn (edges with both ends on a removed piece)
+export function cutRemoved(runs, plan){
+  const g = rmGrid(plan); if(!g.size || !runs) return runs || [];
+  const out = [];
+  for(const run of runs){ let cur = [];
+    for(let i = 0; i < run.length; i++){
+      if(i && nearAny(g, run[i - 1], 2) && nearAny(g, run[i], 2)){ if(cur.length > 1) out.push(cur); cur = [run[i]]; continue; }
+      cur.push(run[i]);
+    }
+    if(cur.length > 1) out.push(cur);
+  }
+  return out;
+}
 export const removedLen = plan => removedOf(plan).reduce((s, x) => s + lenOf(x.pts), 0);
 // progress of a route in % without its removed sections (the tracker counts them as walked)
 export function effPct(tr, plan){
