@@ -515,6 +515,16 @@ button.ov-t.ov-btn{font:inherit;color:inherit;text-align:left;align-items:stretc
 .list-card{background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);overflow:hidden}
 .lc-row{display:flex;align-items:center;gap:12px;width:100%;padding:10px 12px;background:none;border:0;border-top:1px solid var(--color-border);text-align:left;color:var(--color-text);font:inherit;min-height:52px}
 .lc-row:first-child{border-top:0}
+.rm-card>summary{list-style:none;display:flex;align-items:center;gap:12px;padding:12px;cursor:pointer;min-height:56px}.rm-card>summary::-webkit-details-marker{display:none}
+.rm-card>summary svg{width:18px;height:18px;flex:none;fill:none;stroke:var(--color-text-secondary);stroke-width:2;stroke-linecap:round;transition:transform .15s}.rm-card[open]>summary svg{transform:rotate(90deg)}
+.rm-card .grow{display:flex;flex-direction:column;min-width:0;flex:1}.rm-card small{font-size:13px}
+.rm-card .cnt{font-size:12px;font-weight:600;color:var(--color-primary);background:var(--color-primary-soft);border-radius:var(--radius-full);padding:3px 10px;white-space:nowrap}
+.rm-route{border-top:1px solid var(--color-border);padding:10px 12px 12px}
+.rm-head{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+.rm-chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip.rm-chip{cursor:pointer;min-height:32px;padding:4px 10px;gap:6px;font-variant-numeric:tabular-nums;border-color:var(--color-border)}
+.chip.rm-chip small{font-size:11px;color:var(--color-text-secondary)}.chip.rm-chip i{font-style:normal;color:var(--color-text-secondary)}
+@media (hover:hover){.chip.rm-chip:hover{border-color:var(--color-primary);color:var(--color-primary)}.chip.rm-chip:hover i{color:var(--color-primary)}}
 .lc-row .grow{display:flex;flex-direction:column;min-width:0}.lc-row small{font-size:13px}
 .lc-row>svg{width:18px;height:18px;flex:none;color:var(--color-text-secondary);fill:none;stroke:currentColor;stroke-width:2}
 @media (hover:hover){button.lc-row:hover{background:var(--color-surface-subtle)}}

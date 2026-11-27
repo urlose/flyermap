@@ -1989,7 +1989,12 @@ async function viewTask(id){
             const r = by.get(tag) || { p, tag, mb:0, keys:[] }; r.mb += +x.mb || 0; r.keys.push(skKey(x)); by.set(tag, r); });
           return [...by.values()]; });
         if(!rows.length) return '';
-        return `<div class="list-card" id="tRemoved">${rows.map(r => `<div class="lc-row static inb-row"><span class="grow"><b>${esc(t('rmListTitle', { n:r.tag }))}</b><small class="muted">${esc(t('planRoute', { n:r.p.idx + 1 }) + (r.mb ? ' · ≈ ' + fmtN(r.mb) + ' ' + t('rmBoxes') : ''))}</small></span><button class="btn ghost small" data-rmp="${r.p.id}" data-rmk="${esc(JSON.stringify(r.keys))}">${esc(t('cpRestore'))}</button></div>`).join('')}</div>`; })()}
+        // one compact block per route instead of one big row per checkpoint: chips restore one piece, the button restores the whole route
+        const num = x => x.split('.').map(Number), cmp = (a, b) => { const x = num(a.tag), y = num(b.tag); return (x[0] - y[0]) || ((x[1] || 0) - (y[1] || 0)); };
+        const groups = []; rows.forEach(r => { let g = groups.find(g => g.p === r.p); if(!g) groups.push(g = { p:r.p, rows:[] }); g.rows.push(r); });
+        groups.sort((a, b) => a.p.idx - b.p.idx); groups.forEach(g => g.rows.sort(cmp));
+        const boxes = n => n ? ' · ≈ ' + fmtN(n) + ' ' + t('rmBoxes') : '', sum = a => a.reduce((s, r) => s + r.mb, 0);
+        return `<details class="list-card rm-card" id="tRemoved"><summary class="rm-sum">${ICONS.chevron}<span class="grow"><b>${esc(t('rmSumTitle'))}</b><small class="muted">${esc(t('rmSumHint'))}</small></span><span class="cnt">${rows.length}${esc(boxes(sum(rows)))}</span></summary>${groups.map(g => `<div class="rm-route"><div class="rm-head"><span class="grow"><b>${esc(t('planRoute', { n:g.p.idx + 1 }))}</b><small class="muted">${esc(t('rmN', { n:g.rows.length }) + boxes(sum(g.rows)))}</small></span>${g.rows.length > 1 ? `<button class="btn ghost small" data-rmp="${g.p.id}" data-rmk="${esc(JSON.stringify(g.rows.flatMap(r => r.keys)))}">${esc(t('rmAll'))}</button>` : ''}</div><div class="rm-chips">${g.rows.map(r => `<button class="chip rm-chip" data-rmp="${r.p.id}" data-rmk="${esc(JSON.stringify(r.keys))}" title="${esc(t('rmListTitle', { n:r.tag }) + boxes(r.mb) + ' – ' + t('cpRestore'))}"><span>${esc(r.tag)}</span>${r.mb ? `<small>${fmtN(r.mb)}</small>` : ''}<i aria-hidden="true">↺</i></button>`).join('')}</div></div>`).join('')}</details>`; })()}
       ${(() => { // joined orders: every colour appears several times – one person for all routes of a colour
         const cols = []; (plans || []).forEach(p => { if(p.color && !cols.includes(p.color)) cols.push(p.color); });
         if(!plans || cols.length === plans.length) return '';

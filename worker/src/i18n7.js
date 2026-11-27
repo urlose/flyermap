@@ -73,3 +73,6 @@ Object.assign(T.en, { tripsAll:'Car rides' });
 Object.assign(T.de, { rmListTitle:'Checkpoint {n} entfernt', rmBoxes:'Briefkästen' });
 Object.assign(T.ru, { rmListTitle:'Чекпоинт {n} удалён', rmBoxes:'ящиков' });
 Object.assign(T.en, { rmListTitle:'Checkpoint {n} removed', rmBoxes:'mailboxes' });
+Object.assign(T.de, { rmSumTitle:'Entfernte Checkpoints', rmSumHint:'Nicht auf der Karte, zählen nicht zum Auftrag', rmN:'{n} entfernt', rmAll:'Alle wieder aufnehmen' });
+Object.assign(T.ru, { rmSumTitle:'Удалённые чекпоинты', rmSumHint:'Не на карте и не входят в заказ', rmN:'удалено: {n}', rmAll:'Вернуть все' });
+Object.assign(T.en, { rmSumTitle:'Removed checkpoints', rmSumHint:'Not on the map, not counted in the order', rmN:'{n} removed', rmAll:'Restore all' });
