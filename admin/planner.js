@@ -473,7 +473,7 @@
     return nb;
   }
   // P hands a connected strip along its border with Q to Q (breadth first from the border), worth about `want` minutes
-  function shiftStrip(g, parts, P, Q, want, own){
+  function shiftStrip(g, parts, P, Q, want, own, tidy = tidyParts){
     const inP = new Set(parts[P]), take = new Set(), seen = new Set(), queue = [];
     for(const e of parts[P]) for(const v of [g.edges[e].a, g.edges[e].b]){ const m = own.get(v); if(m && m.has(Q) && !seen.has(e)){ seen.add(e); queue.push(e); } }
     let got = 0;
@@ -484,12 +484,12 @@
     if(!take.size) return null;
     const out = parts.map(p => p.slice());
     out[P] = out[P].filter(e => !take.has(e)); for(const e of take) out[Q].push(e);
-    return tidyParts(g, out);
+    return tidy(g, out);
   }
   // evens out the parts (rough minutes) without tearing them: the slowest part hands a strip to its fastest neighbour
-  function balanceParts(g, parts, rounds){
+  function balanceParts(g, parts, rounds, tidy = tidyParts){
     const cost = p => p.reduce((s, e) => s + edgeMin(g.edges[e]), 0);
-    parts = tidyParts(g, parts);
+    parts = tidy(g, parts);
     for(let it = 0; it < (rounds || 40); it++){
       const c = parts.map(cost), mean = c.reduce((a, b) => a + b, 0) / parts.length, own = owners(g, parts);
       let next = null;
@@ -497,13 +497,80 @@
         if(c[P] <= mean * 1.03) break;
         const nb = [...neighbours(g, parts, P, own)].filter(q => c[q] < c[P]).sort((a, b) => c[a] - c[b]);
         if(!nb.length) continue;
-        next = shiftStrip(g, parts, P, nb[0], (c[P] - c[nb[0]]) / 2, own);
+        next = shiftStrip(g, parts, P, nb[0], (c[P] - c[nb[0]]) / 2, own, tidy);
         if(next) break;
       }
       if(!next) break;
       parts = next;
     }
     return parts;
+  }
+
+  /* ---------- 3c. two workers: two whole areas (27.11.2026) ----------
+     The sectors around the start gave one worker the west, a piece in the far south-east and a strip between the other's streets
+     (Löhne). For two workers the area is now cut by a straight line through its middle, in several directions; the border is
+     then evened out by handing over neighbouring streets, and after every step both areas must still hang together. A short
+     road without houses (a bridge, a path, a field road) links two streets of the same worker: walking it is plain transit,
+     and both may use it. */
+  const LINK_M = 1200;
+  // pieces of one worker's delivery streets: joined at a junction, or by a way of at most LINK_M over roads that nobody else
+  // delivers (a bridge, a path, a road without houses between two villages). A piece that can only be reached through the
+  // other worker's streets is a detached piece.
+  function linkedPieces(g, ids, foreign){
+    const ps = pieces(g, ids); if(ps.length < 2) return ps;
+    const up = ps.map((_, k) => k), find = x => { while(up[x] !== x){ up[x] = up[up[x]]; x = up[x]; } return x; };
+    const at = new Map(); ps.forEach((c, k) => { for(const e of c) for(const v of [g.edges[e].a, g.edges[e].b]) at.set(v, k); });
+    ps.forEach((c, k) => {
+      const d = new Map(), heap = []; const push = (v, x) => { if(x > LINK_M || (d.has(v) && d.get(v) <= x)) return; d.set(v, x); heap.push([x, v]); };
+      for(const e of c){ push(g.edges[e].a, 0); push(g.edges[e].b, 0); }
+      while(heap.length){
+        let bi = 0; for(let q = 1; q < heap.length; q++) if(heap[q][0] < heap[bi][0]) bi = q;
+        const [x, v] = heap.splice(bi, 1)[0]; if(x > d.get(v)) continue;
+        const o = at.get(v); if(o != null && o !== k) up[find(o)] = find(k);
+        for(const { e:f, to } of g.adj[v]) if(!foreign.has(f)) push(to, x + g.edges[f].len);
+      }
+    });
+    const groups = new Map(); ps.forEach((c, k) => { const r = find(k); if(!groups.has(r)) groups.set(r, []); groups.get(r).push(...c); });
+    return [...groups.values()];
+  }
+  const others = (parts, k) => { const s = new Set(); parts.forEach((p, q) => { if(q !== k) for(const e of p) s.add(e); }); return s; };
+  const countPieces = (g, parts) => parts.reduce((a, p, k) => a + linkedPieces(g, p, others(parts, k)).length, 0);
+  // every detached piece goes to the neighbour it touches most (directly or over one short empty road); nothing is kept apart
+  function strictTidy(g, parts){
+    parts = parts.map(p => p.slice());
+    const costOf = c => c.reduce((a, e) => a + edgeMin(g.edges[e]), 0);
+    for(let round = 0; round < 12; round++){
+      let moved = false;
+      for(let k = 0; k < parts.length; k++){
+        const ps = linkedPieces(g, parts[k], others(parts, k)); if(ps.length < 2) continue;
+        ps.sort((a, b) => costOf(b) - costOf(a));
+        const own = owners(g, parts), keep = ps[0].slice();
+        for(const c of ps.slice(1)){
+          const touch = new Map(), add = v => { const m = own.get(v); if(m) for(const [q, cnt] of m) if(q !== k) touch.set(q, (touch.get(q) || 0) + cnt); };
+          for(const e of c) for(const v of [g.edges[e].a, g.edges[e].b]){ add(v); for(const { e:f, to } of g.adj[v]) if(g.edges[f].len <= 300) add(to); }
+          if(!touch.size){ for(const e of c) keep.push(e); continue; }
+          let bq = -1, bc = -1; for(const [q, cnt] of touch) if(cnt > bc){ bc = cnt; bq = q; }
+          for(const e of c) parts[bq].push(e); moved = true;
+        }
+        parts[k] = keep;
+      }
+      if(!moved) break;
+    }
+    return parts;
+  }
+  // straight cuts through the weighted middle of the area, every 15°, at the weighted half
+  function lineSplits(g, ids, weight){
+    const wf = weight || (e => e.len), mid = i => { const c = g.edges[i].coords; return c[Math.floor(c.length / 2)]; };
+    let la = 0, lo = 0, W = 0; for(const i of ids){ const m = mid(i), x = wf(g.edges[i]) || 1e-6; la += m[0] * x; lo += m[1] * x; W += x; }
+    const c = [la / W, lo / W], k = Math.cos(c[0] * RAD), out = [];
+    const pts = ids.map(i => { const m = mid(i); return { i, w:wf(g.edges[i]) || 1e-6, y:(m[0] - c[0]) * 111320, x:(m[1] - c[1]) * 111320 * k }; });
+    for(let deg = 0; deg < 180; deg += 15){
+      const a = deg * RAD, ca = Math.cos(a), sa = Math.sin(a);
+      const it = pts.map(p => ({ i:p.i, w:p.w, d:p.x * ca + p.y * sa })).sort((x, y) => x.d - y.d);
+      const parts = [[], []]; let cum = 0; for(const x of it){ parts[cum + x.w / 2 < W / 2 ? 0 : 1].push(x.i); cum += x.w; }
+      if(parts[0].length && parts[1].length) out.push(parts);
+    }
+    return out;
   }
 
   /* ---------- 4. route per part ---------- */
@@ -607,7 +674,10 @@
       length += ed.len; if(!inst[step.i].dead) street += ed.len;
     }
     if(path.length) steps.push([path.length - 1, 'end', '']);
-    return { path, steps, root, length_m:Math.round(length), street_m:Math.round(street), edges:req.length, covered:used.reduce((s, x) => s + x, 0) === inst.length };
+    const walked = circuit.filter(st => st.i >= 0).map(st => inst[st.i].e);   // edges in walking order (repeats = walked twice)
+    const res = { path, steps, root, length_m:Math.round(length), street_m:Math.round(street), edges:req.length, covered:used.reduce((s, x) => s + x, 0) === inst.length };
+    Object.defineProperty(res, 'walked', { value:walked, enumerable:false });   // not saved with a route
+    return res;
   }
 
   /* ---------- progress: which parts of a planned path are already walked ---------- */
@@ -1346,24 +1416,43 @@
       : selectWithMust(g, start, flyers, opt.must);
     const total = sel.ids.reduce((s, i) => s + g.edges[i].len, 0), mbTotal = sel.mailboxes || 1;
     const w = e => 0.5 * e.len / (total || 1) + 0.5 * e.mb / mbTotal;
-    const N = n || 1, build = (parts, rootNode) => parts.map((part, k) => {
-      const r = planPart(g, part, start, rootNode, opt.walkTree);
-      const boxes = []; let mb = 0; for(const i of part){ mb += g.edges[i].mb; for(const b of g.edges[i].boxes) boxes.push(b); }
-      return { idx:k, ...r, part, mailboxes:mb, boxes, minutes:routeMinutes(r.length_m, mb) };
-    });
+    const N = n || 1, build = (parts, rootNode) => { const own = new Map(); parts.forEach((p, k) => p.forEach(e => own.set(e, k)));
+      return parts.map((part, k) => {
+        const { walked, ...r } = planPart(g, part, start, rootNode, opt.walkTree);
+        const boxes = []; let mb = 0; for(const i of part){ mb += g.edges[i].mb; for(const b of g.edges[i].boxes) boxes.push(b); }
+        // metres walked on streets that another worker delivers (crossing his area); not saved with the route
+        let foreign = 0; for(const e of walked || []){ const o = own.get(e); if(o != null && o !== k) foreign += g.edges[e].len; }
+        const out = { idx:k, ...r, part, mailboxes:mb, boxes, minutes:routeMinutes(r.length_m, mb) };
+        Object.defineProperty(out, 'foreign_m', { value:Math.round(foreign), enumerable:false });
+        return out;
+      }); };
     // Equal slices of the street length give unequal days: the walk to far villages and back is not in the weights.
     // So several candidate splits are built (equal slices + time-balanced cuts from different starting angles), each is
     // every split is cleaned up so each worker gets ONE connected area (no detached streets inside a colleague's area), evened out
     // along the borders, routed for real, and scored: the slowest worker first, total walking second.
     const score = rs => { const m = rs.map(r => r.minutes), mx = Math.max(...m), sum = m.reduce((a, b) => a + b, 0); return mx + 0.3 * sum / m.length + 0.01 * (mx - Math.min(...m)); };
     let bestParts = null, routes = null, builds = 0;
-    const splitScore = (rs, parts) => score(rs) + (opt.compact ? 250 * mixShare(g, parts) : 0);
+    const two = opt.compact && N === 2 && !opt.legacySplit, tidy = two ? strictTidy : tidyParts;
+    // two workers: whole areas first (no detached piece, short border), then the hours – a difference up to 15 % of the
+    // average is fine, above it every % costs; the slowest worker still decides between otherwise equal splits
+    const splitScore = (rs, parts) => {
+      if(!two) return score(rs) + (opt.compact ? 250 * mixShare(g, parts) : 0);
+      const m = rs.map(r => r.minutes), mean = m.reduce((a, b) => a + b, 0) / m.length, spread = mean ? (Math.max(...m) - Math.min(...m)) / mean : 0;
+      return score(rs) + 6000 * Math.max(0, spread - 0.15) + 400 * (countPieces(g, parts) - parts.length) + 500 * mixShare(g, parts) + 0.05 * rs.reduce((a, r) => a + (r.foreign_m || 0), 0);
+    };
     const tryParts = parts => { const rs = build(parts); builds++; if(!routes || splitScore(rs, parts) < splitScore(routes, bestParts)){ routes = rs; bestParts = parts; return true; } return false; };
     // every candidate with its stray bits handed over; the three best are also evened out along the borders
     const cands = [partition(g, start, N, sel.ids, w), ...(N > 1 ? balancedSplits(g, start, N, sel.ids, 8) : [])];
     if(opt.compact) cands.push(...centreSplits(g, N, sel.ids, w, 4));
-    const tried = cands.map(raw => { const t = tidyParts(g, raw), rs = build(t), sc = splitScore(rs, t); builds++; if(!routes || sc < splitScore(routes, bestParts)){ routes = rs; bestParts = t; } return { t, sc }; });
-    if(N > 1) for(const { t } of tried.sort((a, b) => a.sc - b.sc).slice(0, 3)) tryParts(balanceParts(g, t));
+    if(two){
+      // straight cuts: rough pre-check without routing (pieces, border, rough hours), only the best few are routed for real
+      const rough = t => { const c = t.map(p => p.reduce((a, e) => a + edgeMin(g.edges[e]), 0)), mean = (c[0] + c[1]) / 2;
+        return 400 * (countPieces(g, t) - 2) + 500 * mixShare(g, t) + 6000 * Math.max(0, Math.abs(c[0] - c[1]) / (mean || 1) - 0.15); };
+      const lines = lineSplits(g, sel.ids, w).map(raw => balanceParts(g, strictTidy(g, raw), 20, strictTidy)).map(t => ({ t, r:rough(t) })).sort((a, b) => a.r - b.r);
+      cands.push(...lines.slice(0, 4).map(x => x.t));
+    }
+    const tried = cands.map(raw => { const t = tidy(g, raw), rs = build(t), sc = splitScore(rs, t); builds++; if(!routes || sc < splitScore(routes, bestParts)){ routes = rs; bestParts = t; } return { t, sc }; });
+    if(N > 1) for(const { t } of tried.sort((a, b) => a.sc - b.sc).slice(0, 3)) tryParts(balanceParts(g, t, undefined, tidy));
     if(N > 1){
       // fine tuning with the real routes: the slowest worker hands streets at the border to a faster neighbour
       // (a strip grown from the shared border, or the last pieces of its sector), stray bits are cleaned up again
@@ -1371,10 +1460,10 @@
         const m = routes.map(r => r.minutes), own = owners(g, bestParts), P = m.indexOf(Math.max(...m));
         let better = false;
         for(const Q of [...neighbours(g, bestParts, P, own)].filter(q => m[q] < m[P] * 0.95).sort((a, b) => m[a] - m[b]).slice(0, 2)){
-          for(const f of [0.5, 0.25]){ const parts = shiftStrip(g, bestParts, P, Q, (m[P] - m[Q]) * f, own); if(parts && tryParts(parts)){ better = true; break; } }
+          for(const f of [0.5, 0.25]){ const parts = shiftStrip(g, bestParts, P, Q, (m[P] - m[Q]) * f, own, tidy); if(parts && tryParts(parts)){ better = true; break; } }
           if(better) break;
         }
-        if(!better){   // the old way: neighbours in the ring of sectors swap their border pieces
+        if(!better && !two){   // (two workers: no ring swap – it hands over pieces from the far end of a sector)   // the old way: neighbours in the ring of sectors swap their border pieces
           const parts = bestParts.map(p => p.slice());
           for(let k = 0; k < N; k++){
             const j = (k + 1) % N, a = m[k], b = m[j];
@@ -1431,6 +1520,6 @@
     return partition(g, start, n).map((part, k) => ({ idx:k, ...planPart(g, part, start) }));
   }
 
-  const api = { walkingTransfers, walkingTreeCache, reserveFor, censusFill, setTileStamp, setPace, denseEntry, pathRuns, emptyGap, tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, DIR_FROM, makeBoxCounter, walkRuns, DRIVE_MS, DRIVE_MIN_M, DRIVE_NET_M, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
+  const api = { linkedPieces, walkingTransfers, walkingTreeCache, reserveFor, censusFill, setTileStamp, setPace, denseEntry, pathRuns, emptyGap, tilesFor, qTile, compactTile, mergeTiles, decodeTile, fetchOwnTile, TILES_URL, TILE_V, MUST_MAX_R, mustEdges, mustPick, mustRadius, selectWithMust, zoneView, COLORS, densifyPath, makeTracker, DIR_FROM, makeBoxCounter, walkRuns, DRIVE_MS, DRIVE_MIN_M, DRIVE_NET_M, fetchStreets, fetchStreetsAround, fetchBuildings, parseBuildings, estimateMailboxes, attachBuildings, selectForFlyers, nextRadius, MAX_R, planFlyers, loadForFlyers, capacity, hull, buildGraph, largestComponent, partition, planPart, planRoutes, loadZone, suggestWorkers, hours, routeMinutes, dist, inPoly, lineLen, WORK_HOURS, WALK_KMH, BOX_SEC };
   if(typeof module !== 'undefined' && module.exports) module.exports = api; else root.Planner = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -164,6 +164,7 @@ export function createPlanService(cache){
       return info();
     },
     // plans the routes; loads a larger square first when the plan reaches the edge of what is loaded
+    _graph(){ return G; },   // tests: the walking map of the last plan (same streets for comparing two splits)
     async plan({ start, flyers, n, days, hours, must, zone, side, quota, bike, travel, split, exact, mainAll, cores, together, first, near, mainName, budget }, stage, stale){
       const eco = !exact && !mainAll;
       const zones = travel === 'zones';   // every place its own zone(s), no rides between places (orders since 15.11.2026)
