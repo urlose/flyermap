@@ -84,9 +84,9 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const t0 = Date.now();
   const box = await until(() => { const r = document.getElementById('fixResult'); return r ? { text:r.innerText, warn:r.className } : null; }, 240000);
   const secs = Math.round((Date.now() - t0) / 100) / 10;
-  ok('box "Feste Auflage" with the ordered number', !!box && /6\.155/.test(box.text), box && box.text);
+  ok('box "Feste Auflage": planned of ordered', !!box && /Geplant 6\.155 von 6\.155/.test(box.text), box && box.text);
   ok('fits in the 26 h (no warning)', !!box && !/warnbox/.test(box.warn), box && box.text);
-  ok('box names the team hours', !!box && /Std\./.test(box.text), box && box.text);
+  ok('box names the team hours', !!box && /Std\. für das Team/.test(box.text), box && box.text);
   const label = await until(() => { const e = [...document.querySelectorAll('.reach-tip')].find(x => /Verteilradius/.test(x.textContent)); return e ? e.textContent : null; }, 20000);
   ok('radius label on the map', !!label && /^Verteilradius ≈ \d+,\d km \(Luftlinie\)$/.test(label), label);
   ok('dashed radius circle drawn', await pg.evaluate(() => !!document.querySelector('path.reach-circle')));
@@ -96,6 +96,15 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await pg.setViewportSize({ width:390, height:844 }); await sleep(1200);
   await pg.screenshot({ path:path.join(OUT, 'wizard-phone.png') });
   await pg.setViewportSize({ width:1440, height:900 }); await sleep(800);
+  // too few hours: planned of ordered, what is left, and why
+  const setHours = async v => { await pg.evaluate(() => document.querySelector('[data-step="2"]')?.click()); await until(() => !!document.getElementById('cHours'), 10000);
+    await pg.evaluate(v => { const i = document.getElementById('cHours'); i.value = v; i.dispatchEvent(new Event('change')); }, v); await sleep(500); await pg.evaluate(() => document.querySelector('[data-step="3"]')?.click()); };
+  await setHours('2');
+  const shortBox = await until(() => { const r = document.getElementById('fixResult'); return r && /offen/.test(r.innerText) ? { text:r.innerText, cls:r.className } : null; }, 240000);
+  ok('few hours: "Geplant X von 6.155 · offen Y" with the reason', !!shortBox && /Geplant [\d.]+ von 6\.155 · offen [\d.]+/.test(shortBox.text) && /Grund: die Stunden/.test(shortBox.text) && /warnbox/.test(shortBox.cls), shortBox && shortBox.text.replace(/\n/g, ' | '));
+  await pg.screenshot({ path:path.join(OUT, 'wizard-short.png') });
+  await setHours('6,5');
+  ok('back to 26 h: everything planned', !!await until(() => /Geplant 6\.155 von 6\.155/.test(document.getElementById('fixResult')?.innerText || ''), 240000));
   // save, open the order: the radius is a layer there
   await pg.evaluate(() => document.querySelector('[data-step="5"]')?.click());
   await pg.waitForSelector('#cSave', { timeout:30000 }); await pg.locator('#cSave').click();

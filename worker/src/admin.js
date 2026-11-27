@@ -1542,7 +1542,8 @@ function viewCreate(edit){
       const effMin = +b.effective_minutes || +b.target_minutes || b.hours * 60, capped = b.strategy === 'near-first' && effMin < b.hours * 60 - 1, effH = capped ? hh(effMin) : b.hours;
       const fx = b.fixed;   // fixed print run (27.11.2026): ordered and doable shown apart, the ordered number stays the order's
       return `<div class="budget-box" role="status"><h4>${esc(t(fx ? 'fixTitle' : 'budTitle'))}</h4>
-        ${fx ? `<div class="${fx.short ? 'warnbox' : 'hint'}" id="fixResult">${esc(fx.short ? t('fixShort', { o:fmtN(fx.ordered), f:fmtN(fx.feasible), h:hh(fx.team_minutes) }) : t('fixOk', { o:fmtN(fx.ordered), h:hh(b.actual_minutes) }))}</div>` : ''}
+        ${fx ? `<div class="${fx.short ? 'warnbox' : 'hint'}" id="fixResult"><b>${esc(fx.missing ? t('fixLine', { p:fmtN(fx.planned), o:fmtN(fx.ordered), m:fmtN(fx.missing) }) : t('fixFull', { o:fmtN(fx.ordered) }))}</b>
+          <br><span class="small">${esc(fx.missing && fx.reason ? t('fixWhy_' + fx.reason, { h:hh(fx.team_minutes) }) : t('fixOk', { o:fmtN(fx.ordered), h:hh(b.actual_minutes) }))}</span></div>` : ''}
         <div class="cov-n"><div><span>${esc(t('budPlanned'))}</span><b>≈ ${fmtN(b.planned)}</b></div><div><span>${esc(t('budHoursNeeded'))}</span><b>${hh(b.actual_minutes)}</b></div>${b.strategy === 'near-first' ? '' : `<div><span>${esc(t('budUncovered'))}</span><b>${b.uncovered ? '≈ ' + fmtN(b.uncovered) : '0'}</b></div>`}</div>
         ${b.strategy === 'near-first' && !fx ? capHtml(b) : ''}
         <p class="small">${fx ? esc(t('fixHow')) : b.strategy === 'near-first' ? esc(t('budNearFirstResult', { h:effH, mb:fmtN(b.planned) })) : esc(t(b.fits_all ? 'budFitsAll' : b.limit === 'time' ? 'budLimitTime' : 'budLimitCap', { h:b.hours, mb:fmtN(b.planned), f:fmtN(b.flyers_max) }))}</p>${capped ? `<p class="small warn">${esc(t('budCappedDays', { h:b.hours, eff:effH, days:d.days, hpd:d.hours, n:d.n }))}</p>` : ''}

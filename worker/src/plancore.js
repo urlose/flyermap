@@ -189,7 +189,11 @@ export function createPlanService(cache){
           budget:{ strategy:'near-first', mode:'walk', hours:team, tolerance:0, maxFlyers:flyers, fixed:true } }, stage, stale);
         if(res && res.plan && res.plan.budget){
           const b = res.plan.budget;
-          b.fixed = { ordered:Math.round(flyers), feasible:Math.round(b.planned), short:b.walk.stop === 'hours' && b.planned < flyers * 0.98, team_minutes:team * 60 };
+          // always: planned against ordered, and why something is missing (hours / no more addresses / the next street was too big)
+          const ordered = Math.round(flyers), planned = Math.min(ordered, Math.round(b.planned)), missing = Math.max(0, ordered - planned);
+          const reason = !missing ? null : b.walk.stop === 'hours' ? 'hours' : b.walk.stop === 'all' ? 'addresses' : b.walk.stop === 'flyers' ? 'street' : null;
+          b.fixed = { ordered, planned, feasible:planned, missing, missing_pct:ordered ? Math.round(missing / ordered * 1000) / 10 : 0, reason,
+            short:missing > 0 && (reason === 'hours' || reason === 'addresses'), team_minutes:team * 60 };
         }
         return res;
       }
