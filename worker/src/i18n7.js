@@ -61,3 +61,7 @@ Object.assign(T.en, {
 Object.assign(T.de, { lgToday:'heute {h} Std.', lgPause:'Pause {h}', lgPace:'Tempo {p} %', paceSlow:'langsam', paceOk:'normal', paceFast:'schnell', paceTooFast:'zu schnell?', lgLiveNow:'läuft', lgDoneToday:'Feierabend', lgNow30:'letzte 30 Min.: {s}' });
 Object.assign(T.ru, { lgToday:'сегодня {h} ч', lgPause:'пауза {h}', lgPace:'темп {p} %', paceSlow:'медленно', paceOk:'нормально', paceFast:'быстро', paceTooFast:'слишком быстро?', lgLiveNow:'идёт', lgDoneToday:'закончил', lgNow30:'последние 30 мин: {s}' });
 Object.assign(T.en, { lgToday:'today {h} h', lgPause:'break {h}', lgPace:'pace {p} %', paceSlow:'slow', paceOk:'normal', paceFast:'fast', paceTooFast:'too fast?', lgLiveNow:'walking', lgDoneToday:'finished', lgNow30:'last 30 min: {s}' });
+// help inbox (27.11.2026): reported pieces and dates after the deadline on top
+Object.assign(T.de, { inbDecide:'Zu entscheiden', inbHelp:'Hilfeanfragen' });
+Object.assign(T.ru, { inbDecide:'Ждут решения', inbHelp:'Обращения за помощью' });
+Object.assign(T.en, { inbDecide:'To decide', inbHelp:'Help requests' });
