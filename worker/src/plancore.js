@@ -183,7 +183,7 @@ export function createPlanService(cache){
       // between the people. The limit in time is the team's shifts until the deadline. Before, only ONE census place was used
       // (Löhne: a dense quarter 1–2 km from the flag was left out and the route went 4 km to the west instead).
       // only for NEW orders (fixedNear from the wizard): saved orders keep their routes and the old planning until replanned on purpose
-      if(fixedNear && zones && !budget && !mainAll && !cores && flyers > 0 && !(side || []).length){
+      if(fixedNear && zones && !budget && !mainAll && !cores && flyers > 0 && !(side || []).some(c => !c.auto)){   // places the app suggested itself are not needed: the walk reaches them
         const team = Math.max(1, Math.round(n || 1)) * hours * Math.max(1, days || 1);
         const res = await this.planNearFirst({ start, n, days, hours, side:[], must, zone, mainName,
           budget:{ strategy:'near-first', mode:'walk', hours:team, tolerance:0, maxFlyers:flyers, fixed:true } }, stage, stale);

@@ -131,9 +131,14 @@ const showOnMap = sel => { LM.sel = sel; LM.focus = true; if(sel.kind === 'task'
 const reachM = (st, routes) => { let R = 0; const k = Math.cos(st[0] * Math.PI / 180);
   for(const r of routes || []) for(const q of (r.boxes && r.boxes.length ? r.boxes : (r.path || []).filter(x => x[2] !== 1))) R = Math.max(R, 111320 * Math.hypot(q[0] - st[0], (q[1] - st[1]) * k));
   return R; };
-const drawReach = (g, st, routes) => { const R = reachM(st, routes); if(R < 50) return null;
+const drawReach = (g, st, routes, map) => { const R = reachM(st, routes);
+  if(map && map._reachCtl){ map.removeControl(map._reachCtl); map._reachCtl = null; }
+  if(R < 50) return null;
+  const txt = t('reachLbl', { km:(Math.round(R / 100) / 10).toFixed(1).replace('.', ',') });
   const c = L.circle(st, { radius:R, color:css('--brand'), weight:2, dashArray:'6 6', fillOpacity:.03, interactive:false, className:'reach-circle' }).addTo(g);
-  L.marker([st[0] + R / 111320, st[1]], { icon:L.divIcon({ className:'', html:`<span class="must-tip zone-tip">${esc(t('reachLbl', { km:(Math.round(R / 100) / 10).toFixed(1).replace('.', ',') }))}</span>`, iconSize:null }), interactive:false, keyboard:false }).addTo(g);
+  L.marker([st[0] + R / 111320, st[1]], { icon:L.divIcon({ className:'', html:`<span class="must-tip reach-tip">${esc(txt)}</span>`, iconSize:null }), interactive:false, keyboard:false }).addTo(g);
+  // the circle is often bigger than the screen: the same label also stays in the map corner
+  if(map){ const ctl = L.control({ position:'bottomright' }); ctl.onAdd = () => { const el = L.DomUtil.create('div', 'reach-ctl'); el.innerHTML = `<span class="must-tip reach-tip">${esc(txt)}</span>`; return el; }; ctl.addTo(map); map._reachCtl = ctl; }
   return c; };
 async function loadLive(){ const { data } = await sb.from('routes').select('id,worker_id,task_id,plan_id,paused_at,last30_m,started_at,break_s').is('ended_at', null); A.live = data || []; }
 async function loadAll(){
@@ -844,7 +849,7 @@ async function viewTaskMap(id, back, keep){
       return res.map(({ p, pct, fl }) => ({ color:p.color || '#2563EB', label:(p.worker_id ? nameOf(p.worker_id) : t('planRoute', { n:p.idx + 1 })), anonLabel:t('planRoute', { n:p.idx + 1 }), sub:pct + ' %' + (fl != null ? ' · ≈ ' + fmtN(fl) + ' ' + t('flyers') : ''), meta:todayMeta(p.worker_id) })); },
     layers:[
       { key:'zone', on:radiusFromPlans(plans) != null, add:g => { if(tk.zone_polygon) L.polygon(tk.zone_polygon, { color:css('--brand'), weight:2, fillOpacity:.05, interactive:false }).addTo(g); } },
-      ...(radiusFromPlans(plans) == null && !tk.zone_polygon && (plans || []).length ? [{ key:'reach', label:t('reachShort'), add:g => drawReach(g, [tk.start_lat, tk.start_lng], plans) }] : []),
+      ...(radiusFromPlans(plans) == null && !(tk.zone_polygon && tk.zone_polygon.length > 2) && (plans || []).length ? [{ key:'reach', label:t('reachShort'), add:g => drawReach(g, [tk.start_lat, tk.start_lng], plans) }] : []),
       ...((tk.must_areas || []).length || (tk.side_towns || []).length ? [{ key:'must', label:t('sideTownsShort'), on:false, add:g => drawTowns(g, tk, 3) }] : []),
       ...(tk.work_area ? [{ key:'own', label:t('zoneTitle'), add:g => L.polygon(tk.work_area, { color:'#7C3AED', weight:3, dashArray:'10 6', fillOpacity:.04, interactive:false }).addTo(g) }] : []),
       // the planned routes; with several working days every day is its own layer (day 1 solid, day 2 dashed, …)
@@ -1302,7 +1307,7 @@ function viewCreate(edit){
       d.sugT = st;
       if(st.list) st.list.forEach(x => { if(!x.name && d.sugNames.has(nameKey(x))) x.name = d.sugNames.get(nameKey(x)); });
       // time-first plans by hours, not by a flyer target: nothing to top up with nearby places (the admin adds them himself)
-      if(!st.loading && !st.failed && !d.autoPicked && !tkE && !d.side.length && !d.zone && d.plan && !(d.budget.on && d.budget.strategy === 'near-first')){
+      if(!st.loading && !st.failed && !d.autoPicked && !tkE && !d.side.length && !d.zone && d.plan && !(d.budget.on && d.budget.strategy === 'near-first') && !(d.plan.budget && d.plan.budget.fixed)){   // fixed print run: the planner walks on into the neighbouring places itself
         d.autoPicked = true; // do not put removed places back; the admin controls the selection from here on
         const picks = chooseNearbyPlaces(st.list, coverage(d.flyers, d.plan.mailboxes).missing, { maxPlaces:8, maxKm:sugCtx().maxKm });
         for(const x of picks) d.side = addSuggestion(d.side, x, x.name || t('sugUnnamed', { km:String(x.km).replace('.', ',') }));
@@ -1381,8 +1386,9 @@ function viewCreate(edit){
   function findSuggestions(){ if(!d.start || !d.plan) return; sugFlow.refresh(sugCtx()).catch(() => {}); }
   function draw(){
     zoneLayer.clearLayers(); planLayer.clearLayers();
+    if(m._reachCtl){ m.removeControl(m._reachCtl); m._reachCtl = null; }
     var z = drawCircle();
-    if(!z && d.plan.budget && d.plan.budget.strategy === 'near-first') z = drawReach(zoneLayer, startArr(), d.plan.routes);   // no circle chosen: show where the flyers go
+    if(!z && d.plan.budget && d.plan.budget.strategy === 'near-first') z = drawReach(zoneLayer, startArr(), d.plan.routes, m);   // no circle chosen: show where the flyers go
     if(!z && d.plan.zone.length > 2) z = L.polygon(d.plan.zone, { color:css('--brand'), weight:2, fillOpacity:.06, interactive:false }).addTo(zoneLayer);
     L.marker(startArr(), { icon:dot('pin-start', 26) }).addTo(zoneLayer); drawMust();
     (d.plan.dropped || []).forEach(l => L.polyline(l, { color:'#94A3B8', weight:4, opacity:.9, dashArray:'4 6', interactive:false, className:'dropped-street' }).addTo(planLayer));   // taken out for the smaller print run
@@ -1463,7 +1469,7 @@ function viewCreate(edit){
         ${withSelect ? `<select class="in small" data-r="${i}" aria-label="${esc(t('planRoute', { n:i + 1 }))}">${workerOptions(d.start.lat, d.start.lng, d.assign[i])}</select>` : ''}</div></div>`;
     if(p && !zensusOfPlan.has(p)){ zensusOfPlan.set(p, ''); zensusCompare(p.routes.flatMap(r => r.boxes || [])).then(c => { const h = zensusHtml(c); if(!h) return; zensusOfPlan.set(p, esc(t('zLabel')) + ': ' + h); const el = $('#cZen'); if(el && d.plan === p) el.innerHTML = zensusOfPlan.get(p); }).catch(() => {}); }
     // what the plan covers: wanted flyers, estimated mailboxes, what is missing; confirmed places; suggestions to add
-    const covShown = () => p && !d.mainAll && !(p.eco && !d.exact) && !p.cores;
+    const covShown = () => p && !d.mainAll && !(p.eco && !d.exact) && !p.cores && !(p.budget && p.budget.fixed);   // fixed print run: its own box (ordered / doable)
     // Uniform selected-place rows for both the start and route steps (fixed right-hand remove control).
     // Counts shown are estimated; changing one fixes its target and replans the remaining flyers.
     const chosenRows = (noRoute = () => false) => d.side.length ? `<div class="chosen-places">${d.side.map((x,k) => {
@@ -2058,6 +2064,7 @@ async function viewTask(id){
   const m = makeMap($('#tMap'), [tk.start_lat, tk.start_lng], 14);
   let b = L.latLngBounds([[tk.start_lat, tk.start_lng]]);
   if(tk.zone_polygon){ const z = L.polygon(tk.zone_polygon, { color:css('--brand'), weight:2, fillOpacity:.06, interactive:false }).addTo(m); b = z.getBounds(); }
+  if(!(tk.zone_polygon && tk.zone_polygon.length > 2) && radiusFromPlans(plans) == null && (plans || []).length){ const rc = drawReach(m, [tk.start_lat, tk.start_lng], plans); if(rc) b = rc.getBounds(); }   // where the flyers go (map fitted to the circle: its label is in view)
   drawTowns(m, tk, 2);
   if(tk.work_area) L.polygon(tk.work_area, { color:'#7C3AED', weight:2, dashArray:'10 6', fillOpacity:.03, interactive:false }).addTo(m);
   (plans || []).forEach(p => { if(!(p.path?.length > 1)) return; const ds = (p.days || []).length > 1 ? p.days : [{ i0:0, i1:p.path.length - 1 }];
