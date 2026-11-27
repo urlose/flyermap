@@ -195,7 +195,7 @@ export function rerouteDay(plan, dayIdx, isDone, here, head){
 
 // Checkpoints: every working day is cut into sections of about `every` metres; a section is done when 80 % of it is walked.
 // Shown to the admin and the walker as numbered points along the route (✓ when done).
-export function checkpoints(plan, isDone, every){
+export function checkpoints(plan, isDone, every, all){
   every = every || 800;
   const nav = makeNav(plan), path = nav.path; if(path.length < 2) return [];
   const mAt = q => { const j = Math.max(0, Math.min(path.length - 1, Math.floor(q))); return j < path.length - 1 ? nav.cum[j] + (q - j) * (nav.cum[j + 1] - nav.cum[j]) : nav.cum[j]; };
@@ -219,15 +219,18 @@ export function checkpoints(plan, isDone, every){
       out.push({ day:k, n:s + 1, at:[a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f], pct, done:pct >= 80, runs });
     }
   });
-  // a checkpoint the admin removed is gone (no marker, for the walker neither); the numbers of the others stay
-  const rm = new Set(((plan && plan.skipped) || []).filter(x => x && x.removed && x.cp).map(x => x.cp));
-  return rm.size ? out.filter(c => !rm.has((c.day + 1) + '.' + c.n)) : out;
+  // a checkpoint the admin removed is gone (no marker, for the walker neither); the numbers of the others stay.
+  // Found by where the removed pieces are (≥ 80 % of its streets), not by the tag.
+  const g = rmGrid(plan); if(!g.size) return out;
+  out.forEach(c => { c.removed = removedShare(g, c) >= .8; });
+  return all ? out : out.filter(c => !c.removed);
 }
 
 // 23.11.2026: sections the admin REMOVED from the order (farms, nothing to deliver): skipped entries with removed:true.
 // For the walker they are like done (guidance passes them); in the admin's figures they do not exist: no progress, no flyers.
 export const removedOf = plan => ((plan && plan.skipped) || []).filter(s => s && s.removed && Array.isArray(s.pts) && s.pts.length > 1);
 const RM_CELL = 0.0004;
+function gridOf(pts){ const g = new Map(); for(const q of pts){ const k = Math.floor(q[0] / RM_CELL) + ':' + Math.floor(q[1] / RM_CELL); if(!g.has(k)) g.set(k, []); g.get(k).push(q); } return g; }
 function rmGrid(plan){ const g = new Map(); for(const s of removedOf(plan)) for(const q of s.pts){ const k = Math.floor(q[0] / RM_CELL) + ':' + Math.floor(q[1] / RM_CELL); if(!g.has(k)) g.set(k, []); g.get(k).push(q); } return g; }
 const nearAny = (g, b, tol) => { const cy = Math.floor(b[0] / RM_CELL), cx = Math.floor(b[1] / RM_CELL), kx = Math.cos(b[0] * Math.PI / 180) * 111320;
   for(let dy = -2; dy <= 2; dy++) for(let dx = -3; dx <= 3; dx++){ const l = g.get((cy + dy) + ':' + (cx + dx)); if(l) for(const q of l) if(Math.hypot((q[0] - b[0]) * 111320, (q[1] - b[1]) * kx) <= tol) return true; }
@@ -238,6 +241,19 @@ export function keptBoxes(plan, extra){
   return boxes.filter(b => !nearAny(g, b, 30 + Math.min(25, 4 * Math.sqrt(Math.max(1, b[2] || 1)))));
 }
 const lenOf = pts => { let m = 0; for(let i = 1; i < pts.length; i++){ const a = pts[i - 1], b = pts[i]; m += Math.hypot((b[0] - a[0]) * 111320, (b[1] - a[1]) * 111320 * Math.cos(a[0] * Math.PI / 180)); } return m; };
+// 27.11.2026: which skipped entries belong to a checkpoint – by where they are, not by the tag "day.n"
+// (the tags change when the days of a route are changed or joined). An entry belongs when its points cover
+// at least half of the checkpoint's streets. pred: filter of the entries (e.g. only the admin's).
+export function cpEntries(plan, c, pred){
+  const verts = (c.runs || []).flat(), out = []; if(!verts.length) return out;
+  ((plan && plan.skipped) || []).forEach((x, i) => {
+    if(!x || !Array.isArray(x.pts) || x.pts.length < 2 || (pred && !pred(x))) return;
+    const g = gridOf(x.pts); let hit = 0; for(const v of verts) if(nearAny(g, v, 3)) hit++;
+    if(hit / verts.length >= .5) out.push(i);
+  });
+  return out;
+}
+const removedShare = (g, c) => { const verts = (c.runs || []).flat(); if(!verts.length || !g.size) return 0; let hit = 0; for(const v of verts) if(nearAny(g, v, 3)) hit++; return hit / verts.length; };
 // 27.11.2026: removed sections are not drawn at all – cut them out of lines that are drawn (edges with both ends on a removed piece)
 export function cutRemoved(runs, plan){
   const g = rmGrid(plan); if(!g.size || !runs) return runs || [];
