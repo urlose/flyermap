@@ -65,3 +65,7 @@ Object.assign(T.en, { lgToday:'today {h} h', lgPause:'break {h}', lgPace:'pace {
 Object.assign(T.de, { inbDecide:'Zu entscheiden', inbHelp:'Hilfeanfragen' });
 Object.assign(T.ru, { inbDecide:'Ждут решения', inbHelp:'Обращения за помощью' });
 Object.assign(T.en, { inbDecide:'To decide', inbHelp:'Help requests' });
+// route maps (27.11.2026): one switch for everything driven
+Object.assign(T.de, { tripsAll:'Autofahrten' });
+Object.assign(T.ru, { tripsAll:'Поездки на машине' });
+Object.assign(T.en, { tripsAll:'Car rides' });
