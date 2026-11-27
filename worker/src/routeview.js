@@ -30,6 +30,10 @@ export function openMapView(opts){
     groups[ly.key] = g; const keep = opts.view && opts.view.on && ly.key in opts.view.on ? opts.view.on[ly.key] : null;
     if(keep == null ? ly.on !== false : keep) g.addTo(m);
   }
+  // fixed stacking: the order of opts.layers is the order from bottom to top, whatever was switched on last
+  const restack = () => { const up = x => { if(x.eachLayer && !x.bringToFront) x.eachLayer(up); else if(x.bringToFront) x.bringToFront(); };
+    (opts.layers || []).forEach(l => { const g = groups[l.key]; if(g && m.hasLayer(g)) g.eachLayer(up); }); };
+  restack();
   const focusAt = {};
   const card = () => {
     const n = VS.names;
@@ -52,8 +56,8 @@ export function openMapView(opts){
       + `<button class="chip" id="rvFit">${esc(t('rvFit'))}</button><button class="chip" id="rvClean">${esc(t('rvOnlyMap'))}</button>`;
     document.querySelectorAll('[data-ly]').forEach(b => b.onclick = () => {
       const k = b.dataset.ly, g = groups[k], ly = (opts.layers || []).find(l => l.key === k), on = m.hasLayer(g);
-      if(ly && ly.focus && !(on && Date.now() - (focusAt[k] || 0) < 4000)){ if(!on) g.addTo(m); if(ly.focus(m)){ focusAt[k] = Date.now(); tools(); return; } if(!on){ tools(); return; } }
-      if(on) m.removeLayer(g); else g.addTo(m); tools();
+      if(ly && ly.focus && !(on && Date.now() - (focusAt[k] || 0) < 4000)){ if(!on){ g.addTo(m); restack(); } if(ly.focus(m)){ focusAt[k] = Date.now(); tools(); return; } if(!on){ tools(); return; } }
+      if(on) m.removeLayer(g); else g.addTo(m); restack(); tools();
     });
     const nb = $('#rvNames'); if(nb) nb.onclick = () => { VS.names = !VS.names; card(); tools(); opts.onNames && opts.onNames(VS.names); };
     $('#rvFit').onclick = fitAll;
@@ -62,7 +66,7 @@ export function openMapView(opts){
   card(); tools(); opts.onNames && opts.onNames(VS.names);
   m.rvRefresh = () => { if($('#rvCard')) card(); };   // values computed later (in the background) refresh the info card
   m.rvTools = () => { if($('#rvTools')) tools(); };
-  m.rvFill = key => { const g = groups[key], ly = (opts.layers || []).find(l => l.key === key); if(!g || !ly || !$('#rvMap')) return; g.clearLayers(); ly.add(g, L); };
+  m.rvFill = key => { const g = groups[key], ly = (opts.layers || []).find(l => l.key === key); if(!g || !ly || !$('#rvMap')) return; g.clearLayers(); ly.add(g, L); restack(); };
   m.rvState = () => ({ center:m.getCenter(), zoom:m.getZoom(), on:Object.fromEntries(Object.keys(groups).map(k => [k, m.hasLayer(groups[k])])) });
   $('#rvBack').onclick = opts.back;
   if(opts.view && opts.view.center) m.setView(opts.view.center, opts.view.zoom, { animate:false }); else setTimeout(fitAll, 80);

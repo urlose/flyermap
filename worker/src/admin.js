@@ -657,11 +657,13 @@ async function viewDayMap(routeId, back, keep){
       { key:'plan', label:pl ? t('rvPlan') : '', on:!!pl, add:g => { if(!pl || !pl.path || pl.path.length < 2) return;
         const ds = (pl.days || []).length > 1 ? pl.days : [{ i0:0, i1:pl.path.length - 1 }];
         ds.forEach((d, k) => L.polyline(Planner.pathRuns(pl.path.slice(d.i0, d.i1 + 1)), { color:routeColor(col), weight:4, opacity:.6, dashArray:dayPattern(k).dash, lineJoin:'round' }).addTo(g)); } },
+      // the driven parts of the track (> 14 km/h): own switch, under what is done
+      { key:'jumps', label:sp.drive.length ? t('tripsAll') : '', add:g => sp.drive.forEach(a => driveLine(g, a)) },
       // one layer: everything done on this route – this day, earlier days and colleagues alike
       { key:'done', label:runs.length || runsPrev.length || ll.length > 1 ? t('rvDone') : '', add:g => { [...runsPrev, ...runs, ...(pl ? offRoute(wr, [pl]) : [])].forEach(x => L.polyline(x, { color:GREEN_C(), weight:8, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g));
         // the GPS track belongs to it (one switch)
         if(ll.length < 2) return;
-        wr.forEach(a => { if(a.length > 1) gpsLine(g, a); }); sp.drive.forEach(a => driveLine(g, a));
+        wr.forEach(a => { if(a.length > 1) gpsLine(g, a); });
         L.marker(ll[0], { icon:dot('start-dot', 16) }).addTo(g); L.marker(ll[ll.length - 1], { icon:dot(r.ended_at ? 'end-dot' : 'me-dot', r.ended_at ? 16 : 20) }).addTo(g); } },
       { key:'skip', label:workerSkips(pl).length ? t('rvSkipped') : '', add:g => drawSkips(g, [pl], pl ? () => viewDayMap(routeId, back, dm.rvState()) : null) },
       { key:'cp', label:cps.length ? t('checkpoints') : '', on:false, add:g => cps.forEach(c => cpAdmin(c, routeColor(col), (pl.days || []).length > 1, pl, () => viewDayMap(routeId, back, dm.rvState())).addTo(g)) },
@@ -831,10 +833,11 @@ async function viewTaskMap(id, back, keep){
         return nd > 1 ? [...Array.from({ length:nd }, (_, k) => ({ key:'day' + k, label:t('dayN', { n:k + 1 }) + ' ' + dayPattern(k).symbol, add:g => drawDay(g, k) })), { key:'start', add:start }]
           : [{ key:'plan', label:t('rvPlan'), add:g => { drawDay(g, 0); start(g); } }];
       })(),
+      // driving: planned changes of place and the parts of the GPS tracks that were driven (> 14 km/h) - one switch, under what is done
+      ...((plans || []).some(p => (p.path || []).some(q => q[2] === 1)) || (routes || []).length ? [{ key:'jumps', label:t('tripsAll'), add:g => { (plans || []).forEach(p => drawJumps(g, p.path, (tk.travel || (tk.bike ? 'bike' : 'bus')), rideMinOf(plans), ridesOf([p]))); drives.forEach(ll => driveLine(g, ll, 2.5)); } }] : []),
       // one switch: what is done (green) together with the GPS tracks it comes from
       { key:'done', label:t('rvDone'), add:g => { res.forEach(x => x.runs.forEach(run => L.polyline(run, { color:GREEN_C(), weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g))); res.forEach(x => removedOf(x.p).forEach(x => L.polyline(x.pts, { color:'#94A3B8', weight:8, opacity:.95, dashArray:'4 8', lineCap:'round', interactive:false }).addTo(g))); offRuns.forEach(run => L.polyline(run, { color:GREEN_C(), weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g));
-        tracks.forEach(ll => { if(ll.length > 1) gpsLine(g, ll, 2.5); }); drives.forEach(ll => driveLine(g, ll, 2.5)); } },
-      ...((plans || []).some(p => (p.path || []).some(q => q[2] === 1)) ? [{ key:'jumps', label:(tk.travel === 'zones' && rideMinOf(plans)) ? t('tripsPlan', { min:rideMinOf(plans) }) : t({ car:'tripsCar', bike:'tripsBike', bus:'tripsBus', zones:'tripsUnknown' }[(tk.travel || (tk.bike ? 'bike' : 'bus'))]), add:g => (plans || []).forEach(p => drawJumps(g, p.path, (tk.travel || (tk.bike ? 'bike' : 'bus')), rideMinOf(plans), ridesOf([p]))) }] : []),
+        tracks.forEach(ll => { if(ll.length > 1) gpsLine(g, ll, 2.5); }); } },
       ...((plans || []).some(p => workerSkips(p).length) ? [{ key:'skip', label:t('rvSkipped'), add:g => drawSkips(g, plans, () => viewTaskMap(id, back, m && m.rvState())) }] : []),
       { key:'cp', label:t('checkpoints'), on:false, add:g => res.forEach(({ p, cps }) => cps.forEach(c => cpAdmin(c, routeColor(p.color), (p.days || []).length > 1, p, () => viewTaskMap(id, back, m && m.rvState())).addTo(g))) },
       // a tap on "Wo gerade" moves the map to the people: the ones walking right now, else the last known positions
@@ -854,7 +857,7 @@ async function viewTaskMap(id, back, keep){
   if(loading){
     const mine = m; try{ compute(await loadSplit()); }catch{}
     loading = false; if(!$('#rvMap') || mine !== m) return;
-    ['done', 'cp', 'skip'].forEach(k => m.rvFill(k)); m.rvRefresh(); m.rvTools();
+    ['done', 'jumps', 'cp', 'skip'].forEach(k => m.rvFill(k)); m.rvRefresh(); m.rvTools();
   }
   // houses along tracks outside the planned routes: counted in the background, the map is already open
   Promise.all(res.map(x => boxesAlong(byPlan[x.p.id] || [], allBoxes).catch(() => null))).then(extra => {
