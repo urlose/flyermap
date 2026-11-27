@@ -14,7 +14,7 @@ import { loadWorkerStats, okBadge, shortLine, workerStatsHtml, bindWorkerStats, 
 window.addEventListener('fm-open-task', e => viewTask(e.detail, () => viewStats()));
 import { makePlanEngine, setStampClient, tileStamp } from './planengine.js';
 import { openMapView } from './routeview.js';
-import { checkpoints, addSkips, dayProgress, makeNav, removedOf, keptBoxes, effPct, removedLen, cutRemoved } from './nav.js';
+import { checkpoints, addSkips, dayProgress, makeNav, removedOf, keptBoxes, effPct, removedLen, cutRemoved, cpEntries } from './nav.js';
 import { compare as zensusCompare, diffPct as zensusDiff, censusPlaces, MIN_HH } from './zensus.js';
 // census line: official households next to our mailbox estimate; more than 25 % apart is marked
 const zensusHtml = c => { const d = zensusDiff(c); return d == null ? '' : `${esc(t('zLine', { hh:fmtN(c.households) }))} · <i class="zd ${Math.abs(d) > 25 ? 'err' : ''}" >${esc(t('zDiff', { d:(d > 0 ? '+' : d < 0 ? '−' : '±') + Math.abs(d) }))}</i>`; };
@@ -708,18 +708,22 @@ export const cpMarker = (c, color, multi) => L.marker(c.at, { keyboard:false, zI
 // admin: tap a checkpoint → its streets light up, and it can be closed as done (or opened again if it was closed here)
 const cpTag = c => (c.day + 1) + '.' + c.n;
 function densify(run){ const out = [run[0]]; for(let i = 1; i < run.length; i++){ const a = run[i - 1], b = run[i], n = Math.max(1, Math.ceil(hav(a[0], a[1], b[0], b[1]) / 8)); for(let k = 1; k <= n; k++) out.push([+(a[0] + (b[0] - a[0]) * k / n).toFixed(6), +(a[1] + (b[1] - a[1]) * k / n).toFixed(6)]); } return out; }
-// a removed checkpoint back into the route: its mailboxes and time come back to the route and the order
-async function restoreRemoved(planId, tag){
+// one skipped entry, recognisable after a fresh load
+const skKey = x => (x && x.at || '') + '|' + ((x && x.pts) || []).length + '|' + JSON.stringify(((x && x.pts) || [])[0] || null);
+// removed pieces back into the route: their mailboxes and time come back to the route and the order
+async function restoreRemoved(planId, keys){
   const { data:fr, error:e1 } = await sb.from('task_plans').select('skipped,mailboxes,minutes,task_id').eq('id', planId).maybeSingle(); if(e1 || !fr) return e1 || new Error('not found');
-  const sk = fr.skipped || [], own = sk.filter(x => x && x.cp === tag && x.removed), mb = own.reduce((s, x) => s + (+x.mb || 0), 0), min = own.reduce((s, x) => s + (+x.min || 0), 0);
-  const { error } = await sb.from('task_plans').update({ skipped:sk.filter(x => !(x && x.cp === tag)), mailboxes:Math.round((fr.mailboxes || 0) + mb), minutes:Math.round((fr.minutes || 0) + min) }).eq('id', planId);
+  const sk = fr.skipped || [], own = sk.filter(x => x && x.removed && keys.includes(skKey(x))), mb = own.reduce((s, x) => s + (+x.mb || 0), 0), min = own.reduce((s, x) => s + (+x.min || 0), 0);
+  const { error } = await sb.from('task_plans').update({ skipped:sk.filter(x => !(x && x.removed && keys.includes(skKey(x)))), mailboxes:Math.round((fr.mailboxes || 0) + mb), minutes:Math.round((fr.minutes || 0) + min) }).eq('id', planId);
   if(error) return error;
   if(mb){ const { data:tk } = await sb.from('tasks').select('flyers,est_mailboxes').eq('id', fr.task_id).maybeSingle();
     if(tk){ const upd = {}; if(tk.flyers != null) upd.flyers = Math.round(tk.flyers + mb); if(tk.est_mailboxes != null) upd.est_mailboxes = Math.round(tk.est_mailboxes + mb); await sb.from('tasks').update(upd).eq('id', fr.task_id); } }
   return null;
 }
 function cpAdmin(c, color, multi, plan, reload){
-  const mine = (plan.skipped || []).filter(x => x && x.cp === cpTag(c)), closed = mine.length > 0, removed = mine.some(x => x.removed);
+  // what the admin closed here – by geometry, the tag may be from before the days were changed
+  const mineIx = cpEntries(plan, c, x => /^Admin/.test(x.by || '')), mine = mineIx.map(i => plan.skipped[i]), mineKeys = mine.map(skKey);
+  const closed = mine.length > 0, removed = mine.some(x => x.removed);
   if(removed) c = { ...c, removed:true };
   const mk = cpMarker(c, color, multi), label = multi ? cpTag(c) : String(c.n);
   let hl = null;
@@ -757,7 +761,7 @@ function cpAdmin(c, color, multi, plan, reload){
       mk.closePopup(); try{ await loadTasks(); }catch{} reload();
     };
     const br = el.querySelector('[data-cprm]'); if(br) br.onclick = () => { br.disabled = true; saveRm(true); };
-    const bo = el.querySelector('[data-cpopen]'); if(bo) bo.onclick = () => { bo.disabled = true; if(removed) saveRm(false); else save(sk => sk.filter(x => !(x && x.cp === cpTag(c)))); };
+    const bo = el.querySelector('[data-cpopen]'); if(bo) bo.onclick = () => { bo.disabled = true; if(removed) saveRm(false); else save(sk => sk.filter(x => !(x && mineKeys.includes(skKey(x))))); };
   });
   mk.on('popupclose', () => { if(hl){ hl.remove(); hl = null; } });
   return mk;
@@ -1978,9 +1982,14 @@ async function viewTask(id){
       <h2 class="sec" data-short="${esc(t('secRoutes'))}">${esc(t('routesOf'))}</h2>
       ${(plans || []).length > 1 ? `<p class="wz-total"><span>${esc(t('planTeamHours'))}</span><b>≈ ${esc(fmtHm((plans || []).reduce((a, p) => a + (p.minutes || 0), 0)))} ${esc(t('h'))} · ${esc(t('routesN', { n:plans.length }))}</b></p>` : ''}
       ${(() => { // removed checkpoints are not on the maps any more – here they can be taken back
-        const rows = (plans || []).flatMap(p => [...new Set(removedOf(p).map(x => x.cp).filter(Boolean))].map(tag => ({ p, tag, mb:removedOf(p).filter(x => x.cp === tag).reduce((a, x) => a + (+x.mb || 0), 0) })));
+        const rows = (plans || []).flatMap(p => { const rm = removedOf(p); if(!rm.length) return [];
+          // label = the checkpoint where the piece is now (the tag may be from before the days were changed)
+          const cps = checkpoints(p, () => false, null, true), multi = (p.days || []).length > 1, by = new Map();
+          rm.forEach(x => { const c = cps.find(c => cpEntries({ skipped:[x] }, c).length), tag = c ? (multi ? (c.day + 1) + '.' + c.n : String(c.n)) : (x.cp || '?');
+            const r = by.get(tag) || { p, tag, mb:0, keys:[] }; r.mb += +x.mb || 0; r.keys.push(skKey(x)); by.set(tag, r); });
+          return [...by.values()]; });
         if(!rows.length) return '';
-        return `<div class="list-card" id="tRemoved">${rows.map(r => `<div class="lc-row static inb-row"><span class="grow"><b>${esc(t('rmListTitle', { n:r.tag }))}</b><small class="muted">${esc(t('planRoute', { n:r.p.idx + 1 }) + (r.mb ? ' · ≈ ' + fmtN(r.mb) + ' ' + t('rmBoxes') : ''))}</small></span><button class="btn ghost small" data-rmp="${r.p.id}" data-rmt="${esc(r.tag)}">${esc(t('cpRestore'))}</button></div>`).join('')}</div>`; })()}
+        return `<div class="list-card" id="tRemoved">${rows.map(r => `<div class="lc-row static inb-row"><span class="grow"><b>${esc(t('rmListTitle', { n:r.tag }))}</b><small class="muted">${esc(t('planRoute', { n:r.p.idx + 1 }) + (r.mb ? ' · ≈ ' + fmtN(r.mb) + ' ' + t('rmBoxes') : ''))}</small></span><button class="btn ghost small" data-rmp="${r.p.id}" data-rmk="${esc(JSON.stringify(r.keys))}">${esc(t('cpRestore'))}</button></div>`).join('')}</div>`; })()}
       ${(() => { // joined orders: every colour appears several times – one person for all routes of a colour
         const cols = []; (plans || []).forEach(p => { if(p.color && !cols.includes(p.color)) cols.push(p.color); });
         if(!plans || cols.length === plans.length) return '';
@@ -2143,7 +2152,7 @@ async function viewTask(id){
   $('#tBig').onclick = () => viewTaskMap(id, () => viewTask(id));
   $('#tRMap').onclick = () => viewTaskMap(id, () => viewTask(id)); if($('#tRepGo')) $('#tRepGo').onclick = () => viewTaskMap(id, () => viewTask(id));
   // the "Meldungen" tile: reported pieces → straight to the route map where they are decided, otherwise to the section
-  document.querySelectorAll('[data-rmp]').forEach(b => b.onclick = async () => { b.disabled = true; const e = await restoreRemoved(b.dataset.rmp, b.dataset.rmt); if(e){ b.disabled = false; toast(errText(e)); return; } try{ await loadTasks(); }catch{} viewTask(id); });
+  document.querySelectorAll('[data-rmp]').forEach(b => b.onclick = async () => { b.disabled = true; const e = await restoreRemoved(b.dataset.rmp, JSON.parse(b.dataset.rmk || '[]')); if(e){ b.disabled = false; toast(errText(e)); return; } try{ await loadTasks(); }catch{} viewTask(id); });
   $('#tRepCard').onclick = () => { if(repOpen && !lateN) return viewTaskMap(id, () => viewTask(id)); const el = $('#tReports'); if(el) el.scrollIntoView({ behavior:'smooth', block:'start' }); };
   $('#tOnMap').onclick = () => showOnMap({ kind:'task', id }); $('#tEdit2').onclick = () => $('#tEdit').click();
   secNav($('#tNav'));
