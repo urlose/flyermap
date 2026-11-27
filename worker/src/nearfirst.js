@@ -68,6 +68,22 @@ export function outwardStreetOrder(g, start, { isolatedGapM = 850, sparsePerKm =
     for(const v of order){ const p=parent[v]; if(p<0)continue; if(drop[p]||(dist[v]>300&&L[v]>0&&B[v]/L[v]*1000<thr))drop[v]=1; }
     keep=c=>!drop[c.v];
   }
+  // Spurs (27.11.2026): a dead-end chain (from a dead end back to the first junction) that brings almost nothing for the way
+  // there AND back – a road into the fields, a long drive to one house – goes to the end as well; the time goes to another street.
+  if(filterEmpty){
+    const deg=v=>(g.adj[v]||[]).length, candAt=new Map(cand.map(c=>[c.i,c]));
+    for(let v=0;v<n;v++){ if(deg(v)!==1||v===root) continue;
+      const chain=[]; let cur=v, prevE=-1, L=0, M=0, hitRoot=false;
+      for(let guard=0;guard<200;guard++){
+        const arc=(g.adj[cur]||[]).find(a=>a.e!==prevE); if(!arc) break;
+        const e=g.edges[arc.e]; chain.push(arc.e); L+=+e.len||0; M+=+e.mb||0; prevE=arc.e; cur=arc.to;
+        if(cur===root){ hitRoot=true; break; } if(deg(cur)!==2) break;
+      }
+      if(hitRoot||!chain.length) continue;
+      const perWalk=M*100/Math.max(1,2*L);   // mailboxes per 100 m walked (there and back)
+      if((M<=2&&L>60)||perWalk<1.2) for(const i of chain){ const c=candAt.get(i); if(c) c.thin=true; }
+    }
+  }
   const later=[];
   cand.forEach(c=>{ const q={ i:c.i, distance:c.distance, mailboxes:c.mailboxes, length_m:c.length_m }; (!c.thin&&keep(c)?streets:later).push(q); });
   const near=(a,b)=>a.distance-b.distance||a.i-b.i;
