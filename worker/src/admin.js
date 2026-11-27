@@ -897,8 +897,21 @@ async function viewHelpInbox(showDone){
   A.helpOpen = all.filter(h => h.status === 'open').length; setBadges();
   const when = d => new Date(d).toLocaleString(I.lang, { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
   const rs = r => t('hr_' + r) === 'hr_' + r ? r : t('hr_' + r);
+  // besides the help requests: pieces of a route a worker reported (decided on the route map) and dates after the deadline
+  let reps = [], lates = [];
+  try{ const ids = [...new Set([...(A.repTasks ? A.repTasks.keys() : []), ...(A.lateTasks || [])])];
+    if(ids.length){ const { data } = await sb.from('task_plans').select('task_id,idx,worker_id,skipped,status,late_dates,late_ok').in('task_id', ids);
+      (data || []).forEach(p => { workerSkips(p).filter(x => x.rep && !x.ok).forEach(x => reps.push({ ...x, p }));
+        if(p.worker_id && p.status === 'accepted' && p.late_dates && !p.late_ok) lates.push(p); }); } }catch{}
+  reps.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+  const tTitle = tid => { const tk = A.tasks.find(x => x.id === tid); return tk ? tk.title : ''; };
+  const decide = reps.length || lates.length ? `<h2 class="sec" style="margin-top:4px">${esc(t('inbDecide'))}</h2><div class="list-card">
+      ${reps.map(x => `<div class="lc-row static inb-row"><span class="rep-dot" aria-hidden="true"></span><span class="grow"><b>${esc(t('rvReported'))}${x.why ? ' · ' + esc(rs(x.why)) : ''}</b><small class="muted">${esc([tTitle(x.p.task_id), t('planRoute', { n:x.p.idx + 1 }), x.by, x.at ? when(x.at) : ''].filter(Boolean).join(' · '))}</small></span><button class="btn ghost small" data-rmap="${x.p.task_id}">${ICONS.route}${esc(t('repDecide'))}</button></div>`).join('')}
+      ${lates.map(p => `<div class="lc-row static inb-row"><span class="rep-dot" aria-hidden="true"></span><span class="grow"><b>${esc(t('lateBadge'))}</b><small class="muted">${esc([tTitle(p.task_id), t('planRoute', { n:p.idx + 1 }), nameOf(p.worker_id)].filter(Boolean).join(' · '))}</small></span><button class="btn ghost small" data-task="${p.task_id}">${ICONS.flag}${esc(t('helpOpenTask'))}</button></div>`).join('')}
+    </div>${list.length ? `<h2 class="sec">${esc(t('inbHelp'))}</h2>` : ''}` : '';
   shell('tasks', `${topbar(t('helpInbox'), true)}
     <div class="pad">
+      ${decide}
       ${list.length ? list.map(h => { const tk = A.tasks.find(x => x.id === h.task_id); return `<div class="help-item ${h.status === 'open' ? '' : 'done'}" data-id="${h.id}">
         <div class="hi-head"><b>${esc(rs(h.reason))}</b>${statusPill(h.status === 'open' ? 'warn' : 'ok', t(h.status === 'open' ? 'helpOpen' : 'helpDone'))}</div>
         <span class="muted small">${esc([t('helpFrom', { n:nameOf(h.worker_id) || '?' }), tk ? tk.title : '', when(h.created_at)].filter(Boolean).join(' · '))}</span>
@@ -907,12 +920,13 @@ async function viewHelpInbox(showDone){
         <div class="hi-acts">${tk ? `<button class="btn ghost small" data-task="${tk.id}">${ICONS.flag}${esc(t('helpOpenTask'))}</button>` : ''}${h.lat != null ? `<a class="btn ghost small" target="_blank" rel="noopener" href="https://www.google.com/maps?q=${(+h.lat).toFixed(6)},${(+h.lng).toFixed(6)}">${ICONS.pin}${esc(t('helpWhere'))}</a>` : ''}</div>
         ${h.status === 'open' && A.bot ? botDraftHtml(h) : ''}
         ${h.status === 'open' ? `<textarea class="in" rows="2" maxlength="1000" placeholder="${esc(t('helpAnswerPh'))}"></textarea><div class="hi-acts"><button class="btn primary small" data-close="${h.id}">${ICONS.check}${esc(t('helpClose'))}</button></div>` : ''}
-      </div>`; }).join('') : emptyState(t('helpInboxNone'), 'inbox')}
+      </div>`; }).join('') : decide ? '' : emptyState(t('helpInboxNone'), 'inbox')}
       ${!showDone && nDone ? `<button class="link" id="hiDone">${esc(t('helpShowDone'))} (${nDone})</button>` : ''}
     </div>`); setLoc('help');
   bindBack(() => adminTab('tasks'));
   if($('#hiDone')) $('#hiDone').onclick = () => viewHelpInbox(true);
   document.querySelectorAll('[data-task]').forEach(b => b.onclick = () => viewTask(b.dataset.task));
+  document.querySelectorAll('[data-rmap]').forEach(b => b.onclick = () => viewTaskMap(b.dataset.rmap, () => viewHelpInbox(showDone)));
   // Claude's draft: take it over into the answer box (the admin still sends it), or have it written again
   document.querySelectorAll('[data-take]').forEach(b => b.onclick = () => { const box = b.closest('.help-item'), h = all.find(x => x.id === b.dataset.take); if(h){ box.querySelector('textarea').value = h.bot_draft || ''; box.querySelector('textarea').focus(); } });
   document.querySelectorAll('[data-redo]').forEach(b => b.onclick = async () => { b.disabled = true; await botDraft(b.dataset.redo, true); viewHelpInbox(showDone); });
@@ -961,7 +975,7 @@ function viewTasks(){
   if($('#create')) $('#create').onclick = () => viewCreate();
   if($('#firmTodo')) $('#firmTodo').onclick = () => { A.focusFirm = true; adminTab('settings'); };
   // reports of the walkers ("need help"): a box on top while there are any
-  loadHelp().then(list => { const box = $('#helpBox'); if(!box || !list.length) return; const n = list.filter(h => h.status === 'open').length;
+  loadHelp().then(list => { const box = $('#helpBox'); const n = list.filter(h => h.status === 'open').length + (A.lateTasks ? A.lateTasks.size : 0) + (A.repTasks ? [...A.repTasks.values()].reduce((a, v) => a + v, 0) : 0); if(!box || (!list.length && !n)) return;
     box.innerHTML = `<button class="help-box" id="helpOpen">${ICONS.chat}<span>${esc(t('helpInbox'))}</span>${n ? `<span class="cnt">${esc(t('helpInboxN', { n }))}</span>` : ''}</button>`; $('#helpOpen').onclick = () => viewHelpInbox(); });
   const again = () => viewTasks();
   document.querySelectorAll('[data-st]').forEach(b => b.onclick = () => { f.status = b.dataset.st; again(); });
@@ -1929,7 +1943,7 @@ async function viewTask(id){
         ${ov(t('colStatus'), statusPill(...taskState(tk)), '')}
         ${ov(t('deadline'), `<span class="due-${due.cls}">${esc(due.txt)}</span>`, '')}
         ${ov(t('colTeam'), `${team.length}`, ps0.length - nAssigned > 0 ? `<span class="due-warn">${esc(t('freeN', { n:ps0.length - nAssigned }))}</span>` : esc(t('ovAllAssigned')), '')}
-        ${ov(t('secReports'), String(repOpen + lateN), repOpen + lateN ? `<span class="due-warn">${esc(t('ovToDecide'))}</span>` : esc(t('ovNothing')), repOpen + lateN ? 'warn' : '')}
+        <button type="button" class="ov-t ov-btn ${repOpen + lateN ? 'warn' : ''}" id="tRepCard"><span>${esc(t('secReports'))}</span><b>${repOpen + lateN}</b><small>${repOpen + lateN ? `<span class="due-warn">${esc(t('ovToDecide'))}</span>` : esc(t('ovNothing'))}</small></button>
         <div class="ov-t"><span>${esc(t('progLbl'))}</span><b id="tProg">—</b><small>${esc(t('colProgress'))}: ${ps0.length ? `${ps0.filter(p => p.status === 'done').length} / ${ps0.length}` : '–'}</small></div>
         <div class="ov-t" id="tFlRow" ${tk.flyers_done != null ? '' : 'style="display:none"'}><span>${esc(t('handedLbl'))} <button class="link" id="tFlEdit" style="font-size:12px">${esc(t('adjust'))}</button></span><b id="tFl">${tk.flyers_done != null ? '≈ ' + fmtN(tk.flyers_done) + (tk.flyers ? ' / ' + fmtN(tk.flyers) : '') : ''}</b>${tk.flyers_done != null ? `<small>${esc(t('flDoneManual', { d:fmtDT(tk.flyers_done_at) }))}${(A.live || []).some(r => r.task_id === tk.id) ? ' · ' + esc(t('stillWorking')) : ''}</small>` : ''}</div>
         <div class="ov-t"><span>${esc(t('hoursLbl'))}</span><b id="tHrs">${taskHours(plans, routes)}</b></div>
@@ -2111,6 +2125,8 @@ async function viewTask(id){
   });
   $('#tBig').onclick = () => viewTaskMap(id, () => viewTask(id));
   $('#tRMap').onclick = () => viewTaskMap(id, () => viewTask(id)); if($('#tRepGo')) $('#tRepGo').onclick = () => viewTaskMap(id, () => viewTask(id));
+  // the "Meldungen" tile: reported pieces → straight to the route map where they are decided, otherwise to the section
+  $('#tRepCard').onclick = () => { if(repOpen && !lateN) return viewTaskMap(id, () => viewTask(id)); const el = $('#tReports'); if(el) el.scrollIntoView({ behavior:'smooth', block:'start' }); };
   $('#tOnMap').onclick = () => showOnMap({ kind:'task', id }); $('#tEdit2').onclick = () => $('#tEdit').click();
   secNav($('#tNav'));
   // help requests that belong to this order
