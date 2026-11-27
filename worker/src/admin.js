@@ -14,7 +14,7 @@ import { loadWorkerStats, okBadge, shortLine, workerStatsHtml, bindWorkerStats, 
 window.addEventListener('fm-open-task', e => viewTask(e.detail, () => viewStats()));
 import { makePlanEngine, setStampClient, tileStamp } from './planengine.js';
 import { openMapView } from './routeview.js';
-import { checkpoints, addSkips, dayProgress, makeNav, removedOf, keptBoxes, effPct, removedLen } from './nav.js';
+import { checkpoints, addSkips, dayProgress, makeNav, removedOf, keptBoxes, effPct, removedLen, cutRemoved } from './nav.js';
 import { compare as zensusCompare, diffPct as zensusDiff, censusPlaces, MIN_HH } from './zensus.js';
 // census line: official households next to our mailbox estimate; more than 25 % apart is marked
 const zensusHtml = c => { const d = zensusDiff(c); return d == null ? '' : `${esc(t('zLine', { hh:fmtN(c.households) }))} · <i class="zd ${Math.abs(d) > 25 ? 'err' : ''}" >${esc(t('zDiff', { d:(d > 0 ? '+' : d < 0 ? '−' : '±') + Math.abs(d) }))}</i>`; };
@@ -656,7 +656,7 @@ async function viewDayMap(routeId, back, keep){
     layers:[
       { key:'plan', label:pl ? t('rvPlan') : '', on:!!pl, add:g => { if(!pl || !pl.path || pl.path.length < 2) return;
         const ds = (pl.days || []).length > 1 ? pl.days : [{ i0:0, i1:pl.path.length - 1 }];
-        ds.forEach((d, k) => L.polyline(Planner.pathRuns(pl.path.slice(d.i0, d.i1 + 1)), { color:routeColor(col), weight:4, opacity:.6, dashArray:dayPattern(k).dash, lineJoin:'round' }).addTo(g)); } },
+        ds.forEach((d, k) => L.polyline(cutRemoved(Planner.pathRuns(pl.path.slice(d.i0, d.i1 + 1)), pl), { color:routeColor(col), weight:4, opacity:.6, dashArray:dayPattern(k).dash, lineJoin:'round' }).addTo(g)); } },
       // the driven parts of the track (> 14 km/h): own switch, under what is done
       { key:'jumps', label:sp.drive.length ? t('tripsAll') : '', add:g => sp.drive.forEach(a => driveLine(g, a)) },
       // one layer: everything done on this route – this day, earlier days and colleagues alike
@@ -708,6 +708,16 @@ export const cpMarker = (c, color, multi) => L.marker(c.at, { keyboard:false, zI
 // admin: tap a checkpoint → its streets light up, and it can be closed as done (or opened again if it was closed here)
 const cpTag = c => (c.day + 1) + '.' + c.n;
 function densify(run){ const out = [run[0]]; for(let i = 1; i < run.length; i++){ const a = run[i - 1], b = run[i], n = Math.max(1, Math.ceil(hav(a[0], a[1], b[0], b[1]) / 8)); for(let k = 1; k <= n; k++) out.push([+(a[0] + (b[0] - a[0]) * k / n).toFixed(6), +(a[1] + (b[1] - a[1]) * k / n).toFixed(6)]); } return out; }
+// a removed checkpoint back into the route: its mailboxes and time come back to the route and the order
+async function restoreRemoved(planId, tag){
+  const { data:fr, error:e1 } = await sb.from('task_plans').select('skipped,mailboxes,minutes,task_id').eq('id', planId).maybeSingle(); if(e1 || !fr) return e1 || new Error('not found');
+  const sk = fr.skipped || [], own = sk.filter(x => x && x.cp === tag && x.removed), mb = own.reduce((s, x) => s + (+x.mb || 0), 0), min = own.reduce((s, x) => s + (+x.min || 0), 0);
+  const { error } = await sb.from('task_plans').update({ skipped:sk.filter(x => !(x && x.cp === tag)), mailboxes:Math.round((fr.mailboxes || 0) + mb), minutes:Math.round((fr.minutes || 0) + min) }).eq('id', planId);
+  if(error) return error;
+  if(mb){ const { data:tk } = await sb.from('tasks').select('flyers,est_mailboxes').eq('id', fr.task_id).maybeSingle();
+    if(tk){ const upd = {}; if(tk.flyers != null) upd.flyers = Math.round(tk.flyers + mb); if(tk.est_mailboxes != null) upd.est_mailboxes = Math.round(tk.est_mailboxes + mb); await sb.from('tasks').update(upd).eq('id', fr.task_id); } }
+  return null;
+}
 function cpAdmin(c, color, multi, plan, reload){
   const mine = (plan.skipped || []).filter(x => x && x.cp === cpTag(c)), closed = mine.length > 0, removed = mine.some(x => x.removed);
   if(removed) c = { ...c, removed:true };
@@ -828,7 +838,7 @@ async function viewTaskMap(id, back, keep){
       ...(() => {
         const nd = Math.max(1, ...(plans || []).map(p => (p.days || []).length));
         const drawDay = (g, k) => (plans || []).forEach(p => { if(!p.path || p.path.length < 2) return; const d = nd > 1 ? (p.days || [])[k] : null; if(nd > 1 && !d) return;
-          L.polyline(Planner.pathRuns(d ? p.path.slice(d.i0, d.i1 + 1) : p.path), { color:routeColor(p.color), weight:5, opacity:.85, dashArray:dayPattern(k).dash, className:'order-day-route', lineJoin:'round', lineCap:'round' }).addTo(g); });
+          L.polyline(cutRemoved(Planner.pathRuns(d ? p.path.slice(d.i0, d.i1 + 1) : p.path), p), { color:routeColor(p.color), weight:5, opacity:.85, dashArray:dayPattern(k).dash, className:'order-day-route', lineJoin:'round', lineCap:'round' }).addTo(g); });
         const start = g => L.marker([tk.start_lat, tk.start_lng], { icon:dot('pin-start', 24) }).addTo(g);
         return nd > 1 ? [...Array.from({ length:nd }, (_, k) => ({ key:'day' + k, label:t('dayN', { n:k + 1 }) + ' ' + dayPattern(k).symbol, add:g => drawDay(g, k) })), { key:'start', add:start }]
           : [{ key:'plan', label:t('rvPlan'), add:g => { drawDay(g, 0); start(g); } }];
@@ -836,7 +846,7 @@ async function viewTaskMap(id, back, keep){
       // driving: planned changes of place and the parts of the GPS tracks that were driven (> 14 km/h) - one switch, under what is done
       ...((plans || []).some(p => (p.path || []).some(q => q[2] === 1)) || (routes || []).length ? [{ key:'jumps', label:t('tripsAll'), add:g => { (plans || []).forEach(p => drawJumps(g, p.path, (tk.travel || (tk.bike ? 'bike' : 'bus')), rideMinOf(plans), ridesOf([p]))); drives.forEach(ll => driveLine(g, ll, 2.5)); } }] : []),
       // one switch: what is done (green) together with the GPS tracks it comes from
-      { key:'done', label:t('rvDone'), add:g => { res.forEach(x => x.runs.forEach(run => L.polyline(run, { color:GREEN_C(), weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g))); res.forEach(x => removedOf(x.p).forEach(x => L.polyline(x.pts, { color:'#94A3B8', weight:8, opacity:.95, dashArray:'4 8', lineCap:'round', interactive:false }).addTo(g))); offRuns.forEach(run => L.polyline(run, { color:GREEN_C(), weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g));
+      { key:'done', label:t('rvDone'), add:g => { res.forEach(x => x.runs.forEach(run => L.polyline(run, { color:GREEN_C(), weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g))); offRuns.forEach(run => L.polyline(run, { color:GREEN_C(), weight:7, opacity:.9, lineJoin:'round', lineCap:'round' }).addTo(g));
         tracks.forEach(ll => { if(ll.length > 1) gpsLine(g, ll, 2.5); }); } },
       ...((plans || []).some(p => workerSkips(p).length) ? [{ key:'skip', label:t('rvSkipped'), add:g => drawSkips(g, plans, () => viewTaskMap(id, back, m && m.rvState())) }] : []),
       { key:'cp', label:t('checkpoints'), on:false, add:g => res.forEach(({ p, cps }) => cps.forEach(c => cpAdmin(c, routeColor(p.color), (p.days || []).length > 1, p, () => viewTaskMap(id, back, m && m.rvState())).addTo(g))) },
@@ -1967,6 +1977,10 @@ async function viewTask(id){
       <div class="rinfo-row"><span>${statusPill(...taskState(tk))}</span><button class="btn ghost small" id="tBig">${ICONS.expand}${esc(t('rvBig'))}</button></div>
       <h2 class="sec" data-short="${esc(t('secRoutes'))}">${esc(t('routesOf'))}</h2>
       ${(plans || []).length > 1 ? `<p class="wz-total"><span>${esc(t('planTeamHours'))}</span><b>≈ ${esc(fmtHm((plans || []).reduce((a, p) => a + (p.minutes || 0), 0)))} ${esc(t('h'))} · ${esc(t('routesN', { n:plans.length }))}</b></p>` : ''}
+      ${(() => { // removed checkpoints are not on the maps any more – here they can be taken back
+        const rows = (plans || []).flatMap(p => [...new Set(removedOf(p).map(x => x.cp).filter(Boolean))].map(tag => ({ p, tag, mb:removedOf(p).filter(x => x.cp === tag).reduce((a, x) => a + (+x.mb || 0), 0) })));
+        if(!rows.length) return '';
+        return `<div class="list-card" id="tRemoved">${rows.map(r => `<div class="lc-row static inb-row"><span class="grow"><b>${esc(t('rmListTitle', { n:r.tag }))}</b><small class="muted">${esc(t('planRoute', { n:r.p.idx + 1 }) + (r.mb ? ' · ≈ ' + fmtN(r.mb) + ' ' + t('rmBoxes') : ''))}</small></span><button class="btn ghost small" data-rmp="${r.p.id}" data-rmt="${esc(r.tag)}">${esc(t('cpRestore'))}</button></div>`).join('')}</div>`; })()}
       ${(() => { // joined orders: every colour appears several times – one person for all routes of a colour
         const cols = []; (plans || []).forEach(p => { if(p.color && !cols.includes(p.color)) cols.push(p.color); });
         if(!plans || cols.length === plans.length) return '';
@@ -2021,7 +2035,7 @@ async function viewTask(id){
   drawTowns(m, tk, 2);
   if(tk.work_area) L.polygon(tk.work_area, { color:'#7C3AED', weight:2, dashArray:'10 6', fillOpacity:.03, interactive:false }).addTo(m);
   (plans || []).forEach(p => { if(!(p.path?.length > 1)) return; const ds = (p.days || []).length > 1 ? p.days : [{ i0:0, i1:p.path.length - 1 }];
-    ds.forEach((d, k) => L.polyline(Planner.pathRuns(p.path.slice(d.i0, d.i1 + 1)), { color:routeColor(p.color), weight:4, opacity:.7, dashArray:dayPattern(k).dash }).addTo(m)); });
+    ds.forEach((d, k) => L.polyline(cutRemoved(Planner.pathRuns(p.path.slice(d.i0, d.i1 + 1)), p), { color:routeColor(p.color), weight:4, opacity:.7, dashArray:dayPattern(k).dash }).addTo(m)); });
   drawSkips(m, plans);
   (plans || []).forEach(p => drawJumps(m, p.path, (tk.travel || (tk.bike ? 'bike' : 'bus')), rideMinOf(plans), ridesOf([p])));
   const doneLayer = L.layerGroup().addTo(m);
@@ -2129,6 +2143,7 @@ async function viewTask(id){
   $('#tBig').onclick = () => viewTaskMap(id, () => viewTask(id));
   $('#tRMap').onclick = () => viewTaskMap(id, () => viewTask(id)); if($('#tRepGo')) $('#tRepGo').onclick = () => viewTaskMap(id, () => viewTask(id));
   // the "Meldungen" tile: reported pieces → straight to the route map where they are decided, otherwise to the section
+  document.querySelectorAll('[data-rmp]').forEach(b => b.onclick = async () => { b.disabled = true; const e = await restoreRemoved(b.dataset.rmp, b.dataset.rmt); if(e){ b.disabled = false; toast(errText(e)); return; } try{ await loadTasks(); }catch{} viewTask(id); });
   $('#tRepCard').onclick = () => { if(repOpen && !lateN) return viewTaskMap(id, () => viewTask(id)); const el = $('#tReports'); if(el) el.scrollIntoView({ behavior:'smooth', block:'start' }); };
   $('#tOnMap').onclick = () => showOnMap({ kind:'task', id }); $('#tEdit2').onclick = () => $('#tEdit').click();
   secNav($('#tNav'));
@@ -2186,7 +2201,6 @@ async function viewTask(id){
       const rb = $('#pred' + p.idx); if(rb && restMin > 1 && dp.some(x => x > 0)) rb.classList.remove('hidden');
     }catch{}   // also streets of this route walked by somebody else
     tr.runs().forEach(run => L.polyline(run, { color:GREEN_C(), weight:6, opacity:.95 }).addTo(doneLayer));
-    removedOf(p).forEach(x => L.polyline(x.pts, { color:'#94A3B8', weight:8, opacity:.95, dashArray:'4 8', lineCap:'round', interactive:false }).addTo(doneLayer));   // removed sections: grey, not green
     const pct = effPct(tr, p); const el = $('#pp' + p.idx); if(el) el.textContent = '· ' + t('done', { p:pct }); const bar = $('#pb' + p.idx); if(bar) bar.style.width = pct + '%';
     const pf = $('#pf' + p.idx); if(pf && ct) pf.textContent = t('flyersDone', { a:fmtN(ct.count()), b:fmtN(ct.total) }) + (ct.total ? ' · ' + Math.round(ct.count() / ct.total * 100) + ' %' : '');
     if(ct){ flSum += ct.count(); flHas = true; }

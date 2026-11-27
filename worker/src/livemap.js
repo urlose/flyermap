@@ -2,6 +2,7 @@
 // Since 16.11.2026. Layers: order areas (stored or derived per place), planned routes, walked parts, order pins, people.
 // Selecting an area, a pin or a person opens the detail panel (right on a PC, bottom sheet on a phone). Regular updates
 // (every 4 s) only touch the people layer and never move the map; the selection stays.
+import { cutRemoved } from './nav.js';
 import L from 'leaflet';
 import Planner from '../../admin/planner.js';
 import { t, I } from './i18n.js';
@@ -115,7 +116,7 @@ export function viewLiveMap(H){
         areaItems.push({ tk, a, layer:lay });
       }
       if(LM.f.routes || on) ps.forEach(p => { if(!p.path || p.path.length < 2) return;
-        L.polyline(Planner.pathRuns(p.path), { pane:'lmRoute', color:p.color || c, weight:on ? 4 : 2.5, opacity:dim ? .2 : on ? .95 : .55, lineJoin:'round', interactive:false }).addTo(routeL); });
+        L.polyline(cutRemoved(Planner.pathRuns(p.path), p), { pane:'lmRoute', color:p.color || c, weight:on ? 4 : 2.5, opacity:dim ? .2 : on ? .95 : .55, lineJoin:'round', interactive:false }).addTo(routeL); });
       if(LM.f.walked && tracks[tk.id]) for(const r of tracks[tk.id]) L.polyline(r, { pane:'lmWalk', color:GREEN_C(), weight:on ? 6 : 4, opacity:dim ? .25 : .8, lineJoin:'round', lineCap:'round', interactive:false }).addTo(walkL);
       if(tk.start_lat != null) L.marker([tk.start_lat, tk.start_lng], { icon:L.divIcon({ className:'', iconSize:[30, 38], iconAnchor:[15, 36],
         html:`<div class="lm-pin ${st}${on ? ' sel' : ''}${dim ? ' dim' : ''}" style="--c:${c}"><svg viewBox="0 0 24 30" aria-hidden="true"><path d="M12 29s9-9.3 9-16.2A9 9 0 0 0 3 12.8C3 19.7 12 29 12 29z"/></svg><i>${st === 'done' ? '✓' : st === 'open' ? '!' : ''}</i></div>` }),
@@ -348,7 +349,7 @@ export function viewLiveMap(H){
   /* ---------- data ---------- */
   const loadOrders = async () => {
     const ids = shown().map(x => x.id); if(!ids.length){ plans = []; return; }
-    const { data } = await sb.from('task_plans').select('id,task_id,idx,color,path,worker_id,status,days,mailboxes').in('task_id', ids);
+    const { data } = await sb.from('task_plans').select('id,task_id,idx,color,path,worker_id,status,days,mailboxes,skipped').in('task_id', ids);
     plans = data || [];
     // walked parts of these orders (green): GPS points without the drives
     const { data:tr } = await sb.rpc('company_tracks', { p_tasks:ids }); tracks = {};

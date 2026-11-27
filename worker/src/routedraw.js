@@ -4,7 +4,7 @@
 import L from 'leaflet';
 import { t } from './i18n.js';
 import { esc, css, fmtDist, hav } from './core.js';
-import { routePieces, checkpoints } from './nav.js';
+import { routePieces, checkpoints, cutRemoved } from './nav.js';
 
 export const ROUTE_C = { today:'#2563EB', missed:'#EA580C', later:'#64748B', cp:'#7C3AED' };
 const GREEN = () => css('--color-map-route-completed') || '#16A34A';
@@ -13,6 +13,7 @@ const GREEN = () => css('--color-map-route-completed') || '#16A34A';
 export function drawPieces(group, plan, tracker, cur, dim){
   group.clearLayers();
   const p = routePieces(plan, tracker, cur), base = { lineJoin:'round', lineCap:'round', interactive:false, smoothFactor:1.2 };
+  ['later', 'done', 'today', 'missed'].forEach(k => { p[k] = cutRemoved(p[k] || [], plan); });   // removed sections are not shown
   const line = (pts, o) => L.polyline(pts, { ...base, ...o }).addTo(group);
   p.later.forEach(x => line(x, { color:ROUTE_C.later, weight:3, opacity:.5 }));
   // a white edge under the coloured lines: they stay readable on every map background and where they meet

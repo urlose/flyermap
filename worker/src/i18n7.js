@@ -69,3 +69,7 @@ Object.assign(T.en, { inbDecide:'To decide', inbHelp:'Help requests' });
 Object.assign(T.de, { tripsAll:'Autofahrten' });
 Object.assign(T.ru, { tripsAll:'Поездки на машине' });
 Object.assign(T.en, { tripsAll:'Car rides' });
+// removed checkpoints (27.11.2026): not on the maps any more, listed on the order page to take them back
+Object.assign(T.de, { rmListTitle:'Checkpoint {n} entfernt', rmBoxes:'Briefkästen' });
+Object.assign(T.ru, { rmListTitle:'Чекпоинт {n} удалён', rmBoxes:'ящиков' });
+Object.assign(T.en, { rmListTitle:'Checkpoint {n} removed', rmBoxes:'mailboxes' });
