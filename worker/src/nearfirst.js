@@ -37,6 +37,15 @@ export function outwardStreetOrder(g, start, { isolatedGapM = 850, sparsePerKm =
     }
   }
   const streets=[], unreachable=[], skipped=[];
+  // Empty land (27.11.2026): forest and field tracks with a lone farm used to be taken just because they were near – and the
+  // time was then missing for a dense place a bit further away. Like the flyer planner (selectForFlyers) such streets are found:
+  // 1. long roads far below the area's usual density, 2. roads out (branches of the walking tree) that bring too few mailboxes
+  // per km. They are not thrown away but put at the END of the order: first every normal street in reach, the empty land only
+  // with time left over. Not for areas the admin drew himself (g.zoned) and not for a kept selection (isolatedGapM = Infinity).
+  const filterEmpty=!g.zoned&&Number.isFinite(isolatedGapM);
+  let sm=0, sl=0; g.edges.forEach(e=>{ if(+e.mb>0&&Number.isFinite(Math.min(dist[e.a],dist[e.b]))){ sm+=+e.mb; sl+=+e.len||0; } });
+  const D=sl?sm/sl*1000:0, minDens=Math.min(.5*D,Math.max(4,Math.min(15,.25*D))), thr=Math.min(.5*D,Math.max(6,Math.min(25,.3*D)));   // never below half the area's own density: in a thin area the thin roads are all there is
+  const cand=[];
   g.edges.forEach((e,i)=>{
     const mb=+e.mb||0;
     if(mb<=0)return;  // roads without mailboxes can still connect two candidate streets
@@ -48,10 +57,23 @@ export function outwardStreetOrder(g, start, { isolatedGapM = 850, sparsePerKm =
     if(deadEnd&&Math.max(a,b)>isolatedGapM&&e.len>=isolatedGapM&&density<sparsePerKm){
       skipped.push(i);return;
     }
-    streets.push({ i, distance, mailboxes:mb, length_m:e.len });
+    cand.push({ i, distance, mailboxes:mb, length_m:e.len, v:a<=b?e.b:e.a, thin:filterEmpty&&e.len>100&&density<minDens });
   });
-  streets.sort((a,b)=>a.distance-b.distance||a.i-b.i);
-  return { root, streets, unreachable, skipped };
+  let keep=()=>true;
+  if(filterEmpty&&cand.length){
+    const order=[...Array(n).keys()].filter(v=>Number.isFinite(dist[v])).sort((x,y)=>dist[x]-dist[y]);
+    const B=new Float64Array(n), L=new Float64Array(n), drop=new Uint8Array(n);
+    cand.forEach(c=>{ const e=g.edges[c.i], u=c.v===e.a?e.b:e.a; B[c.v]+=c.mailboxes; if(parent[c.v]!==u)L[c.v]+=c.length_m; });   // a tree road is counted once (below), other streets on top
+    for(let q=order.length-1;q>=0;q--){ const v=order[q], p=parent[v]; if(p<0)continue; L[v]+=dist[v]-dist[p]; B[p]+=B[v]; L[p]+=L[v]; }
+    for(const v of order){ const p=parent[v]; if(p<0)continue; if(drop[p]||(dist[v]>300&&L[v]>0&&B[v]/L[v]*1000<thr))drop[v]=1; }
+    keep=c=>!drop[c.v];
+  }
+  const later=[];
+  cand.forEach(c=>{ const q={ i:c.i, distance:c.distance, mailboxes:c.mailboxes, length_m:c.length_m }; (!c.thin&&keep(c)?streets:later).push(q); });
+  const near=(a,b)=>a.distance-b.distance||a.i-b.i;
+  streets.sort(near); later.sort(near);
+  const deferred=later.map(q=>q.i); streets.push(...later);
+  return { root, streets, unreachable, skipped, deferred };
 }
 
 // Full geometry distinguishes parallel curves and loops with the same endpoints.

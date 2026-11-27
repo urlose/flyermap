@@ -167,6 +167,9 @@ export function createPlanService(cache){
     async plan({ start, flyers, n, days, hours, must, zone, side, quota, bike, travel, split, exact, mainAll, cores, together, first, near, mainName, budget }, stage, stale){
       const eco = !exact && !mainAll;
       const zones = travel === 'zones';   // every place its own zone(s), no rides between places (orders since 15.11.2026)
+      // one day per route (27.11.2026): no cutting into days any more – each worker gets one line with all his hours and decides
+      // himself when he stops for the day; the next time he goes on where he stopped. (Village tours keep their own days.)
+      if(!(cores && !zones)){ hours = (+hours || 7) * Math.max(1, Math.round(+days || 1)); days = 1; }
       if(cores && !zones) return this.planCores({ start, flyers, n, hours, must, zone, side, travel, together, exact, first }, stage, stale);
       if(!zones){ travel = travel === 'bike' || travel === 'car' ? travel : (bike ? 'bike' : 'bus'); bike = travel !== 'bus'; }
       Planner.setPace(quota);   // hours from the order's quota (metres per 30 minutes)
