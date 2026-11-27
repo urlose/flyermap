@@ -36,7 +36,7 @@ export function openMapView(opts){
     $('#rvCard').innerHTML = `<b class="rv-title">${esc(n ? opts.title : (opts.anonTitle || opts.title))}</b>
       ${(opts.lines || []).filter(Boolean).map(l => `<div class="rv-line">${esc(l)}</div>`).join('')}
       ${(opts.stats || []).length ? `<div class="rv-stats">${opts.stats.filter(s => s && s[1] != null && s[1] !== '').map(([k, v]) => `<div><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}</div>` : ''}
-      ${(opts.legend || []).length ? `<div class="rv-legend">${opts.legend.map(x => `<div class="lg"><i style="background:${esc(x.color)}"></i><b>${esc(n ? x.label : (x.anonLabel || x.label))}</b>${x.sub ? `<span>${esc(x.sub)}</span>` : ''}</div>`).join('')}</div>` : ''}
+      ${(opts.legend || []).length ? `<div class="rv-legend">${opts.legend.map(x => `<div class="lg"><i style="background:${esc(x.color)}"></i><b>${esc(n ? x.label : (x.anonLabel || x.label))}</b>${x.sub ? `<span>${esc(x.sub)}</span>` : ''}</div>${(x.meta || []).length ? `<div class="lg-meta">${x.meta.map(e => `<em class="${esc(e.c || '')}">${esc(e.s)}</em>`).join('')}</div>` : ''}`).join('')}</div>` : ''}
       ${opts.note ? `<div class="rv-note">${esc(opts.note)}</div>` : ''}
       ${opts.action ? `<button class="btn ghost small rv-act" id="rvAct">${esc(opts.action.label)}</button>` : ''}`;
     if(opts.action) $('#rvAct').onclick = () => opts.action.run();
