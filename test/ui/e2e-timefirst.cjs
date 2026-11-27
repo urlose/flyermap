@@ -123,7 +123,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
             const plan = data?.result?.plan;
             const b = plan?.budget;
             if(b?.drive) window.__limits.push({ team:b.drive.team_cap_minutes, max:b.drive.max_minutes, actual:b.actual_minutes });
-            if(plan && !b) window.__fixedMinutes = plan.routes.reduce((sum, route) => sum + route.minutes, 0);
+            if(plan && (!b || b.fixed)) window.__fixedMinutes = plan.routes.reduce((sum, route) => sum + route.minutes, 0);   // fixed print run (since 27.11. planned by walking distance, budget.fixed)
           });
         }
         return post.call(this, message, ...rest);

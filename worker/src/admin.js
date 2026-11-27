@@ -1388,7 +1388,7 @@ function viewCreate(edit){
     zoneLayer.clearLayers(); planLayer.clearLayers();
     if(m._reachCtl){ m.removeControl(m._reachCtl); m._reachCtl = null; }
     var z = drawCircle();
-    if(!z && d.plan.budget && d.plan.budget.strategy === 'near-first') z = drawReach(zoneLayer, startArr(), d.plan.routes, m);   // no circle chosen: show where the flyers go
+    if(!z && d.plan.budget && d.plan.budget.strategy === 'near-first' && !(d.plan.budget.driveZone && d.plan.budget.drive)) z = drawReach(zoneLayer, startArr(), d.plan.routes, m);   // drive time: the reached rings show the area   // no circle chosen: show where the flyers go
     if(!z && d.plan.zone.length > 2) z = L.polygon(d.plan.zone, { color:css('--brand'), weight:2, fillOpacity:.06, interactive:false }).addTo(zoneLayer);
     L.marker(startArr(), { icon:dot('pin-start', 26) }).addTo(zoneLayer); drawMust();
     (d.plan.dropped || []).forEach(l => L.polyline(l, { color:'#94A3B8', weight:4, opacity:.9, dashArray:'4 6', interactive:false, className:'dropped-street' }).addTo(planLayer));   // taken out for the smaller print run

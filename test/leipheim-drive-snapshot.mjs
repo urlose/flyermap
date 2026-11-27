@@ -55,7 +55,9 @@ if(mode === 'record'){
   assert.equal(namingRequests, 0, 'the route plan does not wait for place names');
   if(file === pinned){
     assert.ok(plan.mailboxes >= 5285, 'keep at least the original Leipheim coverage');
-    assert.ok(b.actual_minutes >= 1900 && b.actual_minutes <= 1920, 'use the budget without exceeding 32 hours');   // 24.11.: compact areas – 5 877 flyers in 1 908 min (before 5 813 in 1 917–1 920)
+    // 27.11.: one line per person (no days) – 5 804 flyers in 1 896 min (before 5 851 in 1 916); the next street (2 min) was tried with
+    // the real routes and brings no more flyers (v.topup), so ≥ 98 % of the 32 h is the bar now – the ceiling stays exact
+    assert.ok(b.actual_minutes >= 1880 && b.actual_minutes <= 1920, 'use the budget without exceeding 32 hours: ' + b.actual_minutes);   // 24.11.: compact areas – 5 877 flyers in 1 908 min (before 5 813 in 1 917–1 920)
     assert.equal(v.max_minutes, 1920);
     assert.ok(plan.per_worker.every(m => m <= args.hours * 60 * args.days));
     assert.ok(Math.min(...plan.per_worker) >= .85 * Math.max(...plan.per_worker), 'balance the two tours');
