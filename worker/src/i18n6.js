@@ -94,3 +94,9 @@ Object.assign(T.en, { rideTipPlan:'Change of place · ride ≈ {min} min (in the
 Object.assign(T.de, { rideRoadLabel:'{km} km · {min} Min.', rideRoadEst:'geschätzt {km} km · ≈ {min} Min. – bitte prüfen' });
 Object.assign(T.ru, { rideRoadLabel:'{km} км · {min} мин', rideRoadEst:'оценка {km} км · ≈ {min} мин – проверьте' });
 if(T.en) Object.assign(T.en, { rideRoadLabel:'{km} km · {min} min', rideRoadEst:'estimate {km} km · ≈ {min} min – please check' });
+Object.assign(T.de, { fixTitle:'Feste Auflage', fixOk:'Bestellt {o} Flyer – passt: ≈ {h} Std. für das Team.', fixShort:'Bestellt {o} Flyer – in der Zeit bis zum Termin ({h} Std. Team) machbar sind nur ≈ {f}. Mehr Personen oder ein späterer Termin.', fixHow:'Die Straßen werden nach Fußweg von der Flagge gewählt (Nachbarorte inklusive), bis die Auflage erreicht ist, dann auf die Personen aufgeteilt.' });
+Object.assign(T.ru, { fixTitle:'Фиксированный тираж', fixOk:'Заказано {o} флаеров — успеваем: ≈ {h} ч на команду.', fixShort:'Заказано {o} флаеров — до срока ({h} ч на команду) реально только ≈ {f}. Нужно больше людей или позже срок.', fixHow:'Улицы подбираются по пешему пути от флажка (соседние поселения тоже), пока не набран тираж, затем делятся между людьми.' });
+Object.assign(T.en, { fixTitle:'Fixed print run', fixOk:'Ordered {o} flyers – fits: ≈ {h} h for the team.', fixShort:'Ordered {o} flyers – until the deadline ({h} h for the team) only ≈ {f} are doable. More people or a later deadline.', fixHow:'Streets are chosen by walking distance from the flag (neighbouring places included) until the print run is reached, then split between the people.' });
+Object.assign(T.de, { reachLbl:'Verteilradius ≈ {km} km', reachShort:'Verteilradius' });
+Object.assign(T.ru, { reachLbl:'Радиус раздачи ≈ {km} км', reachShort:'Радиус раздачи' });
+Object.assign(T.en, { reachLbl:'Delivery radius ≈ {km} km', reachShort:'Delivery radius' });

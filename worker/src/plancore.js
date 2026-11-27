@@ -165,7 +165,7 @@ export function createPlanService(cache){
     },
     // plans the routes; loads a larger square first when the plan reaches the edge of what is loaded
     _graph(){ return G; },   // tests: the walking map of the last plan (same streets for comparing two splits)
-    async plan({ start, flyers, n, days, hours, must, zone, side, quota, bike, travel, split, exact, mainAll, cores, together, first, near, mainName, budget }, stage, stale){
+    async plan({ start, flyers, n, days, hours, must, zone, side, quota, bike, travel, split, exact, mainAll, cores, together, first, near, mainName, budget, fixedNear }, stage, stale){
       const eco = !exact && !mainAll;
       const zones = travel === 'zones';   // every place its own zone(s), no rides between places (orders since 15.11.2026)
       // one day per route (27.11.2026): no cutting into days any more – each worker gets one line with all his hours and decides
@@ -177,6 +177,21 @@ export function createPlanService(cache){
       side = (side || []).filter(c => c && (c.flyers > 0 || split === 'even'));   // even split: a place added without a number gets its share below
       if(zones && budget?.strategy === 'near-first' && !mainAll){
         return this.planNearFirst({ start, n, days, hours, budget, side, must, zone, mainName }, stage, stale);
+      }
+      // Fixed print run (27.11.2026): the same street choice as "time first" – residential streets by walking distance from the
+      // flag, streets of the neighbouring built-up areas included, until the ordered flyers are reached – and the same split
+      // between the people. The limit in time is the team's shifts until the deadline. Before, only ONE census place was used
+      // (Löhne: a dense quarter 1–2 km from the flag was left out and the route went 4 km to the west instead).
+      // only for NEW orders (fixedNear from the wizard): saved orders keep their routes and the old planning until replanned on purpose
+      if(fixedNear && zones && !budget && !mainAll && !cores && flyers > 0 && !(side || []).length){
+        const team = Math.max(1, Math.round(n || 1)) * hours * Math.max(1, days || 1);
+        const res = await this.planNearFirst({ start, n, days, hours, side:[], must, zone, mainName,
+          budget:{ strategy:'near-first', mode:'walk', hours:team, tolerance:0, maxFlyers:flyers, fixed:true } }, stage, stale);
+        if(res && res.plan && res.plan.budget){
+          const b = res.plan.budget;
+          b.fixed = { ordered:Math.round(flyers), feasible:Math.round(b.planned), short:b.walk.stop === 'hours' && b.planned < flyers * 0.98, team_minutes:team * 60 };
+        }
+        return res;
       }
       // a near Nebenstadt is walked only when there are mailboxes on the way; an empty road to it (> EMPTY_GAP) → bus, like a far place
       const bus = [];
