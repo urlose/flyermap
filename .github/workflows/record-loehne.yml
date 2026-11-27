@@ -1,0 +1,25 @@
+name: Record Löhne snapshot (read-only public map squares)
+on:
+  workflow_dispatch:
+  push:
+    branches: [fix/two-worker-split]
+    paths: ['.github/workflows/record-loehne.yml']
+permissions:
+  contents: write
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Record (public GET of the planner's own map squares)
+        run: |
+          for i in 1 2 3; do node test/loehne-split.mjs record && break; sleep 30; done
+          test -f test/fixtures/loehne-2026-11-27.json.gz
+      - name: Commit the snapshot
+        run: |
+          git config user.name "github-actions[bot]"; git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add test/fixtures/loehne-2026-11-27.json.gz
+          git commit -m "Löhne snapshot of the real map squares (recorded in CI)" && git push
