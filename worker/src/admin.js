@@ -785,6 +785,30 @@ async function viewTaskMap(id, back, keep){
     let left = tk.flyers_done || 0; arr.forEach((x, i) => { x.fl = i === arr.length - 1 ? left : Math.round((tk.flyers_done || 0) * (tot ? x.m / tot : 1 / arr.length)); left -= x.fl;
       const p = (plans || []).find(q => q.worker_id === x.id); x.color = p && p.color; });
     return arr; })();
+  // working time of today per person, live: today's closed sessions + the running one (a running pause stops the clock),
+  // the pause of the day counted like everywhere else (pauseFull); refreshed every 30 s while the map is open
+  const todayKey = () => new Date().toLocaleDateString('sv-SE');
+  let today = (routes || []).filter(r => dayKey(r) === todayKey());
+  const liveMin = r => Math.max(0, ((r.ended_at ? new Date(r.ended_at) : r.paused_at ? new Date(r.paused_at) : Date.now()) - new Date(r.started_at)) / 60000 + (r.adj_s || 0) / 60 - (r.together_s || 0) / 60);
+  const hhmm = min => { const n = Math.max(0, Math.round(min)); return Math.floor(n / 60) + ':' + String(n % 60).padStart(2, '0'); };
+  const paceCls = pc => pc < 80 ? ['bad', t('paceSlow')] : pc <= 130 ? ['ok', t('paceOk')] : pc <= 300 ? ['ok', t('paceFast')] : ['warn', t('paceTooFast')];
+  // second line under a person in the legend: running / break / finished · hours today · break today · pace against the quota
+  const todayMeta = wid => {
+    const rs = wid ? today.filter(r => r.worker_id === wid) : []; if(!rs.length) return null;
+    const raw = rs.reduce((a, r) => a + liveMin(r), 0), brk = rs.reduce((a, r) => a + (r.break_s || 0), 0), net = Math.max(0, raw - pauseFull(brk));
+    const run = rs.find(r => !r.ended_at), paused = !!(run && run.paused_at);
+    const brkNow = brk / 60 + (paused ? (Date.now() - new Date(run.paused_at)) / 60000 : 0);
+    const out = [run ? (paused ? { c:'warn', s:t('onPause') } : { c:'ok live', s:t('lgLiveNow') }) : { c:'', s:t('lgDoneToday') }, { c:'', s:t('lgToday', { h:hhmm(net) }) }];
+    if(brkNow >= 1) out.push({ c:'', s:t('lgPause', { h:hhmm(brkNow) }) });
+    const quota = tk.quota_m30, dist = rs.reduce((a, r) => a + (r.distance_m || 0), 0);
+    if(quota && !tk.no_quota && net >= 10){ const pc = Math.round(100 * dist / (net / 30 * quota)), [c, s] = paceCls(pc); out.push({ c, s:t('lgPace', { p:pc }) + ' · ' + s }); }
+    // the last half hour of a running session (only while walking)
+    if(run && !paused && quota && !tk.no_quota && run.last30_m != null){
+      const wm = (Date.now() - new Date(run.started_at) - (run.break_s || 0) * 1000) / 60000;
+      if(wm >= 8){ const pc = Math.round(100 * run.last30_m / (quota * Math.min(30, wm) / 30)), [c, s] = paceCls(pc); out.push({ c, s:t('lgNow30', { s }) }); }
+    }
+    return out;
+  };
   let names = true, redrawLive = null, m = null;
   const opts = {
     view:keep, get note(){ return loading ? t('rvLoading') : ''; },
@@ -792,8 +816,8 @@ async function viewTaskMap(id, back, keep){
     lines:[[tk.district, tk.city_name].filter(Boolean).join(', '), tk.work_date ? fmtDay(tk.work_date) : ''],
     get stats(){ return [tk.flyers ? [t('flyers'), fmtN(tk.flyers)] : null, manFl ? [t('rvFlyers'), '≈ ' + fmtN(tk.flyers_done)] : hasFl ? [t('rvFlyers'), '≈ ' + fmtN(flAll)] : null, [t('rvDist'), fmtDist(walked)], allM ? [t('rvDayShare2'), Math.round(100 * doneM / allM) + ' %'] : null, days ? [t('rvDays'), String(days)] : null]; },
     // the admin entered the handed-out flyers: split them over everybody who walked, by kilometres
-    get legend(){ if(manFl) return byWorker.map((x, i) => ({ color:x.color || WCOLS[i % WCOLS.length], label:nameOf(x.id), anonLabel:t('planRoute', { n:i + 1 }), sub:fmtDist(x.m) + ' · ≈ ' + fmtN(x.fl) + ' ' + t('flyers') }));
-      return res.map(({ p, pct, fl }) => ({ color:p.color || '#2563EB', label:(p.worker_id ? nameOf(p.worker_id) : t('planRoute', { n:p.idx + 1 })), anonLabel:t('planRoute', { n:p.idx + 1 }), sub:pct + ' %' + (fl != null ? ' · ≈ ' + fmtN(fl) + ' ' + t('flyers') : '') })); },
+    get legend(){ if(manFl) return byWorker.map((x, i) => ({ color:x.color || WCOLS[i % WCOLS.length], label:nameOf(x.id), anonLabel:t('planRoute', { n:i + 1 }), sub:fmtDist(x.m) + ' · ≈ ' + fmtN(x.fl) + ' ' + t('flyers'), meta:todayMeta(x.id) }));
+      return res.map(({ p, pct, fl }) => ({ color:p.color || '#2563EB', label:(p.worker_id ? nameOf(p.worker_id) : t('planRoute', { n:p.idx + 1 })), anonLabel:t('planRoute', { n:p.idx + 1 }), sub:pct + ' %' + (fl != null ? ' · ≈ ' + fmtN(fl) + ' ' + t('flyers') : ''), meta:todayMeta(p.worker_id) })); },
     layers:[
       { key:'zone', on:radiusFromPlans(plans) != null, add:g => { if(tk.zone_polygon) L.polygon(tk.zone_polygon, { color:css('--brand'), weight:2, fillOpacity:.05, interactive:false }).addTo(g); } },
       ...((tk.must_areas || []).length || (tk.side_towns || []).length ? [{ key:'must', label:t('sideTownsShort'), on:false, add:g => drawTowns(g, tk, 3) }] : []),
@@ -821,6 +845,12 @@ async function viewTaskMap(id, back, keep){
     back,
   };
   m = openMapView(opts);
+  // after openMapView (it clears the timers of the previous screen)
+  every(30000, async () => {
+    const d0 = new Date(); d0.setHours(0, 0, 0, 0);
+    try{ const { data } = await sb.from('routes').select('id,worker_id,started_at,ended_at,break_s,adj_s,together_s,paused_at,distance_m,last30_m').eq('task_id', id).gte('started_at', d0.toISOString()); if(data) today = data.filter(r => dayKey(r) === todayKey()); }catch{}
+    if(m && m.rvRefresh) m.rvRefresh();
+  });
   if(loading){
     const mine = m; try{ compute(await loadSplit()); }catch{}
     loading = false; if(!$('#rvMap') || mine !== m) return;

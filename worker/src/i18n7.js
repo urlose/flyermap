@@ -57,3 +57,7 @@ Object.assign(T.en, {
   wzNeedStart:'First enter a start address or set it on the map.', wzCalc:'The route is still being calculated – one moment.', wzFix:'Please check the marked fields.',
   saving:'Saving …', notSaved:'Not saved – please try again.',
 });
+// order map (27.11.2026): today's hours, pause and pace of every worker, live
+Object.assign(T.de, { lgToday:'heute {h} Std.', lgPause:'Pause {h}', lgPace:'Tempo {p} %', paceSlow:'langsam', paceOk:'normal', paceFast:'schnell', paceTooFast:'zu schnell?', lgLiveNow:'läuft', lgDoneToday:'Feierabend', lgNow30:'letzte 30 Min.: {s}' });
+Object.assign(T.ru, { lgToday:'сегодня {h} ч', lgPause:'пауза {h}', lgPace:'темп {p} %', paceSlow:'медленно', paceOk:'нормально', paceFast:'быстро', paceTooFast:'слишком быстро?', lgLiveNow:'идёт', lgDoneToday:'закончил', lgNow30:'последние 30 мин: {s}' });
+Object.assign(T.en, { lgToday:'today {h} h', lgPause:'break {h}', lgPace:'pace {p} %', paceSlow:'slow', paceOk:'normal', paceFast:'fast', paceTooFast:'too fast?', lgLiveNow:'walking', lgDoneToday:'finished', lgNow30:'last 30 min: {s}' });
