@@ -12,6 +12,8 @@ on:
       - 'worker/src/budgetplan.js'
       - 'worker/src/i18n6.js'
       - 'test/nearfirst.mjs'
+      - 'test/fixedrun.mjs'
+      - 'test/loehne-*.mjs'
       - 'test/nearfirst-overlap.mjs'
       - 'test/nearfirst-zone-boundary.mjs'
       - 'test/routing-quality.mjs'
@@ -71,6 +73,9 @@ jobs:
             node test/$suite.mjs || exit 1
           done
       - run: node test/nearfirst.mjs
+      - run: node test/fixedrun.mjs
+      - run: node test/loehne-split.mjs   # real Löhne data, saved snapshot, no network
+      - run: node test/loehne-fixed.mjs
       - run: node test/nearfirst-service.mjs
       - run: node test/circlearea.mjs
       - run: node test/flyercap.mjs
@@ -101,6 +106,9 @@ jobs:
         env:
           CAP_PCT: '0.85'
         run: timeout 900s node e2e-cap.cjs out-timefirst/cap
+      - name: Browser test fixed print run Löhne (real map squares, synthetic Supabase)
+        working-directory: test/ui
+        run: timeout 600s node e2e-fixedrun.cjs out-timefirst/fixedrun
       - name: Browser test coordinator role (synthetic Supabase, no production)
         working-directory: test/ui
         run: timeout 300s node e2e-coord.cjs out-timefirst/coord
