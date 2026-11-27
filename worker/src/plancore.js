@@ -165,7 +165,7 @@ export function createPlanService(cache){
     },
     // plans the routes; loads a larger square first when the plan reaches the edge of what is loaded
     _graph(){ return G; },   // tests: the walking map of the last plan (same streets for comparing two splits)
-    async plan({ start, flyers, n, days, hours, must, zone, side, quota, bike, travel, split, exact, mainAll, cores, together, first, near, mainName, budget, fixedNear }, stage, stale){
+    async plan({ start, flyers, n, days, hours, must, zone, side, quota, bike, travel, split, exact, mainAll, cores, together, first, near, mainName, budget, fixedNear, exclude }, stage, stale){
       const eco = !exact && !mainAll;
       const zones = travel === 'zones';   // every place its own zone(s), no rides between places (orders since 15.11.2026)
       // one day per route (27.11.2026): no cutting into days any more – each worker gets one line with all his hours and decides
@@ -176,7 +176,7 @@ export function createPlanService(cache){
       Planner.setPace(quota);   // hours from the order's quota (metres per 30 minutes)
       side = (side || []).filter(c => c && (c.flyers > 0 || split === 'even'));   // even split: a place added without a number gets its share below
       if(zones && budget?.strategy === 'near-first' && !mainAll){
-        return this.planNearFirst({ start, n, days, hours, budget, side, must, zone, mainName }, stage, stale);
+        return this.planNearFirst({ start, n, days, hours, budget, side, must, zone, mainName, exclude }, stage, stale);
       }
       // Fixed print run (27.11.2026): the same street choice as "time first" – residential streets by walking distance from the
       // flag, streets of the neighbouring built-up areas included, until the ordered flyers are reached – and the same split
@@ -185,7 +185,7 @@ export function createPlanService(cache){
       // only for NEW orders (fixedNear from the wizard): saved orders keep their routes and the old planning until replanned on purpose
       if(fixedNear && zones && !budget && !mainAll && !cores && flyers > 0 && !(side || []).some(c => !c.auto)){   // places the app suggested itself are not needed: the walk reaches them
         const team = Math.max(1, Math.round(n || 1)) * hours * Math.max(1, days || 1);
-        const res = await this.planNearFirst({ start, n, days, hours, side:[], must, zone, mainName,
+        const res = await this.planNearFirst({ start, n, days, hours, side:[], must, zone, mainName, exclude,
           budget:{ strategy:'near-first', mode:'walk', hours:team, tolerance:0, maxFlyers:flyers, fixed:true } }, stage, stale);
         if(res && res.plan && res.plan.budget){
           const b = res.plan.budget;
@@ -631,7 +631,7 @@ export function createPlanService(cache){
 
     // A single connected walking map keeps both the selection and every worker's
     // route anchored at the order address. Empty streets can connect delivery streets.
-    async walkFirstCore({ start, n, days, hours, budget, side = [], must = [], zone = null, mainName = '' }, stage, stale){
+    async walkFirstCore({ start, n, days, hours, budget, side = [], must = [], zone = null, mainName = '', exclude = [] }, stage, stale){
       const people = Math.max(1, Math.round(n || 1)), maxDays = Math.max(1, Math.min(14, days || 1));
       const dayHours = hours || 7, personMinutes = dayHours * 60 * maxDays;
       const maxMinutes = Math.min(+budget.hours > 0 ? +budget.hours * 60 : Infinity, people * personMinutes);
@@ -652,6 +652,10 @@ export function createPlanService(cache){
       do {
         if(stale()) return { skipped:true };
         let graph = Planner.zoneView(G, zone, shapes);
+        // streets the admin took out in the wizard (27.11.2026): no mailboxes there – they may still be walked through, and the
+        // time goes to the next street by walking distance. Matched by the middle point of the street piece.
+        if((exclude || []).length){ const keys = new Set(exclude.map(p => (+p[0]).toFixed(5) + ',' + (+p[1]).toFixed(5)));
+          graph = { ...graph, edges:graph.edges.map(e => { if(!e.mb) return e; const c = e.coords, m = c[Math.floor(c.length / 2)]; return keys.has(m[0].toFixed(5) + ',' + m[1].toFixed(5)) ? { ...e, mb:0, boxes:[] } : e; }) }; }
         if(budget._capKeep) graph = clipToKeep(graph, budget._capKeep);
         ordered = outwardStreetOrder(graph, start, budget._capKeep ? { isolatedGapM:Infinity } : undefined).streets;
         const walkTree = Planner.walkingTreeCache();
@@ -691,8 +695,10 @@ export function createPlanService(cache){
       if(stale()) return { skipped:true };
       walkingMap = { key:gKey, graph:G };
 
+      // the delivery streets of each route, for picking one on the map in the wizard (not saved): middle, line, name, mailboxes
+      const streetsOf = r => (r.part || []).map(i => { const e = G.edges[i], c = e.coords; return { m:c[Math.floor(c.length / 2)], c:c.length > 12 ? c.filter((_, k) => k % Math.ceil(c.length / 12) === 0 || k === c.length - 1) : c, n:e.name || '', b:Math.round(e.mb) }; });
       const routes = best.routes.map((r, idx) => ({
-        ...r, idx, w:r.idx, place:mainName, work_minutes:r.minutes, ride_minutes:0, jumps:[],
+        ...r, idx, w:r.idx, place:mainName, work_minutes:r.minutes, ride_minutes:0, jumps:[], streets:streetsOf(r),
         parts:[{ place:mainName, part:1, i0:0, i1:r.path.length - 1, mailboxes:Math.round(r.mailboxes), minutes:r.minutes }]
       }));
       const selectedBoxes = routes.reduce((sum, r) => sum + r.mailboxes, 0);

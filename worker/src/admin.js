@@ -127,6 +127,15 @@ function setBadges(){
 }
 // open an order or a person on the map (selected, panel open)
 const showOnMap = sel => { LM.sel = sel; LM.focus = true; if(sel.kind === 'task'){ const tk = A.tasks.find(x => x.id === sel.id); if(tk) LM.f[tk.status === 'done' ? 'done' : 'open'] = true; } adminTab('map'); };
+// a planned route: handing out as a solid line, walking without handing out (there and back, connections, a street a second
+// time) thin and dashed – when the planner marked it (transit, not saved; older routes stay solid)
+const drawRoutePath = (g, r, color) => {
+  const tr = r.transit, p = r.path || [];
+  if(!tr || tr.n !== p.length || !(tr.ranges || []).length){ L.polyline(Planner.pathRuns(p), { color, weight:4, opacity:.85 }).addTo(g); return; }
+  const flag = new Uint8Array(p.length); for(const [a, b] of tr.ranges) for(let i = a + 1; i <= b; i++) flag[i] = 1;
+  let run = [p[0]], f = null; const flush = () => { if(run.length > 1) L.polyline(run.map(q => [q[0], q[1]]), f ? { color, weight:2, opacity:.9, dashArray:'4 6', className:'route-transit' } : { color, weight:4, opacity:.85, className:'route-deliver' }).addTo(g); };
+  for(let i = 1; i < p.length; i++){ if(p[i][2] === 1){ flush(); run = [p[i]]; f = null; continue; } const fi = !!flag[i]; if(f !== null && fi !== f){ flush(); run = [p[i - 1]]; } f = fi; run.push(p[i]); }
+  flush(); };
 // the area where flyers are delivered (27.11.2026): circle around the flag through the farthest planned mailbox (or route point)
 const reachM = (st, routes) => { let R = 0; const k = Math.cos(st[0] * Math.PI / 180);
   for(const r of routes || []) for(const q of (r.boxes && r.boxes.length ? r.boxes : (r.path || []).filter(x => x[2] !== 1))) R = Math.max(R, 111320 * Math.hypot(q[0] - st[0], (q[1] - st[1]) * k));
@@ -1029,7 +1038,7 @@ const readDraft = () => { try{ const x = JSON.parse(localStorage.getItem(DRAFT_K
 const clearDraft = () => { try{ localStorage.removeItem(DRAFT_KEY); }catch{} };
 function viewCreate(edit){
   const tkE = edit && edit.tk;   // editing an existing task: same screen, prefilled, saves over the old routes
-  const d = { start:null, place:null, flyers:10000, n:2, nAuto:false, hours:7, quota:2500, days:2, g:null, plan:null, assign:{}, err:null, token:0, must:[], zone:null, drawing:null, drawFor:'must' };
+  const d = { exclude:[], start:null, place:null, flyers:10000, n:2, nAuto:false, hours:7, quota:2500, days:2, g:null, plan:null, assign:{}, err:null, token:0, must:[], zone:null, drawing:null, drawFor:'must' };
   if(tkE && Array.isArray(tkE.must_areas)) d.must = tkE.must_areas.map(mArea).filter(a => a.p.length > 2);
   if(tkE && Array.isArray(tkE.work_area) && tkE.work_area.length > 2) d.zone = tkE.work_area;
   if(tkE) Object.assign(d, { flyers:tkE.flyers || 5000, hours:+tkE.work_hours || 7, quota:tkE.quota_m30 || 2000, days:tkE.work_days || 2, n:Math.max(1, edit.plans.length), nAuto:false });
@@ -1189,6 +1198,7 @@ function viewCreate(edit){
       else{ let bi = P.length, bc = Infinity; for(let i = 0; i < P.length; i++){ const a = P[i], b = P[(i + 1) % P.length], c = hav(a[0], a[1], q[0], q[1]) + hav(q[0], q[1], b[0], b[1]) - hav(a[0], a[1], b[0], b[1]); if(c < bc){ bc = c; bi = i + 1; } } P.splice(bi, 0, q); }
       updDraw(); drawMust(); return;
     }
+    if(d.step === 3 && d.plan && !d.busy && pickStreet(e.latlng)) return;   // a street of the plan: take it out / back in
     if(d.start && !d.pick) return;
     d.pick = false; d.place = null; const qi = $('#cSearch'); if(qi) qi.value = '';
     setStart(e.latlng.lat, e.latlng.lng, true);
@@ -1279,7 +1289,7 @@ function viewCreate(edit){
     const mode = autoOn() ? t('budgetModeAuto') : walkOn() ? t('budgetModeWalk') : driveOn() ? t('budgetModeCar') : '';
     const tok = ++d.token, pr = progress(tok, mode);
     let res = null;
-    try{ res = await planEngine().run('plan', { fixedNear:!tkE, start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, quota:Math.max(200, Math.round(+saved.quota || NEW_QUOTA)), bike:d.bike, travel:d.travel, split:d.split, exact:d.exact, mainAll:d.mainAll, cores:d.cores && (d.travel === 'car' || d.travel === 'zones'), mainName:mainCity() || '', together:d.cores && d.travel === 'car' && d.together, first:d.cores && d.travel === 'car' ? d.first : null, near:d.side.length > 0 && d.side.every(x => x.auto), budget:d.budget && d.budget.on && d.travel === 'zones' ? { hours:+d.budget.hours || 32, tolerance:(+d.budget.tol >= 0 ? +d.budget.tol : 5) / 100, strategy:d.budget.strategy, travelMin:d.budget.travelMin, car:d.budget.car, radiusKm:circleKm(), ...(walkOn() ? { mode:'walk', maxFlyers:d.budget.maxFlyers } : {}), ...(roadModeOn() ? { mode:d.budget.mode, placeLabel:t('sugUnnamed', { km:'{km}' }), driveMin:d.budget.driveMin, maxFlyers:d.budget.maxFlyers, outlierM:d.budget.outlierM, outlierPerKm:d.budget.outlierPerKm, ...(d.budget.grid && d.budget.gridFor === (d.start ? d.start.lat.toFixed(5) + ',' + d.start.lng.toFixed(5) : '') ? { _grid:d.budget.grid } : {}) } : {}), ...(capOn() ? { cap:{ target:d.budget.cap, places:(d.capPlaces || []).map(x => ({ id:x.id, lat:x.lat, lng:x.lng, cells:x.cells })) } } : {}) } : null, must:d.must, zone:d.zone, side:d.side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers, zone:x.p && x.p.length > 2 ? x.p : null, all:!!x.all, ...(x.cid ? { cid:x.cid } : {}), auto:!!x.auto })) }, pr.stage); }
+    try{ res = await planEngine().run('plan', { fixedNear:!tkE, exclude:d.exclude.map(x => x.m), start:startArr(), flyers:d.flyers, n:d.n, days:d.days, hours:d.hours, quota:Math.max(200, Math.round(+saved.quota || NEW_QUOTA)), bike:d.bike, travel:d.travel, split:d.split, exact:d.exact, mainAll:d.mainAll, cores:d.cores && (d.travel === 'car' || d.travel === 'zones'), mainName:mainCity() || '', together:d.cores && d.travel === 'car' && d.together, first:d.cores && d.travel === 'car' ? d.first : null, near:d.side.length > 0 && d.side.every(x => x.auto), budget:d.budget && d.budget.on && d.travel === 'zones' ? { hours:+d.budget.hours || 32, tolerance:(+d.budget.tol >= 0 ? +d.budget.tol : 5) / 100, strategy:d.budget.strategy, travelMin:d.budget.travelMin, car:d.budget.car, radiusKm:circleKm(), ...(walkOn() ? { mode:'walk', maxFlyers:d.budget.maxFlyers } : {}), ...(roadModeOn() ? { mode:d.budget.mode, placeLabel:t('sugUnnamed', { km:'{km}' }), driveMin:d.budget.driveMin, maxFlyers:d.budget.maxFlyers, outlierM:d.budget.outlierM, outlierPerKm:d.budget.outlierPerKm, ...(d.budget.grid && d.budget.gridFor === (d.start ? d.start.lat.toFixed(5) + ',' + d.start.lng.toFixed(5) : '') ? { _grid:d.budget.grid } : {}) } : {}), ...(capOn() ? { cap:{ target:d.budget.cap, places:(d.capPlaces || []).map(x => ({ id:x.id, lat:x.lat, lng:x.lng, cells:x.cells })) } } : {}) } : null, must:d.must, zone:d.zone, side:d.side.map(x => ({ name:x.name, lat:x.lat, lng:x.lng, flyers:x.flyers, zone:x.p && x.p.length > 2 ? x.p : null, all:!!x.all, ...(x.cid ? { cid:x.cid } : {}), auto:!!x.auto })) }, pr.stage); }
     catch(e){ pr.stop(); if(tok !== d.token || !alive()) return; d.err = errText2(e); d.busy = false; toast(t('streetsFail', { e:d.err })); renderSheet(); return; }
     pr.stop();
     if(tok !== d.token || !alive() || !res || res.skipped) return;
@@ -1384,15 +1394,38 @@ function viewCreate(edit){
     if(changed){ clearTimeout(d.nameTimer); d.nameTimer = setTimeout(() => { if(alive()) recompute(); }, 1000); }
   } });
   function findSuggestions(){ if(!d.start || !d.plan) return; sugFlow.refresh(sugCtx()).catch(() => {}); }
+  // ---- streets taken out by the admin (27.11.2026): click a street of the plan in step 3 → out, the planner takes another ----
+  const distPx = (pt, a, b) => { const A = m.latLngToContainerPoint(a), B = m.latLngToContainerPoint(b), dx = B.x - A.x, dy = B.y - A.y, L = dx * dx + dy * dy;
+    const t = L ? Math.max(0, Math.min(1, ((pt.x - A.x) * dx + (pt.y - A.y) * dy) / L)) : 0; return Math.hypot(pt.x - A.x - t * dx, pt.y - A.y - t * dy); };
+  const nearStreet = (ll, list) => { const pt = m.latLngToContainerPoint(ll); let best = null, bd = 14;
+    for(const st of list) for(let i = 1; i < st.c.length; i++){ const dd = distPx(pt, st.c[i - 1], st.c[i]); if(dd < bd){ bd = dd; best = st; } } return best; };
+  const sameKey = (a, b) => a[0].toFixed(5) === b[0].toFixed(5) && a[1].toFixed(5) === b[1].toFixed(5);
+  function pickStreet(ll){
+    const back = nearStreet(ll, d.exclude);
+    if(back){ L.popup({ className:'excl-pop' }).setLatLng(ll).setContent(`<b>${esc(back.n || t('exclNoName'))}</b><br><span class="small muted">${esc(t('exclOut'))}</span><br><button class="btn ghost small" data-exback style="margin-top:6px">${esc(t('exclBack'))}</button>`).openOn(m);
+      setTimeout(() => { const b = document.querySelector('[data-exback]'); if(b) b.onclick = () => { m.closePopup(); d.exclude = d.exclude.filter(x => x !== back); recompute(); }; }, 0); return true; }
+    const all = (d.plan.routes || []).flatMap(r => r.streets || []); if(!all.length) return false;
+    const st = nearStreet(ll, all); if(!st) return false;
+    const same = st.n ? all.filter(x => x.n === st.n) : [st], sameMb = same.reduce((a, x) => a + x.b, 0);
+    L.popup({ className:'excl-pop' }).setLatLng(ll).setContent(`<b>${esc(st.n || t('exclNoName'))}</b><br><span class="small muted">${esc(t('exclPiece', { b:fmtN(st.b) }))}</span>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px"><button class="btn ghost small" data-exone>${esc(t('exclOne'))}</button>${same.length > 1 ? `<button class="btn ghost small" data-exall>${esc(t('exclAll', { n:same.length, b:fmtN(sameMb) }))}</button>` : ''}</div>`).openOn(m);
+    setTimeout(() => {
+      const add = list => { m.closePopup(); for(const x of list) if(!d.exclude.some(y => sameKey(y.m, x.m))) d.exclude.push({ m:x.m, c:x.c, n:x.n, b:x.b }); recompute(); };
+      const one = document.querySelector('[data-exone]'); if(one) one.onclick = () => add([st]);
+      const al = document.querySelector('[data-exall]'); if(al) al.onclick = () => add(same);
+    }, 0);
+    return true;
+  }
   function draw(){
     zoneLayer.clearLayers(); planLayer.clearLayers();
+    d.exclude.forEach(x => L.polyline(x.c, { color:'#94A3B8', weight:4, opacity:.9, dashArray:'2 6', interactive:false, className:'excluded-street' }).addTo(planLayer));
     if(m._reachCtl){ m.removeControl(m._reachCtl); m._reachCtl = null; }
     var z = drawCircle();
-    if(!z && d.plan.budget && d.plan.budget.strategy === 'near-first' && !(d.plan.budget.driveZone && d.plan.budget.drive)) z = drawReach(zoneLayer, startArr(), d.plan.routes, m);   // drive time: the reached rings show the area   // no circle chosen: show where the flyers go
+    if(!z && d.plan.budget && d.plan.budget.strategy === 'near-first'){ const rc = drawReach(zoneLayer, startArr(), d.plan.routes, m); if(!(d.plan.budget.driveZone && d.plan.budget.drive)) z = rc; }   // always shown while creating; with drive time the rings stay the view frame   // no circle chosen: show where the flyers go
     if(!z && d.plan.zone.length > 2) z = L.polygon(d.plan.zone, { color:css('--brand'), weight:2, fillOpacity:.06, interactive:false }).addTo(zoneLayer);
     L.marker(startArr(), { icon:dot('pin-start', 26) }).addTo(zoneLayer); drawMust();
     (d.plan.dropped || []).forEach(l => L.polyline(l, { color:'#94A3B8', weight:4, opacity:.9, dashArray:'4 6', interactive:false, className:'dropped-street' }).addTo(planLayer));   // taken out for the smaller print run
-    d.plan.routes.forEach((r, i) => { if(r.path.length > 1) L.polyline(Planner.pathRuns(r.path), { color:Planner.COLORS[(r.w != null ? r.w : i) % 10], weight:4, opacity:.85 }).addTo(planLayer); });
+    d.plan.routes.forEach((r, i) => { if(r.path.length > 1) drawRoutePath(planLayer, r, Planner.COLORS[(r.w != null ? r.w : i) % 10]); });
     if(d.plan.budget && d.plan.budget.driveZone && d.plan.budget.drive){   // reached area: fully covered rings darker, the next ring lighter
       const g = d.plan.budget.driveZone, v = d.plan.budget.drive;
       L.polygon(gridRectsUpTo(g, v.next ? v.next.min : v.full_min), { stroke:false, fillColor:css('--brand'), fillOpacity:.06, interactive:false, className:'drive-next' }).addTo(planLayer);
@@ -1558,7 +1591,8 @@ function viewCreate(edit){
         ${(b.unplanned || []).length ? `<div class="warnbox">${esc(t('budUnplanned', { list:b.unplanned.join(', ') }))}</div>` : ''}
         ${b.over_target ? `<div class="warnbox">${esc(t(b.over ? 'budOver' : 'budOverTarget', { h:effH, act:hh(b.actual_minutes), max:hh(b.max_minutes), pct:Math.round(b.tolerance * 100) }))}</div>` : ''}
         <p class="small muted" style="margin:6px 0 0">${esc(t('budEstimate'))}</p></div>`; };
-    const planBlock = () => p ? `${(p.side_failed || []).length ? `<div class="warnbox">${esc(t('sideFailed', { list:p.side_failed.join(', ') }))}</div>` : ''}${(p.bus || []).length ? `<div class="hint">${esc(t('busHint', { list:p.bus.map(x => x.name + ' (' + fmtDist(x.gap) + ')').join(', ') }))}</div>` : ''}${(p.side_info || []).length ? `<p class="small muted" style="margin:8px 0 0">${esc(p.side_info.map(x => x.name + ' → ' + t('planRoute', { n:x.worker + 1 })).join(' · '))}</p>` : ''}<p class="small muted" style="margin:10px 0 0">${esc(t('planSum', { mb:fmtN(p.mailboxes), km }))}</p><p class="small muted" id="cZen" style="margin:4px 0 0">${zensusOfPlan.get(p) || ''}</p>
+    const exclLine = () => d.exclude.length ? `<div class="hint" id="exclInfo">${esc(t('exclInfo', { n:d.exclude.length }))} <button class="link" id="cExclAll">${esc(t('exclAllBack'))}</button></div>` : (p && (p.routes || []).some(r => r.streets) ? `<p class="small muted" id="exclHint">${esc(t('exclHint'))}</p>` : '');
+    const planBlock = () => p ? `${exclLine()}${(p.side_failed || []).length ? `<div class="warnbox">${esc(t('sideFailed', { list:p.side_failed.join(', ') }))}</div>` : ''}${(p.bus || []).length ? `<div class="hint">${esc(t('busHint', { list:p.bus.map(x => x.name + ' (' + fmtDist(x.gap) + ')').join(', ') }))}</div>` : ''}${(p.side_info || []).length ? `<p class="small muted" style="margin:8px 0 0">${esc(p.side_info.map(x => x.name + ' → ' + t('planRoute', { n:x.worker + 1 })).join(' · '))}</p>` : ''}<p class="small muted" style="margin:10px 0 0">${esc(t('planSum', { mb:fmtN(p.mailboxes), km }))}</p><p class="small muted" id="cZen" style="margin:4px 0 0">${zensusOfPlan.get(p) || ''}</p>
         ${p.budget ? budgetPanel(p) : ''}
         ${p.mailboxes < d.flyers * 0.95 && !d.mainAll && !(p.eco && !d.exact) && !p.budget ? `<p class="small err">${esc(t(p.cores ? 'coresSmall' : 'areaSmall', { mb:fmtN(p.mailboxes) }))}</p>` : ''}
         <div class="${cap.ok ? 'hint' : 'warnbox'}">${cap.ok ? esc(needDays === 1 ? t('fitsOne') : t('fitsOk', { d:needDays })) : `${esc(t('tooBig', { h:cap.slowest.toFixed(1).replace('.', ','), lim:cap.limit, d:d.days }))} <button class="link" id="cReduce">${esc(t('reduceTo', { f:fmtN(cap.suggestedFlyers) }))}</button> ${esc(t('moreWorkers'))}`}</div>`
@@ -1681,6 +1715,7 @@ ${d.budget.on && d.budget.strategy === 'near-first' ? '' : `      <label class="
       if(k === 'f'){ d.flyers = Math.max(100, num('#cFly', d.flyers) + +v); $('#cFly').value = d.flyers; d.nAuto = true; return later(); }
       d.n = Math.max(1, Math.min(20, d.n + +v)); $('#vN').textContent = d.n; d.nAuto = false; d.assign = {}; later();
     });
+    if($('#cExclAll')) $('#cExclAll').onclick = () => { d.exclude = []; recompute(); };
     if($('#cBudget')) $('#cBudget').onchange = e => { saved = keep(); d.budget.on = e.target.checked; d.assign = {}; recompute(); };
     if($('#cBudT')) $('#cBudT').onchange = e => { saved = keep(); d.budget.tol = Math.max(0, Math.min(25, Math.round(+e.target.value || 0))); d.assign = {}; recompute(); };
     if($('#cBudH')) $('#cBudH').onchange = e => { saved = keep(); d.budget.hours = Math.max(1, Math.min(2000, Math.round(+e.target.value || 32))); d.assign = {}; recompute(); };

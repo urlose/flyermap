@@ -211,7 +211,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     ok(name+': estimated flyers and work hours visible as output',
       !!bx && bx.nums.length===2 && bx.rows.length===2 &&
       /Flyer/.test(bx.text),bx&&bx.text.slice(0,500));
-    ok(name+': reached area drawn (full rings darker), no circle', await pg.evaluate(()=>document.querySelectorAll('path.drive-full').length===1 && document.querySelectorAll('path.drive-next').length===1 && (()=>{ let c=0; document.getElementById('fullMap')._map.eachLayer(l=>{ if(l.getRadius?.()>1000) c++; }); return c===0; })()));
+    ok(name+': reached area drawn (full rings darker), no circle', await pg.evaluate(()=>document.querySelectorAll('path.drive-full').length===1 && document.querySelectorAll('path.drive-next').length===1 && (()=>{ let c=0; document.getElementById('fullMap')._map.eachLayer(l=>{ if(l.getRadius?.()>1000 && !/reach-circle/.test(l.options?.className||'')) c++; }); return c===0; })()));
     const df=await pg.evaluate(()=>document.getElementById('dfBox')?.innerText||'');
     ok(name+': result says complete up to N min and what stopped it', /Vollständig bis \d+ Min\./.test(df) && /Gestoppt durch|Alle erreichbaren/.test(df), df);
     const ht=await pg.evaluate(()=>[...document.querySelectorAll('#hrsTable tr')].map(r=>r.innerText.replace(/\s+/g,' ')));

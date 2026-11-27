@@ -63,6 +63,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   pg.on('pageerror', e => errors.push('pageerror: ' + e.message)); pg.on('console', m => { if(m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push('console: ' + m.text()); });
   const sess = { access_token:'x', token_type:'bearer', expires_in:3600, expires_at:Math.floor(Date.now() / 1000) + 3600, refresh_token:'y', user:{ id:'u1', email:'admin@example.com', aud:'authenticated', role:'authenticated' } };
   await pg.addInitScript(s => { localStorage.setItem('fm-admin-auth', JSON.stringify(s)); localStorage.setItem('CapacitorStorage.role', '"admin"'); localStorage.setItem('CapacitorStorage.theme', '"dark"'); localStorage.setItem('CapacitorStorage.lang', '"de"'); }, sess);
+  await pg.addInitScript(() => { const post = Worker.prototype.postMessage, seen = new WeakSet(); window.__plans = [];
+    Worker.prototype.postMessage = function(msg, ...rest){ if(!seen.has(this)){ seen.add(this); this.addEventListener('message', ({ data }) => { const pl = data?.result?.plan; if(pl) window.__plans.push(pl); }); } return post.call(this, msg, ...rest); }; });
   await pg.clock.install({ time:new Date(2026, 10, 27, 12) });   // Friday; deadline Saturday = one working day
   await pg.goto('http://localhost:4521/#new', { waitUntil:'load' }); await sleep(2500);
   const until = async (fn, ms = 120000, arg) => { const t0 = Date.now(); while(Date.now() - t0 < ms){ try{ const v = await pg.evaluate(fn, arg); if(v) return v; }catch{} await sleep(500); } return null; };
@@ -84,27 +86,49 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const t0 = Date.now();
   const box = await until(() => { const r = document.getElementById('fixResult'); return r ? { text:r.innerText, warn:r.className } : null; }, 240000);
   const secs = Math.round((Date.now() - t0) / 100) / 10;
-  ok('box "Feste Auflage": planned of ordered', !!box && /Geplant 6\.155 von 6\.155/.test(box.text), box && box.text);
+  ok('box "Feste Auflage": planned of ordered (a few mailboxes may be left for the next street)', !!box && /Geplant 6\.1\d\d von 6\.155/.test(box.text), box && box.text);
   ok('fits in the 26 h (no warning)', !!box && !/warnbox/.test(box.warn), box && box.text);
-  ok('box names the team hours', !!box && /Std\. für das Team/.test(box.text), box && box.text);
+  ok('box says why or that it fits', !!box && (/Std\. für das Team/.test(box.text) || /nächste Straße/.test(box.text)), box && box.text);
   const label = await until(() => { const e = [...document.querySelectorAll('.reach-tip')].find(x => /Verteilradius/.test(x.textContent)); return e ? e.textContent : null; }, 20000);
   ok('radius label on the map', !!label && /^Verteilradius ≈ \d+,\d km \(Luftlinie\)$/.test(label), label);
   ok('dashed radius circle drawn', await pg.evaluate(() => !!document.querySelector('path.reach-circle')));
+  const lines = await pg.evaluate(() => ({ deliver:document.querySelectorAll('path.route-deliver').length, transit:document.querySelectorAll('path.route-transit').length,
+    dash:getComputedStyle(document.querySelector('path.route-transit') || document.body).strokeDasharray }));
+  ok('route: handing out solid, walking without handing out thin dashed', lines.deliver > 0 && lines.transit > 0 && /\d/.test(lines.dash), JSON.stringify(lines));
   const inView = await pg.evaluate(() => { const e = document.querySelector('.reach-ctl .reach-tip'); if(!e) return false; const r = e.getBoundingClientRect(); return r.width > 0 && r.top >= 0 && r.bottom <= innerHeight; });
   ok('label visible in the map view', inView);
   await pg.screenshot({ path:path.join(OUT, 'wizard-desktop.png') });
   await pg.setViewportSize({ width:390, height:844 }); await sleep(1200);
   await pg.screenshot({ path:path.join(OUT, 'wizard-phone.png') });
   await pg.setViewportSize({ width:1440, height:900 }); await sleep(800);
+  // take a street out on the map: the planner takes another one, the print run stays full
+  { const before = await pg.evaluate(() => { const pl = window.__plans.at(-1), st = pl.routes.flatMap(r => r.streets || []).sort((a, b) => b.b - a.b)[0]; return { n:window.__plans.length, st, mb:pl.mailboxes }; });
+    const xy = await pg.evaluate(m => { const map = document.getElementById('fullMap')._map; map.setView(m, 16, { animate:false }); const p = map.latLngToContainerPoint(m), r = document.getElementById('fullMap').getBoundingClientRect(); return { x:r.left + p.x, y:r.top + p.y }; }, before.st.m);
+    await sleep(600); await pg.mouse.click(xy.x, xy.y); await sleep(400);
+    const pop = await pg.evaluate(() => document.querySelector('.excl-pop')?.innerText || '');
+    ok('clicking a street of the plan offers to take it out', /herausnehmen/.test(pop), pop.replace(/\n/g, ' | '));
+    await pg.evaluate(() => document.querySelector('[data-exone]')?.click());
+    const after = await until(n => window.__plans.length > n ? window.__plans.at(-1) : null, 240000, before.n);
+    const key = q => q[0].toFixed(5) + ',' + q[1].toFixed(5);
+    ok('the street is out of the plan, another one is in', !!after && !after.routes.flatMap(r => r.streets || []).some(x => key(x.m) === key(before.st.m)) && after.mailboxes >= before.mb - 15, after && ('mailboxes ' + before.mb + ' → ' + after.mailboxes + ', street ' + (before.st.n || '?') + ' ' + before.st.b + ' BK'));
+    await sleep(800);
+    ok('panel shows "1 Straßenstück(e) herausgenommen" and the street drawn grey', /1 Straßenstück/.test(await pg.evaluate(() => document.getElementById('exclInfo')?.innerText || '')) && await pg.evaluate(() => !!document.querySelector('path.excluded-street')));
+    await pg.screenshot({ path:path.join(OUT, 'wizard-excluded.png') });
+    await pg.mouse.click(xy.x, xy.y); await sleep(400);
+    await pg.evaluate(() => document.querySelector('[data-exback]')?.click());
+    const back = await until(n => window.__plans.length > n + 1 ? window.__plans.at(-1) : null, 240000, before.n);
+    ok('taken back in: the street is planned again', !!back && back.routes.flatMap(r => r.streets || []).some(x => key(x.m) === key(before.st.m)));
+    await pg.evaluate(() => document.getElementById('fullMap')._map.setZoom(13));
+  }
   // too few hours: planned of ordered, what is left, and why
   const setHours = async v => { await pg.evaluate(() => document.querySelector('[data-step="2"]')?.click()); await until(() => !!document.getElementById('cHours'), 10000);
     await pg.evaluate(v => { const i = document.getElementById('cHours'); i.value = v; i.dispatchEvent(new Event('change')); }, v); await sleep(500); await pg.evaluate(() => document.querySelector('[data-step="3"]')?.click()); };
   await setHours('2');
-  const shortBox = await until(() => { const r = document.getElementById('fixResult'); return r && /offen/.test(r.innerText) ? { text:r.innerText, cls:r.className } : null; }, 240000);
+  const shortBox = await until(() => { const r = document.getElementById('fixResult'); return r && /Grund: die Stunden/.test(r.innerText) ? { text:r.innerText, cls:r.className } : null; }, 240000);
   ok('few hours: "Geplant X von 6.155 · offen Y" with the reason', !!shortBox && /Geplant [\d.]+ von 6\.155 · offen [\d.]+/.test(shortBox.text) && /Grund: die Stunden/.test(shortBox.text) && /warnbox/.test(shortBox.cls), shortBox && shortBox.text.replace(/\n/g, ' | '));
   await pg.screenshot({ path:path.join(OUT, 'wizard-short.png') });
   await setHours('6,5');
-  ok('back to 26 h: everything planned', !!await until(() => /Geplant 6\.155 von 6\.155/.test(document.getElementById('fixResult')?.innerText || ''), 240000));
+  ok('back to 26 h: the print run planned again', !!await until(() => { const r = document.getElementById('fixResult'); return r && /Geplant 6\.1\d\d von 6\.155/.test(r.innerText) && !/warnbox/.test(r.className); }, 240000));
   // save, open the order: the radius is a layer there
   await pg.evaluate(() => document.querySelector('[data-step="5"]')?.click());
   await pg.waitForSelector('#cSave', { timeout:30000 }); await pg.locator('#cSave').click();
