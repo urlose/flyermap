@@ -21,7 +21,7 @@ export function layoutStats(plan){
     // spread: mean distance of the worker's delivery points (boxes) to their centre, and the convex hull area (km²)
     const bx = r.boxes || []; const c = bx.reduce((s, b) => [s[0] + b[0] / bx.length, s[1] + b[1] / bx.length], [0, 0]);
     const spread = bx.length ? Math.round(bx.reduce((s, b) => s + seg(c, b), 0) / bx.length) : 0;
-    return { w:r.w + 1, flyers:Math.round(r.mailboxes), hours:h(r.minutes), minutes:r.minutes, walk_h:h(r.work_minutes), ride_h:h(r.ride_minutes), rides:r.jumps.filter(j => !j.walk).length,
+    return { w:r.w + 1, flyers:Math.round(r.mailboxes), hours:h(r.minutes), minutes:r.minutes, work_minutes:r.work_minutes, ride_minutes:r.ride_minutes, walk_h:h(r.work_minutes), ride_h:h(r.ride_minutes), rides:r.jumps.filter(j => !j.walk).length,
       spread_m:spread, parts:r.parts.map(p => p.place + ' ' + p.part), days };
   });
   // boxes given twice (same point in two routes)
@@ -33,7 +33,7 @@ export function layoutStats(plan){
       for(let dy = -1; dy <= 1 && !f; dy++) for(let dx = -1; dx <= 1 && !f; dx++) for(const b of g.get((cy + dy) + ':' + (cx + dx)) || []) if(seg(a, b) < 120){ f = true; break; } if(f) n++; }
     return n / A.length; };
   const ov = plan.routes.length > 1 ? Math.round(near(plan.routes[0].boxes || [], plan.routes[1].boxes || []) * 100) : 0;
-  return { flyers:plan.mailboxes, total_h:h(plan.budget.actual_minutes), total_minutes:plan.budget.actual_minutes, rides:plan.budget.travel.moves, dup_boxes:dup, overlap_pct:ov, workers };
+  return { flyers:plan.mailboxes, team_limit_minutes:plan.budget.max_minutes, total_h:h(plan.budget.actual_minutes), total_minutes:plan.budget.actual_minutes, rides:plan.budget.travel.moves, dup_boxes:dup, overlap_pct:ov, workers };
 }
 const s = layoutStats(plan);
 if(process.argv.includes('--json')) console.log(JSON.stringify(s));
