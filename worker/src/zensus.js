@@ -100,10 +100,12 @@ export async function townsAround(lat, lng, minR, maxR, fetcher){
 // (a park or a wide road does not cut a town; open fields between a town and its hamlets do). Of the places with a cell within
 // `pick` metres of the point the one with the most households is taken (a start in an industrial area still gets its town).
 // Returns { households, cells, inside(lat, lng) } – inside: in one of the place's cells or right next to one (100 m) – or null.
-export async function placeMask(lat, lng, { maxR = 7000, pick = 1500, fetcher } = {}){
+// All built-up areas (100 m cells with households, gaps up to 200 m) whose nearest cell lies within `pick` metres of the point,
+// biggest first. Each: { households, cells, cellKeys, centre, near (m), lives(lat, lng), inside(lat, lng) }.
+export async function placeMasks(lat, lng, { maxR = 7000, pick = 1500, fetcher } = {}){
   const src = censusSource(fetcher), [x, y] = laea(lat, lng), r = Math.ceil(maxR / 100), cx = Math.floor(x / 100), cy = Math.floor(y / 100);
   const H = await src.households(cx - r, cy - r, cx + r, cy + r);
-  if(!H.size) return null;
+  if(!H.size) return [];
   const comp = new Map(); let nc = 0; const info = [];
   for(const k0 of H.keys()){
     if(comp.has(k0)) continue;
@@ -113,15 +115,38 @@ export async function placeMask(lat, lng, { maxR = 7000, pick = 1500, fetcher } 
       for(let dx = -2; dx <= 2; dx++) for(let dy = -2; dy <= 2; dy++){ const n = (ix + dx) + ',' + (iy + dy); if(H.has(n) && !comp.has(n)){ comp.set(n, id); st.push(n); } } }
     info.push({ id, h, near, cells });
   }
-  const cand = info.filter(c => c.near <= pick); if(!cand.length) return null;
-  const best = cand.reduce((a, c) => c.h > a.h ? c : a);
-  const own = new Set(); for(const k of best.cells){ const [ix, iy] = k.split(',').map(Number); for(let dx = -1; dx <= 1; dx++) for(let dy = -1; dy <= 1; dy++) own.add((ix + dx) + ',' + (iy + dy)); }
-  // centre: the cell nearest to the household-weighted middle (a town's centre, not a hole between two parts)
-  let sx = 0, sy = 0; for(const k of best.cells){ const [ix, iy] = k.split(',').map(Number), h = H.get(k); sx += ix * h; sy += iy * h; }
-  const mx = sx / best.h, my = sy / best.h, ck = best.cells.reduce((a, k) => { const [ix, iy] = k.split(',').map(Number), d = Math.hypot(ix - mx, iy - my); return d < a.d ? { k, d } : a; }, { k:null, d:Infinity }).k.split(',').map(Number);
-  const centre = unlaea(ck[0] * 100 + 50, ck[1] * 100 + 50);
-  const lived = new Set(best.cells);
-  return { households:best.h, cells:best.cells.length, centre, lives:(la, lo) => { const [a, b] = cellOf(la, lo); return lived.has(a + ',' + b); }, inside:(la, lo) => { const [a, b] = cellOf(la, lo); return own.has(a + ',' + b); } };
+  return info.filter(c => c.near <= pick).sort((a, b) => b.h - a.h).map(best => {
+    const own = new Set(); for(const k of best.cells){ const [ix, iy] = k.split(',').map(Number); for(let dx = -1; dx <= 1; dx++) for(let dy = -1; dy <= 1; dy++) own.add((ix + dx) + ',' + (iy + dy)); }
+    // centre: the cell nearest to the household-weighted middle (a town's centre, not a hole between two parts)
+    let sx = 0, sy = 0; for(const k of best.cells){ const [ix, iy] = k.split(',').map(Number), h = H.get(k); sx += ix * h; sy += iy * h; }
+    const mx = sx / best.h, my = sy / best.h, ck = best.cells.reduce((a, k) => { const [ix, iy] = k.split(',').map(Number), d = Math.hypot(ix - mx, iy - my); return d < a.d ? { k, d } : a; }, { k:null, d:Infinity }).k.split(',').map(Number);
+    const centre = unlaea(ck[0] * 100 + 50, ck[1] * 100 + 50);
+    const lived = new Set(best.cells);
+    return { households:best.h, cells:best.cells.length, cellKeys:best.cells, centre, near:best.near, lives:(la, lo) => { const [a, b] = cellOf(la, lo); return lived.has(a + ',' + b); }, inside:(la, lo) => { const [a, b] = cellOf(la, lo); return own.has(a + ',' + b); } };
+  });
+}
+// the biggest built-up area near the point (side places; the main place is chosen by walking distance in plancore.js)
+export async function placeMask(lat, lng, opt = {}){
+  const all = await placeMasks(lat, lng, opt);
+  return all.length ? all[0] : null;
+}
+
+// Main place of an order (27.11.2026). Before, the biggest built-up area within 1.5 km was taken: in Löhne the flag stands in
+// Obernbeck, but Mennighüffen–Werste–Bad Oeynhausen (20,798 households) is bigger, so no street around the flag was planned.
+// Now by the real walking way (streets: [{ distance (m) from the start, mid:[lat, lng] }] of the streets with mailboxes):
+//  - the start is in or next to a built-up area (a street of it within NEAR_M on foot): that area, and the walk starts at the flag;
+//  - else (warehouse, industrial estate, a railway between the flag and the next houses): the area that is nearest ON FOOT
+//    among the real places (at least MIN_HH households), and the walk starts at its nearest street.
+export const NEAR_M = 400, MAIN_MIN_HH = 150;
+export function chooseMainPlace(masks, streets){
+  if(!masks || !masks.length) return null;
+  const best = masks.map(() => ({ d:Infinity, at:null }));
+  for(const s of streets) masks.forEach((m, k) => { if(s.distance < best[k].d && m.lives(s.mid[0], s.mid[1])) best[k] = { d:s.distance, at:s.mid }; });
+  const order = masks.map((m, k) => k).filter(k => Number.isFinite(best[k].d)).sort((a, b) => best[a].d - best[b].d);
+  if(!order.length) return { mask:masks[0], walkFrom:null, walk_m:null, rule:'biggest' };
+  if(best[order[0]].d <= NEAR_M) return { mask:masks[order[0]], walkFrom:null, walk_m:Math.round(best[order[0]].d), rule:'at-start' };
+  const real = order.filter(k => masks[k].households >= MAIN_MIN_HH), k = real.length ? real[0] : order[0];
+  return { mask:masks[k], walkFrom:best[k].at, walk_m:Math.round(best[k].d), rule:'nearest-on-foot' };
 }
 
 // ---- Phase 2A (16.11.2026): small villages and districts ------------------------------------------------------------------
