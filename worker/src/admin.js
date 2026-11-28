@@ -1198,7 +1198,7 @@ function viewCreate(edit){
       else{ let bi = P.length, bc = Infinity; for(let i = 0; i < P.length; i++){ const a = P[i], b = P[(i + 1) % P.length], c = hav(a[0], a[1], q[0], q[1]) + hav(q[0], q[1], b[0], b[1]) - hav(a[0], a[1], b[0], b[1]); if(c < bc){ bc = c; bi = i + 1; } } P.splice(bi, 0, q); }
       updDraw(); drawMust(); return;
     }
-    if(d.step === 3 && d.plan && !d.busy && pickStreet(e.latlng)) return;   // a street of the plan: take it out / back in
+    if((d.step === 3 || d.step === 4) && d.plan && !d.busy && pickStreet(e.latlng)) return;   // a street of the plan: take it out / back in
     if(d.start && !d.pick) return;
     d.pick = false; d.place = null; const qi = $('#cSearch'); if(qi) qi.value = '';
     setStart(e.latlng.lat, e.latlng.lng, true);
@@ -1400,14 +1400,18 @@ function viewCreate(edit){
   const nearStreet = (ll, list) => { const pt = m.latLngToContainerPoint(ll); let best = null, bd = 14;
     for(const st of list) for(let i = 1; i < st.c.length; i++){ const dd = distPx(pt, st.c[i - 1], st.c[i]); if(dd < bd){ bd = dd; best = st; } } return best; };
   const sameKey = (a, b) => a[0].toFixed(5) === b[0].toFixed(5) && a[1].toFixed(5) === b[1].toFixed(5);
+  // popups next to the open sheet: keep them out from under it
+  const popOpt = () => { const sh = document.getElementById('cSheet'), mp = document.getElementById('fullMap'); let left = 20;
+    if(sh && mp && innerWidth > 700){ const a = sh.getBoundingClientRect(), b = mp.getBoundingClientRect(); left = Math.max(20, a.right - b.left + 16); }
+    return { className:'excl-pop', autoPanPaddingTopLeft:L.point(left, 90), autoPanPaddingBottomRight:L.point(20, 40) }; };
   function pickStreet(ll){
     const back = nearStreet(ll, d.exclude);
-    if(back){ L.popup({ className:'excl-pop' }).setLatLng(ll).setContent(`<b>${esc(back.n || t('exclNoName'))}</b><br><span class="small muted">${esc(t('exclOut'))}</span><br><button class="btn ghost small" data-exback style="margin-top:6px">${esc(t('exclBack'))}</button>`).openOn(m);
+    if(back){ L.popup(popOpt()).setLatLng(ll).setContent(`<b>${esc(back.n || t('exclNoName'))}</b><br><span class="small muted">${esc(t('exclOut'))}</span><br><button class="btn ghost small" data-exback style="margin-top:6px">${esc(t('exclBack'))}</button>`).openOn(m);
       setTimeout(() => { const b = document.querySelector('[data-exback]'); if(b) b.onclick = () => { m.closePopup(); d.exclude = d.exclude.filter(x => x !== back); recompute(); }; }, 0); return true; }
     const all = (d.plan.routes || []).flatMap(r => r.streets || []); if(!all.length) return false;
     const st = nearStreet(ll, all); if(!st) return false;
     const same = st.n ? all.filter(x => x.n === st.n) : [st], sameMb = same.reduce((a, x) => a + x.b, 0);
-    L.popup({ className:'excl-pop' }).setLatLng(ll).setContent(`<b>${esc(st.n || t('exclNoName'))}</b><br><span class="small muted">${esc(t('exclPiece', { b:fmtN(st.b) }))}</span>
+    L.popup(popOpt()).setLatLng(ll).setContent(`<b>${esc(st.n || t('exclNoName'))}</b><br><span class="small muted">${esc(t('exclPiece', { b:fmtN(st.b) }))}</span>
       <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px"><button class="btn ghost small" data-exone>${esc(t('exclOne'))}</button>${same.length > 1 ? `<button class="btn ghost small" data-exall>${esc(t('exclAll', { n:same.length, b:fmtN(sameMb) }))}</button>` : ''}</div>`).openOn(m);
     setTimeout(() => {
       const add = list => { m.closePopup(); for(const x of list) if(!d.exclude.some(y => sameKey(y.m, x.m))) d.exclude.push({ m:x.m, c:x.c, n:x.n, b:x.b }); recompute(); };
@@ -1591,7 +1595,7 @@ function viewCreate(edit){
         ${(b.unplanned || []).length ? `<div class="warnbox">${esc(t('budUnplanned', { list:b.unplanned.join(', ') }))}</div>` : ''}
         ${b.over_target ? `<div class="warnbox">${esc(t(b.over ? 'budOver' : 'budOverTarget', { h:effH, act:hh(b.actual_minutes), max:hh(b.max_minutes), pct:Math.round(b.tolerance * 100) }))}</div>` : ''}
         <p class="small muted" style="margin:6px 0 0">${esc(t('budEstimate'))}</p></div>`; };
-    const exclLine = () => d.exclude.length ? `<div class="hint" id="exclInfo">${esc(t('exclInfo', { n:d.exclude.length }))} <button class="link" id="cExclAll">${esc(t('exclAllBack'))}</button></div>` : (p && (p.routes || []).some(r => r.streets) ? `<p class="small muted" id="exclHint">${esc(t('exclHint'))}</p>` : '');
+    const exclLine = () => d.exclude.length ? `<div class="hint" id="exclInfo">${esc(t('exclInfo', { n:d.exclude.length }))} <button class="link" id="cExclAll">${esc(t('exclAllBack'))}</button></div>` : (p && (p.routes || []).some(r => r.streets) ? `<div class="hint" id="exclHint">${esc(t('exclHint'))}</div>` : '');
     const planBlock = () => p ? `${exclLine()}${(p.side_failed || []).length ? `<div class="warnbox">${esc(t('sideFailed', { list:p.side_failed.join(', ') }))}</div>` : ''}${(p.bus || []).length ? `<div class="hint">${esc(t('busHint', { list:p.bus.map(x => x.name + ' (' + fmtDist(x.gap) + ')').join(', ') }))}</div>` : ''}${(p.side_info || []).length ? `<p class="small muted" style="margin:8px 0 0">${esc(p.side_info.map(x => x.name + ' → ' + t('planRoute', { n:x.worker + 1 })).join(' · '))}</p>` : ''}<p class="small muted" style="margin:10px 0 0">${esc(t('planSum', { mb:fmtN(p.mailboxes), km }))}</p><p class="small muted" id="cZen" style="margin:4px 0 0">${zensusOfPlan.get(p) || ''}</p>
         ${p.budget ? budgetPanel(p) : ''}
         ${p.mailboxes < d.flyers * 0.95 && !d.mainAll && !(p.eco && !d.exact) && !p.budget ? `<p class="small err">${esc(t(p.cores ? 'coresSmall' : 'areaSmall', { mb:fmtN(p.mailboxes) }))}</p>` : ''}
@@ -1692,7 +1696,7 @@ ${d.budget.on && d.budget.strategy === 'near-first' ? '' : `      <label class="
       <div class="cbusy" id="cBusy" role="status" ${d.busy ? '' : 'hidden'}>${d.busy ? esc(d.status || '') : ''}</div></div>
       <div class="wz" id="cWz">${STEPS.map((k, i) => `<button class="${i + 1 === d.step ? 'on' : i + 1 < d.step ? 'done' : ''}" data-step="${i + 1}" ${canReach(i + 1) ? '' : 'disabled'} aria-current="${i + 1 === d.step ? 'step' : 'false'}"><i></i><span>${i + 1} ${esc(t(k))}</span></button>`).join('')}</div>
       ${p && (d.step === 3 || d.step === 4) ? `<p class="wz-total" id="cPlanHours" ${d.busy || d.err ? 'hidden' : ''}><span>${esc(t('planTeamHours'))}</span><b>≈ ${esc(fmtHm(p.budget?.actual_minutes ?? totMin))} ${esc(t('h'))}</b></p>` : ''}
-      <div class="sheet-content" id="cSheetContent"><div class="wz-head"><small>${esc(t('wzStepOf', { n:d.step, of:STEPS.length }))} · <b>${esc(t(STEPS[d.step - 1]))}</b></small><p>${esc(t('wzDesc' + d.step))}</p></div>
+      <div class="sheet-content" id="cSheetContent"><div class="wz-head"><small>${esc(t('wzStepOf', { n:d.step, of:STEPS.length }))} · <b>${esc(t(STEPS[d.step - 1]))}</b></small><p>${esc(t('wzDesc' + d.step))}</p>${d.step === 4 && d.plan && (d.plan.routes || []).some(r => r.streets) ? `<div class="hint" id="exclHint4">${esc(d.exclude.length ? t('exclInfo', { n:d.exclude.length }) : t('exclHint'))}</div>` : ''}</div>
       ${outsideManual() ? `<div class="warnbox" id="cCircleWarning">${esc(t('circleManualOutside'))}</div>` : ''}
       ${body}
       ${!nextOk ? `<p class="wz-why" role="status">${ICONS.alert}<span>${esc(!d.start ? t('wzNeedStart') : d.busy || !p ? t('wzCalc') : t('wzFix'))}</span></p>` : ''}
