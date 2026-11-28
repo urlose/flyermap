@@ -54,9 +54,12 @@ const minutes = rs => rs.reduce((a, r) => a + r.minutes, 0);
 function fill(forced, banned){
   const ban = new Set(banned), force = forced.filter(i => !ban.has(i)), fs = new Set(force);
   const order = outwardStreetOrder(G, START).streets.map(q => q.i).filter(i => !ban.has(i) && !fs.has(i));
+  // the count lies near the reference: search a window around it first (much faster), widen when it hits an edge
   let lo = 0, hi = order.length, best = null;
+  if(fill.ref){ lo = Math.max(0, fill.ref - 80); hi = Math.min(order.length, fill.ref + 80); }
   while(lo <= hi){ const k = (lo + hi) >> 1, ids = [...force, ...order.slice(0, k)], rs = route(ids);
-    if(minutes(rs) <= TEAM_H * 60 && rs.every(r => r.minutes <= DAYS * HPD * 60)){ best = { ids, rs }; lo = k + 1; } else hi = k - 1; }
+    if(minutes(rs) <= TEAM_H * 60 && rs.every(r => r.minutes <= DAYS * HPD * 60)){ best = { ids, rs, k }; lo = k + 1; } else hi = k - 1; }
+  if(!fill.ref && best) fill.ref = best.k;
   return best;
 }
 function stats(rs){
@@ -91,8 +94,9 @@ for(const b of AREAS.black){
   R.black.push({ name:b.name, streets:free.length, already_in_plan:ids.length - free.length, mailboxes:Math.round(mb), per_km:Math.round(mb / Math.max(1, len) * 1000), walk_from_flag_m:Math.round(Math.min(...free.map(dOf))), _ids:free });
 }
 const pairs = [[null, null]];   // the same fill procedure without any change: the reference for every variant
-for(const w of [null, ...R.white]) for(const b of R.black) pairs.push([w, b]);
+for(const b of R.black) pairs.push([null, b]);
 for(const w of R.white) pairs.push([w, null]);
+if(!process.env.NO_PAIRS) for(const w of R.white) for(const b of R.black) pairs.push([w, b]);
 for(const [w, b] of pairs){
   const t = Date.now(), f = fill(b ? b._ids : [], w ? w._ids : []), s = summary(f.rs);
   R.variants.push({ name:!w && !b ? 'Referenz (gleiches Verfahren)' : (w ? 'ohne ' + w.name : 'nichts weg') + (b ? ' + ' + b.name : ''), ms:Date.now() - t, ...s, diff_mailboxes:s.mailboxes - B.mailboxes, diff_through_km:Math.round((s.through_km - B.through_km) * 10) / 10, _rs:f.rs, _w:w, _b:b });

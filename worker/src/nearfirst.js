@@ -4,7 +4,7 @@
 // be skipped, but normal residential streets are not scored by density.
 export function outwardStreetOrder(g, start, { isolatedGapM = 850, sparsePerKm = 3 } = {}){
   if(!g || !Array.isArray(g.pts) || !Array.isArray(g.edges) || !Array.isArray(g.adj)) throw new Error('Invalid street graph');
-  const n = g.pts.length, dist = new Float64Array(n).fill(Infinity), parent = new Int32Array(n).fill(-1);
+  const n = g.pts.length, dist = new Float64Array(n).fill(Infinity), parent = new Int32Array(n).fill(-1), parentEdge = new Int32Array(n).fill(-1);
   if(!n) return { root:-1, streets:[], unreachable:[], skipped:[] };
   const hav = (a, b) => {
     const r = Math.PI / 180, dLat = (b[0]-a[0])*r, dLon = (b[1]-a[1])*r;
@@ -33,7 +33,7 @@ export function outwardStreetOrder(g, start, { isolatedGapM = 850, sparsePerKm =
     for(const arc of g.adj[v]||[]){
       const e=g.edges[arc.e];if(!e || !Number.isFinite(+e.len) || e.len<0)continue;
       const next=d+e.len;
-      if(next<dist[arc.to]){dist[arc.to]=next;parent[arc.to]=v;push(next,arc.to);}
+      if(next<dist[arc.to]){dist[arc.to]=next;parent[arc.to]=v;parentEdge[arc.to]=arc.e;push(next,arc.to);}
     }
   }
   const streets=[], unreachable=[], skipped=[];
@@ -83,6 +83,22 @@ export function outwardStreetOrder(g, start, { isolatedGapM = 850, sparsePerKm =
       const perWalk=M*100/Math.max(1,2*L);   // mailboxes per 100 m walked (there and back)
       if((M<=2&&L>60)||perWalk<1.2) for(const i of chain){ const c=candAt.get(i); if(c) c.thin=true; }
     }
+  }
+  // Islands behind an empty stretch (28.11.2026, Löhne/Ulenburg): a few houses reached only after ≥ 400 m of road without
+  // mailboxes (forest, fields) – a castle and two farms behind 1.6 km of forest – bring far too little for the way there and
+  // back. Their streets go to the end too; the time goes to the dense quarters at the edge of the area instead. Measured on the
+  // walking tree: mailboxes behind the node per metre of (way there and back over the empty stretch + streets behind it).
+  if(filterEmpty&&cand.length){
+    const isCand=new Map(cand.filter(c=>!c.thin).map(c=>[c.i,c]));
+    const order=[...Array(n).keys()].filter(v=>Number.isFinite(dist[v])).sort((x,y)=>dist[x]-dist[y]);
+    const run=new Float64Array(n), B=new Float64Array(n), Ls=new Float64Array(n), drop=new Uint8Array(n);
+    for(const v of order){ const p=parent[v]; if(p<0) continue; const e=parentEdge[v]; run[v]=isCand.has(e)?0:run[p]+(+g.edges[e].len||0); }
+    for(const c of isCand.values()){ B[c.v]+=c.mailboxes; if(parentEdge[c.v]!==c.i) Ls[c.v]+=c.length_m; }
+    for(let q=order.length-1;q>=0;q--){ const v=order[q], p=parent[v]; if(p<0) continue; if(isCand.has(parentEdge[v])) Ls[v]+=+g.edges[parentEdge[v]].len||0; B[p]+=B[v]; Ls[p]+=Ls[v]; }
+    const ISLAND_GAP=400, islandMin=Math.max(8,Math.min(30,.35*D));   // Löhne: D ≈ 80 → 28 per km
+    for(const v of order){ const p=parent[v]; if(p<0) continue;
+      drop[v]=drop[p]||(run[v]>=ISLAND_GAP&&B[v]>0&&B[v]*1000/(2*run[v]+Ls[v])<islandMin&&(g.adj[v]||[]).some(a=>isCand.has(a.e))); }
+    for(const c of isCand.values()) if(drop[c.v]) c.thin=true;
   }
   const later=[];
   cand.forEach(c=>{ const q={ i:c.i, distance:c.distance, mailboxes:c.mailboxes, length_m:c.length_m }; (!c.thin&&keep(c)?streets:later).push(q); });

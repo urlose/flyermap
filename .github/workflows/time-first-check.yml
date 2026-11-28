@@ -106,6 +106,9 @@ jobs:
         env:
           CAP_PCT: '0.85'
         run: timeout 900s node e2e-cap.cjs out-timefirst/cap
+      - name: Browser test Löhne 32 h (Ulenburg out, take a street out in step 3/4)
+        working-directory: test/ui
+        run: timeout 900s node e2e-loehne32.cjs out-timefirst/loehne32
       - name: Browser test fixed print run Löhne (real map squares, synthetic Supabase)
         working-directory: test/ui
         run: timeout 600s node e2e-fixedrun.cjs out-timefirst/fixedrun
